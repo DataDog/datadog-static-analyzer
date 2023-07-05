@@ -1,0 +1,61 @@
+name: Release new version
+
+on:
+  release:
+    types: [created]
+
+permissions:
+  contents: write
+
+jobs:
+  upload-assets:
+    strategy:
+      matrix:
+        include:
+          # Ubuntu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          # Mac OS
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install latest nightly
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+        # Set the current SHA as the version so that it's exposed on the server.
+      - name: Install cross-compilation tools
+        uses: taiki-e/setup-cross-toolchain-action@v1
+        with:
+          target: ${{ matrix.target }}
+        if: startsWith(matrix.os, 'ubuntu')
+      - name: Set the version
+        run: sed  "s/development/$GITHUB_SHA/g" core/src/constants.rs > bla && rm core/src/constants.rs && mv bla core/src/constants.rs
+      - uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
+          # Note that glob pattern is not supported yet.
+          bin: datadog-static-analyzer-server,datadog-static-analyzer,datadog-export-rulesets
+          # (optional) On which platform to distribute the `.tar.gz` file.
+          # [default value: unix]
+          # [possible values: all, unix, windows, none]
+          tar: none
+          # (optional) On which platform to distribute the `.zip` file.
+          # [default value: windows]
+          # [possible values: all, unix, windows, none]
+          zip: all
+          target: ${{ matrix.target }}
+          # (required) GitHub token for uploading assets to GitHub Releases.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          archive: "datadog-static-analyzer-$target"
