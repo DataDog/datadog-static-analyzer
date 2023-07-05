@@ -13,6 +13,11 @@ Cargo.lock
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
+# files from vim
 *~
 
+# tree-sitter sources
 kernel/tree-sitter-*/
+
+# IntelliJ
+.idea
