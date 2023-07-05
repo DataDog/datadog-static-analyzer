@@ -1,0 +1,49 @@
+image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/base:focal
+
+stages:
+  - install
+  - test
+  - build
+  - release
+
+install:
+  stage: install
+  script:
+    - apt-get update
+    - apt-get install -y git curl
+    - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
+    - source "$HOME/.cargo/env"
+
+build:
+  stage: build
+  script:
+    - cargo build -r
+  tags:
+    - arch:arm64
+
+test:
+  stage: test
+  script:
+    - cargo test
+  tags:
+    - arch:arm64
+
+trigger_internal_image:
+  stage: release
+  only:
+    - main
+  trigger:
+    project: DataDog/images
+    branch: master
+    strategy: depend
+  variables:
+    IMAGE_VERSION: current
+    IMAGE_NAME: datadog-static-analyzer
+    RELEASE_TAG: 2023070501
+    BUILD_TAG: 2023070501
+    TMPL_SRC_IMAGE: v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
+    RELEASE_STAGING: "true"
+    RELEASE_PROD: "true"
+
+after_script:
+  - echo "End CI"
