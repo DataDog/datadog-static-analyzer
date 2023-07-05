@@ -1,0 +1,10 @@
+[workspace]
+
+members = [
+    "bins",
+    "cli",
+    "kernel",
+]
+
+[profile.release]
+lto = true

@@ -1,0 +1,16 @@
+Component,Origin,License,Copyright
+anyhow,https://crates.io/crates/anyhow,MIT,Copyright (c) 2019 David Tolnay
+base64,https://github.com/marshallpierce/rust-base64,Apache-2.0,Copyright (c) 2015 Alice Maz
+deno-core,https://github.com/denoland/deno,MIT,Copyright 2018-2023 the Deno authors
+glob-match,https://crates.io/crates/glob-match,MIT, Copyright (c) 2023 Devon Govett
+lazy_static,https://crates.io/crates/lazy_static,MIT,Copyright 2016 lazy-static.rs Developers
+num_cpus,https://github.com/seanmonstar/num_cpus,MIT, Copyright (c) 2015 Sean McArthur
+rayon,https://crates.io/crates/rayon,MIT,Copyright (c) 2010 The Rust Project Developers
+rocket,https://github.com/SergioBenitez/Rocket,Apache-2.0,Copyright 2016 Sergio Benitez
+tree-sitter,https://github.com/tree-sitter/tree-sitter,MIT,2014 Max Brunsfeld
+sarif-rs,https://github.com/psastras/sarif-rs,MIT,Copyright (c) 2021 Paul Sastrasinh
+serde,https://github.com/serde-rs/serde,Apache-2.0,2015 David Tolnay and Serde contributors
+serde_derive,https://github.com/serde-rs/serde,Apache-2.0,2015 David Tolnay and Serde contributors
+serde_json,https://github.com/serde-rs/json,Apache-2.0,2015 David Tolnay and Serde contributors
+serde_yaml,https://github.com/dtolnay/serde-yaml,Apache-2.0,2016 David Tolnay
+walkdir,https://github.com/BurntSushi/walkdir,MIT,Copyright (c) 2015 Andrew Gallant

@@ -1,0 +1,68 @@
+
+## Clone all required tree-sitter repositories
+
+You need to have all the necessary [tree-sitter](https://github.com/tree-sitter) repositories
+in `core` for the analysis to work. To clone all necessary repositories, clone them
+by invoking the following script.
+
+```shell
+./core/setup_tree_sitter.sh
+```
+
+
+## Run tests
+
+Run all tests
+
+```shell
+cargo test
+```
+
+
+## Test a ruleset
+
+```shell
+cargo run --bin datadog-static-analyzer-test-ruleset -- -r <ruleset-name>1
+```
+
+
+## Run tests with output
+
+```shell
+cargo test -- --nocapture
+```
+
+
+## Test a request to the server
+
+First, start the server using
+
+```shell
+cargo run --bin datadog-static-analyzer-server
+```
+
+```shell
+
+curl -X POST \
+     -H "Content-Type: application/json" \
+     --data '{
+        "filename": "myfile.py",
+        "file_encoding": "utf-8",
+        "language": "PYTHON",
+        "code": "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=",
+        "rules": [
+          {
+              "id": "myrule",
+              "short_description": "",
+              "description": "",
+              "language": "PYTHON",
+              "type": "TREE_SITTER_QUERY",
+              "entity_checked": null,
+              "code": "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=",
+              "tree_sitter_query": "KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik="
+          }
+        ]
+     }' \
+     http://localhost:8000/analyze
+
+```
