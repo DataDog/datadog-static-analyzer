@@ -13,6 +13,8 @@ install:
     - apt-get install -y git curl
     - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
     - source "$HOME/.cargo/env"
+  tags:
+    - arch:arm64
 
 build:
   stage: build
