@@ -9,8 +9,8 @@ stages:
 install:
   stage: install
   script:
-    - apt-get update
-    - apt-get install -y git curl
+    - sudo apt-get update
+    - sudo apt-get install -y git curl
     - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
     - source "$HOME/.cargo/env"
   tags:
