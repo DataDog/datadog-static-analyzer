@@ -3,8 +3,10 @@ use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::serde::json::{json, Json, Value};
 use rocket::{Request as RocketRequest, Response};
-use server::model::request::Request;
-use server::server::process_request;
+use server::model::analysis_request::AnalysisRequest;
+use server::model::tree_sitter_tree_request::TreeSitterRequest;
+use server::request::process_analysis_request;
+use server::tree_sitter_tree::process_tree_sitter_tree_request;
 
 pub struct CORS;
 
@@ -32,8 +34,13 @@ impl Fairing for CORS {
 }
 
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
-fn analyze(request: Json<Request>) -> Value {
-    json!(process_request(request.into_inner()))
+fn analyze(request: Json<AnalysisRequest>) -> Value {
+    json!(process_analysis_request(request.into_inner()))
+}
+
+#[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
+fn get_tree(request: Json<TreeSitterRequest>) -> Value {
+    json!(process_tree_sitter_tree_request(request.into_inner()))
 }
 
 #[rocket::get("/version", format = "text/html")]
@@ -58,6 +65,7 @@ fn rocket_main() -> _ {
     rocket::build()
         .attach(CORS)
         .mount("/", rocket::routes![analyze])
+        .mount("/", rocket::routes![get_tree])
         .mount("/", rocket::routes![get_version])
         .mount("/", rocket::routes![ping])
         .mount("/", rocket::routes![get_options])

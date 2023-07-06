@@ -14,7 +14,7 @@ pub struct RuleResponse {
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
-pub struct Response {
+pub struct AnalysisResponse {
     pub rule_responses: Vec<RuleResponse>,
     pub errors: Vec<String>,
 }
