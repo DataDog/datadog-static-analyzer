@@ -30,7 +30,7 @@ pub struct ServerRule {
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
-pub struct RequestOptions {
+pub struct AnalysisRequestOptions {
     #[serde(rename = "useTreeSitter")]
     pub use_tree_sitter: Option<bool>,
     #[serde(rename = "logOutput")]
@@ -38,7 +38,7 @@ pub struct RequestOptions {
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
-pub struct Request {
+pub struct AnalysisRequest {
     pub filename: String,
     pub language: Language,
     #[serde(rename = "file_encoding")]
@@ -46,5 +46,5 @@ pub struct Request {
     #[serde(rename = "code")]
     pub code_base64: String,
     pub rules: Vec<ServerRule>,
-    pub options: Option<RequestOptions>,
+    pub options: Option<AnalysisRequestOptions>,
 }

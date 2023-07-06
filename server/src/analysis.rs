@@ -1,15 +1,15 @@
 use crate::constants::{
     ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64, ERROR_DECODING_BASE64,
 };
-use crate::model::request::{Request, ServerRule};
-use crate::model::response::{Response, RuleResponse};
+use crate::model::analysis_request::{AnalysisRequest, ServerRule};
+use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use kernel::analysis::analyze::analyze;
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::utils::decode_base64_string;
 use std::collections::HashMap;
 
-pub fn process_request(request: Request) -> Response {
+pub fn process_request(request: AnalysisRequest) -> AnalysisResponse {
     let rules_with_invalid_language: Vec<ServerRule> = request
         .rules
         .iter()
@@ -17,7 +17,7 @@ pub fn process_request(request: Request) -> Response {
         .filter(|v| v.language != request.language)
         .collect();
     if !rules_with_invalid_language.is_empty() {
-        return Response {
+        return AnalysisResponse {
             rule_responses: vec![],
             errors: vec![ERROR_CODE_LANGUAGE_MISMATCH.to_string()],
         };
@@ -49,7 +49,7 @@ pub fn process_request(request: Request) -> Response {
     // let's try to decode the code
     let code_decoded_attempt = decode_base64_string(request.code_base64);
     if code_decoded_attempt.is_err() {
-        return Response {
+        return AnalysisResponse {
             rule_responses: vec![],
             errors: vec![ERROR_CODE_NOT_BASE64.to_string()],
         };
@@ -84,12 +84,12 @@ pub fn process_request(request: Request) -> Response {
                 })
                 .collect();
 
-            Response {
+            AnalysisResponse {
                 rule_responses,
                 errors: vec![],
             }
         }
-        Err(_) => Response {
+        Err(_) => AnalysisResponse {
             rule_responses: vec![],
             errors: vec![ERROR_DECODING_BASE64.to_string()],
         },
@@ -98,7 +98,7 @@ pub fn process_request(request: Request) -> Response {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::request::ServerRule;
+    use crate::model::analysis_request::ServerRule;
     use kernel::model::{
         common::Language,
         rule::{RuleCategory, RuleSeverity, RuleType},
@@ -108,7 +108,7 @@ mod tests {
 
     #[test]
     fn test_request_correct_response() {
-        let request = Request{
+        let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
@@ -140,7 +140,7 @@ mod tests {
 
     #[test]
     fn test_request_invalid_base64() {
-        let request = Request{
+        let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
@@ -174,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_request_invalid_rule_base64_encoding() {
-        let request = Request{
+        let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
@@ -208,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_request_invalid_language() {
-        let request = Request{
+        let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
