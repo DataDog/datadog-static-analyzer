@@ -31,9 +31,7 @@ pub struct ServerRule {
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
 pub struct AnalysisRequestOptions {
-    #[serde(rename = "useTreeSitter")]
     pub use_tree_sitter: Option<bool>,
-    #[serde(rename = "logOutput")]
     pub log_output: Option<bool>,
 }
 

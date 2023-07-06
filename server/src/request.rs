@@ -9,7 +9,7 @@ use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::utils::decode_base64_string;
 use std::collections::HashMap;
 
-pub fn process_request(request: AnalysisRequest) -> AnalysisResponse {
+pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     let rules_with_invalid_language: Vec<ServerRule> = request
         .rules
         .iter()
@@ -132,7 +132,7 @@ mod tests {
                 }
             ]
         };
-        let response = process_request(request);
+        let response = process_analysis_request(request);
         assert!(response.errors.is_empty());
         assert_eq!(1, response.rule_responses.len());
         assert_eq!(1, response.rule_responses.get(0).unwrap().violations.len());
@@ -164,7 +164,7 @@ mod tests {
                 }
             ]
         };
-        let response = process_request(request);
+        let response = process_analysis_request(request);
         assert_eq!(0, response.rule_responses.len());
         assert_eq!(
             &ERROR_CODE_NOT_BASE64.to_string(),
@@ -198,7 +198,7 @@ mod tests {
                 }
             ]
         };
-        let response = process_request(request);
+        let response = process_analysis_request(request);
         assert_eq!(0, response.rule_responses.len());
         assert_eq!(
             &ERROR_DECODING_BASE64.to_string(),
@@ -232,7 +232,7 @@ mod tests {
                 }
             ]
         };
-        let response = process_request(request);
+        let response = process_analysis_request(request);
         assert_eq!(0, response.rule_responses.len());
         assert_eq!(
             &ERROR_CODE_LANGUAGE_MISMATCH.to_string(),
