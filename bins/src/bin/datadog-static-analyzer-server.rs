@@ -1,12 +1,17 @@
+use getopts::Options;
 use kernel::constants::VERSION;
 use rocket::fairing::{Fairing, Info, Kind};
+use rocket::fs::NamedFile;
 use rocket::http::Header;
 use rocket::serde::json::{json, Json, Value};
-use rocket::{Request as RocketRequest, Response};
+use rocket::{Request as RocketRequest, Response, State};
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
 use server::tree_sitter_tree::process_tree_sitter_tree_request;
+use std::collections::HashMap;
+use std::env;
+use std::process::exit;
 
 pub struct CORS;
 
@@ -48,6 +53,20 @@ fn get_version() -> String {
     VERSION.to_string()
 }
 
+#[rocket::get("/static/<name>", format = "text/html")]
+async fn serve_static(
+    server_configuration: &State<ServerConfiguration>,
+    name: &str,
+) -> Option<NamedFile> {
+    let name_optional = server_configuration.files_to_serve.get(name);
+
+    if let Some(name) = name_optional {
+        NamedFile::open(name).await.ok()
+    } else {
+        None
+    }
+}
+
 #[rocket::get("/ping", format = "text/html")]
 fn ping() -> String {
     "pong".to_string()
@@ -60,13 +79,62 @@ fn get_options() -> String {
     "".to_string()
 }
 
+struct ServerConfiguration {
+    files_to_serve: HashMap<String, String>,
+}
+
+fn print_usage(program: &str, opts: Options) {
+    let brief = format!("Usage: {} [options]", program);
+    print!("{}", opts.usage(&brief));
+}
+
 #[rocket::launch]
 fn rocket_main() -> _ {
+    let args: Vec<String> = env::args().collect();
+    let program = args[0].clone();
+    let mut opts = Options::new();
+    opts.optmulti(
+        "s",
+        "static",
+        "serve a static file in /static/<static-name>",
+        "static-name:/path/to/file",
+    );
+    opts.optflag("h", "help", "print this help");
+
+    let matches = match opts.parse(&args[1..]) {
+        Ok(m) => m,
+        Err(f) => {
+            panic!("error when parsing arguments: {}", f)
+        }
+    };
+
+    if matches.opt_present("h") {
+        print_usage(&program, opts);
+        exit(1);
+    }
+
+    let optional_static = matches.opt_strs("s");
+
+    let mut files_to_serve = HashMap::new();
+    for s in optional_static {
+        let parts: Vec<&str> = s.split(':').collect();
+        if parts.len() == 2 {
+            files_to_serve.insert(
+                parts.first().unwrap().to_string(),
+                parts.get(1).unwrap().to_string(),
+            );
+        }
+    }
+
+    let server_configuration = ServerConfiguration { files_to_serve };
+
     rocket::build()
         .attach(CORS)
+        .manage(server_configuration)
         .mount("/", rocket::routes![analyze])
         .mount("/", rocket::routes![get_tree])
         .mount("/", rocket::routes![get_version])
         .mount("/", rocket::routes![ping])
         .mount("/", rocket::routes![get_options])
+        .mount("/", rocket::routes![serve_static])
 }
