@@ -19,6 +19,7 @@ install:
 build:
   stage: build
   script:
+    - source "$HOME/.cargo/env"
     - cargo build -r
   tags:
     - arch:arm64
@@ -26,6 +27,7 @@ build:
 test:
   stage: test
   script:
+    - source "$HOME/.cargo/env"
     - cargo test
   tags:
     - arch:arm64
