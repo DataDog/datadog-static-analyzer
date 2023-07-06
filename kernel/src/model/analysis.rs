@@ -40,7 +40,6 @@ pub struct TreeSitterNode {
     #[serde(rename = "fieldName")]
     pub field_name: Option<String>,
     pub children: Vec<TreeSitterNode>,
-    // pub parent: Option<TreeSitterNode>,
 }
 
 // The node that is then passed to the visit function.
