@@ -1,29 +1,17 @@
-image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/base:focal
+image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ubuntu:22.04
 
 stages:
-  - install
   - test
-  - build
   - release
 
-install:
-  stage: install
-  script:
-    - apt-get update
-    - apt-get install -y git curl
-    - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
-    - source "$HOME/.cargo/env"
-
-build:
-  stage: build
-  script:
-    - cargo build -r
-  tags:
-    - arch:arm64
-
-test:
+test-and-build:
   stage: test
   script:
+    - apt-get update
+    - apt-get install -y git curl build-essential
+    - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
+    - source "$HOME/.cargo/env"
+    - cargo build -r
     - cargo test
   tags:
     - arch:arm64
