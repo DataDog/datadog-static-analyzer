@@ -41,7 +41,7 @@ jobs:
           target: ${{ matrix.target }}
         if: startsWith(matrix.os, 'ubuntu')
       - name: Set the version
-        run: sed  "s/development/$GITHUB_SHA/g" kernel/src/constants.rs > bla && rm core/src/constants.rs && mv bla kernel/src/constants.rs
+        run: sed  "s/development/$GITHUB_SHA/g" kernel/src/constants.rs > bla && rm kernel/src/constants.rs && mv bla kernel/src/constants.rs
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
