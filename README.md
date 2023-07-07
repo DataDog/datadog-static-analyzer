@@ -6,12 +6,12 @@ You can use it in your CI/CD pipeline using our integration:
  - [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
  - [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
 
-If you use it in your own CI/CD pipeline, you can integrate the tool directly. 
+If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/continuous_integration/static_analysis/?tab=other). 
 
 
 ## Download
 
-Download the latest release for your system and architecture from the [release page](releases/latest).
+Download the latest release for your system and architecture from the [release page](https://github.com/DataDog/datadog-static-analyzer/blob/main/releases/latest).
 
 
 To get the static analyzer via shell:
@@ -23,7 +23,8 @@ curl -L -O http://www.github.com/DataDog/datadog-static-analyzer/releases/latest
 Example to get the x86_64 binary for Linux:
 
 ```shell
-curl -L -O http://www.github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip```
+curl -L -O http://www.github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip
+```
 
 ## Usage
 
@@ -41,7 +42,7 @@ The binary cannot be executed as is. You need to flag the binary as safe to exec
 
 ```shell
 xattr -dr com.apple.quarantine datadog-static-analyzer
-````
+```
 
 ## Options
 
