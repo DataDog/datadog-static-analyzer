@@ -17,3 +17,9 @@ jobs:
         run: cargo fmt --check
       - name: Run tests
         run: cargo test
+      - name: Check python-best-practices ruleset
+        run: cargo run --bin datadog-static-analyzer-test-ruleset  -- -r python-best-practices
+      - name: Check python-security ruleset
+        run: cargo run --bin datadog-static-analyzer-test-ruleset  -- -r python-security
+      - name: Check python-code-style ruleset
+        run: cargo run --bin datadog-static-analyzer-test-ruleset  -- -r python-code-style
