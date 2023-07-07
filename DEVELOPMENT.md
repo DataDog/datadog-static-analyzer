@@ -1,12 +1,11 @@
 
-## Clone all required tree-sitter repositories
+## Build the project
 
 You need to have all the necessary [tree-sitter](https://github.com/tree-sitter) repositories
-in `core` for the analysis to work. To clone all necessary repositories, clone them
-by invoking the following script.
+in `kernel` for the analysis to work. The `build` process will take care of this for you:
 
 ```shell
-./core/setup_tree_sitter.sh
+cargo build
 ```
 
 
