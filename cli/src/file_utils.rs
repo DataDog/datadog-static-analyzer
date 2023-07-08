@@ -54,6 +54,9 @@ pub fn get_files(directory: &str, paths_to_ignore_initial: Vec<String>) -> Resul
         for path_to_ignore in &paths_to_ignore {
             // we build the expanded glob to make sure it will match with the full path.
             let expanded_glob = format!("{}/{}", directory, path_to_ignore);
+            println!("expanded_glob: {}", expanded_glob.as_str());
+            println!("path_to_ignore: {}", path_to_ignore.as_str());
+            println!("entry: {}", entry.display().to_string().as_str());
             if glob_match(expanded_glob.as_str(), entry.display().to_string().as_str()) {
                 should_include = false;
             }
