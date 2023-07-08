@@ -39,7 +39,6 @@ pub struct AnalysisRequestOptions {
 pub struct AnalysisRequest {
     pub filename: String,
     pub language: Language,
-    #[serde(rename = "file_encoding")]
     pub file_encoding: String,
     #[serde(rename = "code")]
     pub code_base64: String,
