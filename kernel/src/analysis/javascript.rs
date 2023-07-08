@@ -6,7 +6,6 @@ use crate::model::violation::Violation;
 use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
-use std::thread::yield_now;
 use std::time::{Duration, SystemTime};
 
 use lazy_static::lazy_static;
@@ -176,7 +175,7 @@ pub fn execute_rule(
 
     let started = lock.lock().expect("should lock mutex");
 
-    let thr = thread::spawn(move || {
+    thread::spawn(move || {
         let mut runtime = JsRuntime::new(RuntimeOptions {
             startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
             ..Default::default()
@@ -214,7 +213,6 @@ pub fn execute_rule(
         cvar.notify_one();
     });
 
-    yield_now();
     let handle = rx_runtime.recv();
 
     // Wait for the rule to execute. If the rule times out, we return a specific RuleResult
@@ -235,7 +233,6 @@ pub fn execute_rule(
 
     // drop the thread. Note that it does not terminate the thread, it just put
     // it out of scope.
-    drop(thr);
     match cond_result {
         Ok(v) => {
             if v.1.timed_out() {

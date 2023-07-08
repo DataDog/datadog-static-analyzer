@@ -45,11 +45,10 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
             let path_buf = entry.to_path_buf();
 
             let relative_path = path_buf
-                .as_path()
                 .strip_prefix(directory)
-                .unwrap()
-                .to_str()
-                .expect("should get the path");
+                .ok()
+                .and_then(|p| p.to_str())
+                .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
             if glob_match(path_to_ignore.as_str(), relative_path) {
                 should_include = false;
             }
