@@ -188,7 +188,7 @@ fn main() -> Result<()> {
 
     let languages = get_languages_for_rules(&rules);
 
-    let files_to_analyze = get_files(directory_to_analyze.as_str(), ignore_paths.clone().as_ref())
+    let files_to_analyze = get_files(directory_to_analyze.as_str(), ignore_paths.clone())
         .expect("unable to get the list of files to analyze");
 
     print_configuration(
