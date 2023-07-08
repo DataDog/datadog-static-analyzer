@@ -28,7 +28,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v3
-      - name: Install latest nightly
+      - name: Install Stable + Rustfmt + Clippy
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
@@ -58,4 +58,4 @@ jobs:
           target: ${{ matrix.target }}
           # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
-          archive: "datadog-static-analyzer-$target"
+          archive: 'datadog-static-analyzer-$target'
