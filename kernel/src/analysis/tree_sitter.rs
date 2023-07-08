@@ -109,7 +109,7 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
             loop {
                 let maybe_child = map_node_internal(cursor);
                 if let Some(child) = maybe_child {
-                    children.push(child.clone());
+                    children.push(child);
                 }
                 if !cursor.goto_next_sibling() {
                     break;
