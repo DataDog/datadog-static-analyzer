@@ -4,8 +4,9 @@ use crate::model::analysis::{
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
 use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Barrier, Condvar, Mutex};
 use std::thread;
+use std::thread::yield_now;
 use std::time::{Duration, SystemTime};
 
 use lazy_static::lazy_static;
@@ -155,6 +156,8 @@ pub fn execute_rule(
 ) -> RuleResult {
     let rule_name_copy = rule.name.clone();
     let filename_copy = filename.clone();
+    let rule_name_copy_thr = rule.name.clone();
+    let filename_copy_thr = filename.clone();
     let use_debug = analysis_options.use_debug;
     let start = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -162,12 +165,11 @@ pub fn execute_rule(
         .as_millis();
     // These mutexes and condition variables are used to wait on the execution
     // and have a proper timeout.
-    let condvar_main = Arc::new((Mutex::new(()), Condvar::new()));
+    let condvar_main = Arc::new((Mutex::new(()), Condvar::new(), Barrier::new(2)));
     let condvar_thread = Arc::clone(&condvar_main);
 
     // to send the handle of the JS runtime to terminate the runtime
     let (tx_runtime, rx_runtime) = mpsc::channel();
-
     // To send the result once the execution is complete.
     let (tx_result, rx_result) = mpsc::channel();
     let thr = thread::spawn(move || {
@@ -182,7 +184,10 @@ pub fn execute_rule(
             panic!("we should be able to send the handle to the main thread");
         }
 
-        let (_, cvar) = &*condvar_thread;
+        let (mutex, cvar, barrier) = &*condvar_thread;
+
+        // let's make sure the other thread is ready for us to run and will wait.
+        barrier.wait();
 
         // execute the rule and return
         let res = execute_rule_internal(
@@ -194,16 +199,27 @@ pub fn execute_rule(
         );
 
         // send the result back
-        tx_result
-            .send(Some(res))
-            .expect("sending results to the main thread");
+        let send_result_result = tx_result.send(Some(res));
+        if use_debug && send_result_result.is_err() {
+            eprintln!(
+                "rule {}:{} - error when sending results",
+                rule_name_copy_thr.clone(),
+                filename_copy_thr.clone()
+            );
+        }
 
+        let _ = mutex.lock();
         // notify the main thread we are done with the execution
         cvar.notify_one();
     });
 
+    yield_now();
     let handle = rx_runtime.recv();
-    let (lock, cvar) = &*condvar_main;
+    let (lock, cvar, barrier) = &*condvar_main;
+
+    // synchronize with the other thread and make sure we are ready to execute
+    barrier.wait();
+
     let started = lock.lock().expect("should lock mutex");
 
     // Wait for the rule to execute. If the rule times out, we return a specific RuleResult
@@ -230,7 +246,8 @@ pub fn execute_rule(
             if v.1.timed_out() {
                 if use_debug {
                     eprintln!(
-                        "rule {} TIMED OUT out on file {}, execution time: {} ms",
+                        "[{}] rule:file {}:{} TIMED OUT, execution time: {} ms",
+                        end,
                         rule_name_copy.as_str(),
                         filename_copy.as_str(),
                         execution_time_ms
