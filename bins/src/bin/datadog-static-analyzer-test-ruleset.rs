@@ -58,7 +58,7 @@ fn main() {
     let program = args[0].clone();
     let mut opts = Options::new();
 
-    opts.optopt("r", "ruleset", "rules to test", "python-security");
+    opts.optmulti("r", "ruleset", "rules to test", "python-security");
     opts.optflag("h", "help", "print this help");
 
     let matches = match opts.parse(&args[1..]) {
