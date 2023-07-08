@@ -37,7 +37,7 @@ jobs:
       - name: Check formatting
         run: cargo fmt --check
       - name: Run tests
-        run: cargo test -- --nocapture
+        run: cargo test
       - name: Check python rulesets - part1
         run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
       - name: Check python rulesets - part2
