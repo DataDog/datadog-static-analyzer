@@ -2,7 +2,7 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Deserialize, Debug, Serialize, PartialEq)]
+#[derive(Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum OutputFormat {
     Json,
     Sarif,
@@ -11,10 +11,10 @@ pub enum OutputFormat {
 impl fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            OutputFormat::Json => "JSON",
-            OutputFormat::Sarif => "SARIF",
+            Self::Json => "JSON",
+            Self::Sarif => "SARIF",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 
@@ -41,12 +41,12 @@ static ALL_LANGUAGES: &[Language] = &[
 impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Language::JavaScript => "javascript",
-            Language::Python => "python",
-            Language::Rust => "rust",
-            Language::TypeScript => "typescript",
+            Self::JavaScript => "javascript",
+            Self::Python => "python",
+            Self::Rust => "rust",
+            Self::TypeScript => "typescript",
         };
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

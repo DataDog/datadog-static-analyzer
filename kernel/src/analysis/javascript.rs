@@ -133,7 +133,7 @@ lazy_static! {
     }
         "#,
         );
-        let mut rt = JsRuntimeForSnapshot::new(Default::default(), Default::default());
+        let mut rt = JsRuntimeForSnapshot::new(RuntimeOptions::default(), Default::default());
         rt.execute_script("common_js", code).unwrap();
         rt.snapshot().to_vec()
     };
@@ -180,9 +180,10 @@ pub fn execute_rule(
 
         let handle = runtime.v8_isolate().thread_safe_handle();
 
-        if tx_runtime.send(handle).is_err() {
-            panic!("we should be able to send the handle to the main thread");
-        }
+        assert!(
+            tx_runtime.send(handle).is_ok(),
+            "we should be able to send the handle to the main thread"
+        );
 
         let (mutex, cvar, barrier) = &*condvar_thread;
 
@@ -394,7 +395,7 @@ res
                             filename,
                             violations: vec![],
                             errors: vec![],
-                            execution_error: Some(format!("error when getting violations: ${}", e)),
+                            execution_error: Some(format!("error when getting violations: ${e}")),
                             output: None,
                             execution_time_ms: 0,
                         },
@@ -405,7 +406,7 @@ res
                     filename,
                     violations: vec![],
                     errors: vec![ERROR_RULE_EXECUTION.to_string()],
-                    execution_error: Some(format!("error: {}", err)),
+                    execution_error: Some(format!("error: {err}")),
                     output: None,
                     execution_time_ms: 0,
                 },
@@ -418,10 +419,12 @@ res
                     rule.name, filename, e
                 );
             }
-            let error_message = match e.to_string().find("at rule_code") {
-                Some(pos) => e.to_string()[..pos].to_string(),
-                None => e.to_string(),
-            };
+
+            let err_str = e.to_string();
+            let error_message = err_str
+                .find("at rule_code")
+                .map_or_else(|| err_str.clone(), |pos| err_str[..pos].to_string());
+
             RuleResult {
                 rule_name: rule.name.clone(),
                 filename,
