@@ -4,7 +4,7 @@ use crate::model::analysis::{
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
 use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
-use std::sync::{mpsc, Arc, Barrier, Condvar, Mutex};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::thread::yield_now;
 use std::time::{Duration, SystemTime};
@@ -165,13 +165,17 @@ pub fn execute_rule(
         .as_millis();
     // These mutexes and condition variables are used to wait on the execution
     // and have a proper timeout.
-    let condvar_main = Arc::new((Mutex::new(()), Condvar::new(), Barrier::new(2)));
+    let condvar_main = Arc::new((Mutex::new(()), Condvar::new()));
     let condvar_thread = Arc::clone(&condvar_main);
 
     // to send the handle of the JS runtime to terminate the runtime
     let (tx_runtime, rx_runtime) = mpsc::channel();
     // To send the result once the execution is complete.
     let (tx_result, rx_result) = mpsc::channel();
+    let (lock, cvar) = &*condvar_main;
+
+    let started = lock.lock().expect("should lock mutex");
+
     let thr = thread::spawn(move || {
         let mut runtime = JsRuntime::new(RuntimeOptions {
             startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
@@ -184,10 +188,7 @@ pub fn execute_rule(
             panic!("we should be able to send the handle to the main thread");
         }
 
-        let (mutex, cvar, barrier) = &*condvar_thread;
-
-        // let's make sure the other thread is ready for us to run and will wait.
-        barrier.wait();
+        let (mutex, cvar) = &*condvar_thread;
 
         // execute the rule and return
         let res = execute_rule_internal(
@@ -215,12 +216,6 @@ pub fn execute_rule(
 
     yield_now();
     let handle = rx_runtime.recv();
-    let (lock, cvar, barrier) = &*condvar_main;
-
-    // synchronize with the other thread and make sure we are ready to execute
-    barrier.wait();
-
-    let started = lock.lock().expect("should lock mutex");
 
     // Wait for the rule to execute. If the rule times out, we return a specific RuleResult
     let cond_result = cvar.wait_timeout(
