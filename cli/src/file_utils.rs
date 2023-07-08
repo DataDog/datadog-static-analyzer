@@ -24,21 +24,21 @@ fn get_extensions_for_language(language: &Language) -> Option<Vec<String>> {
 
 // get the files to analyze from the directory. This function walks the directory
 // to analyze recursively and gets all the files.
-pub fn get_files(directory: &str, paths_to_ignore_initial: Vec<String>) -> Result<Vec<PathBuf>> {
+pub fn get_files(directory: &str, paths_to_ignore: Vec<String>) -> Result<Vec<PathBuf>> {
     let mut files_to_return: Vec<PathBuf> = vec![];
 
     // This is the directory that contains the .git files, we do not need to keep them.
     let git_directory = format!("{}/.git", &directory);
 
     // For windows, replace the '/' character of the paths to ignore with the '\' character
-    let paths_to_ignore = if cfg!(windows) {
-        paths_to_ignore_initial
-            .into_iter()
-            .map(|p| str::replace(p.as_str(), '/', "\\"))
-            .collect()
-    } else {
-        paths_to_ignore_initial
-    };
+    // let paths_to_ignore = if cfg!(windows) {
+    //     paths_to_ignore_initial
+    //         .into_iter()
+    //         .map(|p| str::replace(p.as_str(), '/', "\\"))
+    //         .collect()
+    // } else {
+    //     paths_to_ignore_initial
+    // };
 
     for entry in WalkDir::new(directory) {
         let dir_entry = entry?;
@@ -54,10 +54,18 @@ pub fn get_files(directory: &str, paths_to_ignore_initial: Vec<String>) -> Resul
         for path_to_ignore in &paths_to_ignore {
             // we build the expanded glob to make sure it will match with the full path.
             let expanded_glob = format!("{}/{}", directory, path_to_ignore);
+
+            let pbuf = entry.to_path_buf();
+            let relative_path = pbuf
+                .as_path()
+                .strip_prefix(directory)
+                .unwrap()
+                .to_str()
+                .expect("should get the path");
             println!("expanded_glob: {}", expanded_glob.as_str());
-            println!("path_to_ignore: {}", path_to_ignore.as_str());
+            println!("relative_path: {}", relative_path);
             println!("entry: {}", entry.display().to_string().as_str());
-            if glob_match(expanded_glob.as_str(), entry.display().to_string().as_str()) {
+            if glob_match(path_to_ignore.as_str(), relative_path) {
                 should_include = false;
             }
         }
