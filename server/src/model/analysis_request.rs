@@ -1,6 +1,6 @@
 use kernel::model::common::Language;
 use kernel::model::rule::{EntityChecked, RuleCategory, RuleSeverity, RuleType};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 // This is a copy of the rule. We are just renaming the attribute to be

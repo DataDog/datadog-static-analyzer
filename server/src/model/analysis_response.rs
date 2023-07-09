@@ -1,5 +1,5 @@
 use kernel::model::violation::Violation;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
 pub struct RuleResponse {

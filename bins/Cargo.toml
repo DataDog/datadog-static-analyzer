@@ -20,17 +20,19 @@ version = "1"
 default-features = false # Disable features which are enabled by default
 features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy", "run-cargo-fmt"]
 
-
 [dependencies]
-anyhow = "1"
+# local
 cli = {path = "../cli"}
 kernel = {path = "../kernel" }
 server = {path = "../server"}
+# workspace
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+# other
 getopts = "0.2.21"
 num_cpus = "1.15.0"
 rayon = "1.7.0"
 rocket = {version = "=0.5.0-rc.3", features = ["json"]}
-serde_json = "1.0.96"
 
 
 # For linux and macos, we need the vendored ssl (especially
