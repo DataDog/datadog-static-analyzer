@@ -39,12 +39,16 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
         // attempt to add a symlink outside the repo and read content outside of the
         // repo with a custom rule.
         let mut should_include = entry.is_file() && !entry.is_symlink();
+        let path_buf = entry.to_path_buf();
 
         // check if the path should be ignored by a glob or not.
         for path_to_ignore in paths_to_ignore {
-            // we build the expanded glob to make sure it will match with the full path.
-            let expanded_glob = format!("{}/{}", directory, path_to_ignore);
-            if glob_match(expanded_glob.as_str(), entry.display().to_string().as_str()) {
+            let relative_path = path_buf
+                .strip_prefix(directory)
+                .ok()
+                .and_then(|p| p.to_str())
+                .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
+            if glob_match(path_to_ignore.as_str(), relative_path) {
                 should_include = false;
             }
         }

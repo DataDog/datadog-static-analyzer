@@ -2,14 +2,31 @@ on: push
 name: Check Code
 jobs:
   check_code:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          # Ubuntu
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+          # Mac OS
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          # Windows
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
     env:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: ${{ secrets.DD_SITE }}
     steps:
       - uses: actions/checkout@v1
-      - uses: actions-rs/toolchain@v1
+      - name: Install Stable + Rustfmt + Clippy
+        uses: actions-rs/toolchain@v1
         with:
             toolchain: stable
             components: clippy

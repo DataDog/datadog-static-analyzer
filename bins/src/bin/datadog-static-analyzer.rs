@@ -188,7 +188,7 @@ fn main() -> Result<()> {
 
     let languages = get_languages_for_rules(&rules);
 
-    let files_to_analyze = get_files(directory_to_analyze.as_str(), ignore_paths.clone().as_ref())
+    let files_to_analyze = get_files(directory_to_analyze.as_str(), &ignore_paths)
         .expect("unable to get the list of files to analyze");
 
     print_configuration(
@@ -211,7 +211,7 @@ fn main() -> Result<()> {
 
     // we always keep one thread free and some room for the management threads that monitor
     // the rule execution.
-    let ideal_threads = ((num_cpus::get() as f32 - 1.0) * 0.80) as usize;
+    let ideal_threads = ((num_cpus::get() as f32 - 1.0) * 0.90) as usize;
     let num_threads = if ideal_threads == 0 { 1 } else { ideal_threads };
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
