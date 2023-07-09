@@ -5,6 +5,7 @@ use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use cli::sarif_utils::generate_sarif_report;
 use kernel::analysis::analyze::analyze;
+use kernel::constants::VERSION;
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::common::Language;
 use kernel::model::rule::{Rule, RuleInternal};
@@ -86,6 +87,7 @@ fn main() -> Result<()> {
     opts.optopt("o", "output", "output file", "output.json");
     opts.optmulti("p", "ignore-path", "path to ignore", "**/test*.py");
     opts.optflag("h", "help", "print this help");
+    opts.optflag("v", "version", "shows the version");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -93,6 +95,11 @@ fn main() -> Result<()> {
             panic!("error when parsing arguments: {}", f)
         }
     };
+
+    if matches.opt_present("v") {
+        println!("{}", VERSION);
+        exit(1);
+    }
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
