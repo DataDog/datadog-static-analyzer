@@ -1,4 +1,5 @@
 use cli::datadog_utils::get_ruleset;
+use kernel::constants::VERSION;
 use kernel::model::ruleset::RuleSet;
 
 use getopts::Options;
@@ -19,6 +20,7 @@ fn main() {
     opts.optopt("o", "output", "output file", "rulesets.json");
     opts.optmulti("r", "ruleset", "ruleset to fetch", "python-security");
     opts.optflag("h", "help", "print this help");
+    opts.optflag("v", "version", "shows the version");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -26,6 +28,11 @@ fn main() {
             panic!("error when parsing arguments: {}", f)
         }
     };
+
+    if matches.opt_present("v") {
+        println!("{}", VERSION);
+        exit(1);
+    }
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
