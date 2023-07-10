@@ -6,10 +6,8 @@ pub struct RuleResponse {
     pub identifier: String,
     pub violations: Vec<Violation>,
     pub errors: Vec<String>,
-    #[serde(rename = "executionError")]
     pub execution_error: Option<String>,
     pub output: Option<String>,
-    #[serde(rename = "executionTimeMs")]
     pub execution_time_ms: u128,
 }
 
