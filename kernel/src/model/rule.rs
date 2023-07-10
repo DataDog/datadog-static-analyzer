@@ -10,28 +10,28 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
+/// In the RuleCategory, we keep unknown. Old rules keep putting
+/// whatever they want as category. As a matter of fact, old rules that
+/// use old values (e.g. DEPLOYMENT) will fail deserialization. We then match
+/// them on the `Unknown` value.
+///
+/// The `Unknown` value is never exposed tho because we always rewrite the
+/// category of all violations by the categories of the rules they come from.
 #[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum RuleCategory {
     #[serde(rename = "BEST_PRACTICES")]
     BestPractices,
     #[serde(rename = "CODE_STYLE")]
     CodeStyle,
-    #[serde(rename = "DEPLOYMENT")]
-    Deployment,
-    #[serde(rename = "DOCUMENTATION")]
-    Documentation,
-    #[serde(rename = "DESIGN")]
-    Design,
     #[serde(rename = "ERROR_PRONE")]
     ErrorProne,
     #[serde(rename = "PERFORMANCE")]
     Performance,
-    #[serde(rename = "SAFETY")]
-    Safety,
     #[serde(rename = "SECURITY")]
     Security,
-    #[serde(rename = "UNKNOWN")]
-    Unknown,
+    #[serde(other)]
+    #[serde(skip_serializing)]
+    Unknown, // kept only for backward compatibility
 }
 
 #[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
