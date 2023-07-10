@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-#[derive(Copy, Clone, Deserialize, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum RuleCategory {
     #[serde(rename = "BEST_PRACTICES")]
     BestPractices,
@@ -34,7 +34,7 @@ pub enum RuleCategory {
     Unknown,
 }
 
-#[derive(Copy, Clone, Deserialize, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum RuleSeverity {
     #[serde(rename = "ERROR")]
     Error,
@@ -49,15 +49,15 @@ pub enum RuleSeverity {
 impl fmt::Display for RuleSeverity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            RuleSeverity::Error => write!(f, "error"),
-            RuleSeverity::Warning => write!(f, "warning"),
-            RuleSeverity::Notice => write!(f, "notice"),
-            RuleSeverity::None => write!(f, "unone"),
+            Self::Error => write!(f, "error"),
+            Self::Warning => write!(f, "warning"),
+            Self::Notice => write!(f, "notice"),
+            Self::None => write!(f, "unone"),
         }
     }
 }
 
-#[derive(Copy, Clone, Deserialize, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum RuleType {
     #[serde(rename = "AST_CHECK")]
     AstCheck,
@@ -162,7 +162,7 @@ impl Rule {
         }
         let description = self
             .decode_description()
-            .unwrap_or(Some("invalid description".to_string()));
+            .unwrap_or_else(|_| Some("invalid description".to_string()));
         let code = String::from_utf8(general_purpose::STANDARD.decode(self.code_base64.clone())?)?;
         let short_description = self
             .short_description_base64
@@ -174,7 +174,7 @@ impl Rule {
             general_purpose::STANDARD.decode(
                 self.tree_sitter_query_base64
                     .as_ref()
-                    .ok_or(anyhow!("tree sitter query is empty"))?,
+                    .ok_or_else(|| anyhow!("tree sitter query is empty"))?,
             )?,
         )?;
 

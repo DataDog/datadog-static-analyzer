@@ -4,7 +4,7 @@ use crate::model::rule::{RuleCategory, RuleSeverity};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
-#[derive(Copy, Clone, Deserialize, Debug, Serialize, PartialEq)]
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum EditType {
     #[serde(rename = "ADD")]
     Add,

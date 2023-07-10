@@ -6,11 +6,12 @@ where
     F: FnMut(&mut Command) -> &mut Command,
 {
     let mut command = Command::new(name);
-    println!("Running {:?}", command);
+    println!("Running {command:?}");
     let configured = configure(&mut command);
-    if configured.status().is_err() {
-        panic!("failed to execute {:?}", configured);
-    }
+    assert!(
+        configured.status().is_ok(),
+        "failed to execute {configured:?}"
+    );
 }
 
 fn main() {

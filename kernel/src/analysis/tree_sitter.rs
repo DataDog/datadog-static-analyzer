@@ -1,10 +1,10 @@
 use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
 use crate::model::common::{Language, Position};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 use tree_sitter::QueryCursor;
 
-fn get_tree_sitter_language(language: &Language) -> Option<tree_sitter::Language> {
+fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
         fn tree_sitter_python() -> tree_sitter::Language;
         fn tree_sitter_javascript() -> tree_sitter::Language;
@@ -13,10 +13,10 @@ fn get_tree_sitter_language(language: &Language) -> Option<tree_sitter::Language
     }
 
     match language {
-        Language::JavaScript => Some(unsafe { tree_sitter_javascript() }),
-        Language::Python => Some(unsafe { tree_sitter_python() }),
-        Language::Rust => Some(unsafe { tree_sitter_rust() }),
-        Language::TypeScript => Some(unsafe { tree_sitter_tsx() }),
+        Language::JavaScript => unsafe { tree_sitter_javascript() },
+        Language::Python => unsafe { tree_sitter_python() },
+        Language::Rust => unsafe { tree_sitter_rust() },
+        Language::TypeScript => unsafe { tree_sitter_tsx() },
     }
 }
 
@@ -24,16 +24,13 @@ fn get_tree_sitter_language(language: &Language) -> Option<tree_sitter::Language
 pub fn get_tree(code: &str, language: &Language) -> Option<tree_sitter::Tree> {
     let mut tree_sitter_parser = tree_sitter::Parser::new();
     let tree_sitter_language = get_tree_sitter_language(language);
-    tree_sitter_language.and_then(|ts_lang| {
-        tree_sitter_parser.set_language(ts_lang).unwrap();
-        tree_sitter_parser.parse(code, None)
-    })
+    tree_sitter_parser.set_language(tree_sitter_language).ok()?;
+    tree_sitter_parser.parse(code, None)
 }
 
 // build the query from tree-sitter
 pub fn get_query(query_code: &str, language: &Language) -> Result<tree_sitter::Query> {
-    let tree_sitter_language =
-        get_tree_sitter_language(language).ok_or(anyhow!("no language defined"))?;
+    let tree_sitter_language = get_tree_sitter_language(language);
     Ok(tree_sitter::Query::new(tree_sitter_language, query_code)?)
 }
 
@@ -84,7 +81,7 @@ pub fn get_query_nodes(
                 filename: filename.to_string(),
                 variables: variables.clone(),
             },
-        })
+        });
     }
     match_nodes
 }
@@ -95,8 +92,6 @@ pub fn get_query_nodes(
 //
 // If this is NOT a named node, we do not return anything.
 pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
-    let mut ts_cursor = node.walk();
-
     fn map_node_internal(cursor: &mut tree_sitter::TreeCursor) -> Option<TreeSitterNode> {
         // we do not map space, parenthesis and other non-named nodes.
         if !cursor.node().is_named() {
@@ -129,12 +124,14 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
                 line: u32::try_from(cursor.node().range().end_point.row + 1).unwrap(),
                 col: u32::try_from(cursor.node().range().end_point.column + 1).unwrap(),
             },
-            field_name: cursor.field_name().map(|v| v.to_string()),
+            field_name: cursor.field_name().map(ToString::to_string),
             children,
         };
 
         Some(ts_node)
     }
+
+    let mut ts_cursor = node.walk();
     map_node_internal(&mut ts_cursor)
 }
 

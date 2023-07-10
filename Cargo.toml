@@ -4,6 +4,7 @@ members = [
     "bins",
     "cli",
     "kernel",
+    "server"
 ]
 
 [profile.release]

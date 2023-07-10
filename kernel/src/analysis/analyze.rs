@@ -47,70 +47,72 @@ pub fn analyze(
 ) -> Vec<RuleResult> {
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
-    match get_tree(code, language) {
-        Some(tree) => rules
-            .into_iter()
-            .map(|rule| {
-                let invalid_query_result = RuleResult {
-                    rule_name: rule.name.clone(),
-                    filename: filename.to_string(),
-                    violations: vec![],
-                    errors: vec![ERROR_INVALID_QUERY.to_string()],
-                    execution_error: None,
-                    execution_time_ms: 0,
-                    output: None,
-                };
-
-                if let Some(tree_sitter_query) = &rule.tree_sitter_query {
-                    let query_try = get_query(tree_sitter_query.as_str(), &rule.language);
-
-                    match query_try {
-                        Ok(query) => {
-                            let nodes =
-                                get_query_nodes(&tree, &query, filename, code, &HashMap::new());
-
-                            if nodes.is_empty() {
-                                RuleResult {
-                                    rule_name: rule.name.clone(),
-                                    filename: filename.to_string(),
-                                    violations: vec![],
-                                    errors: vec![],
-                                    execution_error: None,
-                                    execution_time_ms: 0,
-                                    output: None,
-                                }
-                            } else {
-                                let mut rule_result = execute_rule(
-                                    rule,
-                                    nodes,
-                                    filename.to_string(),
-                                    analysis_option.clone(),
-                                );
-
-                                // filter violations that have been ignored
-                                rule_result.violations = rule_result
-                                    .violations
-                                    .iter()
-                                    .cloned()
-                                    .filter(|v| !lines_to_ignore.contains(&v.start.line))
-                                    .collect();
-                                rule_result
-                            }
-                        }
-                        Err(_) => invalid_query_result,
-                    }
-                } else {
-                    invalid_query_result
-                }
-            })
-            .collect(),
-        None => {
+    get_tree(code, language).map_or_else(
+        || {
             if analysis_option.use_debug {
-                eprintln!("error when parsing source file {}", filename);
+                eprintln!("error when parsing source file {filename}");
             }
             vec![]
-        }
-    }
+        },
+        |tree| {
+            rules
+                .into_iter()
+                .map(|rule| {
+                    let invalid_query_result = RuleResult {
+                        rule_name: rule.name.clone(),
+                        filename: filename.to_string(),
+                        violations: vec![],
+                        errors: vec![ERROR_INVALID_QUERY.to_string()],
+                        execution_error: None,
+                        execution_time_ms: 0,
+                        output: None,
+                    };
+
+                    if let Some(tree_sitter_query) = &rule.tree_sitter_query {
+                        let query_try = get_query(tree_sitter_query.as_str(), &rule.language);
+
+                        match query_try {
+                            Ok(query) => {
+                                let nodes =
+                                    get_query_nodes(&tree, &query, filename, code, &HashMap::new());
+
+                                if nodes.is_empty() {
+                                    RuleResult {
+                                        rule_name: rule.name.clone(),
+                                        filename: filename.to_string(),
+                                        violations: vec![],
+                                        errors: vec![],
+                                        execution_error: None,
+                                        execution_time_ms: 0,
+                                        output: None,
+                                    }
+                                } else {
+                                    let mut rule_result = execute_rule(
+                                        rule,
+                                        nodes,
+                                        filename.to_string(),
+                                        analysis_option.clone(),
+                                    );
+
+                                    // filter violations that have been ignored
+                                    rule_result.violations = rule_result
+                                        .violations
+                                        .iter()
+                                        .cloned()
+                                        .filter(|v| !lines_to_ignore.contains(&v.start.line))
+                                        .collect();
+                                    rule_result
+                                }
+                            }
+                            Err(_) => invalid_query_result,
+                        }
+                    } else {
+                        invalid_query_result
+                    }
+                })
+                .collect()
+        },
+    )
 }
 
 #[cfg(test)]
