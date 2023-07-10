@@ -1,6 +1,6 @@
 use kernel::model::analysis::TreeSitterNode;
 use kernel::model::common::Position;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 // This representation is for the server only for an node representation. In the kernel,
 // we serialize/deserialize in camelCase since the value is retrieved in JavaScript code.

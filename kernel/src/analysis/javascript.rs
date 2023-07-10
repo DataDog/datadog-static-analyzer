@@ -9,7 +9,7 @@ use std::thread;
 use std::time::{Duration, SystemTime};
 
 use lazy_static::lazy_static;
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 // how long a rule can execute before it's a timeout.
 const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
