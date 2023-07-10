@@ -3,6 +3,7 @@ use crate::constants::{
 };
 use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
+use crate::model::violation::violation_to_server;
 use kernel::analysis::analyze::analyze;
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
@@ -76,7 +77,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                 .iter()
                 .map(|rr| RuleResponse {
                     identifier: rr.rule_name.clone(),
-                    violations: rr.violations.clone(),
+                    violations: rr.violations.iter().map(violation_to_server).collect(),
                     errors: rr.errors.clone(),
                     execution_error: rr.execution_error.clone(),
                     output: rr.output.clone(),

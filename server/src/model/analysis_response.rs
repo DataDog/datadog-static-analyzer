@@ -1,10 +1,10 @@
-use kernel::model::violation::Violation;
+use crate::model::violation::ServerViolation;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Debug, Serialize)]
 pub struct RuleResponse {
     pub identifier: String,
-    pub violations: Vec<Violation>,
+    pub violations: Vec<ServerViolation>,
     pub errors: Vec<String>,
     pub execution_error: Option<String>,
     pub output: Option<String>,
