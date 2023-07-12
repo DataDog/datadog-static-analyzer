@@ -132,6 +132,10 @@ fn generate_tool_section(rules: &[Rule]) -> Result<Tool> {
     Ok(ToolBuilder::default().driver(driver).build()?)
 }
 
+/// Convert our severity enumeration into the corresponding SARIF values.
+/// The main discrepancy here is that Notice maps to note.
+/// See [this document](https://github.com/oasis-tcs/sarif-spec/blob/main/Documents/CommitteeSpecifications/2.1.0/sarif-schema-2.1.0.json#L1566)
+/// for the full SARIF standard.
 fn get_level_from_severity(severity: RuleSeverity) -> String {
     match severity {
         RuleSeverity::Notice => "note",
