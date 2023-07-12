@@ -63,5 +63,14 @@ curl -X POST \
         ]
      }' \
      http://localhost:8000/analyze
-
 ```
+
+
+curl -X POST \
+-H "Content-Type: application/json" \
+--data '{
+"file_encoding": "utf-8",
+"language": "PYTHON",
+"code": "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M="
+}' \
+http://localhost:8000/get-treesitter-ast

@@ -7,6 +7,7 @@ use serde_sarif::sarif::{
     ToolComponent, ToolComponentBuilder,
 };
 
+use kernel::model::rule::RuleSeverity;
 use kernel::model::{
     common::PositionBuilder,
     rule::{Rule, RuleResult},
@@ -131,6 +132,16 @@ fn generate_tool_section(rules: &[Rule]) -> Result<Tool> {
     Ok(ToolBuilder::default().driver(driver).build()?)
 }
 
+fn get_level_from_severity(severity: RuleSeverity) -> String {
+    match severity {
+        RuleSeverity::Notice => "note",
+        RuleSeverity::Warning => "warning",
+        RuleSeverity::Error => "error",
+        _ => "none",
+    }
+    .to_string()
+}
+
 // Generate the tool section that reports all the rules being run
 fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<SarifResult>> {
     rules_results
@@ -139,7 +150,7 @@ fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<
             let mut result_builder = ResultBuilder::default();
             if let Some(rule_index) = rules.iter().position(|r| r.name == rule_result.rule_name) {
                 result_builder.rule_index(i64::try_from(rule_index).unwrap());
-                result_builder.level(format!("{}", rules[rule_index].severity));
+                result_builder.level(get_level_from_severity(rules[rule_index].severity));
                 // Why not json_serde::to_value?
             }
 
