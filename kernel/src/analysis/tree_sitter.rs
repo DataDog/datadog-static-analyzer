@@ -15,7 +15,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_python() -> tree_sitter::Language;
         fn tree_sitter_rust() -> tree_sitter::Language;
         fn tree_sitter_tsx() -> tree_sitter::Language;
-        fn tree_sitter_yaml() -> tree_sitter::Language;
+        // fn tree_sitter_yaml() -> tree_sitter::Language;
 
     }
 
@@ -29,7 +29,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Python => unsafe { tree_sitter_python() },
         Language::Rust => unsafe { tree_sitter_rust() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
-        Language::Yaml => unsafe { tree_sitter_yaml() },
+        // Language::Yaml => unsafe { tree_sitter_yaml() },
     }
 }
 
@@ -294,19 +294,19 @@ let myAdd = function (x: number, y: number): number {
         assert_eq!("program", t.unwrap().root_node().kind());
     }
 
-    #[test]
-    fn test_yaml_get_tree() {
-        let source_code = r#"
-rulesets:
-  - python-code-style
-  - python-best-practices
-  - python-inclusive
-  - python-security
-"#;
-        let t = get_tree(source_code, &Language::Yaml);
-        assert!(t.is_some());
-        assert_eq!("stream", t.unwrap().root_node().kind());
-    }
+    //     #[test]
+    //     fn test_yaml_get_tree() {
+    //         let source_code = r#"
+    // rulesets:
+    //   - python-code-style
+    //   - python-best-practices
+    //   - python-inclusive
+    //   - python-security
+    // "#;
+    //         let t = get_tree(source_code, &Language::Yaml);
+    //         assert!(t.is_some());
+    //         assert_eq!("stream", t.unwrap().root_node().kind());
+    //     }
 
     // test the number of node we should retrieve when executing a rule
     #[test]

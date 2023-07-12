@@ -38,8 +38,8 @@ pub enum Language {
     Rust,
     #[serde(rename = "TYPESCRIPT")]
     TypeScript,
-    #[serde(rename = "YAML")]
-    Yaml,
+    // #[serde(rename = "YAML")]
+    // Yaml,
 }
 
 #[allow(dead_code)]
@@ -62,7 +62,7 @@ impl fmt::Display for Language {
             Self::Python => "python",
             Self::Rust => "rust",
             Self::TypeScript => "typescript",
-            Self::Yaml => "yaml",
+            // Self::Yaml => "yaml",
         };
         write!(f, "{s}")
     }

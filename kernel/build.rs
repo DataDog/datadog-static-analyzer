@@ -20,7 +20,6 @@ fn main() {
         repository: String, // the repository to clone
         build_dir: PathBuf, // the directory we use to build the tree-sitter project
         files: Vec<String>,
-        cpp: bool,
     }
 
     fn compile_project(tree_sitter_project: &TreeSitterProject) {
@@ -31,22 +30,11 @@ fn main() {
             .map(|x| dir.join(x))
             .collect();
 
-        if tree_sitter_project.cpp {
-            cc::Build::new()
-                .cpp(tree_sitter_project.cpp)
-                .flag_if_supported("-lstdc++")
-                .include(dir)
-                .files(files)
-                .warnings(false)
-                .compile(tree_sitter_project.name.as_str());
-        } else {
-            cc::Build::new()
-                .cpp(tree_sitter_project.cpp)
-                .include(dir)
-                .files(files)
-                .warnings(false)
-                .compile(tree_sitter_project.name.as_str());
-        }
+        cc::Build::new()
+            .include(dir)
+            .files(files)
+            .warnings(false)
+            .compile(tree_sitter_project.name.as_str());
     }
 
     let tree_sitter_projects: Vec<TreeSitterProject> = vec![
@@ -55,70 +43,54 @@ fn main() {
             repository: "https://github.com/tree-sitter/tree-sitter-c-sharp.git".to_string(),
             build_dir: ["tree-sitter-c-sharp", "src"].iter().collect(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-dockerfile".to_string(),
             repository: "https://github.com/camdencheek/tree-sitter-dockerfile.git".to_string(),
             build_dir: ["tree-sitter-dockerfile", "src"].iter().collect(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-go".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-go.git".to_string(),
             build_dir: ["tree-sitter-go", "src"].iter().collect(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-java".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-java.git".to_string(),
             build_dir: ["tree-sitter-java", "src"].iter().collect(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-javascript".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-javascript.git".to_string(),
             build_dir: ["tree-sitter-javascript", "src"].iter().collect(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-json".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-json.git".to_string(),
             build_dir: ["tree-sitter-json", "src"].iter().collect(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-python".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-python.git".to_string(),
             build_dir: ["tree-sitter-python", "src"].iter().collect(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-rust".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-rust.git".to_string(),
             build_dir: ["tree-sitter-rust", "src"].iter().collect(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-typescript".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-typescript.git".to_string(),
             build_dir: ["tree-sitter-typescript", "tsx", "src"].iter().collect(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
-        },
-        TreeSitterProject {
-            name: "tree-sitter-yaml".to_string(),
-            repository: "https://github.com/ikatyang/tree-sitter-yaml.git".to_string(),
-            build_dir: ["tree-sitter-yaml", "src"].iter().collect(),
-            files: vec!["parser.c".to_string(), "scanner.cc".to_string()],
-            cpp: true,
         },
     ];
 
