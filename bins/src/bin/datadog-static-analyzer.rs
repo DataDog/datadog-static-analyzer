@@ -3,7 +3,6 @@ use cli::datadog_utils::get_rules_from_rulesets;
 use cli::file_utils::{filter_files_for_language, get_files};
 use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
-use cli::sarif_utils::generate_sarif_report;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::VERSION;
 use kernel::model::analysis::AnalysisOptions;
@@ -11,6 +10,7 @@ use kernel::model::common::Language;
 use kernel::model::rule::{Rule, RuleInternal};
 
 use anyhow::{Context, Result};
+use cli::sarif::sarif_utils::generate_sarif_report;
 use getopts::Options;
 use rayon::prelude::*;
 use std::io::prelude::*;

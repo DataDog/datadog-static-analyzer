@@ -39,12 +39,13 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
         if first_results.violations.len() != test.annotation_count as usize {
             let error =
                 format!(
-                "error evaluating test {}, expected {} annotations, got {}, error: {}, output: {}",
+                "error evaluating test {}, expected {} annotations, got {}, execution error: {}, output: {}, rule errors: {}",
                 test.filename,
                 test.annotation_count,
                 first_results.violations.len(),
                 first_results.execution_error.clone().unwrap_or("none".to_string()),
-                first_results.output.clone().unwrap_or("none".to_string())
+                first_results.output.clone().unwrap_or("none".to_string()),
+                first_results.errors.join(",")
             );
             Err(Error::msg(error))
         } else {

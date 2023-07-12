@@ -7,6 +7,7 @@ use serde_sarif::sarif::{
     ToolComponent, ToolComponentBuilder,
 };
 
+use kernel::model::rule::RuleSeverity;
 use kernel::model::{
     common::PositionBuilder,
     rule::{Rule, RuleResult},
@@ -131,6 +132,20 @@ fn generate_tool_section(rules: &[Rule]) -> Result<Tool> {
     Ok(ToolBuilder::default().driver(driver).build()?)
 }
 
+/// Convert our severity enumeration into the corresponding SARIF values.
+/// The main discrepancy here is that Notice maps to note.
+/// See [this document](https://github.com/oasis-tcs/sarif-spec/blob/main/Documents/CommitteeSpecifications/2.1.0/sarif-schema-2.1.0.json#L1566)
+/// for the full SARIF standard.
+fn get_level_from_severity(severity: RuleSeverity) -> String {
+    match severity {
+        RuleSeverity::Notice => "note",
+        RuleSeverity::Warning => "warning",
+        RuleSeverity::Error => "error",
+        _ => "none",
+    }
+    .to_string()
+}
+
 // Generate the tool section that reports all the rules being run
 fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<SarifResult>> {
     rules_results
@@ -139,7 +154,7 @@ fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<
             let mut result_builder = ResultBuilder::default();
             if let Some(rule_index) = rules.iter().position(|r| r.name == rule_result.rule_name) {
                 result_builder.rule_index(i64::try_from(rule_index).unwrap());
-                result_builder.level(format!("{}", rules[rule_index].severity));
+                result_builder.level(get_level_from_severity(rules[rule_index].severity));
                 // Why not json_serde::to_value?
             }
 
@@ -232,7 +247,17 @@ mod tests {
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
+    use serde_json::{from_str, Value};
     use std::collections::HashMap;
+    use valico::json_schema;
+
+    /// Validate JSON data against the SARIF schema
+    fn validate_data(v: &Value) -> bool {
+        let j_schema = from_str(include_str!("sarif-schema-2.1.0.json")).unwrap();
+        let mut scope = json_schema::Scope::new();
+        let schema = scope.compile_and_return(j_schema, true).expect("schema");
+        schema.validate(v).is_valid()
+    }
 
     // test to check the correct generation of a SARIF report with all the default
     // values. This assumes the happy path and does not stress test the
@@ -348,7 +373,10 @@ mod tests {
                         ],
                         "version":"2.1.0"
             })
-        )
+        );
+
+        // validate the schema
+        assert!(validate_data(&sarif_report_to_string));
     }
 
     // in this test, the rule in the violation cannot be found in the list
@@ -417,5 +445,7 @@ mod tests {
             .unwrap()
             .rule_index
             .is_none());
+        // validate the schema
+        assert!(validate_data(&serde_json::to_value(sarif_report).unwrap()));
     }
 }
