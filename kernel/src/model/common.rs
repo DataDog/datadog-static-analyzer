@@ -2,7 +2,7 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Deserialize, Debug, Serialize, Eq, PartialEq)]
+#[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum OutputFormat {
     Json,
     Sarif,

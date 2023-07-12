@@ -6,10 +6,11 @@ use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use kernel::analysis::analyze::analyze;
 use kernel::constants::VERSION;
 use kernel::model::analysis::AnalysisOptions;
-use kernel::model::common::Language;
+use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal};
 
 use anyhow::{Context, Result};
+use cli::model::cli_configuration::CliConfiguration;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use getopts::Options;
 use rayon::prelude::*;
@@ -22,45 +23,39 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-enum OutputFormat {
-    Sarif,
-    Json,
-}
-
-#[allow(clippy::too_many_arguments)]
-fn print_configuration(
-    use_debug: bool,
-    use_configuration_file: bool,
-    source_directory: &str,
-    ignore_paths: &[String],
-    output_file: &String,
-    rules: &Vec<Rule>,
-    languages: &[Language],
-    output_format: &OutputFormat,
-) {
-    let configuration_method = if use_configuration_file {
+fn print_configuration(configuration: &CliConfiguration) {
+    let configuration_method = if configuration.use_configuration_file {
         "config file (static-analysis.datadog.[yml|yaml])"
     } else {
         "rule file"
     };
 
-    let output_format_str = match output_format {
+    let output_format_str = match configuration.output_format {
         OutputFormat::Sarif => "sarif",
         OutputFormat::Json => "json",
     };
 
+    let languages = get_languages_for_rules(&configuration.rules);
     let languages_string: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
+
     println!("Configuration");
     println!("=============");
     println!("config method    : {}", configuration_method);
-    println!("#cores           : {}", num_cpus::get());
-    println!("#rules loaded    : {}", rules.len());
-    println!("source directory : {}", source_directory);
-    println!("output file      : {}", output_file);
+    println!("cores available  : {}", num_cpus::get());
+    println!("cores used       : {}", configuration.num_cpus);
+    println!("#rules loaded    : {}", configuration.rules.len());
+    println!("source directory : {}", configuration.source_directory);
+    println!("output file      : {}", configuration.output_file);
     println!("output format    : {}", output_format_str);
-    println!("ignore paths     : {}", ignore_paths.join(","));
-    println!("use config file  : {}", use_configuration_file);
-    println!("use debug        : {}", use_debug);
+    println!(
+        "ignore paths     : {}",
+        configuration.ignore_paths.join(",")
+    );
+    println!(
+        "use config file  : {}",
+        configuration.use_configuration_file
+    );
+    println!("use debug        : {}", configuration.use_debug);
     println!("rules languages  : {}", languages_string.join(","));
 }
 
@@ -85,6 +80,7 @@ fn main() -> Result<()> {
     opts.optopt("d", "debug", "use debug mode", "yes/no");
     opts.optopt("f", "format", "format", "json/sarif");
     opts.optopt("o", "output", "output file", "output.json");
+    opts.optopt("c", "cpus", "set the number of CPU, use to parallelize (default is the number of cores on the platform)", "--cpus 5");
     opts.optmulti("p", "ignore-path", "path to ignore", "**/test*.py");
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the version");
@@ -182,7 +178,7 @@ fn main() -> Result<()> {
             exit(1);
         }
 
-        let rulesets_from_file = get_rulesets_from_file(rules_file.unwrap().as_str());
+        let rulesets_from_file = get_rulesets_from_file(rules_file.clone().unwrap().as_str());
         let rules_from_file: Vec<Rule> = rulesets_from_file
             .context("cannot read ruleset")?
             .iter()
@@ -198,16 +194,27 @@ fn main() -> Result<()> {
     let files_to_analyze = get_files(directory_to_analyze.as_str(), &ignore_paths)
         .expect("unable to get the list of files to analyze");
 
-    print_configuration(
+    // we try to get the amount of cpu from the system. if the user set an option to force
+    // the value. it overrides the value.
+    let num_cpus = matches
+        .opt_str("c")
+        .map(|x| x.parse::<usize>().unwrap())
+        .unwrap_or(num_cpus::get());
+
+    // build the configuration object that contains how the CLI should behave.
+    let configuration = CliConfiguration {
         use_debug,
         use_configuration_file,
-        &directory_to_analyze,
-        &ignore_paths,
-        &output_file,
-        &rules,
-        &languages,
-        &output_format,
-    );
+        source_directory: directory_to_analyze.clone(),
+        ignore_paths,
+        rules_file,
+        output_format,
+        num_cpus,
+        rules,
+        output_file,
+    };
+
+    print_configuration(&configuration);
 
     let mut all_rule_results = vec![];
 
@@ -218,8 +225,9 @@ fn main() -> Result<()> {
 
     // we always keep one thread free and some room for the management threads that monitor
     // the rule execution.
-    let ideal_threads = ((num_cpus::get() as f32 - 1.0) * 0.90) as usize;
+    let ideal_threads = ((configuration.num_cpus as f32 - 1.0) * 0.90) as usize;
     let num_threads = if ideal_threads == 0 { 1 } else { ideal_threads };
+
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build_global()?;
@@ -227,7 +235,8 @@ fn main() -> Result<()> {
     for language in &languages {
         let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
-        let rules_for_language: Vec<RuleInternal> = rules
+        let rules_for_language: Vec<RuleInternal> = configuration
+            .rules
             .iter()
             .filter(|r| r.language == *language)
             .map(|r| {
@@ -266,9 +275,10 @@ fn main() -> Result<()> {
             .collect();
     }
 
-    let value = match output_format {
+    let value = match configuration.output_format {
         OutputFormat::Json => serde_json::to_string(&all_rule_results),
-        OutputFormat::Sarif => match generate_sarif_report(&rules, &all_rule_results) {
+        OutputFormat::Sarif => match generate_sarif_report(&configuration.rules, &all_rule_results)
+        {
             Ok(report) => serde_json::to_string(&report),
             Err(_) => {
                 panic!("Error when generating the sarif report");
@@ -277,7 +287,7 @@ fn main() -> Result<()> {
     };
 
     // write the reports
-    let mut file = fs::File::create(output_file).context("cannot create file")?;
+    let mut file = fs::File::create(configuration.output_file).context("cannot create file")?;
     file.write_all(value.expect("cannot get data").as_bytes())
         .context("error when writing results")?;
     Ok(())
