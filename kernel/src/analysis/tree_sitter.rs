@@ -6,17 +6,30 @@ use tree_sitter::QueryCursor;
 
 fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
-        fn tree_sitter_python() -> tree_sitter::Language;
+        fn tree_sitter_c_sharp() -> tree_sitter::Language;
+        fn tree_sitter_dockerfile() -> tree_sitter::Language;
+        fn tree_sitter_go() -> tree_sitter::Language;
+        fn tree_sitter_java() -> tree_sitter::Language;
         fn tree_sitter_javascript() -> tree_sitter::Language;
-        fn tree_sitter_tsx() -> tree_sitter::Language;
+        fn tree_sitter_json() -> tree_sitter::Language;
+        fn tree_sitter_python() -> tree_sitter::Language;
         fn tree_sitter_rust() -> tree_sitter::Language;
+        fn tree_sitter_tsx() -> tree_sitter::Language;
+        // fn tree_sitter_yaml() -> tree_sitter::Language;
+
     }
 
     match language {
+        Language::Csharp => unsafe { tree_sitter_c_sharp() },
+        Language::Dockerfile => unsafe { tree_sitter_dockerfile() },
+        Language::Go => unsafe { tree_sitter_go() },
+        Language::Java => unsafe { tree_sitter_java() },
         Language::JavaScript => unsafe { tree_sitter_javascript() },
+        Language::Json => unsafe { tree_sitter_json() },
         Language::Python => unsafe { tree_sitter_python() },
         Language::Rust => unsafe { tree_sitter_rust() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
+        // Language::Yaml => unsafe { tree_sitter_yaml() },
     }
 }
 
@@ -187,12 +200,86 @@ def func():
     }
 
     #[test]
+    fn test_csharp_get_tree() {
+        let source_code = r#"
+namespace HelloWorld
+{
+    class Hello {
+        static void Main(string[] args)
+        {
+            System.Console.WriteLine("Hello World!");
+        }
+    }
+}
+"#;
+        let t = get_tree(source_code, &Language::Csharp);
+        assert!(t.is_some());
+        assert_eq!("compilation_unit", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_dockerfile_get_tree() {
+        let source_code = r#"
+RUN /blabla
+"#;
+        let t = get_tree(source_code, &Language::Dockerfile);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_go_test_tree() {
+        let source_code = r#"
+package main
+import "fmt"
+func main() {
+    fmt.Println("hello world")
+}
+"#;
+        let t = get_tree(source_code, &Language::Go);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_java_get_tree() {
+        let source_code = r#"
+class Foo {
+}
+"#;
+        let t = get_tree(source_code, &Language::Java);
+        assert!(t.is_some());
+        assert_eq!("program", t.unwrap().root_node().kind());
+    }
+
+    #[test]
     fn test_javascript_get_tree() {
         let source_code = r#"
 function foo() {console.log("bar");}"#;
         let t = get_tree(source_code, &Language::JavaScript);
         assert!(t.is_some());
         assert_eq!("program", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_json_get_tree() {
+        let source_code = r#"
+{}"#;
+        let t = get_tree(source_code, &Language::Json);
+        assert!(t.is_some());
+        assert_eq!("document", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_rust_get_tree() {
+        let source_code = r#"
+fn foo(bar: String) -> String {
+   return "foobar".to_string();
+}
+"#;
+        let t = get_tree(source_code, &Language::Rust);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
     }
 
     #[test]
@@ -207,17 +294,19 @@ let myAdd = function (x: number, y: number): number {
         assert_eq!("program", t.unwrap().root_node().kind());
     }
 
-    #[test]
-    fn test_rust_get_tree() {
-        let source_code = r#"
-fn foo(bar: String) -> String {
-   return "foobar".to_string();
-}
-"#;
-        let t = get_tree(source_code, &Language::Rust);
-        assert!(t.is_some());
-        assert_eq!("source_file", t.unwrap().root_node().kind());
-    }
+    //     #[test]
+    //     fn test_yaml_get_tree() {
+    //         let source_code = r#"
+    // rulesets:
+    //   - python-code-style
+    //   - python-best-practices
+    //   - python-inclusive
+    //   - python-security
+    // "#;
+    //         let t = get_tree(source_code, &Language::Yaml);
+    //         assert!(t.is_some());
+    //         assert_eq!("stream", t.unwrap().root_node().kind());
+    //     }
 
     // test the number of node we should retrieve when executing a rule
     #[test]
