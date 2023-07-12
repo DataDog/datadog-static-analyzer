@@ -9,8 +9,8 @@ use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
 use server::tree_sitter_tree::process_tree_sitter_tree_request;
-use std::collections::HashMap;
 use std::env;
+use std::path::Path;
 use std::process::exit;
 
 pub struct CORS;
@@ -58,13 +58,25 @@ async fn serve_static(
     server_configuration: &State<ServerConfiguration>,
     name: &str,
 ) -> Option<NamedFile> {
-    let name_optional = server_configuration.files_to_serve.get(name);
+    server_configuration.static_directory.as_ref()?;
 
-    if let Some(name) = name_optional {
-        NamedFile::open(name).await.ok()
-    } else {
-        None
+    if name.contains("..") {
+        return None;
     }
+
+    if name.starts_with('.') {
+        return None;
+    }
+
+    let full_path = Path::new(
+        server_configuration
+            .static_directory
+            .clone()
+            .unwrap()
+            .as_str(),
+    )
+    .join(Path::new(name));
+    NamedFile::open(full_path).await.ok()
 }
 
 #[rocket::get("/ping", format = "text/html")]
@@ -80,7 +92,7 @@ fn get_options() -> String {
 }
 
 struct ServerConfiguration {
-    files_to_serve: HashMap<String, String>,
+    static_directory: Option<String>,
 }
 
 fn print_usage(program: &str, opts: Options) {
@@ -93,11 +105,11 @@ fn rocket_main() -> _ {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let mut opts = Options::new();
-    opts.optmulti(
+    opts.optopt(
         "s",
         "static",
-        "serve a static file in /static/<static-name>",
-        "static-name:/path/to/file",
+        "directory for static files",
+        "/path/to/directory",
     );
     opts.optflag("h", "help", "print this help");
 
@@ -113,20 +125,9 @@ fn rocket_main() -> _ {
         exit(1);
     }
 
-    let optional_static = matches.opt_strs("s");
-
-    let mut files_to_serve = HashMap::new();
-    for s in optional_static {
-        let parts: Vec<&str> = s.split(':').collect();
-        if parts.len() == 2 {
-            files_to_serve.insert(
-                parts.first().unwrap().to_string(),
-                parts.get(1).unwrap().to_string(),
-            );
-        }
-    }
-
-    let server_configuration = ServerConfiguration { files_to_serve };
+    let server_configuration = ServerConfiguration {
+        static_directory: matches.opt_str("s"),
+    };
 
     rocket::build()
         .attach(CORS)
