@@ -53,9 +53,9 @@ static ALL_LANGUAGES: &[Language] = &[
 impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
-            Self::Csharp => "C#",
-            Self::Dockerfile => "Dockerfile",
-            Self::Go => "Go",
+            Self::Csharp => "c#",
+            Self::Dockerfile => "dockerfile",
+            Self::Go => "go",
             Self::Java => "java",
             Self::JavaScript => "javascript",
             Self::Json => "json",

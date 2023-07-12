@@ -31,12 +31,22 @@ fn main() {
             .map(|x| dir.join(x))
             .collect();
 
-        cc::Build::new()
-            .cpp(tree_sitter_project.cpp)
-            .include(dir)
-            .files(files)
-            .warnings(false)
-            .compile(tree_sitter_project.name.as_str());
+        if tree_sitter_project.cpp {
+            cc::Build::new()
+                .cpp(tree_sitter_project.cpp)
+                .flag_if_supported("-lstdc++")
+                .include(dir)
+                .files(files)
+                .warnings(false)
+                .compile(tree_sitter_project.name.as_str());
+        } else {
+            cc::Build::new()
+                .cpp(tree_sitter_project.cpp)
+                .include(dir)
+                .files(files)
+                .warnings(false)
+                .compile(tree_sitter_project.name.as_str());
+        }
     }
 
     let tree_sitter_projects: Vec<TreeSitterProject> = vec![
