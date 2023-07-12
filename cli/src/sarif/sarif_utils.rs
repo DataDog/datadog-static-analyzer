@@ -232,7 +232,17 @@ mod tests {
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
+    use serde_json::{from_str, Value};
     use std::collections::HashMap;
+    use valico::json_schema;
+
+    /// Validate JSON data against the SARIF schema
+    fn validate_data(v: &Value) -> bool {
+        let j_schema = from_str(include_str!("sarif-schema-2.1.0.json")).unwrap();
+        let mut scope = json_schema::Scope::new();
+        let schema = scope.compile_and_return(j_schema, true).expect("schema");
+        schema.validate(v).is_valid()
+    }
 
     // test to check the correct generation of a SARIF report with all the default
     // values. This assumes the happy path and does not stress test the
@@ -348,7 +358,10 @@ mod tests {
                         ],
                         "version":"2.1.0"
             })
-        )
+        );
+
+        // validate the schema
+        assert!(validate_data(&sarif_report_to_string));
     }
 
     // in this test, the rule in the violation cannot be found in the list
@@ -417,5 +430,7 @@ mod tests {
             .unwrap()
             .rule_index
             .is_none());
+        // validate the schema
+        assert!(validate_data(&serde_json::to_value(sarif_report).unwrap()));
     }
 }

@@ -4,4 +4,4 @@ pub mod datadog_utils;
 pub mod file_utils;
 pub mod model;
 pub mod rule_utils;
-pub mod sarif_utils;
+pub mod sarif;
