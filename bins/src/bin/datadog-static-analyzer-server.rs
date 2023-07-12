@@ -58,24 +58,16 @@ async fn serve_static(
     server_configuration: &State<ServerConfiguration>,
     name: &str,
 ) -> Option<NamedFile> {
-    server_configuration.static_directory.as_ref()?;
-
-    if name.contains("..") {
+    if server_configuration.static_directory.is_none()
+        || name.contains("..")
+        || name.starts_with('.')
+    {
         return None;
     }
 
-    if name.starts_with('.') {
-        return None;
-    }
+    let s = server_configuration.static_directory.as_ref().unwrap();
 
-    let full_path = Path::new(
-        server_configuration
-            .static_directory
-            .clone()
-            .unwrap()
-            .as_str(),
-    )
-    .join(Path::new(name));
+    let full_path = Path::new(s).join(name);
     NamedFile::open(full_path).await.ok()
 }
 
