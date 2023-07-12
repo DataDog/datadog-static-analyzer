@@ -1,7 +1,16 @@
-// represents the CLI configuration
-// pub struct CliConfiguration {
-//     use_debug: bool,
-//     ignore_paths: Vec<String>,
-//     rules_file: String,
-//     output_format: model::OutputFormat,
-// }
+use kernel::model::common::OutputFormat;
+use kernel::model::rule::Rule;
+
+/// represents the CLI configuratoin
+#[derive(Clone)]
+pub struct CliConfiguration {
+    pub use_debug: bool,
+    pub use_configuration_file: bool,
+    pub source_directory: String,
+    pub ignore_paths: Vec<String>,
+    pub rules_file: Option<String>,
+    pub output_format: OutputFormat, // SARIF or JSON
+    pub output_file: String,
+    pub num_cpus: usize, // of cpus to use for parallelism
+    pub rules: Vec<Rule>,
+}
