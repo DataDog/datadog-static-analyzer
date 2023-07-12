@@ -105,6 +105,7 @@ fn main() {
             .collect();
         cc::Build::new()
             .include(dir)
+            .flag_if_supported("-lstdc++")
             .files(files)
             .warnings(false)
             .compile(tree_sitter_project.name.as_str());

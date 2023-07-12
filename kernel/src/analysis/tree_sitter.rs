@@ -200,12 +200,86 @@ def func():
     }
 
     #[test]
+    fn test_csharp_get_tree() {
+        let source_code = r#"
+namespace HelloWorld
+{
+    class Hello {
+        static void Main(string[] args)
+        {
+            System.Console.WriteLine("Hello World!");
+        }
+    }
+}
+"#;
+        let t = get_tree(source_code, &Language::Csharp);
+        assert!(t.is_some());
+        assert_eq!("compilation_unit", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_dockerfile_get_tree() {
+        let source_code = r#"
+RUN /blabla
+"#;
+        let t = get_tree(source_code, &Language::Dockerfile);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_go_test_tree() {
+        let source_code = r#"
+package main
+import "fmt"
+func main() {
+    fmt.Println("hello world")
+}
+"#;
+        let t = get_tree(source_code, &Language::Go);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_java_get_tree() {
+        let source_code = r#"
+class Foo {
+}
+"#;
+        let t = get_tree(source_code, &Language::Java);
+        assert!(t.is_some());
+        assert_eq!("program", t.unwrap().root_node().kind());
+    }
+
+    #[test]
     fn test_javascript_get_tree() {
         let source_code = r#"
 function foo() {console.log("bar");}"#;
         let t = get_tree(source_code, &Language::JavaScript);
         assert!(t.is_some());
         assert_eq!("program", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_json_get_tree() {
+        let source_code = r#"
+{}"#;
+        let t = get_tree(source_code, &Language::Json);
+        assert!(t.is_some());
+        assert_eq!("document", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_rust_get_tree() {
+        let source_code = r#"
+fn foo(bar: String) -> String {
+   return "foobar".to_string();
+}
+"#;
+        let t = get_tree(source_code, &Language::Rust);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
     }
 
     #[test]
@@ -221,15 +295,17 @@ let myAdd = function (x: number, y: number): number {
     }
 
     #[test]
-    fn test_rust_get_tree() {
+    fn test_yaml_get_tree() {
         let source_code = r#"
-fn foo(bar: String) -> String {
-   return "foobar".to_string();
-}
+rulesets:
+  - python-code-style
+  - python-best-practices
+  - python-inclusive
+  - python-security
 "#;
-        let t = get_tree(source_code, &Language::Rust);
+        let t = get_tree(source_code, &Language::Yaml);
         assert!(t.is_some());
-        assert_eq!("source_file", t.unwrap().root_node().kind());
+        assert_eq!("stream", t.unwrap().root_node().kind());
     }
 
     // test the number of node we should retrieve when executing a rule
