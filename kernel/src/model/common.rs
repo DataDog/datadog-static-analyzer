@@ -20,14 +20,26 @@ impl fmt::Display for OutputFormat {
 
 #[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, Hash, PartialEq)]
 pub enum Language {
-    #[serde(rename = "PYTHON")]
-    Python,
+    #[serde(rename = "CSHARP")]
+    Csharp,
+    #[serde(rename = "DOCKERFILE")]
+    Dockerfile,
+    #[serde(rename = "GO")]
+    Go,
+    #[serde(rename = "JAVA")]
+    Java,
     #[serde(rename = "JAVASCRIPT")]
     JavaScript,
-    #[serde(rename = "TYPESCRIPT")]
-    TypeScript,
+    #[serde(rename = "JSON")]
+    Json,
+    #[serde(rename = "PYTHON")]
+    Python,
     #[serde(rename = "RUST")]
     Rust,
+    #[serde(rename = "TYPESCRIPT")]
+    TypeScript,
+    #[serde(rename = "YAML")]
+    Yaml,
 }
 
 #[allow(dead_code)]
@@ -41,10 +53,16 @@ static ALL_LANGUAGES: &[Language] = &[
 impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
+            Self::Csharp => "C#",
+            Self::Dockerfile => "Dockerfile",
+            Self::Go => "Go",
+            Self::Java => "java",
             Self::JavaScript => "javascript",
+            Self::Json => "json",
             Self::Python => "python",
             Self::Rust => "rust",
             Self::TypeScript => "typescript",
+            Self::Yaml => "yaml",
         };
         write!(f, "{s}")
     }

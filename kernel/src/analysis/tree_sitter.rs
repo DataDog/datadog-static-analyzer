@@ -6,17 +6,30 @@ use tree_sitter::QueryCursor;
 
 fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
-        fn tree_sitter_python() -> tree_sitter::Language;
+        fn tree_sitter_c_sharp() -> tree_sitter::Language;
+        fn tree_sitter_dockerfile() -> tree_sitter::Language;
+        fn tree_sitter_go() -> tree_sitter::Language;
+        fn tree_sitter_java() -> tree_sitter::Language;
         fn tree_sitter_javascript() -> tree_sitter::Language;
-        fn tree_sitter_tsx() -> tree_sitter::Language;
+        fn tree_sitter_json() -> tree_sitter::Language;
+        fn tree_sitter_python() -> tree_sitter::Language;
         fn tree_sitter_rust() -> tree_sitter::Language;
+        fn tree_sitter_tsx() -> tree_sitter::Language;
+        fn tree_sitter_yaml() -> tree_sitter::Language;
+
     }
 
     match language {
+        Language::Csharp => unsafe { tree_sitter_c_sharp() },
+        Language::Dockerfile => unsafe { tree_sitter_dockerfile() },
+        Language::Go => unsafe { tree_sitter_go() },
+        Language::Java => unsafe { tree_sitter_java() },
         Language::JavaScript => unsafe { tree_sitter_javascript() },
+        Language::Json => unsafe { tree_sitter_json() },
         Language::Python => unsafe { tree_sitter_python() },
         Language::Rust => unsafe { tree_sitter_rust() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
+        Language::Yaml => unsafe { tree_sitter_yaml() },
     }
 }
 
