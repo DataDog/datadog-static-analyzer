@@ -275,6 +275,13 @@ fn main() -> Result<()> {
             .collect();
     }
 
+    let nb_violations: u32 = all_rule_results
+        .iter()
+        .map(|x| x.violations.len() as u32)
+        .sum();
+
+    println!("Found {} violations", nb_violations);
+
     let value = match configuration.output_format {
         OutputFormat::Json => serde_json::to_string(&all_rule_results),
         OutputFormat::Sarif => match generate_sarif_report(&configuration.rules, &all_rule_results)
