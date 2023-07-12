@@ -40,6 +40,8 @@ First, start the server using
 cargo run --bin datadog-static-analyzer-server
 ```
 
+
+### Get an analysis request
 ```shell
 
 curl -X POST \
@@ -65,7 +67,9 @@ curl -X POST \
      http://localhost:8000/analyze
 ```
 
+### Get the AST Tree
 
+```shell
 curl -X POST \
 -H "Content-Type: application/json" \
 --data '{
@@ -74,3 +78,4 @@ curl -X POST \
 "code": "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M="
 }' \
 http://localhost:8000/get-treesitter-ast
+```
