@@ -2,9 +2,9 @@ use anyhow::Result;
 use base64::Engine;
 use serde_sarif::sarif::{
     self, ArtifactChangeBuilder, ArtifactLocationBuilder, Fix, FixBuilder, LocationBuilder,
-    MessageBuilder, PhysicalLocationBuilder, RegionBuilder, Replacement, ReportingDescriptor,
-    Result as SarifResult, ResultBuilder, RunBuilder, Sarif, SarifBuilder, Tool, ToolBuilder,
-    ToolComponent, ToolComponentBuilder,
+    MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder, Replacement,
+    ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif, SarifBuilder,
+    Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
 use kernel::model::rule::RuleSeverity;
@@ -152,9 +152,20 @@ fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<
         .iter()
         .flat_map(|rule_result| {
             let mut result_builder = ResultBuilder::default();
+
+            // if we find the rule for this violation, get the id, level and category
             if let Some(rule_index) = rules.iter().position(|r| r.name == rule_result.rule_name) {
+                let category =
+                    format!("DATADOG_CATEGORY:{}", rules[rule_index].category).to_uppercase();
+
                 result_builder.rule_index(i64::try_from(rule_index).unwrap());
                 result_builder.level(get_level_from_severity(rules[rule_index].severity));
+                result_builder.properties(
+                    PropertyBagBuilder::default()
+                        .tags(vec![category])
+                        .build()
+                        .unwrap(),
+                );
                 // Why not json_serde::to_value?
             }
 
@@ -317,62 +328,10 @@ mod tests {
             generate_sarif_report(&[rule], &vec![rule_result]).expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
+        println!("{}", sarif_report_to_string);
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({
-                        "runs":[
-                            {
-                                "results":[
-                                    {
-                                        "fixes":[
-                                            {
-                                                "artifactChanges":[
-                                                    {
-                                                        "artifactLocation":{
-                                                            "uri":"myfile"
-                                                        },
-                                                        "replacements":[
-                                                            {
-                                                                "deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},
-                                                                "insertedContent":{"text":"newcontent"}
-                                                            }
-                                                        ]
-                                                    }
-                                                ],
-                                                "description":{"text":"myfix"}
-                                            }
-                                        ],
-                                        "level":"error",
-                                        "locations":[
-                                            {
-                                                "physicalLocation":{
-                                                    "artifactLocation":{"uri":"myfile"},
-                                                    "region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}
-                                                }
-                                            }
-                                        ],
-                                        "message":{"text":"violation message"},
-                                        "ruleId":"my-rule",
-                                        "ruleIndex":0
-                                    }
-                                ],
-                                "tool":{
-                                    "driver":{
-                                        "informationUri":"https://www.datadoghq.com",
-                                        "name":"datadog-static-analyzer",
-                                        "rules":[
-                                            {
-                                                "fullDescription":{"text":"awesome rule"},
-                                                "helpUri":"https://static-analysis.datadoghq.com/my-rule",
-                                                "id":"my-rule"
-                                            }
-                                        ]
-                                    }
-                                }
-                            }
-                        ],
-                        "version":"2.1.0"
-            })
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://static-analysis.datadoghq.com/my-rule","id":"my-rule"}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
