@@ -141,7 +141,15 @@ pub fn execute_rule(
                     execution_time_ms,
                 }
             } else if let Some(res) = rx_result.try_recv().unwrap_or(None) {
-                res
+                RuleResult {
+                    rule_name: res.rule_name,
+                    filename: res.filename,
+                    violations: res.violations,
+                    errors: res.errors,
+                    execution_error: res.execution_error,
+                    execution_time_ms,
+                    output: res.output,
+                }
             } else {
                 RuleResult {
                     rule_name: rule_name_copy,

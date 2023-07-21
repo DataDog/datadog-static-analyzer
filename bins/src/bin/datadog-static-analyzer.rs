@@ -3,19 +3,22 @@ use cli::datadog_utils::get_rules_from_rulesets;
 use cli::file_utils::{filter_files_for_language, get_files};
 use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
+use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::VERSION;
-use kernel::model::analysis::AnalysisOptions;
+use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
-use kernel::model::rule::{Rule, RuleInternal};
+use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 
 use anyhow::{Context, Result};
 use cli::model::cli_configuration::CliConfiguration;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use getopts::Options;
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
+use std::time::SystemTime;
 use std::{env, fs};
 
 fn print_usage(program: &str, opts: Options) {
@@ -84,6 +87,11 @@ fn main() -> Result<()> {
     opts.optmulti("p", "ignore-path", "path to ignore", "**/test*.py");
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the version");
+    opts.optflag(
+        "x",
+        "performance-statistics",
+        "enable performance statistics",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -107,6 +115,8 @@ fn main() -> Result<()> {
         print_usage(&program, opts);
         exit(1);
     }
+
+    let enable_performance_statistics = matches.opt_present("x");
 
     let output_format = match matches.opt_str("f") {
         Some(f) => {
@@ -232,8 +242,16 @@ fn main() -> Result<()> {
         .num_threads(num_threads)
         .build_global()?;
 
+    let mut total_files_analyzed: usize = 0;
+    let start_timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     for language in &languages {
         let files_for_language = filter_files_for_language(&files_to_analyze, language);
+
+        total_files_analyzed += files_for_language.len();
 
         let rules_for_language: Vec<RuleInternal> = configuration
             .rules
@@ -275,12 +293,64 @@ fn main() -> Result<()> {
             .collect();
     }
 
+    let end_timestamp = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     let nb_violations: u32 = all_rule_results
         .iter()
         .map(|x| x.violations.len() as u32)
         .sum();
 
-    println!("Found {} violations", nb_violations);
+    println!(
+        "Found {} violations in {} files using {} rules within {} secs",
+        nb_violations,
+        total_files_analyzed,
+        configuration.rules.len(),
+        end_timestamp - start_timestamp
+    );
+
+    // If the performance statistics are enabled, we show the total execution time per rule
+    // and the rule that timed-out.
+    if enable_performance_statistics {
+        let mut rules_execution_time_ms: HashMap<String, u128> = HashMap::new();
+
+        // first, get the rule execution time
+        for rule_result in &all_rule_results {
+            let current_value = rules_execution_time_ms
+                .get(&rule_result.rule_name)
+                .unwrap_or(&0u128);
+            let new_value = current_value + rule_result.execution_time_ms;
+            rules_execution_time_ms.insert(rule_result.rule_name.clone(), new_value);
+        }
+
+        println!("Rule execution time");
+        println!("-------------------");
+        // Show execution time, in sorted order
+        for v in rules_execution_time_ms
+            .iter()
+            .sorted_by(|a, b| Ord::cmp(b.1, a.1))
+            .as_slice()
+        {
+            println!("rule {:?} execution time {:?} ms", v.0, v.1);
+        }
+
+        // show the rules that timed out
+        println!("Rule timed out");
+        println!("--------------");
+        let rules_timed_out: Vec<RuleResult> = all_rule_results
+            .clone()
+            .into_iter()
+            .filter(|r| r.errors.contains(&ERROR_RULE_TIMEOUT.to_string()))
+            .collect();
+        if rules_timed_out.is_empty() {
+            println!("No rule timed out");
+        }
+        for v in rules_timed_out {
+            println!("Rule {} timed out on file {}", v.rule_name, v.filename);
+        }
+    }
 
     let value = match configuration.output_format {
         OutputFormat::Json => serde_json::to_string(&all_rule_results),

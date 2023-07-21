@@ -27,6 +27,7 @@ kernel = {path = "../kernel" }
 server = {path = "../server"}
 # workspace
 anyhow = { workspace = true }
+itertools = { workspace = true }
 serde_json = { workspace = true }
 # other
 getopts = "0.2.21"
