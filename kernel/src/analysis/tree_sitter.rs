@@ -102,12 +102,14 @@ pub fn get_query_nodes(
 // map a node from the tree-sitter representation into our own internal representation
 // this is the representation that is passed to the JavaScript layer and how we represent
 // or expose the node to the end-user.
-//
-// If this is NOT a named node, we do not return anything.
 pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
-    fn map_node_internal(cursor: &mut tree_sitter::TreeCursor) -> Option<TreeSitterNode> {
-        // we do not map space, parenthesis and other non-named nodes.
-        if !cursor.node().is_named() {
+    fn map_node_internal(
+        cursor: &mut tree_sitter::TreeCursor,
+        only_named_node: bool,
+    ) -> Option<TreeSitterNode> {
+        // we do not map space, parenthesis and other non-named nodes if there
+        // when `only_named_node` is true (which is `true` for children only).
+        if only_named_node && !cursor.node().is_named() {
             return None;
         }
 
@@ -115,7 +117,8 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
         let mut children: Vec<TreeSitterNode> = vec![];
         if cursor.goto_first_child() {
             loop {
-                let maybe_child = map_node_internal(cursor);
+                // For the child, we only want to capture named nodes to avoid polluting the AST.
+                let maybe_child = map_node_internal(cursor, true);
                 if let Some(child) = maybe_child {
                     children.push(child);
                 }
@@ -145,7 +148,10 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
     }
 
     let mut ts_cursor = node.walk();
-    map_node_internal(&mut ts_cursor)
+
+    // Initially, we capture both un/named nodes to allow capturing unnamed node from
+    // the tree-sitter query.
+    map_node_internal(&mut ts_cursor, false)
 }
 
 #[cfg(test)]
