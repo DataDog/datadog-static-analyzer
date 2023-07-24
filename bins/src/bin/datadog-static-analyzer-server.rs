@@ -38,6 +38,15 @@ impl Fairing for CORS {
     }
 }
 
+#[rocket::get("/languages", format = "application/json")]
+fn languages() -> Value {
+    let languages: Vec<String> = kernel::model::common::ALL_LANGUAGES
+        .iter()
+        .map(|x| format!("{}", x))
+        .collect();
+    json!(languages)
+}
+
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
 fn analyze(request: Json<AnalysisRequest>) -> Value {
     json!(process_analysis_request(request.into_inner()))
@@ -130,4 +139,5 @@ fn rocket_main() -> _ {
         .mount("/", rocket::routes![ping])
         .mount("/", rocket::routes![get_options])
         .mount("/", rocket::routes![serve_static])
+        .mount("/", rocket::routes![languages])
 }

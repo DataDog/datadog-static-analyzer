@@ -43,8 +43,13 @@ pub enum Language {
 }
 
 #[allow(dead_code)]
-static ALL_LANGUAGES: &[Language] = &[
+pub static ALL_LANGUAGES: &[Language] = &[
+    Language::Csharp,
+    Language::Dockerfile,
+    Language::Go,
+    Language::Java,
     Language::JavaScript,
+    Language::Json,
     Language::Python,
     Language::Rust,
     Language::TypeScript,
