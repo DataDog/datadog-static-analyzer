@@ -40,9 +40,9 @@ impl Fairing for CORS {
 
 #[rocket::get("/languages", format = "application/json")]
 fn languages() -> Value {
-    let languages: Vec<String> = kernel::model::common::ALL_LANGUAGES
+    let languages: Vec<Value> = kernel::model::common::ALL_LANGUAGES
         .iter()
-        .map(|x| format!("{}", x))
+        .map(|x| json!(x))
         .collect();
     json!(languages)
 }
