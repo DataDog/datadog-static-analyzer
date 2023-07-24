@@ -296,6 +296,76 @@ function visit(node, filename, code) {
         );
     }
 
+    // execute two rules and check that both rules are executed and their respective
+    // results reported.
+    #[test]
+    fn test_capture_unnamed_nodes() {
+        let rule_code1 = r#"
+function visit(node, filename, code) {
+
+    const el = node.captures["less_than"];
+    if(el) {
+        const error = buildError(el.start.line, el.start.col, el.end.line, el.end.col,
+                                 "do not use less than", "CRITICAL", "security");
+        addError(error);
+    }
+}
+        "#;
+
+        let tree_sitter_query = r#"
+(
+    (for_statement
+        condition: (_
+            (binary_expression
+                left: (identifier)
+                operator: [
+                    "<" @less_than
+                    "<=" @less_than
+                    ">" @more_than
+                    ">=" @more_than
+                ]
+            )
+        )
+    )
+)
+        "#;
+
+        let js_code = r#"
+for(var i = 0; i <= 10; i--){}
+        "#;
+
+        let rule1 = RuleInternal {
+            name: "myrule".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::JavaScript,
+            code: rule_code1.to_string(),
+            tree_sitter_query: Some(tree_sitter_query.to_string()),
+            variables: HashMap::new(),
+        };
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+        };
+        let results = analyze(
+            &Language::JavaScript,
+            vec![rule1],
+            "myfile.js",
+            js_code,
+            &analysis_options,
+        );
+        assert_eq!(1, results.len());
+        let result1 = results.get(0).unwrap();
+        assert_eq!(result1.violations.len(), 1);
+        assert_eq!(
+            result1.violations.get(0).unwrap().message,
+            "do not use less than".to_string()
+        );
+    }
+
     // test showing violation ignore
     #[test]
     fn test_violation_ignore() {
