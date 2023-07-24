@@ -34,6 +34,19 @@ pub enum RuleCategory {
     Unknown, // kept only for backward compatibility
 }
 
+impl fmt::Display for RuleCategory {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::BestPractices => write!(f, "best_practices"),
+            Self::CodeStyle => write!(f, "code_style"),
+            Self::ErrorProne => write!(f, "error_prone"),
+            Self::Performance => write!(f, "performance"),
+            Self::Security => write!(f, "security"),
+            Self::Unknown => write!(f, "unknown"),
+        }
+    }
+}
+
 #[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum RuleSeverity {
     #[serde(rename = "ERROR")]
@@ -52,7 +65,7 @@ impl fmt::Display for RuleSeverity {
             Self::Error => write!(f, "error"),
             Self::Warning => write!(f, "warning"),
             Self::Notice => write!(f, "notice"),
-            Self::None => write!(f, "unone"),
+            Self::None => write!(f, "none"),
         }
     }
 }
