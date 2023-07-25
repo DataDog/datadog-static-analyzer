@@ -14,11 +14,9 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v3
       - name: Upload versions
-        uses: JasonEtco/upload-to-release@master
+        uses: softprops/action-gh-release@v1
         with:
-          args: versions.json
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: versions.json
   upload-assets:
     strategy:
       matrix:
