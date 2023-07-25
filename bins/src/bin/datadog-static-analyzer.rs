@@ -132,7 +132,7 @@ fn main() -> Result<()> {
     let use_debug = *matches
         .opt_str("d")
         .map(|value| value == "yes")
-        .get_or_insert(false);
+        .get_or_insert(env::var_os("DD_DEBUG").is_some());
     let output_file = matches
         .opt_str("o")
         .context("output file must be specified")?;
