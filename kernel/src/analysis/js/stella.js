@@ -53,7 +53,7 @@ function buildEditUpdate(startLine, startCol, endLine, endCol, content) {
 }
 
 function buildEditRemove(startLine, startCol, endLine, endCol) {
-  return new buildEdit(startLine, startCol, null, null, "REMOVE");
+  return new buildEdit(startLine, startCol, endLine, endCol, "REMOVE");
 }
 
 
