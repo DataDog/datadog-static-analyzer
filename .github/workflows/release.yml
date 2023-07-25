@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   upload-versions:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v3
