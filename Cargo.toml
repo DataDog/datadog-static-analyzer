@@ -1,11 +1,13 @@
 [workspace]
-
 members = [
     "bins",
     "cli",
     "kernel",
     "server"
 ]
+
+[workspace.package]
+version = "0.0.5"
 
 [profile.release]
 lto = true

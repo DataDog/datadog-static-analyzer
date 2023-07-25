@@ -5,7 +5,7 @@ use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
-use kernel::constants::VERSION;
+use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
@@ -101,7 +101,7 @@ fn main() -> Result<()> {
     };
 
     if matches.opt_present("v") {
-        println!("{}", VERSION);
+        println!("Version: {}, revision: {}", CARGO_VERSION, VERSION);
         exit(1);
     }
 
