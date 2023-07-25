@@ -1,5 +1,5 @@
 use getopts::Options;
-use kernel::constants::VERSION;
+use kernel::constants::{CARGO_VERSION, VERSION};
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
 use rocket::http::Header;
@@ -59,7 +59,7 @@ fn get_tree(request: Json<TreeSitterRequest>) -> Value {
 
 #[rocket::get("/version", format = "text/html")]
 fn get_version() -> String {
-    VERSION.to_string()
+    format!("{}/{}", CARGO_VERSION, VERSION)
 }
 
 #[rocket::get("/static/<name>", format = "text/html")]

@@ -8,6 +8,16 @@ permissions:
   contents: write
 
 jobs:
+  upload-versions:
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+      - name: Upload versions
+        uses: JasonEtco/upload-to-release@master
+        with:
+          args: versions.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   upload-assets:
     strategy:
       matrix:
