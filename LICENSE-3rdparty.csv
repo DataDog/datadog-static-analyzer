@@ -13,5 +13,6 @@ sarif-rs,https://github.com/psastras/sarif-rs,MIT,Copyright (c) 2021 Paul Sastra
 serde,https://github.com/serde-rs/serde,Apache-2.0,2015 David Tolnay and Serde contributors
 serde_json,https://github.com/serde-rs/json,Apache-2.0,2015 David Tolnay and Serde contributors
 serde_yaml,https://github.com/dtolnay/serde-yaml,Apache-2.0,2016 David Tolnay
+sha2,https://crates.io/crates/sha2,Apache-2.0,Copyright (c) 2006-2009 Graydon Hoare 2009-2013 Mozilla Foundation 2016 Artyom Pavlov
 valico,https://github.com/s-panferov/valico,MIT,Copyright (c) 2014 Stanislav Panferov
 walkdir,https://github.com/BurntSushi/walkdir,MIT,Copyright (c) 2015 Andrew Gallant

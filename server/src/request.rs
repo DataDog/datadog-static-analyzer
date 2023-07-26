@@ -1,5 +1,6 @@
 use crate::constants::{
-    ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64, ERROR_DECODING_BASE64,
+    ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
+    ERROR_DECODING_BASE64,
 };
 use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
@@ -24,8 +25,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         };
     }
 
-    // Convert the rules from the server into internal rules
-    let rules_converted: Result<Vec<RuleInternal>, anyhow::Error> = request
+    let server_rules_to_rules: Vec<Rule> = request
         .rules
         .iter()
         .map(|r| Rule {
@@ -44,6 +44,11 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             variables: r.variables.clone().unwrap_or(HashMap::new()),
             tests: vec![],
         })
+        .collect();
+
+    // Convert the rules from the server into internal rules
+    let rules_converted: Result<Vec<RuleInternal>, anyhow::Error> = server_rules_to_rules
+        .iter()
         .map(|r| r.to_rule_internal())
         .collect::<Result<Vec<RuleInternal>, anyhow::Error>>();
 
@@ -54,6 +59,18 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             rule_responses: vec![],
             errors: vec![ERROR_CODE_NOT_BASE64.to_string()],
         };
+    }
+
+    // We check each rule and if the checksum is correct or not. If one rule does not
+    // have a valid checksum, we return an error.
+    for rule in &server_rules_to_rules {
+        if !rule.verify_checksum() {
+            eprintln!("Rule {} has an invalid checksum", rule.name);
+            return AnalysisResponse {
+                rule_responses: vec![],
+                errors: vec![ERROR_CHECKSUM_MISMATCH.to_string()],
+            };
+        }
     }
 
     // execute the rule. If we fail to convert, return an error.
@@ -126,7 +143,7 @@ mod tests {
                     rule_type: RuleType::TreeSitterQuery,
                     entity_checked: None,
                     code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: None,
+                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     variables: None,
@@ -137,6 +154,40 @@ mod tests {
         assert!(response.errors.is_empty());
         assert_eq!(1, response.rule_responses.len());
         assert_eq!(1, response.rule_responses.get(0).unwrap().violations.len());
+    }
+
+    #[test]
+    fn test_invalid_checksum() {
+        let request = AnalysisRequest {
+            filename: "myfile.py".to_string(),
+            language: Language::Python,
+            file_encoding: "utf-8".to_string(),
+            code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            options: None,
+            rules: vec![
+                ServerRule{
+                    name: "myrule".to_string(),
+                    short_description_base64: None,
+                    description_base64: None,
+                    category: Some(RuleCategory::BestPractices),
+                    severity: Some(RuleSeverity::Warning),
+                    language: Language::Python,
+                    rule_type: RuleType::TreeSitterQuery,
+                    entity_checked: None,
+                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
+                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c36d8b59237c4ba23340057".to_string()),
+                    pattern: None,
+                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
+                    variables: None,
+                }
+            ]
+        };
+        let response = process_analysis_request(request);
+        assert_eq!(0, response.rule_responses.len());
+        assert_eq!(
+            &ERROR_CHECKSUM_MISMATCH.to_string(),
+            response.errors.get(0).unwrap()
+        );
     }
 
     #[test]
@@ -192,7 +243,7 @@ mod tests {
                     rule_type: RuleType::TreeSitterQuery,
                     entity_checked: None,
                     code_base64: "ZnVuY3Rpb24gd23223222mlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("".to_string()),
+                    checksum: Some("1a1dd51c47738a19b073a20ffc16c1eb816a4a6ed05ffaa53c19db0caf036c0c".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     variables: None,
