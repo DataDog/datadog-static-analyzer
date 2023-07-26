@@ -87,6 +87,7 @@ fn main() -> Result<()> {
     opts.optmulti("p", "ignore-path", "path to ignore", "**/test*.py");
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the version");
+    opts.optflag("b", "bypass-checksum", "bypass checksum verification");
     opts.optflag(
         "x",
         "performance-statistics",
@@ -115,6 +116,8 @@ fn main() -> Result<()> {
         print_usage(&program, opts);
         exit(1);
     }
+
+    let should_verify_checksum = !matches.opt_present("b");
 
     let enable_performance_statistics = matches.opt_present("x");
 
@@ -232,6 +235,23 @@ fn main() -> Result<()> {
         log_output: true,
         use_debug,
     };
+
+    // verify rule checksum
+    if should_verify_checksum {
+        if configuration.use_debug {
+            print!("Checking rule checksum ... ");
+        }
+        for r in &configuration.rules {
+            if !r.verify_checksum() {
+                panic!("Checksum invalid for rule {}", r.name);
+            }
+        }
+        if configuration.use_debug {
+            println!("done!");
+        }
+    } else {
+        println!("Skipping checksum verification");
+    }
 
     // we always keep one thread free and some room for the management threads that monitor
     // the rule execution.

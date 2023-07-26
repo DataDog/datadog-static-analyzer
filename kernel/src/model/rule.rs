@@ -7,6 +7,7 @@ use crate::model::violation::Violation;
 use anyhow::anyhow;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use std::collections::HashMap;
 use std::fmt;
 
@@ -203,6 +204,19 @@ impl Rule {
             variables: self.variables.clone(),
         })
     }
+
+    /// Check the checksum of the rule is correct. The checksum of a rule is calculated
+    /// by calculating the SHA256 of the base64 of the rule code.
+    pub fn verify_checksum(&self) -> bool {
+        self.compute_checksum() == self.checksum
+    }
+
+    /// Compute the checksum using the SHA256 of the base64 of the rule code.
+    pub fn compute_checksum(&self) -> String {
+        let mut hasher = sha2::Sha256::new();
+        hasher.update(self.code_base64.clone().as_bytes());
+        format!("{:x}", hasher.finalize())
+    }
 }
 
 impl fmt::Display for Rule {
@@ -220,4 +234,50 @@ pub struct RuleResult {
     pub execution_error: Option<String>,
     pub output: Option<String>,
     pub execution_time_ms: u128,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::utils::encode_base64_string;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_checksum_valid() {
+        let rule_invalid_checksum = Rule {
+            name: "myrule".to_string(),
+            short_description_base64: Some("bla".to_string()),
+            description_base64: Some("bli".to_string()),
+            category: RuleCategory::BestPractices,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: "mycode".to_string(),
+            checksum: "foobar".to_string(),
+            pattern: None,
+            tree_sitter_query_base64: None,
+            variables: HashMap::new(),
+            tests: vec![],
+        };
+        let rule_valid_checksum = Rule {
+            name: "myrule".to_string(),
+            short_description_base64: Some("bla".to_string()),
+            description_base64: Some("bli".to_string()),
+            category: RuleCategory::BestPractices,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: encode_base64_string("rule code".to_string()),
+            checksum: "3ec22eed588a89d1b2f1c967bf82041ab069ae98b3739be93ac3b22bf419f3aa"
+                .to_string(),
+            pattern: None,
+            tree_sitter_query_base64: None,
+            variables: HashMap::new(),
+            tests: vec![],
+        };
+        assert!(!rule_invalid_checksum.verify_checksum());
+        assert!(rule_valid_checksum.verify_checksum());
+    }
 }

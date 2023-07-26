@@ -6,3 +6,7 @@ pub fn decode_base64_string(base64_string: String) -> anyhow::Result<String> {
         general_purpose::STANDARD.decode(base64_string)?,
     )?)
 }
+
+pub fn encode_base64_string(str: String) -> String {
+    general_purpose::STANDARD.encode(str)
+}
