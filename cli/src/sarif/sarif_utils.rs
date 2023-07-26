@@ -32,12 +32,25 @@ impl IntoSarif for &Rule {
                 .decode(d.as_bytes())
                 .unwrap();
             let text_description =
-                std::str::from_utf8(&decrypted_description).unwrap_or("invalid description");
+                std::str::from_utf8(&decrypted_description).unwrap_or("invalid full description");
             let text = sarif::MultiformatMessageStringBuilder::default()
                 .text(std::str::from_utf8(text_description.as_bytes()).unwrap())
                 .build()
                 .unwrap();
             builder.full_description(text);
+        }
+
+        if let Some(d) = self.short_description_base64.as_ref() {
+            let decrypted_description = base64::engine::general_purpose::STANDARD
+                .decode(d.as_bytes())
+                .unwrap();
+            let text_description =
+                std::str::from_utf8(&decrypted_description).unwrap_or("invalid short description");
+            let text = sarif::MultiformatMessageStringBuilder::default()
+                .text(std::str::from_utf8(text_description.as_bytes()).unwrap())
+                .build()
+                .unwrap();
+            builder.short_description(text);
         }
 
         builder.help_uri(self.get_url()).build().unwrap()
@@ -331,7 +344,7 @@ mod tests {
         println!("{}", sarif_report_to_string);
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://static-analysis.datadoghq.com/my-rule","id":"my-rule"}]}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/continuous_integration/static_analysis/rules/my-rule","id":"my-rule","shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
