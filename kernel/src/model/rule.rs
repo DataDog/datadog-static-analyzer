@@ -156,7 +156,10 @@ pub struct RuleInternal {
 
 impl Rule {
     pub fn get_url(&self) -> String {
-        format!("https://static-analysis.datadoghq.com/{}", self.name)
+        format!(
+            "https://docs.datadoghq.com/continuous_integration/static_analysis/rules/{}",
+            self.name
+        )
     }
 
     fn decode_description(&self) -> anyhow::Result<Option<String>> {
