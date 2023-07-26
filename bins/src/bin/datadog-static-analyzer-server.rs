@@ -57,9 +57,14 @@ fn get_tree(request: Json<TreeSitterRequest>) -> Value {
     json!(process_tree_sitter_tree_request(request.into_inner()))
 }
 
-#[rocket::get("/version", format = "text/html")]
+#[rocket::get("/version", format = "text/plain")]
 fn get_version() -> String {
-    format!("{}/{}", CARGO_VERSION, VERSION)
+    CARGO_VERSION.to_string()
+}
+
+#[rocket::get("/revision", format = "text/plain")]
+fn get_revision() -> String {
+    VERSION.to_string()
 }
 
 #[rocket::get("/static/<name>", format = "text/html")]
@@ -136,6 +141,7 @@ fn rocket_main() -> _ {
         .mount("/", rocket::routes![analyze])
         .mount("/", rocket::routes![get_tree])
         .mount("/", rocket::routes![get_version])
+        .mount("/", rocket::routes![get_revision])
         .mount("/", rocket::routes![ping])
         .mount("/", rocket::routes![get_options])
         .mount("/", rocket::routes![serve_static])
