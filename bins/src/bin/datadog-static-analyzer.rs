@@ -11,6 +11,7 @@ use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 
 use anyhow::{Context, Result};
+use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use getopts::Options;
@@ -34,6 +35,7 @@ fn print_configuration(configuration: &CliConfiguration) {
     };
 
     let output_format_str = match configuration.output_format {
+        OutputFormat::Csv => "csv",
         OutputFormat::Sarif => "sarif",
         OutputFormat::Json => "json",
     };
@@ -122,13 +124,11 @@ fn main() -> Result<()> {
     let enable_performance_statistics = matches.opt_present("x");
 
     let output_format = match matches.opt_str("f") {
-        Some(f) => {
-            if f == "sarif" {
-                OutputFormat::Sarif
-            } else {
-                OutputFormat::Json
-            }
-        }
+        Some(f) => match f.as_str() {
+            "csv" => OutputFormat::Csv,
+            "sarif" => OutputFormat::Sarif,
+            _ => OutputFormat::Json,
+        },
         None => OutputFormat::Json,
     };
 
@@ -295,16 +295,21 @@ fn main() -> Result<()> {
         all_rule_results = files_for_language
             .into_par_iter()
             .flat_map(|path| match fs::read_to_string(&path) {
-                Ok(file_content) => analyze(
-                    language,
-                    rules_for_language.clone(),
-                    path.strip_prefix(directory_path)
-                        .unwrap()
-                        .to_str()
-                        .expect("path contains non-Unicode characters"),
-                    &file_content,
-                    &analysis_options,
-                ),
+                Ok(file_content) => {
+                    println!("analyzing file {}", path.display());
+                    let res = analyze(
+                        language,
+                        rules_for_language.clone(),
+                        path.strip_prefix(directory_path)
+                            .unwrap()
+                            .to_str()
+                            .expect("path contains non-Unicode characters"),
+                        &file_content,
+                        &analysis_options,
+                    );
+                    println!("analyzing file {} done", path.display());
+                    res
+                }
                 Err(_) => {
                     eprintln!("error when getting content of path {}", &path.display());
                     vec![]
@@ -371,12 +376,17 @@ fn main() -> Result<()> {
             println!("Rule {} timed out on file {}", v.rule_name, v.filename);
         }
     }
-
+    println!("writing files");
     let value = match configuration.output_format {
-        OutputFormat::Json => serde_json::to_string(&all_rule_results),
+        OutputFormat::Csv => csv::generate_csv_results(&all_rule_results),
+        OutputFormat::Json => {
+            serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
+        }
         OutputFormat::Sarif => match generate_sarif_report(&configuration.rules, &all_rule_results)
         {
-            Ok(report) => serde_json::to_string(&report),
+            Ok(report) => {
+                serde_json::to_string(&report).expect("error when getting the SARIF report")
+            }
             Err(_) => {
                 panic!("Error when generating the sarif report");
             }
@@ -385,7 +395,7 @@ fn main() -> Result<()> {
 
     // write the reports
     let mut file = fs::File::create(configuration.output_file).context("cannot create file")?;
-    file.write_all(value.expect("cannot get data").as_bytes())
+    file.write_all(value.as_bytes())
         .context("error when writing results")?;
     Ok(())
 }
