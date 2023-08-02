@@ -296,7 +296,6 @@ fn main() -> Result<()> {
             .into_par_iter()
             .flat_map(|path| match fs::read_to_string(&path) {
                 Ok(file_content) => {
-                    println!("analyzing file {}", path.display());
                     let res = analyze(
                         language,
                         rules_for_language.clone(),
@@ -307,7 +306,6 @@ fn main() -> Result<()> {
                         &file_content,
                         &analysis_options,
                     );
-                    println!("analyzing file {} done", path.display());
                     res
                 }
                 Err(_) => {
