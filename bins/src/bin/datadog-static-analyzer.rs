@@ -83,13 +83,22 @@ fn main() -> Result<()> {
         "/path/to/rules.json",
     );
     opts.optopt("d", "debug", "use debug mode", "yes/no");
-    opts.optopt("f", "format", "format", "json/sarif");
-    opts.optopt("o", "output", "output file", "output.json");
+    opts.optopt("f", "format", "format of the output file", "json/sarif/csv");
+    opts.optopt("o", "output", "output file name", "output.json");
     opts.optopt("c", "cpus", "set the number of CPU, use to parallelize (default is the number of cores on the platform)", "--cpus 5");
-    opts.optmulti("p", "ignore-path", "path to ignore", "**/test*.py");
+    opts.optmulti(
+        "p",
+        "ignore-path",
+        "path to ignore - the value is a glob",
+        "**/test*.py (multiple values possible)",
+    );
     opts.optflag("h", "help", "print this help");
-    opts.optflag("v", "version", "shows the version");
-    opts.optflag("b", "bypass-checksum", "bypass checksum verification");
+    opts.optflag("v", "version", "shows the tool version");
+    opts.optflag(
+        "b",
+        "bypass-checksum",
+        "bypass checksum verification for the rules",
+    );
     opts.optflag(
         "x",
         "performance-statistics",
