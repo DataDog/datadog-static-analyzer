@@ -32,8 +32,8 @@ curl -L -O http://www.github.com/DataDog/datadog-static-analyzer/releases/latest
 datadog-static-analyzer -i <directory> -o <output-file>
 ```
 
-For the tool to work, you must have a `<directory>/static-analysis.datadog.yml` file that defines the
-configuration of the analyzer. This file will indicates the rules you use for your project.
+For the tool to work, you must have a `<directory>/static-analysis.datadog.yml` file that defines the configuration of the analyzer. This file will indicate the rules you will use for your project.
+
 You can get more information about the configuration on [Datadog documentation](https://docs.datadoghq.com/continuous_integration/static_analysis).
 
 ### Mac OS X users
