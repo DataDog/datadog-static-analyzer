@@ -1,5 +1,4 @@
 use crate::constants::{ERROR_CODE_NOT_BASE64, ERROR_CODE_NO_ROOT_NODE};
-use crate::model::tree_sitter_tree_node::convert_tree_sitter_node_for_server;
 use crate::model::tree_sitter_tree_request::TreeSitterRequest;
 use crate::model::tree_sitter_tree_response::TreeSitterResponse;
 use kernel::analysis::tree_sitter::{get_tree, map_node};
@@ -33,7 +32,7 @@ pub fn process_tree_sitter_tree_request(request: TreeSitterRequest) -> TreeSitte
     }
 
     TreeSitterResponse {
-        result: root_node.map(convert_tree_sitter_node_for_server),
+        result: root_node.map(|node| node.into()),
         errors: vec![],
     }
 }

@@ -14,18 +14,18 @@ pub struct ServerTreeSitterNode {
     pub children: Vec<ServerTreeSitterNode>,
 }
 
-pub fn convert_tree_sitter_node_for_server(node: TreeSitterNode) -> ServerTreeSitterNode {
-    let children: Vec<ServerTreeSitterNode> = node
-        .children
-        .into_iter()
-        .map(convert_tree_sitter_node_for_server)
-        .collect();
-
-    ServerTreeSitterNode {
-        ast_type: node.ast_type,
-        start: node.start.clone(),
-        end: node.end.clone(),
-        field_name: node.field_name,
-        children,
+impl From<TreeSitterNode> for ServerTreeSitterNode {
+    fn from(value: TreeSitterNode) -> Self {
+        ServerTreeSitterNode {
+            ast_type: value.ast_type,
+            start: value.start,
+            end: value.end,
+            field_name: value.field_name,
+            children: value
+                .children
+                .into_iter()
+                .map(ServerTreeSitterNode::from)
+                .collect(),
+        }
     }
 }
