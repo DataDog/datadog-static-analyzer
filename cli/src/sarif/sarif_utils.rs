@@ -23,6 +23,9 @@ trait IntoSarif {
     fn into_sarif(self) -> Self::SarifType;
 }
 
+// Options to use when to generate the SARIF reports.
+// if `add_git_info` is true, the git_repo should not be
+// optional and will be used to get the SHA of the violations.
 #[derive(Clone)]
 pub struct SarifGenerationOptions {
     pub add_git_info: bool,

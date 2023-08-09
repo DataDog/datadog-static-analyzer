@@ -26,4 +26,6 @@ if [ "${SECOND_SHA}" != "\"SHA:8c5080ff058d5d34961b9941ef498fc238be1caf\"" ]; th
   exit 1
 fi
 
+echo "All tests passed"
+
 exit 0
