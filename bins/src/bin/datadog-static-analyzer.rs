@@ -104,6 +104,11 @@ fn main() -> Result<()> {
         "performance-statistics",
         "enable performance statistics",
     );
+    opts.optflag(
+        "g",
+        "add-git-info",
+        "add Git information to the SARIF report",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -129,7 +134,7 @@ fn main() -> Result<()> {
     }
 
     let should_verify_checksum = !matches.opt_present("b");
-
+    let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
 
     let output_format = match matches.opt_str("f") {
@@ -389,8 +394,12 @@ fn main() -> Result<()> {
         OutputFormat::Json => {
             serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
         }
-        OutputFormat::Sarif => match generate_sarif_report(&configuration.rules, &all_rule_results)
-        {
+        OutputFormat::Sarif => match generate_sarif_report(
+            &configuration.rules,
+            &all_rule_results,
+            &directory_to_analyze,
+            add_git_info,
+        ) {
             Ok(report) => {
                 serde_json::to_string(&report).expect("error when getting the SARIF report")
             }
