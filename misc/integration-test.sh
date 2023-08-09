@@ -7,8 +7,8 @@ export REPO_DIR
 git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}"
 ./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x -g
 CATEGORY=$(jq '.runs[0].results[0].properties.tags[0]' "${REPO_DIR}/results.json")
-FIRST_SHA=$(jq '.runs[0].results[0].properties.tags[1]' "${REPO_DIR}/results.json")
-SECOND_SHA=$(jq '.runs[0].results[1].properties.tags[1]' "${REPO_DIR}/results.json")
+FIRST_SHA=$(jq '.runs[0].results[] | select( .ruleId | contains("python-security/subprocess-shell-true")).properties.tags[1]' "${REPO_DIR}/results.json")
+SECOND_SHA=$(jq '.runs[0].results[] | select( .ruleId | contains("python-security/yaml-load")).properties.tags[1]' "${REPO_DIR}/results.json")
 
 if [ "${CATEGORY}" != "\"DATADOG_CATEGORY:SECURITY\"" ]; then
   echo "invalid category ${CATEGORY}"
