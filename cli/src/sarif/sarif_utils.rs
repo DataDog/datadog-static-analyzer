@@ -1,11 +1,15 @@
 use anyhow::Result;
 use base64::Engine;
+use git2::{BlameOptions, Repository};
 use serde_sarif::sarif::{
     self, ArtifactChangeBuilder, ArtifactLocationBuilder, Fix, FixBuilder, LocationBuilder,
     MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder, Replacement,
     ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif, SarifBuilder,
     Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::sync::Arc;
 
 use kernel::model::rule::RuleSeverity;
 use kernel::model::{
@@ -18,6 +22,15 @@ trait IntoSarif {
     type SarifType;
 
     fn into_sarif(self) -> Self::SarifType;
+}
+
+// Options to use when to generate the SARIF reports.
+// if `add_git_info` is true, the git_repo should not be
+// optional and will be used to get the SHA of the violations.
+#[derive(Clone)]
+pub struct SarifGenerationOptions {
+    pub add_git_info: bool,
+    pub git_repo: Option<Arc<Repository>>,
 }
 
 impl IntoSarif for &Rule {
@@ -159,30 +172,48 @@ fn get_level_from_severity(severity: RuleSeverity) -> String {
     .to_string()
 }
 
+fn get_sha_for_line(
+    filename: &str,
+    line: usize,
+    generation_options: &SarifGenerationOptions,
+) -> Option<String> {
+    generation_options.git_repo.as_ref()?;
+
+    let git_repo = generation_options.git_repo.as_ref().unwrap();
+    let mut blame_options = BlameOptions::default();
+    let blame = git_repo
+        .blame_file(Path::new(filename), Some(&mut blame_options))
+        .expect("cannot get the blame");
+    Some(blame.get_line(line).unwrap().final_commit_id().to_string())
+}
+
 // Generate the tool section that reports all the rules being run
-fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<SarifResult>> {
+fn generate_results(
+    rules: &[Rule],
+    rules_results: &[RuleResult],
+    options_orig: SarifGenerationOptions,
+) -> Result<Vec<SarifResult>> {
     rules_results
         .iter()
         .flat_map(|rule_result| {
-            let mut result_builder = ResultBuilder::default();
-
             // if we find the rule for this violation, get the id, level and category
+            let mut result_builder = ResultBuilder::default();
+            let mut category_tags = vec![];
+
             if let Some(rule_index) = rules.iter().position(|r| r.name == rule_result.rule_name) {
                 let category =
                     format!("DATADOG_CATEGORY:{}", rules[rule_index].category).to_uppercase();
 
                 result_builder.rule_index(i64::try_from(rule_index).unwrap());
                 result_builder.level(get_level_from_severity(rules[rule_index].severity));
-                result_builder.properties(
-                    PropertyBagBuilder::default()
-                        .tags(vec![category])
-                        .build()
-                        .unwrap(),
-                );
+                category_tags.push(category);
                 // Why not json_serde::to_value?
             }
 
+            let options = options_orig.clone();
             rule_result.violations.iter().map(move |violation| {
+                // if we find the rule for this violation, get the id, level and category
+
                 let location = LocationBuilder::default()
                     .physical_location(
                         PhysicalLocationBuilder::default()
@@ -230,6 +261,16 @@ fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<
                     })
                     .collect::<Result<Vec<_>>>()?;
 
+                let sha_option = get_sha_for_line(
+                    rule_result.filename.as_str(),
+                    violation.start.line as usize,
+                    &options,
+                );
+                let partial_fingerprints: BTreeMap<String, String> = match sha_option {
+                    Some(s) => BTreeMap::from([("SHA".to_string(), s)]),
+                    None => BTreeMap::new(),
+                };
+
                 Ok(result_builder
                     .clone()
                     .rule_id(rule_result.rule_name.clone())
@@ -241,6 +282,13 @@ fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<
                             .build()
                             .unwrap(),
                     )
+                    .properties(
+                        PropertyBagBuilder::default()
+                            .tags(category_tags.clone())
+                            .build()
+                            .unwrap(),
+                    )
+                    .partial_fingerprints(partial_fingerprints)
                     .build()?)
             })
         })
@@ -250,10 +298,33 @@ fn generate_results(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Vec<
 // generate a SARIF report for a run.
 // the rules parameter is the list of rules used for this run
 // the violations parameter is the list of violations for this run.
-pub fn generate_sarif_report(rules: &[Rule], rules_results: &[RuleResult]) -> Result<Sarif> {
+pub fn generate_sarif_report(
+    rules: &[Rule],
+    rules_results: &[RuleResult],
+    directory: &String,
+    add_git_info: bool,
+) -> Result<Sarif> {
+    // if we enable git info, we are then getting the repository object. We put that
+    // into an `Arc` object to be able to clone the object.
+    let repository: Option<Arc<Repository>> = if add_git_info {
+        let repo = Repository::open(directory.as_str());
+        if repo.is_err() {
+            eprintln!("Invalid Git repository in {}", directory);
+            panic!("Please provide a valid Git repository or disable Git integration");
+        }
+        Some(Arc::new(repo.expect("cannot open repository")))
+    } else {
+        None
+    };
+
+    let options = SarifGenerationOptions {
+        add_git_info,
+        git_repo: repository,
+    };
+
     let run = RunBuilder::default()
         .tool(generate_tool_section(rules)?)
-        .results(generate_results(rules, rules_results)?)
+        .results(generate_results(rules, rules_results, options)?)
         .build()?;
 
     Ok(SarifBuilder::default()
@@ -338,13 +409,14 @@ mod tests {
             .expect("building violation");
 
         let sarif_report =
-            generate_sarif_report(&[rule], &vec![rule_result]).expect("generate sarif report");
+            generate_sarif_report(&[rule], &vec![rule_result], &"mydir".to_string(), false)
+                .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
         println!("{}", sarif_report_to_string);
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/continuous_integration/static_analysis/rules/my-rule","id":"my-rule","shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/continuous_integration/static_analysis/rules/my-rule","id":"my-rule","shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
@@ -405,7 +477,8 @@ mod tests {
             .expect("building violation");
 
         let sarif_report =
-            generate_sarif_report(&[rule], &vec![rule_result]).expect("generate sarif report");
+            generate_sarif_report(&[rule], &vec![rule_result], &"mydir".to_string(), false)
+                .expect("generate sarif report");
         assert!(sarif_report
             .runs
             .get(0)

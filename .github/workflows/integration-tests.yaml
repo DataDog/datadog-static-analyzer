@@ -1,0 +1,20 @@
+on: push
+name: Run Integration tests
+jobs:
+  integration_tests:
+    runs-on: ubuntu-latest
+    env:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: ${{ secrets.DD_SITE }}
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install Stable + Rustfmt + Clippy
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: stable
+            components: clippy
+            override: true
+            default: true
+      - name: Run Integration tests
+        run: ./misc/integration-test.sh
