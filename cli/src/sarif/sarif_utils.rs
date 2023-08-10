@@ -7,6 +7,7 @@ use serde_sarif::sarif::{
     ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif, SarifBuilder,
     Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -265,12 +266,10 @@ fn generate_results(
                     violation.start.line as usize,
                     &options,
                 );
-                let mut sha_tags = match sha_option {
-                    Some(s) => vec![format!("SHA:{}", s)],
-                    None => vec![],
+                let partial_fingerprints: BTreeMap<String, String> = match sha_option {
+                    Some(s) => BTreeMap::from([("SHA".to_string(), s)]),
+                    None => BTreeMap::new(),
                 };
-                let mut all_tags = category_tags.clone();
-                all_tags.append(&mut sha_tags);
 
                 Ok(result_builder
                     .clone()
@@ -285,10 +284,11 @@ fn generate_results(
                     )
                     .properties(
                         PropertyBagBuilder::default()
-                            .tags(all_tags)
+                            .tags(category_tags.clone())
                             .build()
                             .unwrap(),
                     )
+                    .partial_fingerprints(partial_fingerprints)
                     .build()?)
             })
         })
@@ -416,7 +416,7 @@ mod tests {
         println!("{}", sarif_report_to_string);
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/continuous_integration/static_analysis/rules/my-rule","id":"my-rule","shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/continuous_integration/static_analysis/rules/my-rule","id":"my-rule","shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
