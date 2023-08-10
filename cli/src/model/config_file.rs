@@ -9,6 +9,8 @@ pub struct ConfigFile {
     pub rulesets: Vec<String>,
     #[serde(rename(serialize = "ignore-paths", deserialize = "ignore-paths"))]
     pub ignore_paths: Option<Vec<String>>,
+    #[serde(rename(serialize = "ignore-gitignore", deserialize = "ignore-gitignore"))]
+    pub ignore_gitignore: Option<bool>,
 }
 
 impl fmt::Display for ConfigFile {
@@ -20,8 +22,12 @@ impl fmt::Display for ConfigFile {
         };
         write!(
             f,
-            "rulesets: {}, ignore paths: {}",
-            rules_string, ignore_path_string
+            "rulesets: {}, ignore paths: {}, ignore .gitignore: {}",
+            rules_string,
+            ignore_path_string,
+            self.ignore_gitignore
+                .map(|v| v.to_string())
+                .unwrap_or("undefined".to_string())
         )
     }
 }

@@ -1,7 +1,8 @@
 use anyhow::Result;
 use glob_match::glob_match;
 use kernel::model::common::Language;
-use std::path::PathBuf;
+use std::fs::read_to_string;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
@@ -20,6 +21,29 @@ fn get_extensions_for_language(language: &Language) -> Option<Vec<String>> {
         }
     }
     None
+}
+
+// Read the .gitignore file in a directory and return the lines that are not commented
+// or empty.
+// We ignore pattern that start with # (comments) or contains ! (cause repositories
+// not being included and totally skipped).
+pub fn read_files_from_gitignore_internal(path: &PathBuf) -> Result<Vec<String>> {
+    if path.exists() {
+        let lines: Vec<String> = read_to_string(path)?
+            .lines()
+            .map(String::from)
+            .filter(|v| !v.starts_with('#'))
+            .filter(|v| !v.contains('!'))
+            .filter(|v| !v.is_empty())
+            .collect();
+        return Ok(lines);
+    }
+    Ok(vec![])
+}
+
+pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> {
+    let gitignore_path = Path::new(source_directory).join(".gitignore");
+    read_files_from_gitignore_internal(&gitignore_path)
 }
 
 // get the files to analyze from the directory. This function walks the directory
@@ -49,6 +73,11 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
                 .and_then(|p| p.to_str())
                 .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
             if glob_match(path_to_ignore.as_str(), relative_path) {
+                println!(
+                    "file {} excluded by match {}",
+                    path_to_ignore.as_str(),
+                    relative_path
+                );
                 should_include = false;
             }
         }
@@ -94,6 +123,37 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
     use std::path::Path;
+
+    #[test]
+    fn get_gitignore_exists() {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("resources/test/gitignore/test1");
+        let file_list = read_files_from_gitignore_internal(&d);
+        assert!(file_list.is_ok());
+        let fl = file_list.unwrap();
+        assert_eq!(85, fl.len());
+        // check it contains the values of the file
+        assert!(fl.contains(&"ddtrace/appsec/_ddwaf.cpp".to_string()));
+        // make sure it does not contains lines with !
+        assert!(!fl.contains(&"!.env".to_string()));
+        assert_eq!(
+            0,
+            fl.iter()
+                .filter(|v| v.starts_with("#"))
+                .collect::<Vec<&String>>()
+                .len()
+        )
+    }
+
+    #[test]
+    fn get_gitignore_do_not_exists() {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("resources/test/gitignore/test-do-not-exists");
+        let file_list = read_files_from_gitignore_internal(&d);
+        assert!(file_list.is_ok());
+        let fl = file_list.unwrap();
+        assert!(fl.is_empty());
+    }
 
     // make sure we can get the list of rules from a directory and that the
     // ignore-paths correctly works.

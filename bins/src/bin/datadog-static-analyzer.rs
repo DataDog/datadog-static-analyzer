@@ -1,6 +1,6 @@
 use cli::config_file::read_config_file;
 use cli::datadog_utils::get_rules_from_rulesets;
-use cli::file_utils::{filter_files_for_language, get_files};
+use cli::file_utils::{filter_files_for_language, get_files, read_files_from_gitignore};
 use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
@@ -42,6 +42,11 @@ fn print_configuration(configuration: &CliConfiguration) {
 
     let languages = get_languages_for_rules(&configuration.rules);
     let languages_string: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
+    let ignore_paths_str = if configuration.ignore_paths.is_empty() {
+        "no ignore path".to_string()
+    } else {
+        configuration.ignore_paths.join(",")
+    };
 
     println!("Configuration");
     println!("=============");
@@ -52,10 +57,8 @@ fn print_configuration(configuration: &CliConfiguration) {
     println!("source directory : {}", configuration.source_directory);
     println!("output file      : {}", configuration.output_file);
     println!("output format    : {}", output_format_str);
-    println!(
-        "ignore paths     : {}",
-        configuration.ignore_paths.join(",")
-    );
+    println!("ignore paths     : {}", ignore_paths_str);
+    println!("ignore gitignore : {}", configuration.ignore_gitignore);
     println!(
         "use config file  : {}",
         configuration.use_configuration_file
@@ -70,6 +73,7 @@ fn main() -> Result<()> {
     let mut opts = Options::new();
     #[allow(unused_assignments)]
     let mut use_configuration_file = false;
+    let mut ignore_gitignore = false;
     opts.optopt(
         "i",
         "directory",
@@ -183,6 +187,7 @@ fn main() -> Result<()> {
     // we cannot have the rule parameter given.
     if let Some(conf) = configuration_file {
         use_configuration_file = true;
+        ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
         if rules_file.is_some() {
             eprintln!("a rule file cannot be specified when a configuration file is present.");
             exit(1);
@@ -214,7 +219,15 @@ fn main() -> Result<()> {
         rules.extend(rules_from_file);
     }
 
+    // add ignore path from the options
     ignore_paths.extend(ignore_paths_from_options);
+
+    // ignore all directories that are in gitignore
+    if !ignore_gitignore {
+        let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str());
+        println!("from gitignore {:?}", paths_from_gitignore);
+        ignore_paths.extend(paths_from_gitignore.expect("error when reading gitignore file"));
+    }
 
     let languages = get_languages_for_rules(&rules);
 
@@ -232,6 +245,7 @@ fn main() -> Result<()> {
     let configuration = CliConfiguration {
         use_debug,
         use_configuration_file,
+        ignore_gitignore,
         source_directory: directory_to_analyze.clone(),
         ignore_paths,
         rules_file,
@@ -388,7 +402,7 @@ fn main() -> Result<()> {
             println!("Rule {} timed out on file {}", v.rule_name, v.filename);
         }
     }
-    println!("writing files");
+
     let value = match configuration.output_format {
         OutputFormat::Csv => csv::generate_csv_results(&all_rule_results),
         OutputFormat::Json => {

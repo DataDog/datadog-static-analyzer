@@ -6,6 +6,7 @@ use kernel::model::rule::Rule;
 pub struct CliConfiguration {
     pub use_debug: bool,
     pub use_configuration_file: bool,
+    pub ignore_gitignore: bool,
     pub source_directory: String,
     pub ignore_paths: Vec<String>,
     pub rules_file: Option<String>,
