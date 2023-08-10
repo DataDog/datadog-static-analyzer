@@ -73,11 +73,6 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
                 .and_then(|p| p.to_str())
                 .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
             if glob_match(path_to_ignore.as_str(), relative_path) {
-                println!(
-                    "file {} excluded by match {}",
-                    path_to_ignore.as_str(),
-                    relative_path
-                );
                 should_include = false;
             }
         }
