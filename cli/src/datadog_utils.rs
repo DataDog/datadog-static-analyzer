@@ -37,19 +37,26 @@ pub fn get_datadog_variable_value(variable: &str) -> anyhow::Result<String> {
 // the rulesets. We then extract all the rulesets
 pub fn get_ruleset(ruleset_name: &str) -> Result<RuleSet> {
     let site = get_datadog_variable_value("SITE").unwrap_or(DEFAULT_DATADOG_SITE.to_string());
-    let app_key = get_datadog_variable_value("APP_KEY").expect("specify DD_APP_KEY variable");
-    let api_key = get_datadog_variable_value("API_KEY").expect("specify DD_API_KEY variable");
+    let app_key = get_datadog_variable_value("APP_KEY");
+    let api_key = get_datadog_variable_value("API_KEY");
     let url = format!(
         "https://api.{}/api/v2/static-analysis/rulesets/{}",
         site, ruleset_name
     );
 
-    let client = reqwest::blocking::Client::new();
-    Ok(client
+    let request_builder = reqwest::blocking::Client::new()
         .get(url)
-        .header("Content-Type", "application/json")
-        .header("dd-api-key", api_key)
-        .header("dd-application-key", app_key)
+        .header("Content-Type", "application/json");
+
+    // only add datadog credentials if both app-key and api-keys are defined.
+    let request_builder_with_auth = match (app_key, api_key) {
+        (Ok(appk), Ok(apik)) => request_builder
+            .header("dd-api-key", apik)
+            .header("dd-application-key", appk),
+        _ => request_builder,
+    };
+
+    Ok(request_builder_with_auth
         .send()
         .context("error querying rulesets")?
         .json::<ApiResponse>()
