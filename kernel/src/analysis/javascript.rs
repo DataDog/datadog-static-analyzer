@@ -17,7 +17,7 @@ const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
 lazy_static! {
     static ref STARTUP_DATA: Vec<u8> = {
         let code: FastString = FastString::from_static(include_str!("./js/stella.js"));
-        let mut rt = JsRuntimeForSnapshot::new(Default::default(), Default::default());
+        let mut rt = JsRuntimeForSnapshot::new(RuntimeOptions::default());
         rt.execute_script("common_js", code).unwrap();
         rt.snapshot().to_vec()
     };
