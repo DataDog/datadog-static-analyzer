@@ -31,6 +31,7 @@ trait IntoSarif {
 pub struct SarifGenerationOptions {
     pub add_git_info: bool,
     pub git_repo: Option<Arc<Repository>>,
+    pub debug: bool,
 }
 
 impl IntoSarif for &Rule {
@@ -181,10 +182,18 @@ fn get_sha_for_line(
 
     let git_repo = generation_options.git_repo.as_ref().unwrap();
     let mut blame_options = BlameOptions::default();
-    let blame = git_repo
-        .blame_file(Path::new(filename), Some(&mut blame_options))
-        .expect("cannot get the blame");
-    Some(blame.get_line(line).unwrap().final_commit_id().to_string())
+    let blame_res = git_repo.blame_file(Path::new(filename), Some(&mut blame_options));
+    if let Ok(blame) = blame_res {
+        return Some(blame.get_line(line).unwrap().final_commit_id().to_string());
+    }
+
+    if generation_options.debug {
+        eprintln!(
+            "[sarif-export] cannot get git blame info at {}:{}",
+            filename, line
+        )
+    }
+    None
 }
 
 // Generate the tool section that reports all the rules being run
@@ -303,6 +312,7 @@ pub fn generate_sarif_report(
     rules_results: &[RuleResult],
     directory: &String,
     add_git_info: bool,
+    debug: bool,
 ) -> Result<Sarif> {
     // if we enable git info, we are then getting the repository object. We put that
     // into an `Arc` object to be able to clone the object.
@@ -320,6 +330,7 @@ pub fn generate_sarif_report(
     let options = SarifGenerationOptions {
         add_git_info,
         git_repo: repository,
+        debug,
     };
 
     let run = RunBuilder::default()
@@ -408,9 +419,14 @@ mod tests {
             .build()
             .expect("building violation");
 
-        let sarif_report =
-            generate_sarif_report(&[rule], &vec![rule_result], &"mydir".to_string(), false)
-                .expect("generate sarif report");
+        let sarif_report = generate_sarif_report(
+            &[rule],
+            &vec![rule_result],
+            &"mydir".to_string(),
+            false,
+            false,
+        )
+        .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
         println!("{}", sarif_report_to_string);
@@ -476,9 +492,14 @@ mod tests {
             .build()
             .expect("building violation");
 
-        let sarif_report =
-            generate_sarif_report(&[rule], &vec![rule_result], &"mydir".to_string(), false)
-                .expect("generate sarif report");
+        let sarif_report = generate_sarif_report(
+            &[rule],
+            &vec![rule_result],
+            &"mydir".to_string(),
+            false,
+            false,
+        )
+        .expect("generate sarif report");
         assert!(sarif_report
             .runs
             .get(0)
