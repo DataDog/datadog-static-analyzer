@@ -1,0 +1,9 @@
+on: push
+name: Check the versions.json file is correct
+jobs:
+  integration_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Ensure versions
+        run: python -mjson.tool versions.json >/dev/null
