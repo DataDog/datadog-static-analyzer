@@ -13,6 +13,8 @@ test-and-build:
     - source "$HOME/.cargo/env"
     - cargo build -r
     - cargo test
+  variables:
+    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
   tags:
     - arch:arm64
 
@@ -25,6 +27,7 @@ trigger_internal_image:
     branch: master
     strategy: depend
   variables:
+    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
     RELEASE_TAG: 2023081001
@@ -32,6 +35,3 @@ trigger_internal_image:
     TMPL_SRC_IMAGE: v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     RELEASE_STAGING: "true"
     RELEASE_PROD: "true"
-
-after_script:
-  - echo "End CI"
