@@ -50,7 +50,7 @@ xattr -dr com.apple.quarantine datadog-static-analyzer
  - `-r` or `--rules`: provides a file that contains all rules (rules can be put in a file using `datadog-export-rulesets`)
  - `-c` or `--cpus`: number of cores used to analyze (count about 1GB of RAM usage per core)
  - `-o` or `--output`: output file
- - `-p` or `--ignore-path`: path (pattern/glob) to ignore
+ - `-p` or `--ignore-path`: path (pattern/glob) to ignore; accepts multiple
  - `-x` or `--performance-statistics`: show performance statistics for the analyzer
  - `-g` or `--add-git-info`: add Git-related information (sha, etc) into the SARIF report when using -f sarif
 
