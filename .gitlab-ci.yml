@@ -27,7 +27,7 @@ trigger_internal_image:
     branch: master
     strategy: depend
   variables:
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
+    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: images
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
     RELEASE_TAG: 2023081001
