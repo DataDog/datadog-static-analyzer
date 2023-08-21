@@ -3,10 +3,10 @@
         "0.0.9": {
             "windows": {
                 "cli": {
-                  "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
+                    "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
                 },
                 "server": {
-                  "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-server-x86_64-pc-windows-msvc.zip"
+                    "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-server-x86_64-pc-windows-msvc.zip"
                 }
             },
             "linux": {
@@ -30,4 +30,6 @@
                 }
             }
         }
+    }
+
 }
