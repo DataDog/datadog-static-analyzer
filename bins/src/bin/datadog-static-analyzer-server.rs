@@ -117,6 +117,7 @@ fn rocket_main() -> _ {
         "directory for static files",
         "/path/to/directory",
     );
+    opts.optopt("p", "port", "port to run the server on", "8000");
     opts.optflag("h", "help", "print this help");
 
     let matches = match opts.parse(&args[1..]) {
@@ -135,7 +136,22 @@ fn rocket_main() -> _ {
         static_directory: matches.opt_str("s"),
     };
 
-    rocket::build()
+    let mut rocket_configuration = rocket::config::Config::default();
+
+    // Set up the port in rocket configuration if --port is passed
+    if matches.opt_present("p") {
+        let port_opt = matches.opt_str("p");
+        if let Some(port_str) = port_opt {
+            let port_res = port_str.parse::<u16>();
+            if port_res.is_err() {
+                eprintln!("Invalid port argument");
+                exit(1)
+            }
+            rocket_configuration.port = port_res.unwrap();
+        }
+    }
+
+    rocket::custom(rocket_configuration)
         .attach(CORS)
         .manage(server_configuration)
         .mount("/", rocket::routes![analyze])
