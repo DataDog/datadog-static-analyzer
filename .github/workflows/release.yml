@@ -52,7 +52,8 @@ jobs:
       - name: Set the version
         shell: bash
         run: sed  "s/development/$GITHUB_SHA/g" kernel/src/constants.rs > bla && rm kernel/src/constants.rs && mv bla kernel/src/constants.rs
-      - uses: taiki-e/upload-rust-binary-action@v1
+      - name: Release the CLI
+        uses: taiki-e/upload-rust-binary-action@v1
         with:
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
           # Note that glob pattern is not supported yet.
@@ -69,3 +70,21 @@ jobs:
           # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
           archive: 'datadog-static-analyzer-$target'
+      - name: Release the server
+        uses: taiki-e/upload-rust-binary-action@v1
+        with:
+          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
+          # Note that glob pattern is not supported yet.
+          bin: datadog-static-analyzer-server
+          # (optional) On which platform to distribute the `.tar.gz` file.
+          # [default value: unix]
+          # [possible values: all, unix, windows, none]
+          tar: none
+          # (optional) On which platform to distribute the `.zip` file.
+          # [default value: windows]
+          # [possible values: all, unix, windows, none]
+          zip: all
+          target: ${{ matrix.target }}
+          # (required) GitHub token for uploading assets to GitHub Releases.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          archive: 'datadog-static-analyzer-server-$target'

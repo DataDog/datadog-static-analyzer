@@ -1,71 +1,33 @@
 {
-  "0": [
-    {
-      "0.0.8": {
-        "windows": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.8/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
-        },
-        "linux": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.8/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.8/datadog-static-analyzer-aarch64-unknown-linux-gnu.zip"
-        },
-        "macos": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.8/datadog-static-analyzer-x86_64-apple-darwin.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.8/datadog-static-analyzer-aarch64-apple-darwin.zip"
+    "0": {
+        "0.0.9": {
+            "windows": {
+                "cli": {
+                  "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
+                },
+                "server": {
+                  "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-server-x86_64-pc-windows-msvc.zip"
+                }
+            },
+            "linux": {
+                "cli": {
+                    "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip",
+                    "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-aarch64-unknown-linux-gnu.zip"
+                },
+                "server": {
+                    "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-server-x86_64-unknown-linux-gnu.zip",
+                    "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-server-aarch64-unknown-linux-gnu.zip"
+                }
+            },
+            "macos": {
+                "cli": {
+                    "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-x86_64-apple-darwin.zip",
+                    "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-aarch64-apple-darwin.zip"
+                },
+                "server": {
+                    "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-server-x86_64-apple-darwin.zip",
+                    "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.9/datadog-static-analyzer-server-aarch64-apple-darwin.zip"
+                }
+            }
         }
-      },
-      "0.0.7": {
-        "windows": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.7/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
-        },
-        "linux": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.7/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.7/datadog-static-analyzer-aarch64-unknown-linux-gnu.zip"
-        },
-        "macos": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.7/datadog-static-analyzer-x86_64-apple-darwin.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.7/datadog-static-analyzer-aarch64-apple-darwin.zip"
-        }
-      },
-      "0.0.6": {
-        "windows": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.6/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
-        },
-        "linux": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.6/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.6/datadog-static-analyzer-aarch64-unknown-linux-gnu.zip"
-        },
-        "macos": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.6/datadog-static-analyzer-x86_64-apple-darwin.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.6/datadog-static-analyzer-aarch64-apple-darwin.zip"
-        }
-      },
-      "0.0.5": {
-        "windows": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.5/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
-        },
-        "linux": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.5/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.5/datadog-static-analyzer-aarch64-unknown-linux-gnu.zip"
-        },
-        "macos": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.5/datadog-static-analyzer-x86_64-apple-darwin.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.5/datadog-static-analyzer-aarch64-apple-darwin.zip"
-        }
-      },
-      "0.0.4": {
-        "windows": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.4/datadog-static-analyzer-x86_64-pc-windows-msvc.zip"
-        },
-        "linux": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.4/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.4/datadog-static-analyzer-aarch64-unknown-linux-gnu.zip"
-        },
-        "macos": {
-          "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.4/datadog-static-analyzer-x86_64-apple-darwin.zip",
-          "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.0.4/datadog-static-analyzer-aarch64-apple-darwin.zip"
-        }
-      }
-    }
-  ]
 }
