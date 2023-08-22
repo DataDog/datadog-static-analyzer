@@ -225,7 +225,6 @@ fn main() -> Result<()> {
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
         let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str());
-        println!("from gitignore {:?}", paths_from_gitignore);
         ignore_paths.extend(paths_from_gitignore.expect("error when reading gitignore file"));
     }
 
