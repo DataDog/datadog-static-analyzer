@@ -1,6 +1,8 @@
+use crate::model::cli_configuration::CliConfiguration;
 use anyhow::Result;
 use glob_match::glob_match;
 use kernel::model::common::Language;
+use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -113,9 +115,36 @@ pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<
     result
 }
 
+pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration) -> Vec<PathBuf> {
+    let max_len_bytes = configuration.max_file_size_kb * 1024;
+    return files
+        .iter()
+        .filter(|f| {
+            let metadata = fs::metadata(f);
+            let too_big = &metadata
+                .as_ref()
+                .map(|x| x.len() > max_len_bytes)
+                .unwrap_or(false);
+
+            if configuration.use_debug {
+                eprintln!(
+                    "File {} too big (size {} bytes, max size {} kb)",
+                    f.display(),
+                    &metadata.map(|x| x.len()).unwrap_or(0),
+                    configuration.max_file_size_kb
+                )
+            }
+
+            f.is_file() && !*too_big
+        })
+        .cloned()
+        .collect();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kernel::model::common::OutputFormat::Sarif;
     use std::collections::HashMap;
     use std::path::Path;
 
@@ -138,6 +167,36 @@ mod tests {
                 .collect::<Vec<&String>>()
                 .len()
         )
+    }
+
+    /// Filter files bigger than one kilobyte and make sure files
+    /// less than one kilobyte are not being filtered.
+    #[test]
+    fn test_filter_files_by_size() {
+        let mut files1 = vec![];
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("resources/test/test_files_by_size/versions.json");
+        files1.push(d);
+        let cli_configuration = CliConfiguration {
+            use_debug: true,
+            use_configuration_file: true,
+            ignore_gitignore: true,
+            source_directory: "bla".to_string(),
+            ignore_paths: vec![],
+            rules_file: None,
+            output_format: Sarif, // SARIF or JSON
+            output_file: "foo".to_string(),
+            num_cpus: 2, // of cpus to use for parallelism
+            rules: vec![],
+            max_file_size_kb: 1,
+        };
+        assert_eq!(0, filter_files_by_size(&files1, &cli_configuration).len());
+
+        let mut files2 = vec![];
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.push("resources/test/test_files_by_size/versions-empty.json");
+        files2.push(d);
+        assert_eq!(1, filter_files_by_size(&files2, &cli_configuration).len());
     }
 
     #[test]

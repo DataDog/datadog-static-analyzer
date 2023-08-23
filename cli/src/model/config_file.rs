@@ -11,6 +11,8 @@ pub struct ConfigFile {
     pub ignore_paths: Option<Vec<String>>,
     #[serde(rename(serialize = "ignore-gitignore", deserialize = "ignore-gitignore"))]
     pub ignore_gitignore: Option<bool>,
+    #[serde(rename(serialize = "max-file-size-kb", deserialize = "max-file-size-kb"))]
+    pub max_file_size_kb: Option<u64>,
 }
 
 impl fmt::Display for ConfigFile {

@@ -71,6 +71,10 @@ pub fn analyze(
                         output: None,
                     };
 
+                    if analysis_option.use_debug {
+                        eprintln!("Apply rule {} file {}", rule.name, filename);
+                    }
+
                     if let Some(tree_sitter_query) = &rule.tree_sitter_query {
                         let query_try = get_query(tree_sitter_query.as_str(), &rule.language);
 
