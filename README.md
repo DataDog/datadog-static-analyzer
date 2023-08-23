@@ -71,7 +71,7 @@ at the root directory of the repository. This is a YAML file with the following 
  - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a full list)
  - `ignore-paths`: list of paths (glob) to ignore
  - `ignore-gitignore`: a boolean to indicate if files in `.gitignore` should be ignored (default: `false`)
- - `max-file-size-kb`: all files above this size are ignored (default 200KB)
+ - `max-file-size-kb`: all files above this size are ignored (default: 200KB)
 
 
 Example of configuration:
