@@ -68,7 +68,7 @@ For the tool to work, the following variables must be configured:
 The static analyzer can be configured using a `static-analysis.datadog.yml` file
 at the root directory of the repository. This is a YAML file with the following entries:
 
- - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a list of rules)
+ - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a full list)
  - `ignore-paths`: list of paths (glob) to ignore
  - `ignore-gitignore`: a boolean to indicate if files in `.gitignore` should be ignored
  - `max-file-size-kb`: all files above this size are ignored (default 200KB)
