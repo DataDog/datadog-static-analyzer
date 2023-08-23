@@ -119,6 +119,7 @@ fn rocket_main() -> _ {
     );
     opts.optopt("p", "port", "port to run the server on", "8000");
     opts.optflag("h", "help", "print this help");
+    opts.optflag("v", "version", "shows the tool version");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -126,6 +127,11 @@ fn rocket_main() -> _ {
             panic!("error when parsing arguments: {}", f)
         }
     };
+
+    if matches.opt_present("v") {
+        println!("Version: {}, revision: {}", CARGO_VERSION, VERSION);
+        exit(1);
+    }
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
