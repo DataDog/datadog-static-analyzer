@@ -9,6 +9,13 @@ cargo build
 ```
 
 
+## Analyze a directory
+
+```shell
+
+cargo run --bin datadog-static-analyzer -- --directory <SOURCE> --output result.json --format sarif --debug yes
+```
+
 ## Run tests
 
 Run all tests

@@ -63,6 +63,30 @@ For the tool to work, the following variables must be configured:
  - `DD_API_KEY`: the API key from Datadog
  - `DD_SITE`: the Datadog site to use (see list [here](https://docs.datadoghq.com/getting_started/site/))
 
+## Configuration file
+
+The static analyzer can be configured using a `static-analysis.datadog.yml` file
+at the root directory of the repository. This is a YAML file with the following entries:
+
+ - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a full list)
+ - `ignore-paths`: list of paths (glob) to ignore
+ - `ignore-gitignore`: a boolean to indicate if files in `.gitignore` should be ignored (default: `false`)
+ - `max-file-size-kb`: all files above this size are ignored (default: 200KB)
+
+
+Example of configuration:
+
+```yaml
+rulesets:
+  - python-code-style
+  - python-best-practices
+  - python-inclusive
+ignore-paths:
+  - tests
+ignore-gitignore: false
+max-file-size-kb: 100
+```
+
 ## Other Tools
 
 ### datadog-export-rulesets

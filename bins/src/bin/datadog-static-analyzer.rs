@@ -11,6 +11,7 @@ use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 
 use anyhow::{Context, Result};
+use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::sarif::sarif_utils::generate_sarif_report;
@@ -65,6 +66,7 @@ fn print_configuration(configuration: &CliConfiguration) {
     );
     println!("use debug        : {}", configuration.use_debug);
     println!("rules languages  : {}", languages_string.join(","));
+    println!("max file size    : {} kb", configuration.max_file_size_kb);
 }
 
 fn main() -> Result<()> {
@@ -74,6 +76,8 @@ fn main() -> Result<()> {
     #[allow(unused_assignments)]
     let mut use_configuration_file = false;
     let mut ignore_gitignore = false;
+    let mut max_file_size_kb = DEFAULT_MAX_FILE_SIZE_KB;
+
     opts.optopt(
         "i",
         "directory",
@@ -200,6 +204,9 @@ fn main() -> Result<()> {
         if let Some(v) = conf.ignore_paths {
             ignore_paths.extend(v);
         }
+
+        // Get the max file size from the configuration or default to the default constant.
+        max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB)
     } else {
         use_configuration_file = false;
         // if there is no config file, we must read the rules from a file.
@@ -252,6 +259,7 @@ fn main() -> Result<()> {
         num_cpus,
         rules,
         output_file,
+        max_file_size_kb,
     };
 
     print_configuration(&configuration);
