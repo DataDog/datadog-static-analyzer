@@ -69,17 +69,21 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
 
         // check if the path should be ignored by a glob or not.
         for path_to_ignore in paths_to_ignore {
-            let relative_path = path_buf
+            let relative_path_str = path_buf
                 .strip_prefix(directory)
                 .ok()
                 .and_then(|p| p.to_str())
                 .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
-            if glob_match(path_to_ignore.as_str(), relative_path) {
+            if glob_match(path_to_ignore.as_str(), relative_path_str) {
                 should_include = false;
             }
 
-            if relative_path.starts_with(path_to_ignore.as_str()) {
-                should_include = false;
+            let relative_path_res = path_buf.strip_prefix(directory);
+
+            if let Ok(relative_path) = relative_path_res {
+                if relative_path.starts_with(Path::new(path_to_ignore.as_str())) {
+                    should_include = false;
+                }
             }
         }
 
