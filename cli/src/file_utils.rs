@@ -69,6 +69,11 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
 
         // check if the path should be ignored by a glob or not.
         for path_to_ignore in paths_to_ignore {
+            // skip empty path to ignore
+            if path_to_ignore.is_empty() {
+                continue;
+            }
+
             let relative_path_str = path_buf
                 .strip_prefix(directory)
                 .ok()
