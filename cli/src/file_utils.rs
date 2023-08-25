@@ -69,13 +69,26 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
 
         // check if the path should be ignored by a glob or not.
         for path_to_ignore in paths_to_ignore {
-            let relative_path = path_buf
+            // skip empty path to ignore
+            if path_to_ignore.is_empty() {
+                continue;
+            }
+
+            let relative_path_str = path_buf
                 .strip_prefix(directory)
                 .ok()
                 .and_then(|p| p.to_str())
                 .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
-            if glob_match(path_to_ignore.as_str(), relative_path) {
+            if glob_match(path_to_ignore.as_str(), relative_path_str) {
                 should_include = false;
+            }
+
+            let relative_path_res = path_buf.strip_prefix(directory);
+
+            if let Ok(relative_path) = relative_path_res {
+                if relative_path.starts_with(Path::new(path_to_ignore.as_str())) {
+                    should_include = false;
+                }
             }
         }
 
@@ -210,11 +223,10 @@ mod tests {
     }
 
     // make sure we can get the list of rules from a directory and that the
-    // ignore-paths correctly works.
+    // ignore-paths correctly works when we pass a glob.
     #[test]
-    fn get_list_of_files() {
+    fn get_list_of_files_with_glob() {
         let current_path = std::env::current_dir().unwrap();
-        println!("current path {}", current_path.display());
         let file_to_find = Path::new(current_path.display().to_string().as_str())
             .join("src")
             .join("lib.rs");
@@ -246,6 +258,54 @@ mod tests {
             .map(|p| p.display().to_string())
             .collect();
         assert_eq!(0, find_file.len()); // correctly filtered
+    }
+
+    // make sure we can get the list of rules from a directory and that the
+    // ignore-paths correctly works when we pass a prefix.
+    #[test]
+    fn get_list_of_files_with_prefix() {
+        let current_path = std::env::current_dir().unwrap();
+        let file_to_find = Path::new(current_path.display().to_string().as_str())
+            .join("src")
+            .join("lib.rs");
+        println!("file to find {}", file_to_find.display().to_string());
+        println!("current path {}", current_path.display().to_string());
+
+        // now, we one path to ignore, we should filter.
+        let ignore_paths = vec!["src".to_string()];
+        let files = get_files(current_path.display().to_string().as_str(), &ignore_paths);
+        assert!(files.is_ok());
+        let f = &files.unwrap();
+        let find_file: Vec<String> = f
+            .iter()
+            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
+            .map(|p| p.display().to_string())
+            .collect();
+        assert_eq!(0, find_file.len()); // correctly filtered
+
+        // now, we add the complete path to ignore, we should filter.
+        let ignore_paths = vec!["src/lib.rs".to_string()];
+        let files = get_files(current_path.display().to_string().as_str(), &ignore_paths);
+        assert!(files.is_ok());
+        let f = &files.unwrap();
+        let find_file: Vec<String> = f
+            .iter()
+            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
+            .map(|p| p.display().to_string())
+            .collect();
+        assert_eq!(0, find_file.len()); // correctly filtered
+
+        // now, we add another directory that is totally different, we should not filter.
+        let ignore_paths = vec!["foo".to_string()];
+        let files = get_files(current_path.display().to_string().as_str(), &ignore_paths);
+        assert!(files.is_ok());
+        let f = &files.unwrap();
+        let find_file: Vec<String> = f
+            .iter()
+            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
+            .map(|p| p.display().to_string())
+            .collect();
+        assert_eq!(1, find_file.len()); // correctly filtered
     }
 
     // check that we have the correct number of extensions for each language we support.
