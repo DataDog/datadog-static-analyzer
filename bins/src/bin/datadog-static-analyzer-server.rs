@@ -85,7 +85,7 @@ async fn serve_static(
     NamedFile::open(full_path).await.ok()
 }
 
-#[rocket::get("/ping", format = "text/html")]
+#[rocket::get("/ping", format = "text/plain")]
 fn ping() -> String {
     "pong".to_string()
 }
