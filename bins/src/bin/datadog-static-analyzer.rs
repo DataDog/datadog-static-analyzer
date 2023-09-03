@@ -16,6 +16,7 @@ use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use getopts::Options;
+use indicatif::ProgressBar;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;
@@ -306,6 +307,19 @@ fn main() -> Result<()> {
     for language in &languages {
         let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
+        println!(
+            "Analyzing {} {:?} files",
+            files_for_language.len(),
+            language
+        );
+
+        // we only use the progress bar when the debug mode is not active, otherwise, it puts
+        // too much information on the screen.
+        let progress_bar = if !configuration.use_debug {
+            Some(ProgressBar::new(files_for_language.len() as u64))
+        } else {
+            None
+        };
         total_files_analyzed += files_for_language.len();
 
         let rules_for_language: Vec<RuleInternal> = configuration
@@ -327,7 +341,7 @@ fn main() -> Result<()> {
         }
 
         // take the relative path for the analysis
-        all_rule_results = files_for_language
+        let rule_results: Vec<RuleResult> = files_for_language
             .into_par_iter()
             .flat_map(|path| match fs::read_to_string(&path) {
                 Ok(file_content) => {
@@ -341,6 +355,11 @@ fn main() -> Result<()> {
                         &file_content,
                         &analysis_options,
                     );
+
+                    if let Some(pb) = &progress_bar {
+                        pb.inc(1);
+                    }
+
                     res
                 }
                 Err(_) => {
@@ -349,6 +368,11 @@ fn main() -> Result<()> {
                 }
             })
             .collect();
+        all_rule_results.append(rule_results.clone().as_mut());
+
+        if let Some(pb) = &progress_bar {
+            pb.finish();
+        }
     }
 
     let end_timestamp = SystemTime::now()
