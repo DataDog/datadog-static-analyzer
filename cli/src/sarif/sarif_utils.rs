@@ -9,7 +9,7 @@ use serde_sarif::sarif::{
 };
 use std::collections::BTreeMap;
 use std::path::Path;
-use std::sync::Arc;
+use std::rc::Rc;
 
 use kernel::model::rule::RuleSeverity;
 use kernel::model::{
@@ -30,7 +30,7 @@ trait IntoSarif {
 #[derive(Clone)]
 pub struct SarifGenerationOptions {
     pub add_git_info: bool,
-    pub git_repo: Option<Arc<Repository>>,
+    pub git_repo: Option<Rc<Repository>>,
     pub debug: bool,
 }
 
@@ -316,13 +316,13 @@ pub fn generate_sarif_report(
 ) -> Result<Sarif> {
     // if we enable git info, we are then getting the repository object. We put that
     // into an `Arc` object to be able to clone the object.
-    let repository: Option<Arc<Repository>> = if add_git_info {
+    let repository: Option<Rc<Repository>> = if add_git_info {
         let repo = Repository::open(directory.as_str());
         if repo.is_err() {
             eprintln!("Invalid Git repository in {}", directory);
             panic!("Please provide a valid Git repository or disable Git integration");
         }
-        Some(Arc::new(repo.expect("cannot open repository")))
+        Some(Rc::new(repo.expect("cannot open repository")))
     } else {
         None
     };

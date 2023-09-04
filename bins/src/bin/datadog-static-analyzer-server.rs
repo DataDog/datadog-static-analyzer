@@ -130,12 +130,12 @@ fn rocket_main() -> _ {
 
     if matches.opt_present("v") {
         println!("Version: {}, revision: {}", CARGO_VERSION, VERSION);
-        exit(1);
+        exit(0);
     }
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
-        exit(1);
+        exit(0);
     }
 
     let server_configuration = ServerConfiguration {
