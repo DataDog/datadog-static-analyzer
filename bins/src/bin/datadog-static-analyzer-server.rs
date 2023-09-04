@@ -1,5 +1,6 @@
 use getopts::Options;
 use kernel::constants::{CARGO_VERSION, VERSION};
+use lazy_static::lazy_static;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
 use rocket::http::Header;
@@ -9,11 +10,21 @@ use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
 use server::tree_sitter_tree::process_tree_sitter_tree_request;
-use std::env;
 use std::path::Path;
 use std::process::exit;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{env, thread};
 
 pub struct CORS;
+
+/// get the current timestamp
+fn get_current_timestamp_ms() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
 
 // Adding CORS for the server.
 // See https://stackoverflow.com/questions/62412361/how-to-set-up-cors-or-options-for-rocket-rs
@@ -85,11 +96,6 @@ async fn serve_static(
     NamedFile::open(full_path).await.ok()
 }
 
-#[rocket::get("/ping", format = "text/plain")]
-fn ping() -> String {
-    "pong".to_string()
-}
-
 /// Catches all OPTION requests in order to get the CORS related Fairing triggered.
 #[rocket::options("/<_..>")]
 fn get_options() -> String {
@@ -99,6 +105,27 @@ fn get_options() -> String {
 
 struct ServerConfiguration {
     static_directory: Option<String>,
+}
+
+struct ServerState {
+    last_ping_request_timestamp_ms: u128,
+}
+
+// Global value that keeps the status of the server
+lazy_static! {
+    static ref LAST_TIMESTAMP: Mutex<ServerState> = Mutex::new(ServerState {
+        last_ping_request_timestamp_ms: get_current_timestamp_ms()
+    });
+}
+
+#[rocket::get("/ping", format = "text/plain")]
+fn ping() -> String {
+    // at every ping request, we refresh the timestamp of the latest request
+    LAST_TIMESTAMP
+        .lock()
+        .unwrap()
+        .last_ping_request_timestamp_ms = get_current_timestamp_ms();
+    "pong".to_string()
 }
 
 fn print_usage(program: &str, opts: Options) {
@@ -111,6 +138,7 @@ fn rocket_main() -> _ {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let mut opts = Options::new();
+
     opts.optopt(
         "s",
         "static",
@@ -118,6 +146,12 @@ fn rocket_main() -> _ {
         "/path/to/directory",
     );
     opts.optopt("p", "port", "port to run the server on", "8000");
+    opts.optopt(
+        "k",
+        "keep-alive-timeout",
+        "how many seconds without a request the server will exit",
+        "90",
+    );
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the tool version");
 
@@ -154,6 +188,36 @@ fn rocket_main() -> _ {
                 exit(1)
             }
             rocket_configuration.port = port_res.unwrap();
+        }
+    }
+
+    // if we set up the keepalive mechanism (option -k)
+    //   1. Get the timeout value as parameter
+    //   2. Start the thread that checks every 5 seconds if we should exit the server
+    if matches.opt_present("k") {
+        let keepalive_timeout_sec = matches.opt_str("k");
+        if let Some(keepalive_timeout) = keepalive_timeout_sec {
+            let timeout_sec = keepalive_timeout.parse::<u128>().unwrap();
+            let timeout_ms = timeout_sec * 1000;
+
+            // thread that periodically checks if we should exit the server
+            thread::spawn(move || {
+                loop {
+                    // get the latest request timestamp and the current one
+                    let latest_timestamp = LAST_TIMESTAMP
+                        .lock()
+                        .unwrap()
+                        .last_ping_request_timestamp_ms;
+                    let current_timestamp = get_current_timestamp_ms();
+
+                    if latest_timestamp > 0 && current_timestamp > latest_timestamp + timeout_ms {
+                        eprintln!("exiting because of timeout");
+                        exit(1);
+                    }
+
+                    thread::sleep(Duration::from_secs(5));
+                }
+            });
         }
     }
 

@@ -14,9 +14,10 @@ serde-sarif = { workspace = true }
 sha2 = { workspace = true }
 
 # other
-deno_core = "0.200.0"
+deno_core = "0.208.0"
+deno_console = "0.118.0"
 lazy_static = "1.4.0"
-serde_v8 = "0.111.0"
+serde_v8 = "0.119.0"
 tree-sitter = "0.20.10"
 
 [build-dependencies]
