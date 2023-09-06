@@ -50,7 +50,7 @@ jobs:
           target: ${{ matrix.target }}
         if: startsWith(matrix.os, 'ubuntu')
       - name: Install libssl-dev for ubuntu
-        run: apt-get install build-essential pkg-config libssl-dev
+        run: sudo apt-get install build-essential pkg-config libssl-dev
         if: startsWith(matrix.os, 'ubuntu')
       - name: Set the version
         shell: bash
