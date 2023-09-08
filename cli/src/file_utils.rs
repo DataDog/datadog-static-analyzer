@@ -15,9 +15,37 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::TypeScript, &["ts", "tsx"]),
 ];
 
+static FILE_EXACT_MATCH_PER_LANGUAGE_LIST: &[(Language, &[&str])] =
+    &[(Language::Dockerfile, &["Dockerfile"])];
+
+static FILE_PREFIX_PER_LANGUAGE_LIST: &[(Language, &[&str])] =
+    &[(Language::Dockerfile, &["Dockerfile"])];
+
 // get all extensions for a language.
 fn get_extensions_for_language(language: &Language) -> Option<Vec<String>> {
     for fe in FILE_EXTENSIONS_PER_LANGUAGE_LIST {
+        if fe.0 == *language {
+            let extensions = fe.1.to_vec();
+            return Some(extensions.iter().map(|x| x.to_string()).collect());
+        }
+    }
+    None
+}
+
+// if a langauge only match a file for an exact match, return it
+fn get_exact_filename_for_language(language: &Language) -> Option<Vec<String>> {
+    for fe in FILE_EXACT_MATCH_PER_LANGUAGE_LIST {
+        if fe.0 == *language {
+            let extensions = fe.1.to_vec();
+            return Some(extensions.iter().map(|x| x.to_string()).collect());
+        }
+    }
+    None
+}
+
+// get the prefix for a file that needs to be analyzed for a language
+fn get_prefix_for_language(language: &Language) -> Option<Vec<String>> {
+    for fe in FILE_PREFIX_PER_LANGUAGE_LIST {
         if fe.0 == *language {
             let extensions = fe.1.to_vec();
             return Some(extensions.iter().map(|x| x.to_string()).collect());
@@ -105,24 +133,56 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
     Ok(files_to_return)
 }
 
+// filter the file according to a list of extensions
+fn match_extension(path: &Path, extensions: &[String]) -> bool {
+    match path.extension() {
+        Some(ext) => match ext.to_str() {
+            Some(e) => extensions.contains(&e.to_string().to_lowercase()),
+            None => false,
+        },
+        None => false,
+    }
+}
+
+// filter a file based on its name
+fn match_exact_filename(path: &Path, filename_list: &[String]) -> bool {
+    match path.file_name() {
+        Some(p) => match p.to_str() {
+            Some(s) => filename_list.contains(&s.to_string()),
+            None => false,
+        },
+        None => false,
+    }
+}
+
+fn match_prefix_filename(path: &Path, prefixes_list: &[String]) -> bool {
+    match path.file_name() {
+        Some(p) => match p.to_str() {
+            Some(s) => prefixes_list.iter().any(|p| s.to_string().starts_with(p)),
+            None => false,
+        },
+        None => false,
+    }
+}
+
 // filter files to analyze for a language. It will filter the files based on the prefix or suffix.
 pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<PathBuf> {
-    let extensions_opt = get_extensions_for_language(language);
+    let extensions = get_extensions_for_language(language).unwrap_or(vec![]);
+    let exact_matches = get_exact_filename_for_language(language).unwrap_or(vec![]);
+    let prefixes = get_prefix_for_language(language).unwrap_or(vec![]);
 
-    if extensions_opt.is_none() {
+    if extensions.is_empty() && exact_matches.is_empty() && prefixes.is_empty() {
         return vec![];
     }
 
-    let extensions = extensions_opt.unwrap();
-
     let result = files
         .iter()
-        .filter(|p| match p.extension() {
-            Some(ext) => match ext.to_str() {
-                Some(e) => extensions.contains(&e.to_string()),
-                None => false,
-            },
-            None => false,
+        .filter(|p| {
+            let extension_match = match_extension(p, &extensions);
+            let filename_match = match_exact_filename(p, &exact_matches);
+            let prefix_match = match_prefix_filename(p, &prefixes);
+
+            extension_match || filename_match || prefix_match
         })
         .cloned()
         .collect();
@@ -232,7 +292,6 @@ mod tests {
         let file_to_find = Path::new(current_path.display().to_string().as_str())
             .join("src")
             .join("lib.rs");
-        println!("file to find {}", file_to_find.display().to_string());
 
         // first, we get the list of files without any path to ignore
         let empty_paths_to_ignore = vec![];
@@ -270,8 +329,6 @@ mod tests {
         let file_to_find = Path::new(current_path.display().to_string().as_str())
             .join("src")
             .join("lib.rs");
-        println!("file to find {}", file_to_find.display().to_string());
-        println!("current path {}", current_path.display().to_string());
 
         // now, we one path to ignore, we should filter.
         let ignore_paths = vec!["src".to_string()];
@@ -330,7 +387,7 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_files_for_language() {
+    fn test_filter_files_for_language_suffix() {
         let current_path = std::env::current_dir().unwrap();
 
         let empty_paths_to_ignore = vec![];
@@ -345,5 +402,53 @@ mod tests {
             filter_files_for_language(files, &Language::TypeScript).len()
         );
         assert_ne!(0, filter_files_for_language(files, &Language::Rust).len());
+        assert_eq!(
+            1,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("foobar.Dockerfile"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
+    }
+
+    #[test]
+    fn test_filter_files_for_language_with_prefix() {
+        assert_eq!(
+            1,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("Dockerfile.foobar"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
+        assert_eq!(
+            0,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("Dock3rfile.foobar"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
+    }
+
+    #[test]
+    fn test_filter_files_for_language_with_exact_match() {
+        assert_eq!(
+            1,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("Dockerfile"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
+        assert_eq!(
+            0,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("Dock3rfile"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
     }
 }
