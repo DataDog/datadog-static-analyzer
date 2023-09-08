@@ -15,4 +15,5 @@ pub struct CliConfiguration {
     pub num_cpus: usize, // of cpus to use for parallelism
     pub rules: Vec<Rule>,
     pub max_file_size_kb: u64,
+    pub use_staging: bool,
 }
