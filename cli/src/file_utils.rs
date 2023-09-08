@@ -137,7 +137,7 @@ pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<Path
 fn match_extension(path: &Path, extensions: &[String]) -> bool {
     match path.extension() {
         Some(ext) => match ext.to_str() {
-            Some(e) => extensions.contains(&e.to_string()),
+            Some(e) => extensions.contains(&e.to_string().to_lowercase()),
             None => false,
         },
         None => false,
@@ -158,10 +158,7 @@ fn match_exact_filename(path: &Path, filename_list: &[String]) -> bool {
 fn match_prefix_filename(path: &Path, prefixes_list: &[String]) -> bool {
     match path.file_name() {
         Some(p) => match p.to_str() {
-            Some(s) => {
-                let filename = s.to_string();
-                prefixes_list.iter().any(|p| filename.starts_with(p))
-            }
+            Some(s) => prefixes_list.iter().any(|p| s.to_string().starts_with(p)),
             None => false,
         },
         None => false,
@@ -389,7 +386,7 @@ mod tests {
     }
 
     #[test]
-    fn test_filter_files_for_language() {
+    fn test_filter_files_for_language_suffix() {
         let current_path = std::env::current_dir().unwrap();
 
         let empty_paths_to_ignore = vec![];
@@ -404,6 +401,14 @@ mod tests {
             filter_files_for_language(files, &Language::TypeScript).len()
         );
         assert_ne!(0, filter_files_for_language(files, &Language::Rust).len());
+        assert_eq!(
+            1,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("foobar.Dockerfile"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
     }
 
     #[test]
