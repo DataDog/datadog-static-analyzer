@@ -21,6 +21,7 @@ fn main() {
     opts.optmulti("r", "ruleset", "ruleset to fetch", "python-security");
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the version");
+    opts.optflag("s", "staging", "use staging");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -51,13 +52,16 @@ fn main() {
         exit(1);
     }
 
+    let use_staging = matches.opt_present("s");
     let rulesets_names = matches.opt_strs("r");
     let file_to_write = matches.opt_str("o").expect("output file");
 
     // get the rulesets from the API
     let rulesets: Vec<RuleSet> = rulesets_names
         .iter()
-        .map(|ruleset_name| get_ruleset(ruleset_name).expect("error when reading ruleset"))
+        .map(|ruleset_name| {
+            get_ruleset(ruleset_name, use_staging).expect("error when reading ruleset")
+        })
         .collect();
 
     let file = File::create(&file_to_write).expect("error when opening the output file");

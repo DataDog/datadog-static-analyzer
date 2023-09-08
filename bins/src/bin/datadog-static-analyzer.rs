@@ -66,6 +66,7 @@ fn print_configuration(configuration: &CliConfiguration) {
         configuration.use_configuration_file
     );
     println!("use debug        : {}", configuration.use_debug);
+    println!("use staging      : {}", configuration.use_staging);
     println!("rules languages  : {}", languages_string.join(","));
     println!("max file size    : {} kb", configuration.max_file_size_kb);
 }
@@ -113,6 +114,7 @@ fn main() -> Result<()> {
         "performance-statistics",
         "enable performance statistics",
     );
+    opts.optflag("s", "staging", "use staging");
     opts.optflag(
         "g",
         "add-git-info",
@@ -143,6 +145,7 @@ fn main() -> Result<()> {
     }
 
     let should_verify_checksum = !matches.opt_present("b");
+    let use_staging = matches.opt_present("s");
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
 
@@ -198,7 +201,7 @@ fn main() -> Result<()> {
             exit(1);
         }
 
-        let rules_from_api = get_rules_from_rulesets(&conf.rulesets);
+        let rules_from_api = get_rules_from_rulesets(&conf.rulesets, use_staging);
         rules.extend(rules_from_api.context("error when reading rules from API")?);
 
         // copy the ignore paths from the configuration file
@@ -261,6 +264,7 @@ fn main() -> Result<()> {
         rules,
         output_file,
         max_file_size_kb,
+        use_staging,
     };
 
     print_configuration(&configuration);
