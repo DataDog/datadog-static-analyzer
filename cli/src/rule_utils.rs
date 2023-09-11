@@ -2,6 +2,7 @@ use anyhow::Result;
 use kernel::model::common::Language;
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
+use std::collections::HashSet;
 use std::{fs::File, io::BufReader};
 
 pub fn get_rulesets_from_file(file_path: &str) -> Result<Vec<RuleSet>> {
@@ -15,9 +16,8 @@ pub fn get_rulesets_from_reader<R: std::io::Read>(reader: R) -> Result<Vec<RuleS
 }
 
 pub fn get_languages_for_rules(rules: &[Rule]) -> Vec<Language> {
-    let mut all_languages: Vec<Language> = rules.iter().map(|r| r.language).collect();
-    all_languages.dedup();
-    all_languages
+    let languages_set: HashSet<Language> = HashSet::from_iter(rules.iter().map(|r| r.language));
+    Vec::from_iter(languages_set.iter().cloned())
 }
 
 #[cfg(test)]
