@@ -86,15 +86,18 @@ pub fn get_query_nodes(
                     .push(node.clone());
             }
         }
-        match_nodes.push(MatchNode {
-            captures: captures.clone(),
-            captures_list: captures_list.clone(),
-            context: MatchNodeContext {
-                code: Some(code.to_string()),
-                filename: filename.to_string(),
-                variables: variables.clone(),
-            },
-        });
+
+        if !captures.is_empty() {
+            match_nodes.push(MatchNode {
+                captures: captures.clone(),
+                captures_list: captures_list.clone(),
+                context: MatchNodeContext {
+                    code: Some(code.to_string()),
+                    filename: filename.to_string(),
+                    variables: variables.clone(),
+                },
+            });
+        }
     }
     match_nodes
 }

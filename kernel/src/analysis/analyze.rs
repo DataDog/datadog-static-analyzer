@@ -370,6 +370,56 @@ for(var i = 0; i <= 10; i--){}
         );
     }
 
+    // do not execute the visit function when there is no match
+    #[test]
+    fn test_no_unecessary_execute() {
+        let rule_code1 = r#"
+function visit(node, filename, code) {
+
+    console.log("bla");
+}
+        "#;
+
+        let tree_sitter_query = r#"
+
+    (for_statement) @for_statement
+    (#eq? @for_statement "bla")
+
+        "#;
+
+        let python_code = r#"
+def foo():
+  print("bar")
+        "#;
+
+        let rule1 = RuleInternal {
+            name: "myrule".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code1.to_string(),
+            tree_sitter_query: Some(tree_sitter_query.to_string()),
+            variables: HashMap::new(),
+        };
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+        };
+        let results = analyze(
+            &Language::Python,
+            vec![rule1],
+            "myfile.py",
+            python_code,
+            &analysis_options,
+        );
+        assert_eq!(1, results.len());
+        let result1 = results.get(0).unwrap();
+        assert!(result1.output.as_ref().is_none());
+    }
+
     // test showing violation ignore
     #[test]
     fn test_violation_ignore() {
