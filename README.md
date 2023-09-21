@@ -57,11 +57,9 @@ xattr -dr com.apple.quarantine datadog-static-analyzer
 
 ## Configuration
 
-For the tool to work, the following variables must be configured:
+Set the following variables to configure an analysis:
 
- - `DD_APP_KEY`: the application key from Datadog
- - `DD_API_KEY`: the API key from Datadog
- - `DD_SITE`: the Datadog site to use (see list [here](https://docs.datadoghq.com/getting_started/site/))
+ - `DD_SITE`: the Datadog site parameter used to fetch rules ([view list](https://docs.datadoghq.com/getting_started/site/)) (default: `datadoghq.com`)
 
 ## Configuration file
 
