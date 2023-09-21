@@ -9,14 +9,19 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
     let mut lines_to_ignore = vec![];
     let mut line_number = 1u32;
     let disabling_patterns = match language {
-        Language::Python | Language::Dockerfile => {
-            vec!["#no-dd-sa"]
+        Language::Python | Language::Dockerfile | Language::Terraform => {
+            vec!["#no-dd-sa", "datadog-disable"]
         }
         Language::JavaScript | Language::TypeScript => {
-            vec!["//no-dd-sa", "/*no-dd-sa*/"]
+            vec![
+                "//no-dd-sa",
+                "/*no-dd-sa*/",
+                "//datadog-disable",
+                "/*datadog-disable*/",
+            ]
         }
         Language::Go | Language::Rust | Language::Csharp | Language::Java => {
-            vec!["//no-dd-sa", "//no:dd-sa"]
+            vec!["//no-dd-sa", "//no:dd-sa", "//datadog-disable"]
         }
         Language::Json => {
             vec!["impossiblestringtoreach"]

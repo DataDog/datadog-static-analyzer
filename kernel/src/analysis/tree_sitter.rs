@@ -15,6 +15,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_python() -> tree_sitter::Language;
         fn tree_sitter_rust() -> tree_sitter::Language;
         fn tree_sitter_tsx() -> tree_sitter::Language;
+        fn tree_sitter_hcl() -> tree_sitter::Language;
         // fn tree_sitter_yaml() -> tree_sitter::Language;
 
     }
@@ -28,6 +29,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Json => unsafe { tree_sitter_json() },
         Language::Python => unsafe { tree_sitter_python() },
         Language::Rust => unsafe { tree_sitter_rust() },
+        Language::Terraform => unsafe { tree_sitter_hcl() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
         // Language::Yaml => unsafe { tree_sitter_yaml() },
     }
