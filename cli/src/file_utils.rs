@@ -12,6 +12,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Dockerfile, &["docker", "dockerfile"]),
     (Language::Python, &["py", "py3"]),
     (Language::Rust, &["rs"]),
+    (Language::Terraform, &["tf"]),
     (Language::TypeScript, &["ts", "tsx"]),
 ];
 

@@ -38,6 +38,8 @@ pub enum Language {
     Python,
     #[serde(rename = "RUST")]
     Rust,
+    #[serde(rename = "TERRAFORM")]
+    Terraform,
     #[serde(rename = "TYPESCRIPT")]
     TypeScript,
     // #[serde(rename = "YAML")]
@@ -55,6 +57,7 @@ pub static ALL_LANGUAGES: &[Language] = &[
     Language::Python,
     Language::Rust,
     Language::TypeScript,
+    Language::Terraform,
 ];
 
 impl fmt::Display for Language {
@@ -68,6 +71,7 @@ impl fmt::Display for Language {
             Self::Json => "json",
             Self::Python => "python",
             Self::Rust => "rust",
+            Self::Terraform => "terraform",
             Self::TypeScript => "typescript",
             // Self::Yaml => "yaml",
         };
