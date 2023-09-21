@@ -21,7 +21,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
             ]
         }
         Language::Go | Language::Rust | Language::Csharp | Language::Java => {
-            vec!["//no-dd-sa", "//no:dd-sa", "//datadog-disable"]
+            vec!["//no-dd-sa", "//datadog-disable"]
         }
         Language::Json => {
             vec!["impossiblestringtoreach"]
