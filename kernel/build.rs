@@ -58,7 +58,7 @@ fn main() {
         },
         TreeSitterProject {
             name: "tree-sitter-hcl".to_string(),
-            repository: "git@github.com:MichaHoffmann/tree-sitter-hcl.git".to_string(),
+            repository: "https://github.com/MichaHoffmann/tree-sitter-hcl.git".to_string(),
             build_dir: ["tree-sitter-hcl", "src"].iter().collect(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
         },
