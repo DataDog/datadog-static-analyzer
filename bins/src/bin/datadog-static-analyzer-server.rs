@@ -146,6 +146,7 @@ fn rocket_main() -> _ {
         "/path/to/directory",
     );
     opts.optopt("p", "port", "port to run the server on", "8000");
+    opts.optopt("a", "address", "address to listen on", "127.0.0.1");
     opts.optopt(
         "k",
         "keep-alive-timeout",
@@ -188,6 +189,13 @@ fn rocket_main() -> _ {
                 exit(1)
             }
             rocket_configuration.port = port_res.unwrap();
+        }
+    }
+
+    if matches.opt_present("a") {
+        let addr_opt = matches.opt_str("a");
+        if let Some(addr) = addr_opt {
+            rocket_configuration.address = addr.parse().expect("should be able to parse addr");
         }
     }
 
