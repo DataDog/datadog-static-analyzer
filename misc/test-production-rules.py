@@ -4,10 +4,13 @@ import base64
 import json
 import optparse
 import os.path
+import random
 import shlex
 import shutil
+import signal
 import subprocess
 import tempfile
+import time
 
 import requests
 import sys
@@ -64,14 +67,63 @@ def fetch_ruleset(ruleset_name: str):
     return response.json()
 
 
-def start_server():
-    pass
+def ping_server(port):
+    try:
+        r = requests.get(f"http://localhost:{port}/version")
+        if r.status_code != 200:
+            return False
+        return True
+    except requests.exceptions.ConnectionError:
+        return False
 
-def stop_server():
-    pass
+def start_server(port):
+    pid = os.spawnl(os.P_NOWAIT, options.serverbin, options.serverbin, "-p", str(port))
+    while True:
+        if ping_server(port):
+            break
+        time.sleep(1.0)
+        print(f"waiting for server to start on port {port}")
+    return pid
 
-def test_ruleset_server(ruleset):
-    pass
+def stop_server(server_pid):
+    os.kill(server_pid, signal.SIGKILL)
+
+def test_ruleset_server(ruleset, port):
+    print(f"Testing ruleset {ruleset['data']['id']} on the server")
+    rules = ruleset['data']['attributes']['rules']
+
+    for rule in rules:
+        print(f"   Testing rule {rule['name']}")
+
+        # for each test of the rule
+        for test in rule['tests']:
+            test_code = test['code']
+            test_file = test['filename']
+            test_annotations_count = int(test['annotation_count'])
+
+            payload = {
+                "code": test_code,
+                "file_encoding": "utf-8",
+                "filename": test_file,
+                "language": rule['language'],
+                "rules": [transform_rule(rule)]
+            }
+
+            req = requests.post(f"http://localhost:{port}/analyze", json=payload)
+
+            response = req.json()
+
+            test_results = response['rule_responses']
+            if len(test_results) == 0:
+                results_annotations_count = 0
+            else:
+                results_annotations_count = len(test_results[0]['violations'])
+
+            if results_annotations_count != test_annotations_count:
+                print(f"number of annotations mistmatch for rule {rule['name']}")
+                print(f"Expected number of annotations: {test_annotations_count}")
+                print(f"Got number of annotations: {results_annotations_count}")
+                sys.exit(1)
 
 
 def transform_rule(rule):
@@ -80,11 +132,13 @@ def transform_rule(rule):
     to the analyzer
     """
     return {
+        "id": rule['name'],
         "name": rule['name'],
         "description": rule['description'],
         "category": rule['category'],
         "severity": rule['severity'],
         "rule_type": rule['type'],
+        "type": rule['type'],
         "language": rule['language'],
         "tests": [],
         "tree_sitter_query": rule['tree_sitter_query'],
@@ -105,7 +159,7 @@ def test_ruleset_cli(ruleset):
     :param ruleset:
     :return:
     """
-    print(f"Testing ruleset {ruleset['data']['id']}")
+    print(f"Testing ruleset {ruleset['data']['id']} on the CLI")
     rules = ruleset['data']['attributes']['rules']
 
     # Temporary directory to test, we will remove at the end
@@ -174,9 +228,27 @@ if ruleset is None:
     print("ruleset not found")
     sys.exit(1)
 
+
+# First, get all the tests running on the CLI
 test_ruleset_cli(ruleset)
-# start_server()
-# test_ruleset_server(ruleset)
-# stop_server()
+
+# Then, get all the tests running on the server
+# Get a post to run the server
+port = random.randint(4000, 9000)
+print(f"testing server on port {port}")
+
+# Start the server
+server_pid = start_server(port)
+
+# Execute all tests
+test_ruleset_server(ruleset, port)
+
+
+# The server should still be running and respond to ping requests
+if not ping_server(port):
+    print("server not active after testing")
+    sys.exit(1)
+
+stop_server(server_pid)
 
 sys.exit(0)
