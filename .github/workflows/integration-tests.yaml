@@ -21,6 +21,6 @@ jobs:
       - name: Test all production rules
         run: |
           cargo build -r && \
-          apt-get python3-requests && \
+          apt-get install python3-requests && \
           python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-best-practices && \
           python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-security
