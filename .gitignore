@@ -21,3 +21,5 @@ kernel/tree-sitter-*/
 
 # IntelliJ
 .idea
+
+venv
