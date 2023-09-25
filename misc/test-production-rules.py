@@ -150,7 +150,11 @@ def test_ruleset_cli(ruleset):
             with open(test_results_file) as results_file:
                 results = results_file.read()
                 test_results = json.loads(results)
-                results_annotations_count = len(test_results[0]['violations'])
+                if len(test_results) == 0:
+                    results_annotations_count = 0
+                else:
+                    results_annotations_count = len(test_results[0]['violations'])
+
                 if results_annotations_count != test_annotations_count:
                     print(f"number of annotations mistmatch for rule {rule['name']}")
                     print(f"Expected number of annotations: {test_annotations_count}")
