@@ -6,6 +6,8 @@
 # 3. Check that we get the SHA of the commit and the category in the output SARIF file.
 
 cargo build -r
+
+## First, test a repository
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}"
