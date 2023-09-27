@@ -26,34 +26,10 @@ jobs:
         run: |
           cargo build -r && \
           sudo apt-get install python3-requests && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-best-practices && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-code-style && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-design && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-django && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-flask && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-inclusive && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-pandas && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r python-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r tsx-react && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-aws && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-best-practices && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-browser-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-code-style && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-common-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-express && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-inclusive && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r typescript-node-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-aws && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-best-practices && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-browser-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-code-style && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-common-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-express && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-inclusive && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r javascript-node-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r jsx-react && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r java-best-practices && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r java-code-style && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r java-security && \
-          python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r docker-best-practices 
+          for ruleset in \
+            python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
+            tsx-react typescript-aws typescript-best-practices typescript-browser-security typescript-code-style typescript-common-security typescript-express typescript-inclusive typescript-node-security \
+            jsx-react javascript-aws javascript-best-practices javascript-browser-security javascript-code-style javascript-common-security javascript-express javascript-inclusive javascript-node-security \
+            java-best-practices java-code-style java-security docker-best-practices ; do \
+            python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r $ruleset ; \
+          done
