@@ -78,7 +78,7 @@ fn get_revision() -> String {
     VERSION.to_string()
 }
 
-#[rocket::get("/static/<name>", format = "text/html")]
+#[rocket::get("/static/<name>")]
 async fn serve_static(
     server_configuration: &State<ServerConfiguration>,
     name: &str,
