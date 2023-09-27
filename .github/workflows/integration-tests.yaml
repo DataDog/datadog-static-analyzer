@@ -1,8 +1,8 @@
 on:
   push:
   schedule:
-    # run every day at 10am UTC (5am EST)
-    - cron:  '0 11 * * *'
+    # run every day at 9am UTC
+    - cron:  '0 9 * * *'
 name: Run Integration tests
 jobs:
   integration_tests:
