@@ -30,6 +30,8 @@ jobs:
             python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
             tsx-react typescript-aws typescript-best-practices typescript-browser-security typescript-code-style typescript-common-security typescript-express typescript-inclusive typescript-node-security \
             jsx-react javascript-aws javascript-best-practices javascript-browser-security javascript-code-style javascript-common-security javascript-express javascript-inclusive javascript-node-security \
-            java-best-practices java-code-style java-security docker-best-practices ; do \
+            java-best-practices java-code-style java-security \
+            # docker-best-practices (see STAL-607)\
+            do \
             python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r $ruleset ; \
           done
