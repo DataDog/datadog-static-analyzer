@@ -3,6 +3,9 @@ use crate::model::common::{Language, Position};
 use anyhow::Result;
 use std::collections::HashMap;
 use tree_sitter::QueryCursor;
+
+// Swift is implemented differently. While most languages are integrated from sources,
+// the sources from the swift tree-sitter syntax do not compile and the rust package works.
 use tree_sitter_swift::language as swift_language;
 
 fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
