@@ -34,10 +34,14 @@ pub enum Language {
     JavaScript,
     #[serde(rename = "JSON")]
     Json,
+    #[serde(rename = "KOTLIN")]
+    Kotlin,
     #[serde(rename = "PYTHON")]
     Python,
     #[serde(rename = "RUST")]
     Rust,
+    #[serde(rename = "SWIFT")]
+    Swift,
     #[serde(rename = "TERRAFORM")]
     Terraform,
     #[serde(rename = "TYPESCRIPT")]
@@ -54,8 +58,10 @@ pub static ALL_LANGUAGES: &[Language] = &[
     Language::Java,
     Language::JavaScript,
     Language::Json,
+    Language::Kotlin,
     Language::Python,
     Language::Rust,
+    Language::Swift,
     Language::TypeScript,
     Language::Terraform,
 ];
@@ -69,8 +75,10 @@ impl fmt::Display for Language {
             Self::Java => "java",
             Self::JavaScript => "javascript",
             Self::Json => "json",
+            Self::Kotlin => "kotlin",
             Self::Python => "python",
             Self::Rust => "rust",
+            Self::Swift => "swift",
             Self::Terraform => "terraform",
             Self::TypeScript => "typescript",
             // Self::Yaml => "yaml",
