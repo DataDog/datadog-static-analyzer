@@ -20,7 +20,12 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
                 "/*datadog-disable*/",
             ]
         }
-        Language::Go | Language::Rust | Language::Csharp | Language::Java => {
+        Language::Go
+        | Language::Rust
+        | Language::Csharp
+        | Language::Java
+        | Language::Kotlin
+        | Language::Swift => {
             vec!["//no-dd-sa", "//datadog-disable"]
         }
         Language::Json => {

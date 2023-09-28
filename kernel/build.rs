@@ -63,6 +63,12 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
         },
         TreeSitterProject {
+            name: "tree-sitter-kotlin".to_string(),
+            repository: "https://github.com/fwcd/tree-sitter-kotlin.git".to_string(),
+            build_dir: ["tree-sitter-kotlin", "src"].iter().collect(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+        },
+        TreeSitterProject {
             name: "tree-sitter-java".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-java.git".to_string(),
             build_dir: ["tree-sitter-java", "src"].iter().collect(),

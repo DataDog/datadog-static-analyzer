@@ -10,9 +10,11 @@ use walkdir::WalkDir;
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::JavaScript, &["js", "jsx"]),
     (Language::Java, &["java"]),
+    (Language::Kotlin, &["kt", "kts"]),
     (Language::Dockerfile, &["docker", "dockerfile"]),
     (Language::Python, &["py", "py3"]),
     (Language::Rust, &["rs"]),
+    (Language::Swift, &["swift"]),
     (Language::Terraform, &["tf"]),
     (Language::TypeScript, &["ts", "tsx"]),
 ];

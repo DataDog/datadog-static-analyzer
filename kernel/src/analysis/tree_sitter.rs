@@ -3,6 +3,7 @@ use crate::model::common::{Language, Position};
 use anyhow::Result;
 use std::collections::HashMap;
 use tree_sitter::QueryCursor;
+use tree_sitter_swift::language as swift_language;
 
 fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
@@ -12,6 +13,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_java() -> tree_sitter::Language;
         fn tree_sitter_javascript() -> tree_sitter::Language;
         fn tree_sitter_json() -> tree_sitter::Language;
+        fn tree_sitter_kotlin() -> tree_sitter::Language;
         fn tree_sitter_python() -> tree_sitter::Language;
         fn tree_sitter_rust() -> tree_sitter::Language;
         fn tree_sitter_tsx() -> tree_sitter::Language;
@@ -26,9 +28,11 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Go => unsafe { tree_sitter_go() },
         Language::Java => unsafe { tree_sitter_java() },
         Language::JavaScript => unsafe { tree_sitter_javascript() },
+        Language::Kotlin => unsafe { tree_sitter_kotlin() },
         Language::Json => unsafe { tree_sitter_json() },
         Language::Python => unsafe { tree_sitter_python() },
         Language::Rust => unsafe { tree_sitter_rust() },
+        Language::Swift => swift_language(),
         Language::Terraform => unsafe { tree_sitter_hcl() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
         // Language::Yaml => unsafe { tree_sitter_yaml() },
@@ -289,6 +293,31 @@ fn foo(bar: String) -> String {
 }
 "#;
         let t = get_tree(source_code, &Language::Rust);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_kotlin_get_tree() {
+        let source_code = r#"
+fun main() {
+    println("What's your name?")
+    val name = readln()
+    println("Hello, $name!")
+}
+"#;
+        let t = get_tree(source_code, &Language::Kotlin);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_swift_get_tree() {
+        let source_code = r#"
+print("Hello, world!")
+}
+"#;
+        let t = get_tree(source_code, &Language::Swift);
         assert!(t.is_some());
         assert_eq!("source_file", t.unwrap().root_node().kind());
     }
