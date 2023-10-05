@@ -190,7 +190,7 @@ pub fn execute_rule_internal(
     filename: String,
     analysis_options: &AnalysisOptions,
 ) -> RuleResult {
-    let nodes_json: String = serde_json::to_string(match_nodes).unwrap();
+    let nodes_json: String = serde_json::to_string(match_nodes).expect("Error serializing nodes");
 
     // format the JavaScript code that will be executed
     let js_code = format!(

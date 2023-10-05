@@ -78,7 +78,7 @@ pub fn get_query_nodes(
     for query_match in query_result {
         let mut captures: HashMap<String, TreeSitterNode> = HashMap::new();
         let mut captures_list: HashMap<String, Vec<TreeSitterNode>> = HashMap::new();
-        for capture in query_match.captures.iter() {
+        for capture in query_match.captures {
             let capture_name_opt = query
                 .capture_names()
                 .get(usize::try_from(capture.index).unwrap());

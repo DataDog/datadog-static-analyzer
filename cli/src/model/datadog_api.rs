@@ -66,7 +66,7 @@ impl ApiResponseRuleset {
                     severity: rule_from_api.severity,
                     pattern: rule_from_api.pattern,
                     tree_sitter_query_base64: rule_from_api.tree_sitter_query,
-                    variables: rule_from_api.variables.unwrap_or(HashMap::new()),
+                    variables: rule_from_api.variables.unwrap_or_default(),
                     tests: rule_from_api
                         .tests
                         .into_iter()
