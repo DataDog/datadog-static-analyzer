@@ -1,3 +1,4 @@
+use cli::model::config_file::ConfigFile;
 use getopts::Options;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use lazy_static::lazy_static;
@@ -5,7 +6,7 @@ use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
 use rocket::http::Header;
 use rocket::serde::json::{json, Json, Value};
-use rocket::{Request as RocketRequest, Response, State};
+use rocket::{response, Request as RocketRequest, Response, State};
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
@@ -76,6 +77,13 @@ fn get_version() -> String {
 #[rocket::get("/revision", format = "text/plain")]
 fn get_revision() -> String {
     VERSION.to_string()
+}
+
+#[rocket::post("/config", data = "<request>")]
+fn config_to_json(request: String) -> Result<Value, response::status::BadRequest<String>> {
+    serde_yaml::from_str::<ConfigFile>(&request)
+        .map(|config| json!(config))
+        .map_err(|e| response::status::BadRequest(Some(e.to_string())))
 }
 
 #[rocket::get("/static/<name>")]
@@ -240,4 +248,5 @@ fn rocket_main() -> _ {
         .mount("/", rocket::routes![get_options])
         .mount("/", rocket::routes![serve_static])
         .mount("/", rocket::routes![languages])
+        .mount("/", rocket::routes![config_to_json])
 }

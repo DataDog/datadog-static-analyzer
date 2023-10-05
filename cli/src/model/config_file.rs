@@ -9,9 +9,15 @@ pub struct ConfigFile {
     pub rulesets: Vec<String>,
     #[serde(rename(serialize = "ignore-paths", deserialize = "ignore-paths"))]
     pub ignore_paths: Option<Vec<String>>,
-    #[serde(rename(serialize = "ignore-gitignore", deserialize = "ignore-gitignore"))]
+    #[serde(
+        rename(serialize = "ignore-gitignore", deserialize = "ignore-gitignore",),
+        skip_serializing_if = "Option::is_none"
+    )]
     pub ignore_gitignore: Option<bool>,
-    #[serde(rename(serialize = "max-file-size-kb", deserialize = "max-file-size-kb"))]
+    #[serde(
+        rename(serialize = "max-file-size-kb", deserialize = "max-file-size-kb"),
+        skip_serializing_if = "Option::is_none"
+    )]
     pub max_file_size_kb: Option<u64>,
 }
 
