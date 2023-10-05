@@ -1,0 +1,12 @@
+[tasks.server]
+workspace = false
+command = "cargo"
+watch = { watch = ["./bins", "./kernel", "./cli", "./server", "Cargo.toml"] }
+args = ["run", "--bin", "datadog-static-analyzer-server"]
+
+[tasks.format]
+clear = true
+workspace = false
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]

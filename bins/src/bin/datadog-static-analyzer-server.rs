@@ -79,8 +79,8 @@ fn get_revision() -> String {
     VERSION.to_string()
 }
 
-#[rocket::post("/config", data = "<request>")]
-fn config_to_json(request: String) -> Result<Value, response::status::BadRequest<String>> {
+#[rocket::post("/parse-yaml", data = "<request>")]
+fn parse_yaml(request: String) -> Result<Value, response::status::BadRequest<String>> {
     serde_yaml::from_str::<ConfigFile>(&request)
         .map(|config| json!(config))
         .map_err(|e| response::status::BadRequest(Some(e.to_string())))
@@ -248,5 +248,5 @@ fn rocket_main() -> _ {
         .mount("/", rocket::routes![get_options])
         .mount("/", rocket::routes![serve_static])
         .mount("/", rocket::routes![languages])
-        .mount("/", rocket::routes![config_to_json])
+        .mount("/", rocket::routes![parse_yaml])
 }

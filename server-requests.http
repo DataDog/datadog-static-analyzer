@@ -13,8 +13,8 @@ GET {{host}}/revision HTTP/1.1
 ### languages 
 GET {{host}}/languages HTTP/1.1
 
-### config to json
-POST {{host}}/config HTTP/1.1
+### yaml to json
+POST {{host}}/parse-yaml HTTP/1.1
 
 rulesets:
   - 'python-best-practices'

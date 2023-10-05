@@ -95,6 +95,15 @@ Export rulesets from the API into a file
 cargo run --bin datadog-export-rulesets -- -r <ruleset> -o <file-to-export>
 ```
 
+### Cargo Make
+
+We're using [Cargo Make](https://sagiegurari.github.io/cargo-make/) to manage some recurrent tasks.
+
+
+### REST Client
+
+If you're using [VS Code](https://code.visualstudio.com/), you can install the [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) extension and use the `server-request.http` file to easily test the `Static Analyzer Server`.
+
 ## Contribute
 
 See file [CONTRIBUTING.md](CONTRIBUTING.md) for more information as well as [DEVELOPMENT.md](DEVELOPMENT.md)
