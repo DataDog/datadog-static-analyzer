@@ -97,7 +97,7 @@ cargo run --bin datadog-export-rulesets -- -r <ruleset> -o <file-to-export>
 
 ### Cargo Make
 
-We're using [Cargo Make](https://sagiegurari.github.io/cargo-make/) to manage some recurrent tasks.
+We're using [Cargo Make](https://sagiegurari.github.io/cargo-make/) to manage some recurring tasks.
 
 
 ### REST Client
