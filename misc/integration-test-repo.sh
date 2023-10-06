@@ -12,7 +12,7 @@ echo "Checking rosie tests"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}"
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x -g
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x -g
 if [ $? -ne 0 ]; then
   echo "fail to analyze rosie-tests"
   exit 1
@@ -63,7 +63,7 @@ echo " - javascript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - typescript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - javascript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze juice-shop"
@@ -82,7 +82,7 @@ echo " - python-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-django" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze django repository"
