@@ -24,8 +24,8 @@ jobs:
         run: ./misc/integration-test-repo.sh
       - name: Test all production rules
         run: |
-          cargo build -r && \
-          sudo apt-get install python3-requests && \
+          cargo build && \
+          sudo apt-get install python3-requests gdb && \
           for ruleset in \
             python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
             tsx-react typescript-aws typescript-best-practices typescript-browser-security typescript-code-style typescript-common-security typescript-express typescript-inclusive typescript-node-security \
@@ -33,5 +33,6 @@ jobs:
             java-best-practices java-code-style java-security \
             # docker-best-practices (see STAL-607)\
             do \
-            python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -r $ruleset ; \
+            python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -d true -r $ruleset ; \
+            python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
           done
