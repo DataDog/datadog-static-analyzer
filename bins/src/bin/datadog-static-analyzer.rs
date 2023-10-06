@@ -52,6 +52,8 @@ fn print_configuration(configuration: &CliConfiguration) {
 
     println!("Configuration");
     println!("=============");
+    println!("version          : {}", CARGO_VERSION);
+    println!("revision         : {}", VERSION);
     println!("config method    : {}", configuration_method);
     println!("cores available  : {}", num_cpus::get());
     println!("cores used       : {}", configuration.num_cpus);
