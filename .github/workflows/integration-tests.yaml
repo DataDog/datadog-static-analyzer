@@ -5,54 +5,46 @@ on:
     - cron:  '0 9 * * *'
 name: Run Integration tests
 jobs:
-  integration_test_git:
+  build_analyzer:
     runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ secrets.DD_SITE }}
     steps:
       - uses: actions/checkout@v1
       - name: Install Stable + Rustfmt + Clippy
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: stable
-            components: clippy
-            override: true
-            default: true
+          toolchain: stable
+          components: clippy
+          override: true
+          default: true
+      - name: Build the analyzer
+        run: cargo build -r
+  integration_test_git:
+    runs-on: ubuntu-latest
+    needs: [build_analyzer]
+    env:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: ${{ secrets.DD_SITE }}
+    steps:
       - name: Run Integration tests that the analyzer works with representative codebases
         run: ./misc/integration-test-git.sh
   integration_test_python:
     runs-on: ubuntu-latest
+    needs: [build_analyzer]
     env:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: ${{ secrets.DD_SITE }}
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
       - name: Run Integration tests that the analyzer works with representative codebases
         run: ./misc/integration-test-python.sh
   integration_test_jsts:
     runs-on: ubuntu-latest
+    needs: [build_analyzer]
     env:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: ${{ secrets.DD_SITE }}
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
       - name: Run Integration tests that the analyzer works with representative codebases
         run: ./misc/integration-test-js-ts.sh
