@@ -49,7 +49,20 @@ echo "Checking juice shop"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone https://github.com/juice-shop/juice-shop.git "${REPO_DIR}"
-echo "rulesets:\n - javascript-best-practices\n - typescript-best-practices\n - javascript-common-security\n - typescript-common-security\n - javascript-inclusive\n - typescript-inclusive\n - javascript-code-style\n - jsx-react\n - tsx-react\n - typescript-node-security\n - javascript-node-security" > "${REPO_DIR}/static-analysis.datadog.yml"
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-common-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-common-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-code-style" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - jsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - tsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
+
 ./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x
 
 if [ $? -ne 0 ]; then
@@ -62,7 +75,13 @@ echo "Checking django repository"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone https://github.com/gothinkster/django-realworld-example-app.git "${REPO_DIR}"
-echo "rulesets:\n - python-security\n - python-best-practices\n - python-django\n - python-inclusive\n" > "${REPO_DIR}/static-analysis.datadog.yml"
+
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-django" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
+
 ./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x
 
 if [ $? -ne 0 ]; then
