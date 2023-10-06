@@ -39,6 +39,23 @@ jobs:
           default: true
       - name: Run Integration Test for Python
         run: ./misc/integration-test-python.sh
+  integration_test_docker:
+    runs-on: ubuntu-latest
+    env:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: ${{ secrets.DD_SITE }}
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install Stable + Rustfmt + Clippy
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+          override: true
+          default: true
+      - name: Run Integration Test for Docker
+        run: ./misc/integration-test-docker.sh
   integration_test_jsts:
     runs-on: ubuntu-latest
     env:
