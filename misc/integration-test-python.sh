@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cargo build -r
+
 ## A Python repository
 echo "Checking django repository"
 REPO_DIR=$(mktemp -d)

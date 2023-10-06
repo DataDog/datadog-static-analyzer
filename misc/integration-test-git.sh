@@ -5,6 +5,8 @@
 # 2. Run the latest version of the analyzer on it
 # 3. Check that we get the SHA of the commit and the category in the output SARIF file.
 
+cargo build -r
+
 ## First, test a repository to check that the commit that indicates the repo information for a violation
 echo "Checking rosie tests"
 REPO_DIR=$(mktemp -d)

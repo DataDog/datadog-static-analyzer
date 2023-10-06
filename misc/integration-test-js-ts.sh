@@ -1,5 +1,7 @@
 #!/bin/bash
 
+cargo build -r
+
 echo "Checking juice shop"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
