@@ -23,7 +23,7 @@ jobs:
       - name: Test all production rules
         run: |
           cargo build && \
-          sudo apt-get install python3-requests gdb && \
+          sudo apt-get install python3-requests && \
           for ruleset in \
             python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
             tsx-react typescript-aws typescript-best-practices typescript-browser-security typescript-code-style typescript-common-security typescript-express typescript-inclusive typescript-node-security \
