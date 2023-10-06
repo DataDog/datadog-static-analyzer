@@ -25,13 +25,8 @@ parser.add_option(
 parser.add_option(
     "-s", "--server-bin", dest="serverbin", help="path to server binary",
 )
-parser.add_option(
-    "-d", "--debug", dest="debug", help="use debug (true/false)",
-)
 
 (options, args) = parser.parse_args()
-
-use_debug = False
 
 if not options.ruleset:
     print("please specify a rule to test with option -r ")
@@ -44,9 +39,6 @@ if not options.clibin:
 if not options.serverbin:
     print("please specify cli binary with option -s")
     sys.exit(1)
-
-if options.debug and options.debug == "true":
-    use_debug = True
 
 if not os.path.isfile(options.clibin):
     print(f"file {options.clibin} does not exists")
@@ -206,10 +198,6 @@ def test_ruleset_cli(ruleset):
 
             # Invoke the tool, do not print anything
             cmd = f"{options.clibin} -r {test_rules_file} -i {ruledir} -o {test_results_file} -f json"
-            if use_debug:
-                # rust-gdb -ex run --args ./target/release/datadog-static-analyzer -i /home/ubuntu/cloud-tf-ci/ -o plop.json -f sarif
-                cmd = f"{os.environ['HOME']}/.cargo/bin/rust-gdb -ex run --args {options.clibin} -r {test_rules_file} -i {ruledir} -o {test_results_file} -f json"
-
             subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             # check that the number of violations match the number of expected annotations

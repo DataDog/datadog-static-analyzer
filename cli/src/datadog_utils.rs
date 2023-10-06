@@ -1,6 +1,6 @@
 use std::env;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
 
@@ -68,12 +68,22 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         _ => request_builder,
     };
 
-    Ok(request_builder_with_auth
+    let server_response = request_builder_with_auth
         .send()
-        .context("error querying rulesets")?
-        .json::<ApiResponse>()
-        .context("error when parsing the server response")?
-        .into_ruleset())
+        .expect("error when querying the datadog server");
+
+    let response_text = &server_response.text();
+    let api_response =
+        serde_json::from_str::<ApiResponse>(response_text.as_ref().unwrap().as_str());
+
+    match api_response {
+        Ok(d) => Ok(d.clone().into_ruleset()),
+        Err(e) => {
+            eprintln!("Error when parsing the ruleset {} {:?}", ruleset_name, e);
+            eprintln!("{}", response_text.as_ref().unwrap().as_str());
+            Err(anyhow!("error {:?}", e))
+        }
+    }
 }
 
 #[cfg(test)]

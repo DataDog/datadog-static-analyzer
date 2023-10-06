@@ -7,11 +7,16 @@
 
 cargo build -r
 
-## First, test a repository
+## First, test a repository to check that the commit that indicates the repo information for a violation
+echo "Checking rosie tests"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}"
 ./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x -g
+if [ $? -ne 0 ]; then
+  echo "fail to analyze rosie-tests"
+  exit 1
+fi
 
 # Getting the category of the fist violation detected (all violations in this report are security)
 CATEGORY=$(jq '.runs[0].results[0].properties.tags[0]' "${REPO_DIR}/results.json")
@@ -35,6 +40,33 @@ fi
 
 if [ "${SECOND_SHA}" != "\"8c5080ff058d5d34961b9941ef498fc238be1caf\"" ]; then
   echo "invalid second SHA ${SECOND_SHA}"
+  exit 1
+fi
+
+
+## Then, test a repository that runs static analysis on the juice-shop repository
+echo "Checking juice shop"
+REPO_DIR=$(mktemp -d)
+export REPO_DIR
+git clone https://github.com/juice-shop/juice-shop.git "${REPO_DIR}"
+echo "rulesets:\n - javascript-best-practices\n - typescript-best-practices\n - javascript-common-security\n - typescript-common-security\n - javascript-inclusive\n - typescript-inclusive\n - javascript-code-style\n - jsx-react\n - tsx-react\n - typescript-node-security\n - javascript-node-security" > "${REPO_DIR}/static-analysis.datadog.yml"
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x
+
+if [ $? -ne 0 ]; then
+  echo "fail to analyze juice-shop"
+  exit 1
+fi
+
+## A Python repository
+echo "Checking django repository"
+REPO_DIR=$(mktemp -d)
+export REPO_DIR
+git clone https://github.com/gothinkster/django-realworld-example-app.git "${REPO_DIR}"
+echo "rulesets:\n - python-security\n - python-best-practices\n - python-django\n - python-inclusive\n" > "${REPO_DIR}/static-analysis.datadog.yml"
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x
+
+if [ $? -ne 0 ]; then
+  echo "fail to analyze django repository"
   exit 1
 fi
 

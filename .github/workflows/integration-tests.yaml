@@ -33,6 +33,5 @@ jobs:
             java-best-practices java-code-style java-security \
             # docker-best-practices (see STAL-607)\
             do \
-            python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server  -d true -r $ruleset ; \
             python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
           done
