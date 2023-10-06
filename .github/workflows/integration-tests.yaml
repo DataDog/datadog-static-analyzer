@@ -20,7 +20,7 @@ jobs:
             components: clippy
             override: true
             default: true
-      - name: Run Integration tests that the analyzer works with representative codebases
+      - name: Run Integration Test for Git
         run: ./misc/integration-test-git.sh
   integration_test_python:
     runs-on: ubuntu-latest
@@ -37,7 +37,7 @@ jobs:
           components: clippy
           override: true
           default: true
-      - name: Run Integration tests that the analyzer works with representative codebases
+      - name: Run Integration Test for Python
         run: ./misc/integration-test-python.sh
   integration_test_jsts:
     runs-on: ubuntu-latest
@@ -54,5 +54,5 @@ jobs:
           components: clippy
           override: true
           default: true
-      - name: Run Integration tests that the analyzer works with representative codebases
+      - name: Run Integration Test for JavaScript/TypeScript
         run: ./misc/integration-test-js-ts.sh
