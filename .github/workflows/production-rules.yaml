@@ -22,7 +22,7 @@ jobs:
             default: true
       - name: Test all production rules
         run: |
-          cargo build && \
+          cargo build -r && \
           sudo apt-get install python3-requests && \
           for ruleset in \
             python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
