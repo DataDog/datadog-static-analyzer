@@ -171,9 +171,9 @@ fn match_prefix_filename(path: &Path, prefixes_list: &[String]) -> bool {
 
 // filter files to analyze for a language. It will filter the files based on the prefix or suffix.
 pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<PathBuf> {
-    let extensions = get_extensions_for_language(language).unwrap_or(vec![]);
-    let exact_matches = get_exact_filename_for_language(language).unwrap_or(vec![]);
-    let prefixes = get_prefix_for_language(language).unwrap_or(vec![]);
+    let extensions = get_extensions_for_language(language).unwrap_or_default();
+    let exact_matches = get_exact_filename_for_language(language).unwrap_or_default();
+    let prefixes = get_prefix_for_language(language).unwrap_or_default();
 
     if extensions.is_empty() && exact_matches.is_empty() && prefixes.is_empty() {
         return vec![];
