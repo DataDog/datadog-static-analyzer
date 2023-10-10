@@ -46,8 +46,8 @@ pub enum Language {
     Terraform,
     #[serde(rename = "TYPESCRIPT")]
     TypeScript,
-    // #[serde(rename = "YAML")]
-    // Yaml,
+    #[serde(rename = "YAML")]
+    Yaml,
 }
 
 #[allow(dead_code)]
@@ -64,6 +64,7 @@ pub static ALL_LANGUAGES: &[Language] = &[
     Language::Swift,
     Language::TypeScript,
     Language::Terraform,
+    Language::Yaml,
 ];
 
 impl fmt::Display for Language {
@@ -81,7 +82,7 @@ impl fmt::Display for Language {
             Self::Swift => "swift",
             Self::Terraform => "terraform",
             Self::TypeScript => "typescript",
-            // Self::Yaml => "yaml",
+            Self::Yaml => "yaml",
         };
         write!(f, "{s}")
     }

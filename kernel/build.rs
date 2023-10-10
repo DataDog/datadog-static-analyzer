@@ -104,6 +104,12 @@ fn main() {
             build_dir: ["tree-sitter-typescript", "tsx", "src"].iter().collect(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
         },
+        TreeSitterProject {
+            name: "tree-sitter-yaml".to_string(),
+            repository: "https://github.com/ikatyang/tree-sitter-yaml.git".to_string(),
+            build_dir: ["tree-sitter-yaml", "src"].iter().collect(),
+            files: vec!["parser.c".to_string(), "scanner.cc".to_string()],
+        },
     ];
 
     // for each project
