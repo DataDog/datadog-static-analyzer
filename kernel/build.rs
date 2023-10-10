@@ -31,12 +31,16 @@ fn main() {
             .map(|x| dir.join(x))
             .collect();
         let cpp = tree_sitter_project.cpp;
-        cc::Build::new()
-            .include(dir)
-            .files(files)
-            .warnings(false)
-            .cpp(cpp)
-            .compile(tree_sitter_project.name.as_str());
+        let mut cc_build = cc::Build::new();
+        let initial_build = cc_build.include(dir).files(files).warnings(false).cpp(cpp);
+
+        let build_with_flag = if tree_sitter_project.cpp {
+            initial_build.flag("-X c")
+        } else {
+            initial_build
+        };
+
+        build_with_flag.compile(tree_sitter_project.name.as_str());
     }
 
     let tree_sitter_projects: Vec<TreeSitterProject> = vec![
