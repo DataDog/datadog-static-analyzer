@@ -7,11 +7,16 @@
 
 cargo build -r
 
-## First, test a repository
+## First, test a repository to check that the commit that indicates the repo information for a violation
+echo "Checking rosie tests"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}"
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" --debug yes -b -f sarif -x -g
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x -g
+if [ $? -ne 0 ]; then
+  echo "fail to analyze rosie-tests"
+  exit 1
+fi
 
 # Getting the category of the fist violation detected (all violations in this report are security)
 CATEGORY=$(jq '.runs[0].results[0].properties.tags[0]' "${REPO_DIR}/results.json")
