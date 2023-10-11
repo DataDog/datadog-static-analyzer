@@ -32,9 +32,12 @@ fn main() {
             .map(|x| dir.join(x))
             .collect();
         let cpp = tree_sitter_project.cpp;
-        let mut cc_build = cc::Build::new();
-        let initial_build = cc_build.include(dir).files(files).warnings(false).cpp(cpp);
-        initial_build.compile(tree_sitter_project.compilation_unit.as_str());
+        cc::Build::new()
+            .include(dir)
+            .files(files)
+            .warnings(false)
+            .cpp(cpp)
+            .compile(tree_sitter_project.compilation_unit.as_str());
     }
 
     let tree_sitter_projects: Vec<TreeSitterProject> = vec![
