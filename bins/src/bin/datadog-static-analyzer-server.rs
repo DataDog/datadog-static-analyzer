@@ -5,16 +5,17 @@ use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
 use rocket::http::Header;
 use rocket::serde::json::{json, Json, Value};
-use rocket::{Request as RocketRequest, Response, State};
+use rocket::{Build, Request as RocketRequest, Response, Rocket, Shutdown, State};
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
 use server::tree_sitter_tree::process_tree_sitter_tree_request;
 use std::path::Path;
 use std::process::exit;
+use std::sync::mpsc::channel;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use std::{env, thread};
+use std::{env, process, thread};
 
 pub struct CORS;
 
@@ -133,8 +134,15 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-#[rocket::launch]
-fn rocket_main() -> _ {
+async fn spawn_rocket(rocket_build: Rocket<Build>) -> Shutdown {
+    let rocket = rocket_build.ignite().await.unwrap();
+    let shutdown_handle = rocket.shutdown();
+    rocket::tokio::spawn(rocket.launch());
+    shutdown_handle
+}
+
+#[rocket::main]
+async fn main() {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let mut opts = Options::new();
@@ -199,6 +207,9 @@ fn rocket_main() -> _ {
         }
     }
 
+    // channel used to send the shutdown handler so that we can exit the server gracefully
+    let (tx, rx) = channel();
+
     // if we set up the keepalive mechanism (option -k)
     //   1. Get the timeout value as parameter
     //   2. Start the thread that checks every 5 seconds if we should exit the server
@@ -210,6 +221,7 @@ fn rocket_main() -> _ {
 
             // thread that periodically checks if we should exit the server
             thread::spawn(move || {
+                let shutdown_handle: Shutdown = rx.recv().unwrap();
                 loop {
                     // get the latest request timestamp and the current one
                     let latest_timestamp = LAST_TIMESTAMP
@@ -219,17 +231,21 @@ fn rocket_main() -> _ {
                     let current_timestamp = get_current_timestamp_ms();
 
                     if latest_timestamp > 0 && current_timestamp > latest_timestamp + timeout_ms {
-                        eprintln!("exiting because of timeout");
-                        exit(1);
+                        eprintln!("exiting because of timeout, trying to exit gracefully");
+                        shutdown_handle.clone().notify();
+                        // we give 10 seconds for the process to terminate
+                        // if it does not, we abort
+                        thread::sleep(Duration::from_secs(10));
+                        eprintln!("no graceful exit, aborting the process");
+                        process::abort();
                     }
-
                     thread::sleep(Duration::from_secs(5));
                 }
             });
         }
     }
 
-    rocket::custom(rocket_configuration)
+    let rocket_build = rocket::custom(rocket_configuration)
         .attach(CORS)
         .manage(server_configuration)
         .mount("/", rocket::routes![analyze])
@@ -239,5 +255,11 @@ fn rocket_main() -> _ {
         .mount("/", rocket::routes![ping])
         .mount("/", rocket::routes![get_options])
         .mount("/", rocket::routes![serve_static])
-        .mount("/", rocket::routes![languages])
+        .mount("/", rocket::routes![languages]);
+
+    let shutdown_handle = spawn_rocket(rocket_build).await;
+    let _ = tx.send(shutdown_handle.clone());
+
+    // Will shutdown if the keepalive option has been passed
+    shutdown_handle.await;
 }
