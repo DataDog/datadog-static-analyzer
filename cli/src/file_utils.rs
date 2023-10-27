@@ -84,13 +84,26 @@ pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> 
 
 // get the files to analyze from the directory. This function walks the directory
 // to analyze recursively and gets all the files.
-pub fn get_files(directory: &str, paths_to_ignore: &[String]) -> Result<Vec<PathBuf>> {
+pub fn get_files(
+    directory: &str,
+    subdirectory: Option<String>,
+    paths_to_ignore: &[String],
+) -> Result<Vec<PathBuf>> {
     let mut files_to_return: Vec<PathBuf> = vec![];
 
     // This is the directory that contains the .git files, we do not need to keep them.
     let git_directory = format!("{}/.git", &directory);
 
-    for entry in WalkDir::new(directory) {
+    let directory_to_walk: String = match subdirectory {
+        Some(sd) => {
+            let sd_str = sd.as_str();
+            let p = Path::new(directory.clone()).join(sd_str.clone());
+            p.as_os_str().to_str().unwrap().to_string()
+        }
+        None => directory.clone().to_string(),
+    };
+
+    for entry in WalkDir::new(directory_to_walk.as_str()) {
         let dir_entry = entry?;
         let entry = dir_entry.path();
 
@@ -261,6 +274,7 @@ mod tests {
             use_configuration_file: true,
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
+            source_subdirectory: None,
             ignore_paths: vec![],
             rules_file: None,
             output_format: Sarif, // SARIF or JSON
@@ -302,6 +316,7 @@ mod tests {
         let empty_paths_to_ignore = vec![];
         let files = get_files(
             current_path.display().to_string().as_str(),
+            None,
             &empty_paths_to_ignore,
         );
         assert!(files.is_ok());
@@ -315,7 +330,11 @@ mod tests {
 
         // now, we add one path to ignore
         let ignore_paths = vec!["**/src/**/lib.rs".to_string()];
-        let files = get_files(current_path.display().to_string().as_str(), &ignore_paths);
+        let files = get_files(
+            current_path.display().to_string().as_str(),
+            None,
+            &ignore_paths,
+        );
         assert!(files.is_ok());
         let f = &files.unwrap();
         let find_file: Vec<String> = f
@@ -324,6 +343,22 @@ mod tests {
             .map(|p| p.display().to_string())
             .collect();
         assert_eq!(0, find_file.len()); // correctly filtered
+    }
+
+    #[test]
+    fn get_files_with_subdirectory() {
+        let current_path = std::env::current_dir().unwrap();
+        let subdirectory = Path::new("src").join("sarif");
+
+        // first, we get the list of files without any path to ignore
+        let empty_paths_to_ignore = vec![];
+        let files = get_files(
+            current_path.display().to_string().as_str(),
+            Some(subdirectory.into_os_string().into_string().unwrap()),
+            &empty_paths_to_ignore,
+        );
+
+        assert_eq!(2, files.unwrap().len());
     }
 
     // make sure we can get the list of rules from a directory and that the
@@ -337,7 +372,11 @@ mod tests {
 
         // now, we one path to ignore, we should filter.
         let ignore_paths = vec!["src".to_string()];
-        let files = get_files(current_path.display().to_string().as_str(), &ignore_paths);
+        let files = get_files(
+            current_path.display().to_string().as_str(),
+            None,
+            &ignore_paths,
+        );
         assert!(files.is_ok());
         let f = &files.unwrap();
         let find_file: Vec<String> = f
@@ -349,7 +388,11 @@ mod tests {
 
         // now, we add the complete path to ignore, we should filter.
         let ignore_paths = vec!["src/lib.rs".to_string()];
-        let files = get_files(current_path.display().to_string().as_str(), &ignore_paths);
+        let files = get_files(
+            current_path.display().to_string().as_str(),
+            None,
+            &ignore_paths,
+        );
         assert!(files.is_ok());
         let f = &files.unwrap();
         let find_file: Vec<String> = f
@@ -361,7 +404,11 @@ mod tests {
 
         // now, we add another directory that is totally different, we should not filter.
         let ignore_paths = vec!["foo".to_string()];
-        let files = get_files(current_path.display().to_string().as_str(), &ignore_paths);
+        let files = get_files(
+            current_path.display().to_string().as_str(),
+            None,
+            &ignore_paths,
+        );
         assert!(files.is_ok());
         let f = &files.unwrap();
         let find_file: Vec<String> = f
@@ -380,6 +427,8 @@ mod tests {
         extensions_per_languages.insert(Language::Python, 2);
         extensions_per_languages.insert(Language::Rust, 1);
         extensions_per_languages.insert(Language::TypeScript, 2);
+        extensions_per_languages.insert(Language::Dockerfile, 2);
+        extensions_per_languages.insert(Language::Yaml, 2);
 
         for (l, e) in extensions_per_languages {
             assert_eq!(
@@ -398,6 +447,7 @@ mod tests {
         let empty_paths_to_ignore = vec![];
         let files = get_files(
             current_path.display().to_string().as_str(),
+            None,
             &empty_paths_to_ignore,
         );
         assert!(files.is_ok());

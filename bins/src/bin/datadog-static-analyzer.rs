@@ -52,25 +52,35 @@ fn print_configuration(configuration: &CliConfiguration) {
 
     println!("Configuration");
     println!("=============");
-    println!("version          : {}", CARGO_VERSION);
-    println!("revision         : {}", VERSION);
-    println!("config method    : {}", configuration_method);
-    println!("cores available  : {}", num_cpus::get());
-    println!("cores used       : {}", configuration.num_cpus);
-    println!("#rules loaded    : {}", configuration.rules.len());
-    println!("source directory : {}", configuration.source_directory);
-    println!("output file      : {}", configuration.output_file);
-    println!("output format    : {}", output_format_str);
-    println!("ignore paths     : {}", ignore_paths_str);
-    println!("ignore gitignore : {}", configuration.ignore_gitignore);
+    println!("version             : {}", CARGO_VERSION);
+    println!("revision            : {}", VERSION);
+    println!("config method       : {}", configuration_method);
+    println!("cores available     : {}", num_cpus::get());
+    println!("cores used          : {}", configuration.num_cpus);
+    println!("#rules loaded       : {}", configuration.rules.len());
+    println!("source directory    : {}", configuration.source_directory);
     println!(
-        "use config file  : {}",
+        "source subdirectory : {}",
+        configuration
+            .source_subdirectory
+            .clone()
+            .unwrap_or("none".to_string())
+    );
+    println!("output file         : {}", configuration.output_file);
+    println!("output format       : {}", output_format_str);
+    println!("ignore paths        : {}", ignore_paths_str);
+    println!("ignore gitignore    : {}", configuration.ignore_gitignore);
+    println!(
+        "use config file     : {}",
         configuration.use_configuration_file
     );
-    println!("use debug        : {}", configuration.use_debug);
-    println!("use staging      : {}", configuration.use_staging);
-    println!("rules languages  : {}", languages_string.join(","));
-    println!("max file size    : {} kb", configuration.max_file_size_kb);
+    println!("use debug           : {}", configuration.use_debug);
+    println!("use staging         : {}", configuration.use_staging);
+    println!("rules languages     : {}", languages_string.join(","));
+    println!(
+        "max file size       : {} kb",
+        configuration.max_file_size_kb
+    );
 }
 
 fn main() -> Result<()> {
@@ -87,6 +97,12 @@ fn main() -> Result<()> {
         "directory",
         "directory to scan (valid existing directory)",
         "/path/to/code/to/analyze",
+    );
+    opts.optopt(
+        "u",
+        "subdirectory",
+        "subdirectory to scan within the repository",
+        "sub/directory",
     );
     opts.optopt(
         "r",
@@ -172,6 +188,7 @@ fn main() -> Result<()> {
     let mut ignore_paths: Vec<String> = Vec::new();
     let ignore_paths_from_options = matches.opt_strs("p");
     let directory_to_analyze_option = matches.opt_str("i");
+    let subdirectory_to_analyze_option = matches.opt_str("u");
 
     let rules_file = matches.opt_str("r");
 
@@ -243,8 +260,12 @@ fn main() -> Result<()> {
 
     let languages = get_languages_for_rules(&rules);
 
-    let files_to_analyze = get_files(directory_to_analyze.as_str(), &ignore_paths)
-        .expect("unable to get the list of files to analyze");
+    let files_to_analyze = get_files(
+        directory_to_analyze.as_str(),
+        subdirectory_to_analyze_option.clone(),
+        &ignore_paths,
+    )
+    .expect("unable to get the list of files to analyze");
 
     // we try to get the amount of cpu from the system. if the user set an option to force
     // the value. it overrides the value.
@@ -259,6 +280,7 @@ fn main() -> Result<()> {
         use_configuration_file,
         ignore_gitignore,
         source_directory: directory_to_analyze.clone(),
+        source_subdirectory: subdirectory_to_analyze_option.clone(),
         ignore_paths,
         rules_file,
         output_format,
