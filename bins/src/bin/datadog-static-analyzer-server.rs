@@ -3,9 +3,10 @@ use kernel::constants::{CARGO_VERSION, VERSION};
 use lazy_static::lazy_static;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
+use rocket::futures::FutureExt;
 use rocket::http::Header;
 use rocket::serde::json::{json, Json, Value};
-use rocket::{Build, Request as RocketRequest, Response, Rocket, Shutdown, State};
+use rocket::{Build, Ignite, Request as RocketRequest, Response, Rocket, Shutdown, State};
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
@@ -134,11 +135,15 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-async fn spawn_rocket(rocket_build: Rocket<Build>) -> Shutdown {
+async fn spawn_rocket(
+    rocket_build: Rocket<Build>,
+) -> (
+    rocket::tokio::task::JoinHandle<Result<Rocket<Ignite>, rocket::error::Error>>,
+    Shutdown,
+) {
     let rocket = rocket_build.ignite().await.unwrap();
     let shutdown_handle = rocket.shutdown();
-    rocket::tokio::spawn(rocket.launch());
-    shutdown_handle
+    (rocket::tokio::spawn(rocket.launch()), shutdown_handle)
 }
 
 #[rocket::main]
@@ -209,6 +214,7 @@ async fn main() {
 
     // channel used to send the shutdown handler so that we can exit the server gracefully
     let (tx, rx) = channel();
+    let mut is_keepalive_enabled = false;
 
     // if we set up the keepalive mechanism (option -k)
     //   1. Get the timeout value as parameter
@@ -218,6 +224,7 @@ async fn main() {
         if let Some(keepalive_timeout) = keepalive_timeout_sec {
             let timeout_sec = keepalive_timeout.parse::<u128>().unwrap();
             let timeout_ms = timeout_sec * 1000;
+            is_keepalive_enabled = true;
 
             // thread that periodically checks if we should exit the server
             thread::spawn(move || {
@@ -257,9 +264,17 @@ async fn main() {
         .mount("/", rocket::routes![serve_static])
         .mount("/", rocket::routes![languages]);
 
-    let shutdown_handle = spawn_rocket(rocket_build).await;
-    let _ = tx.send(shutdown_handle.clone());
+    let (rocket_handle, shutdown_handle) = spawn_rocket(rocket_build).await;
 
-    // Will shutdown if the keepalive option has been passed
-    shutdown_handle.await;
+    if is_keepalive_enabled {
+        let _ = tx.send(shutdown_handle.clone());
+        // Will shutdown if the keep alive option has been passed
+        // of if the rocket thread stops.
+        rocket::futures::select! {
+            a = shutdown_handle.fuse() => a,
+            _ = rocket_handle.fuse() => ()
+        };
+    } else {
+        let _ = rocket_handle.await;
+    }
 }

@@ -9,7 +9,6 @@ use kernel::analysis::analyze::analyze;
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::utils::decode_base64_string;
-use std::collections::HashMap;
 
 pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     let rules_with_invalid_language: Vec<ServerRule> = request
@@ -41,7 +40,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             checksum: r.checksum.clone().unwrap_or("".to_string()),
             pattern: r.pattern.clone(),
             tree_sitter_query_base64: r.tree_sitter_query_base64.clone(),
-            variables: r.variables.clone().unwrap_or(HashMap::new()),
+            variables: r.variables.clone().unwrap_or_default(),
             tests: vec![],
         })
         .collect();
