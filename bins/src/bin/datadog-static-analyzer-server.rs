@@ -3,6 +3,7 @@ use kernel::constants::{CARGO_VERSION, VERSION};
 use lazy_static::lazy_static;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
+use rocket::futures::FutureExt;
 use rocket::http::Header;
 use rocket::serde::json::{json, Json, Value};
 use rocket::{Build, Ignite, Request as RocketRequest, Response, Rocket, Shutdown, State};
@@ -268,9 +269,12 @@ async fn main() {
     if is_keepalive_enabled {
         let _ = tx.send(shutdown_handle.clone());
         // Will shutdown if the keep alive option has been passed
-        shutdown_handle.await;
+        // of if the rocket thread stops.
+        rocket::futures::select! {
+            a = shutdown_handle.fuse() => a,
+            _ = rocket_handle.fuse() => ()
+        };
     } else {
-        // shutdown_server(shutdown_handle, false);
         let _ = rocket_handle.await;
     }
 }
