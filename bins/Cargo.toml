@@ -18,13 +18,18 @@ name = "datadog-static-analyzer-server"
 [dev-dependencies.cargo-husky]
 version = "1"
 default-features = false # Disable features which are enabled by default
-features = ["precommit-hook", "run-cargo-test", "run-cargo-clippy", "run-cargo-fmt"]
+features = [
+  "precommit-hook",
+  "run-cargo-test",
+  "run-cargo-clippy",
+  "run-cargo-fmt",
+]
 
 [dependencies]
 # local
-cli = {path = "../cli"}
-kernel = {path = "../kernel" }
-server = {path = "../server"}
+cli = { path = "../cli" }
+kernel = { path = "../kernel" }
+server = { path = "../server" }
 # workspace
 anyhow = { workspace = true }
 itertools = { workspace = true }
@@ -35,7 +40,7 @@ num_cpus = "1.15.0"
 indicatif = "0.17.6"
 lazy_static = "1.4.0"
 rayon = "1.7.0"
-rocket = {version = "=0.5.0-rc.3", features = ["json"]}
+rocket = { version = "=0.5.0-rc.3", features = ["json"] }
 
 
 # For linux and macos, we need the vendored ssl
