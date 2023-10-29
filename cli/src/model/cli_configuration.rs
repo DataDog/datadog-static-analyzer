@@ -8,6 +8,7 @@ pub struct CliConfiguration {
     pub use_configuration_file: bool,
     pub ignore_gitignore: bool,
     pub source_directory: String,
+    pub source_subdirectory: Option<String>,
     pub ignore_paths: Vec<String>,
     pub rules_file: Option<String>,
     pub output_format: OutputFormat, // SARIF or JSON
