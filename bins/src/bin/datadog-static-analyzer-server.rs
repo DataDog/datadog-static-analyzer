@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
 use rocket::futures::FutureExt;
-use rocket::http::Header;
+use rocket::http::{Header, Status};
 use rocket::serde::json::{json, Json, Value};
 use rocket::{Build, Ignite, Request as RocketRequest, Response, Rocket, Shutdown, State};
 use server::model::analysis_request::AnalysisRequest;
@@ -18,8 +18,6 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{env, process, thread};
 
-pub struct CORS;
-
 /// get the current timestamp
 fn get_current_timestamp_ms() -> u128 {
     SystemTime::now()
@@ -27,6 +25,8 @@ fn get_current_timestamp_ms() -> u128 {
         .unwrap()
         .as_millis()
 }
+
+pub struct CORS;
 
 // Adding CORS for the server.
 // See https://stackoverflow.com/questions/62412361/how-to-set-up-cors-or-options-for-rocket-rs
@@ -48,6 +48,25 @@ impl Fairing for CORS {
         ));
         response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+    }
+}
+
+#[rocket::get("/shutdown")]
+fn shutdown_get(server_configuration: &State<ServerConfiguration>) -> Status {
+    if server_configuration.is_shutdown_enabled {
+        Status::NoContent
+    } else {
+        Status::Forbidden
+    }
+}
+
+#[rocket::post("/shutdown")]
+fn shutdown_post(server_configuration: &State<ServerConfiguration>, shutdown: Shutdown) -> Status {
+    if server_configuration.is_shutdown_enabled {
+        shutdown.notify();
+        Status::Ok
+    } else {
+        Status::Forbidden
     }
 }
 
@@ -107,6 +126,7 @@ fn get_options() -> String {
 
 struct ServerConfiguration {
     static_directory: Option<String>,
+    is_shutdown_enabled: bool,
 }
 
 struct ServerState {
@@ -166,6 +186,7 @@ async fn main() {
         "how many seconds without a request the server will exit",
         "90",
     );
+    opts.optflag("e", "enable-shutdown", "enables the shutdown endpoint");
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the tool version");
 
@@ -188,6 +209,7 @@ async fn main() {
 
     let server_configuration = ServerConfiguration {
         static_directory: matches.opt_str("s"),
+        is_shutdown_enabled: matches.opt_present("e"),
     };
 
     let mut rocket_configuration = rocket::config::Config::default();
@@ -262,14 +284,16 @@ async fn main() {
         .mount("/", rocket::routes![ping])
         .mount("/", rocket::routes![get_options])
         .mount("/", rocket::routes![serve_static])
-        .mount("/", rocket::routes![languages]);
+        .mount("/", rocket::routes![languages])
+        .mount("/", rocket::routes![shutdown_get])
+        .mount("/", rocket::routes![shutdown_post]);
 
     let (rocket_handle, shutdown_handle) = spawn_rocket(rocket_build).await;
 
     if is_keepalive_enabled {
         let _ = tx.send(shutdown_handle.clone());
         // Will shutdown if the keep alive option has been passed
-        // of if the rocket thread stops.
+        // or if the rocket thread stops.
         rocket::futures::select! {
             a = shutdown_handle.fuse() => a,
             _ = rocket_handle.fuse() => ()
