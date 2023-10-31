@@ -97,10 +97,10 @@ pub fn get_files(
     let directory_to_walk: String = match subdirectory {
         Some(sd) => {
             let sd_str = sd.as_str();
-            let p = Path::new(directory.clone()).join(sd_str.clone());
+            let p = Path::new(directory).join(sd_str);
             p.as_os_str().to_str().unwrap().to_string()
         }
-        None => directory.clone().to_string(),
+        None => directory.to_string(),
     };
 
     for entry in WalkDir::new(directory_to_walk.as_str()) {
