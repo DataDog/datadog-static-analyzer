@@ -51,6 +51,55 @@ impl Fairing for CORS {
     }
 }
 
+/// The shutdown endpoint, when a GET request is received, will return a 204 code if the shutdown mechanism is enabled.
+/// It will return a 403 code otherwise.
+///
+/// The shutdown mechanism is optional, and the user starting the server decides
+/// whether to enable it or not by using the `-e` or `--enable-shutdown` flag.
+///
+/// # Examples
+///
+/// To enable this feature we should start the server with the `-e` flag.
+///
+/// ```sh
+/// ./datadog-static-analyzer-server -p 9090 -k 30 -e
+/// ```
+///
+/// Then if we do
+/// ```sh
+/// curl -i localhost:9090/shutdown
+/// ````
+///
+/// We should receive something like this:
+/// ```txt
+/// HTTP/1.1 204 No Content
+/// server: Rocket
+/// x-content-type-options: nosniff
+/// x-frame-options: SAMEORIGIN
+/// permissions-policy: interest-cohort=()
+/// access-control-allow-origin: *
+/// access-control-allow-methods: POST, GET, PATCH, OPTIONS
+/// access-control-allow-headers: *
+/// access-control-allow-credentials: true
+/// content-length: 0
+/// date: Tue, 31 Oct 2023 08:50:17 GMT
+/// ```
+///
+/// If the server was not started with the `-e` flag, then we should receive something like this:
+/// ```txt
+/// HTTP/1.1 403 Forbidden
+/// content-type: text/html; charset=utf-8
+/// server: Rocket
+/// permissions-policy: interest-cohort=()
+/// x-content-type-options: nosniff
+/// x-frame-options: SAMEORIGIN
+/// access-control-allow-origin: *
+/// access-control-allow-methods: POST, GET, PATCH, OPTIONS
+/// access-control-allow-headers: *
+/// access-control-allow-credentials: true
+/// content-length: 385
+/// date: Tue, 31 Oct 2023 08:52:06 GMT
+// ```
 #[rocket::get("/shutdown")]
 fn shutdown_get(server_configuration: &State<ServerConfiguration>) -> Status {
     if server_configuration.is_shutdown_enabled {
@@ -60,6 +109,13 @@ fn shutdown_get(server_configuration: &State<ServerConfiguration>) -> Status {
     }
 }
 
+/// The shutdown endpoint, when receiving a POST request, will SHUTDOWN the server and return a 204 code if the shutdown mechanism is enabled.
+/// It will return a 403 code otherwise.
+///
+/// The shutdown mechanism is optional, and the user starting the server decides
+/// whether to enable it or not by using the `-e` or `--enable-shutdown` flag.
+///
+/// Please, refer to the [`shutdown_get`] function's examples section to see how this would work.
 #[rocket::post("/shutdown")]
 fn shutdown_post(server_configuration: &State<ServerConfiguration>, shutdown: Shutdown) -> Status {
     if server_configuration.is_shutdown_enabled {
