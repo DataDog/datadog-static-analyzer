@@ -99,7 +99,7 @@ impl Fairing for KeepAlive {
         let state = request.guard::<&State<ServerState>>().await;
 
         if let rocket::outcome::Outcome::Success(state) = state {
-            // the fairing shouldn't be added is keep alive is not enabled but just playing defensive here
+            // the fairing shouldn't be added if keep alive is not enabled but just playing defensive here
             if state.is_keepalive_enabled {
                 // mutate the keep alive ms
                 if let Ok(mut x) = state.last_ping_request_timestamp_ms.try_write() {
