@@ -38,7 +38,6 @@ serde_json = { workspace = true }
 getopts = "0.2.21"
 num_cpus = "1.15.0"
 indicatif = "0.17.6"
-lazy_static = "1.4.0"
 rayon = "1.7.0"
 rocket = { version = "=0.5.0-rc.3", features = ["json"] }
 
