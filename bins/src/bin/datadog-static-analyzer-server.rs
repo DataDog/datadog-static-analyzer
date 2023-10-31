@@ -7,7 +7,8 @@ use rocket::http::{Header, Status};
 use rocket::serde::json::{json, Json, Value};
 use rocket::{Build, Ignite, Request as RocketRequest, Response, Rocket, Shutdown, State};
 use server::constants::{
-    SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION, SERVER_HEADER_SHUTDOWN_ENABLED,
+    SERVER_HEADER_KEEPALIVE_ENABLED, SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION,
+    SERVER_HEADER_SHUTDOWN_ENABLED,
 };
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
@@ -71,6 +72,10 @@ impl Fairing for CustomHeaders {
             response.set_header(Header::new(
                 SERVER_HEADER_SHUTDOWN_ENABLED,
                 state.is_shutdown_enabled.to_string(),
+            ));
+            response.set_header(Header::new(
+                SERVER_HEADER_KEEPALIVE_ENABLED,
+                state.is_keepalive_enabled.to_string(),
             ));
         }
 
@@ -209,6 +214,7 @@ struct ServerState {
     last_ping_request_timestamp_ms: Arc<RwLock<u128>>,
     static_directory: Option<String>,
     is_shutdown_enabled: bool,
+    is_keepalive_enabled: bool,
 }
 
 #[rocket::get("/ping", format = "text/plain")]
@@ -278,11 +284,11 @@ async fn main() {
     }
 
     // server state
-
-    let server_state = ServerState {
+    let mut server_state = ServerState {
         last_ping_request_timestamp_ms: Arc::new(RwLock::new(get_current_timestamp_ms())),
         static_directory: matches.opt_str("s"),
         is_shutdown_enabled: matches.opt_present("e"),
+        is_keepalive_enabled: false,
     };
 
     let mut rocket_configuration = rocket::config::Config::default();
@@ -309,7 +315,6 @@ async fn main() {
 
     // channel used to send the shutdown handler so that we can exit the server gracefully
     let (tx, rx) = channel();
-    let mut is_keepalive_enabled = false;
 
     // if we set up the keepalive mechanism (option -k)
     //   1. Get the timeout value as parameter
@@ -319,7 +324,7 @@ async fn main() {
         if let Some(keepalive_timeout) = keepalive_timeout_sec {
             let timeout_sec = keepalive_timeout.parse::<u128>().unwrap();
             let timeout_ms = timeout_sec * 1000;
-            is_keepalive_enabled = true;
+            server_state.is_keepalive_enabled = true;
             let last_ping_request_timestamp_ms =
                 Arc::clone(&server_state.last_ping_request_timestamp_ms);
 
@@ -348,6 +353,8 @@ async fn main() {
             });
         }
     }
+
+    let is_keepalive_enabled = server_state.is_keepalive_enabled;
 
     let rocket_build = rocket::custom(rocket_configuration)
         .attach(CORS)

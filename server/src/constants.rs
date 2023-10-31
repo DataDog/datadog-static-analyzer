@@ -9,5 +9,6 @@ pub const ERROR_CODE_NO_ROOT_NODE: &str = "no-root-node";
 pub const ERROR_CHECKSUM_MISMATCH: &str = "checksum-mismatch";
 
 pub const SERVER_HEADER_SHUTDOWN_ENABLED: &str = "X-static-analyzer-server-shutdown-enabled";
+pub const SERVER_HEADER_KEEPALIVE_ENABLED: &str = "X-static-analyzer-server-keepalive-enabled";
 pub const SERVER_HEADER_SERVER_VERSION: &str = "X-static-analyzer-server-version";
 pub const SERVER_HEADER_SERVER_REVISION: &str = "X-static-analyzer-server-revision";
