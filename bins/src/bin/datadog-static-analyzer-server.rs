@@ -7,6 +7,9 @@ use rocket::futures::FutureExt;
 use rocket::http::{Header, Status};
 use rocket::serde::json::{json, Json, Value};
 use rocket::{Build, Ignite, Request as RocketRequest, Response, Rocket, Shutdown, State};
+use server::constants::{
+    SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION, SERVER_HEADER_SHUTDOWN_ENABLED,
+};
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
@@ -48,6 +51,32 @@ impl Fairing for CORS {
         ));
         response.set_header(Header::new("Access-Control-Allow-Headers", "*"));
         response.set_header(Header::new("Access-Control-Allow-Credentials", "true"));
+    }
+}
+
+pub struct CustomHeaders;
+
+#[rocket::async_trait]
+impl Fairing for CustomHeaders {
+    fn info(&self) -> Info {
+        Info {
+            name: "Custom Headers",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, request: &'r RocketRequest<'_>, response: &mut Response<'r>) {
+        let state = request.guard::<&State<ServerConfiguration>>().await;
+
+        if let rocket::outcome::Outcome::Success(server_configuration) = state {
+            response.set_header(Header::new(
+                SERVER_HEADER_SHUTDOWN_ENABLED,
+                server_configuration.is_shutdown_enabled.to_string(),
+            ));
+        }
+
+        response.set_header(Header::new(SERVER_HEADER_SERVER_VERSION, get_version()));
+        response.set_header(Header::new(SERVER_HEADER_SERVER_REVISION, get_revision()));
     }
 }
 
@@ -332,6 +361,7 @@ async fn main() {
 
     let rocket_build = rocket::custom(rocket_configuration)
         .attach(CORS)
+        .attach(CustomHeaders)
         .manage(server_configuration)
         .mount("/", rocket::routes![analyze])
         .mount("/", rocket::routes![get_tree])
