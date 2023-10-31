@@ -1,6 +1,5 @@
 use getopts::Options;
 use kernel::constants::{CARGO_VERSION, VERSION};
-use lazy_static::lazy_static;
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
 use rocket::futures::FutureExt;
@@ -17,7 +16,7 @@ use server::tree_sitter_tree::process_tree_sitter_tree_request;
 use std::path::Path;
 use std::process::exit;
 use std::sync::mpsc::channel;
-use std::sync::Mutex;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::{env, process, thread};
 
@@ -215,23 +214,15 @@ struct ServerConfiguration {
 }
 
 struct ServerState {
-    last_ping_request_timestamp_ms: u128,
-}
-
-// Global value that keeps the status of the server
-lazy_static! {
-    static ref LAST_TIMESTAMP: Mutex<ServerState> = Mutex::new(ServerState {
-        last_ping_request_timestamp_ms: get_current_timestamp_ms()
-    });
+    last_ping_request_timestamp_ms: Arc<RwLock<u128>>,
 }
 
 #[rocket::get("/ping", format = "text/plain")]
-fn ping() -> String {
+fn ping(state: &State<ServerState>) -> String {
     // at every ping request, we refresh the timestamp of the latest request
-    LAST_TIMESTAMP
-        .lock()
-        .unwrap()
-        .last_ping_request_timestamp_ms = get_current_timestamp_ms();
+    if let Ok(mut x) = state.last_ping_request_timestamp_ms.try_write() {
+        *x = get_current_timestamp_ms();
+    }
     "pong".to_string()
 }
 
@@ -292,9 +283,14 @@ async fn main() {
         exit(0);
     }
 
+    // server state
     let server_configuration = ServerConfiguration {
         static_directory: matches.opt_str("s"),
         is_shutdown_enabled: matches.opt_present("e"),
+    };
+
+    let server_state = ServerState {
+        last_ping_request_timestamp_ms: Arc::new(RwLock::new(get_current_timestamp_ms())),
     };
 
     let mut rocket_configuration = rocket::config::Config::default();
@@ -332,16 +328,14 @@ async fn main() {
             let timeout_sec = keepalive_timeout.parse::<u128>().unwrap();
             let timeout_ms = timeout_sec * 1000;
             is_keepalive_enabled = true;
+            let state_clone = Arc::clone(&server_state.last_ping_request_timestamp_ms);
 
             // thread that periodically checks if we should exit the server
             thread::spawn(move || {
                 let shutdown_handle: Shutdown = rx.recv().unwrap();
                 loop {
                     // get the latest request timestamp and the current one
-                    let latest_timestamp = LAST_TIMESTAMP
-                        .lock()
-                        .unwrap()
-                        .last_ping_request_timestamp_ms;
+                    let latest_timestamp = state_clone.try_read().map(|x| *x).unwrap_or_default();
                     let current_timestamp = get_current_timestamp_ms();
 
                     if latest_timestamp > 0 && current_timestamp > latest_timestamp + timeout_ms {
@@ -363,6 +357,7 @@ async fn main() {
         .attach(CORS)
         .attach(CustomHeaders)
         .manage(server_configuration)
+        .manage(server_state)
         .mount("/", rocket::routes![analyze])
         .mount("/", rocket::routes![get_tree])
         .mount("/", rocket::routes![get_version])
