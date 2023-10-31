@@ -64,7 +64,7 @@ fn shutdown_get(server_configuration: &State<ServerConfiguration>) -> Status {
 fn shutdown_post(server_configuration: &State<ServerConfiguration>, shutdown: Shutdown) -> Status {
     if server_configuration.is_shutdown_enabled {
         shutdown.notify();
-        Status::Ok
+        Status::NoContent
     } else {
         Status::Forbidden
     }
