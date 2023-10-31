@@ -65,12 +65,12 @@ impl Fairing for CustomHeaders {
     }
 
     async fn on_response<'r>(&self, request: &'r RocketRequest<'_>, response: &mut Response<'r>) {
-        let state = request.guard::<&State<ServerConfiguration>>().await;
+        let state = request.guard::<&State<ServerState>>().await;
 
-        if let rocket::outcome::Outcome::Success(server_configuration) = state {
+        if let rocket::outcome::Outcome::Success(state) = state {
             response.set_header(Header::new(
                 SERVER_HEADER_SHUTDOWN_ENABLED,
-                server_configuration.is_shutdown_enabled.to_string(),
+                state.is_shutdown_enabled.to_string(),
             ));
         }
 
@@ -129,8 +129,8 @@ impl Fairing for CustomHeaders {
 /// date: Tue, 31 Oct 2023 08:52:06 GMT
 // ```
 #[rocket::get("/shutdown")]
-fn shutdown_get(server_configuration: &State<ServerConfiguration>) -> Status {
-    if server_configuration.is_shutdown_enabled {
+fn shutdown_get(state: &State<ServerState>) -> Status {
+    if state.is_shutdown_enabled {
         Status::NoContent
     } else {
         Status::Forbidden
@@ -145,8 +145,8 @@ fn shutdown_get(server_configuration: &State<ServerConfiguration>) -> Status {
 ///
 /// Please, refer to the [`shutdown_get`] function's examples section to see how this would work.
 #[rocket::post("/shutdown")]
-fn shutdown_post(server_configuration: &State<ServerConfiguration>, shutdown: Shutdown) -> Status {
-    if server_configuration.is_shutdown_enabled {
+fn shutdown_post(state: &State<ServerState>, shutdown: Shutdown) -> Status {
+    if state.is_shutdown_enabled {
         shutdown.notify();
         Status::NoContent
     } else {
@@ -184,10 +184,7 @@ fn get_revision() -> String {
 }
 
 #[rocket::get("/static/<name>")]
-async fn serve_static(
-    server_configuration: &State<ServerConfiguration>,
-    name: &str,
-) -> Option<NamedFile> {
+async fn serve_static(server_configuration: &State<ServerState>, name: &str) -> Option<NamedFile> {
     if server_configuration.static_directory.is_none()
         || name.contains("..")
         || name.starts_with('.')
@@ -208,13 +205,10 @@ fn get_options() -> String {
     "".to_string()
 }
 
-struct ServerConfiguration {
-    static_directory: Option<String>,
-    is_shutdown_enabled: bool,
-}
-
 struct ServerState {
     last_ping_request_timestamp_ms: Arc<RwLock<u128>>,
+    static_directory: Option<String>,
+    is_shutdown_enabled: bool,
 }
 
 #[rocket::get("/ping", format = "text/plain")]
@@ -284,13 +278,11 @@ async fn main() {
     }
 
     // server state
-    let server_configuration = ServerConfiguration {
-        static_directory: matches.opt_str("s"),
-        is_shutdown_enabled: matches.opt_present("e"),
-    };
 
     let server_state = ServerState {
         last_ping_request_timestamp_ms: Arc::new(RwLock::new(get_current_timestamp_ms())),
+        static_directory: matches.opt_str("s"),
+        is_shutdown_enabled: matches.opt_present("e"),
     };
 
     let mut rocket_configuration = rocket::config::Config::default();
@@ -328,14 +320,18 @@ async fn main() {
             let timeout_sec = keepalive_timeout.parse::<u128>().unwrap();
             let timeout_ms = timeout_sec * 1000;
             is_keepalive_enabled = true;
-            let state_clone = Arc::clone(&server_state.last_ping_request_timestamp_ms);
+            let last_ping_request_timestamp_ms =
+                Arc::clone(&server_state.last_ping_request_timestamp_ms);
 
             // thread that periodically checks if we should exit the server
             thread::spawn(move || {
                 let shutdown_handle: Shutdown = rx.recv().unwrap();
                 loop {
                     // get the latest request timestamp and the current one
-                    let latest_timestamp = state_clone.try_read().map(|x| *x).unwrap_or_default();
+                    let latest_timestamp = last_ping_request_timestamp_ms
+                        .try_read()
+                        .map(|x| *x)
+                        .unwrap_or_default();
                     let current_timestamp = get_current_timestamp_ms();
 
                     if latest_timestamp > 0 && current_timestamp > latest_timestamp + timeout_ms {
@@ -356,7 +352,6 @@ async fn main() {
     let rocket_build = rocket::custom(rocket_configuration)
         .attach(CORS)
         .attach(CustomHeaders)
-        .manage(server_configuration)
         .manage(server_state)
         .mount("/", rocket::routes![analyze])
         .mount("/", rocket::routes![get_tree])
