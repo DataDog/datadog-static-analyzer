@@ -51,6 +51,38 @@ impl Fairing for CORS {
     }
 }
 
+pub struct CustomHeaders;
+
+#[rocket::async_trait]
+impl Fairing for CustomHeaders {
+    fn info(&self) -> Info {
+        Info {
+            name: "Custom Headers",
+            kind: Kind::Response,
+        }
+    }
+
+    async fn on_response<'r>(&self, request: &'r RocketRequest<'_>, response: &mut Response<'r>) {
+        let state = request.guard::<&State<ServerConfiguration>>().await;
+
+        if let rocket::outcome::Outcome::Success(server_configuration) = state {
+            response.set_header(Header::new(
+                "X-static-analyzer-server-shutdown-enabled",
+                server_configuration.is_shutdown_enabled.to_string(),
+            ));
+        }
+
+        response.set_header(Header::new(
+            "X-static-analyzer-server-version",
+            get_version(),
+        ));
+        response.set_header(Header::new(
+            "X-static-analyzer-server-revision",
+            get_revision(),
+        ));
+    }
+}
+
 /// The shutdown endpoint, when a GET request is received, will return a 204 code if the shutdown mechanism is enabled.
 /// It will return a 403 code otherwise.
 ///
@@ -332,6 +364,7 @@ async fn main() {
 
     let rocket_build = rocket::custom(rocket_configuration)
         .attach(CORS)
+        .attach(CustomHeaders)
         .manage(server_configuration)
         .mount("/", rocket::routes![analyze])
         .mount("/", rocket::routes![get_tree])
