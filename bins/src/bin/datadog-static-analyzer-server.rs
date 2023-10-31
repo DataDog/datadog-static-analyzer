@@ -84,6 +84,32 @@ impl Fairing for CustomHeaders {
     }
 }
 
+pub struct KeepAlive;
+
+#[rocket::async_trait]
+impl Fairing for KeepAlive {
+    fn info(&self) -> Info {
+        Info {
+            name: "Keep Alive",
+            kind: Kind::Request,
+        }
+    }
+
+    async fn on_request(&self, request: &mut RocketRequest<'_>, _data: &mut rocket::Data<'_>) {
+        let state = request.guard::<&State<ServerState>>().await;
+
+        if let rocket::outcome::Outcome::Success(state) = state {
+            // the fairing shouldn't be added is keep alive is not enabled but just playing defensive here
+            if state.is_keepalive_enabled {
+                // mutate the keep alive ms
+                if let Ok(mut x) = state.last_ping_request_timestamp_ms.try_write() {
+                    *x = get_current_timestamp_ms();
+                }
+            }
+        }
+    }
+}
+
 /// The shutdown endpoint, when a GET request is received, will return a 204 code if the shutdown mechanism is enabled.
 /// It will return a 403 code otherwise.
 ///
@@ -218,11 +244,7 @@ struct ServerState {
 }
 
 #[rocket::get("/ping", format = "text/plain")]
-fn ping(state: &State<ServerState>) -> String {
-    // at every ping request, we refresh the timestamp of the latest request
-    if let Ok(mut x) = state.last_ping_request_timestamp_ms.try_write() {
-        *x = get_current_timestamp_ms();
-    }
+fn ping() -> String {
     "pong".to_string()
 }
 
@@ -356,9 +378,15 @@ async fn main() {
 
     let is_keepalive_enabled = server_state.is_keepalive_enabled;
 
-    let rocket_build = rocket::custom(rocket_configuration)
+    let mut rocket_build = rocket::custom(rocket_configuration)
         .attach(CORS)
-        .attach(CustomHeaders)
+        .attach(CustomHeaders);
+
+    if is_keepalive_enabled {
+        rocket_build = rocket_build.attach(KeepAlive);
+    }
+
+    rocket_build = rocket_build
         .manage(server_state)
         .mount("/", rocket::routes![analyze])
         .mount("/", rocket::routes![get_tree])
