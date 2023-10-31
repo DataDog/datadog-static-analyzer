@@ -7,6 +7,9 @@ use rocket::futures::FutureExt;
 use rocket::http::{Header, Status};
 use rocket::serde::json::{json, Json, Value};
 use rocket::{Build, Ignite, Request as RocketRequest, Response, Rocket, Shutdown, State};
+use server::constants::{
+    SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION, SERVER_HEADER_SHUTDOWN_ENABLED,
+};
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
 use server::request::process_analysis_request;
@@ -67,19 +70,13 @@ impl Fairing for CustomHeaders {
 
         if let rocket::outcome::Outcome::Success(server_configuration) = state {
             response.set_header(Header::new(
-                "X-static-analyzer-server-shutdown-enabled",
+                SERVER_HEADER_SHUTDOWN_ENABLED,
                 server_configuration.is_shutdown_enabled.to_string(),
             ));
         }
 
-        response.set_header(Header::new(
-            "X-static-analyzer-server-version",
-            get_version(),
-        ));
-        response.set_header(Header::new(
-            "X-static-analyzer-server-revision",
-            get_revision(),
-        ));
+        response.set_header(Header::new(SERVER_HEADER_SERVER_VERSION, get_version()));
+        response.set_header(Header::new(SERVER_HEADER_SERVER_REVISION, get_revision()));
     }
 }
 
