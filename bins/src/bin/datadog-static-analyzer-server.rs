@@ -4,11 +4,12 @@ use rocket::fairing::{Fairing, Info, Kind};
 use rocket::fs::NamedFile;
 use rocket::futures::FutureExt;
 use rocket::http::{Header, Status};
+use rocket::request::{FromRequest, Outcome};
 use rocket::serde::json::{json, Json, Value};
 use rocket::{Build, Ignite, Request as RocketRequest, Response, Rocket, Shutdown, State};
 use server::constants::{
-    SERVER_HEADER_KEEPALIVE_ENABLED, SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION,
-    SERVER_HEADER_SHUTDOWN_ENABLED,
+    SERVER_HEADER_KEEPALIVE_ENABLED, SERVER_HEADER_SERVER_EXPECTED_VERSION,
+    SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION, SERVER_HEADER_SHUTDOWN_ENABLED,
 };
 use server::model::analysis_request::AnalysisRequest;
 use server::model::tree_sitter_tree_request::TreeSitterRequest;
@@ -29,13 +30,67 @@ fn get_current_timestamp_ms() -> u128 {
         .as_millis()
 }
 
-pub struct CORS;
+fn print_usage(program: &str, opts: Options) {
+    let brief = format!("Usage: {} [options]", program);
+    print!("{}", opts.usage(&brief));
+}
+
+fn get_current_version() -> &'static str {
+    CARGO_VERSION
+}
+
+fn get_current_revision() -> &'static str {
+    VERSION
+}
+
+struct VersionGuard(Option<String>);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for VersionGuard {
+    type Error = String;
+
+    async fn from_request(request: &'r RocketRequest<'_>) -> Outcome<Self, Self::Error> {
+        let headers = request.headers();
+        let expected_version_headers: Vec<_> =
+            headers.get(SERVER_HEADER_SERVER_EXPECTED_VERSION).collect();
+
+        let current_version = get_current_version();
+
+        match expected_version_headers.len() {
+            0 => Outcome::Success(VersionGuard(None)),
+            1 => {
+                // check if the header is valid and return accordingly
+                let expected_version = expected_version_headers[0];
+                if expected_version == current_version {
+                    Outcome::Success(VersionGuard(Some(expected_version.to_string())))
+                } else {
+                    Outcome::Failure((
+                        Status::BadRequest,
+                        format!(
+                            "Expected version '{}', found '{}'",
+                            expected_version, current_version
+                        ),
+                    ))
+                }
+            }
+            occurrences => Outcome::Failure((
+                Status::BadRequest,
+                format!(
+                    "'{}' header was found {} times in the request",
+                    SERVER_HEADER_SERVER_EXPECTED_VERSION, occurrences
+                ),
+            )),
+        }
+    }
+}
+
+struct Cors;
 
 // Adding CORS for the server.
 // See https://stackoverflow.com/questions/62412361/how-to-set-up-cors-or-options-for-rocket-rs
 // for more information.
 #[rocket::async_trait]
-impl Fairing for CORS {
+impl Fairing for Cors {
     fn info(&self) -> Info {
         Info {
             name: "Add CORS headers to responses",
@@ -54,7 +109,7 @@ impl Fairing for CORS {
     }
 }
 
-pub struct CustomHeaders;
+struct CustomHeaders;
 
 #[rocket::async_trait]
 impl Fairing for CustomHeaders {
@@ -79,12 +134,18 @@ impl Fairing for CustomHeaders {
             ));
         }
 
-        response.set_header(Header::new(SERVER_HEADER_SERVER_VERSION, get_version()));
-        response.set_header(Header::new(SERVER_HEADER_SERVER_REVISION, get_revision()));
+        response.set_header(Header::new(
+            SERVER_HEADER_SERVER_VERSION,
+            get_current_version(),
+        ));
+        response.set_header(Header::new(
+            SERVER_HEADER_SERVER_REVISION,
+            get_current_revision(),
+        ));
     }
 }
 
-pub struct KeepAlive;
+struct KeepAlive;
 
 #[rocket::async_trait]
 impl Fairing for KeepAlive {
@@ -160,7 +221,7 @@ impl Fairing for KeepAlive {
 /// date: Tue, 31 Oct 2023 08:52:06 GMT
 // ```
 #[rocket::get("/shutdown")]
-fn shutdown_get(state: &State<ServerState>) -> Status {
+fn shutdown_get(_v: VersionGuard, state: &State<ServerState>) -> Status {
     if state.is_shutdown_enabled {
         Status::NoContent
     } else {
@@ -176,7 +237,7 @@ fn shutdown_get(state: &State<ServerState>) -> Status {
 ///
 /// Please, refer to the [`shutdown_get`] function's examples section to see how this would work.
 #[rocket::post("/shutdown")]
-fn shutdown_post(state: &State<ServerState>, shutdown: Shutdown) -> Status {
+fn shutdown_post(_v: VersionGuard, state: &State<ServerState>, shutdown: Shutdown) -> Status {
     if state.is_shutdown_enabled {
         shutdown.notify();
         Status::NoContent
@@ -186,7 +247,7 @@ fn shutdown_post(state: &State<ServerState>, shutdown: Shutdown) -> Status {
 }
 
 #[rocket::get("/languages", format = "application/json")]
-fn languages() -> Value {
+fn languages(_v: VersionGuard) -> Value {
     let languages: Vec<Value> = kernel::model::common::ALL_LANGUAGES
         .iter()
         .map(|x| json!(x))
@@ -195,27 +256,31 @@ fn languages() -> Value {
 }
 
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
-fn analyze(request: Json<AnalysisRequest>) -> Value {
+fn analyze(_v: VersionGuard, request: Json<AnalysisRequest>) -> Value {
     json!(process_analysis_request(request.into_inner()))
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
-fn get_tree(request: Json<TreeSitterRequest>) -> Value {
+fn get_tree(_v: VersionGuard, request: Json<TreeSitterRequest>) -> Value {
     json!(process_tree_sitter_tree_request(request.into_inner()))
 }
 
 #[rocket::get("/version", format = "text/plain")]
-fn get_version() -> String {
-    CARGO_VERSION.to_string()
+fn get_version(_v: VersionGuard) -> &'static str {
+    get_current_version()
 }
 
 #[rocket::get("/revision", format = "text/plain")]
-fn get_revision() -> String {
-    VERSION.to_string()
+fn get_revision(_v: VersionGuard) -> &'static str {
+    get_current_revision()
 }
 
 #[rocket::get("/static/<name>")]
-async fn serve_static(server_configuration: &State<ServerState>, name: &str) -> Option<NamedFile> {
+async fn serve_static(
+    _v: VersionGuard,
+    server_configuration: &State<ServerState>,
+    name: &str,
+) -> Option<NamedFile> {
     if server_configuration.static_directory.is_none()
         || name.contains("..")
         || name.starts_with('.')
@@ -244,13 +309,8 @@ struct ServerState {
 }
 
 #[rocket::get("/ping", format = "text/plain")]
-fn ping() -> String {
+fn ping(_v: VersionGuard) -> String {
     "pong".to_string()
-}
-
-fn print_usage(program: &str, opts: Options) {
-    let brief = format!("Usage: {} [options]", program);
-    print!("{}", opts.usage(&brief));
 }
 
 async fn spawn_rocket(
@@ -379,7 +439,7 @@ async fn main() {
     let is_keepalive_enabled = server_state.is_keepalive_enabled;
 
     let mut rocket_build = rocket::custom(rocket_configuration)
-        .attach(CORS)
+        .attach(Cors)
         .attach(CustomHeaders);
 
     if is_keepalive_enabled {

@@ -8,7 +8,8 @@ pub const ERROR_CODE_LANGUAGE_MISMATCH: &str = "language-mismatch";
 pub const ERROR_CODE_NO_ROOT_NODE: &str = "no-root-node";
 pub const ERROR_CHECKSUM_MISMATCH: &str = "checksum-mismatch";
 
-pub const SERVER_HEADER_SHUTDOWN_ENABLED: &str = "X-static-analyzer-server-shutdown-enabled";
-pub const SERVER_HEADER_KEEPALIVE_ENABLED: &str = "X-static-analyzer-server-keepalive-enabled";
-pub const SERVER_HEADER_SERVER_VERSION: &str = "X-static-analyzer-server-version";
-pub const SERVER_HEADER_SERVER_REVISION: &str = "X-static-analyzer-server-revision";
+pub const SERVER_HEADER_SHUTDOWN_ENABLED: &str = "X-Static-Analyzer-Server-Shutdown-Enabled";
+pub const SERVER_HEADER_KEEPALIVE_ENABLED: &str = "X-Static-Analyzer-Server-Keepalive-Enabled";
+pub const SERVER_HEADER_SERVER_VERSION: &str = "X-Static-Analyzer-Server-Version";
+pub const SERVER_HEADER_SERVER_REVISION: &str = "X-Static-Analyzer-Server-Revision";
+pub const SERVER_HEADER_SERVER_EXPECTED_VERSION: &str = "X-Static-Analyzer-Server-Expected-Version";
