@@ -39,7 +39,7 @@ fn get_datadog_site(use_staging: bool) -> String {
     if use_staging {
         STAGING_DATADOG_SITE.to_string()
     } else {
-        get_datadog_variable_value("DD_SITE").unwrap_or(DEFAULT_DATADOG_SITE.to_string())
+        get_datadog_variable_value("SITE").unwrap_or(DEFAULT_DATADOG_SITE.to_string())
     }
 }
 
