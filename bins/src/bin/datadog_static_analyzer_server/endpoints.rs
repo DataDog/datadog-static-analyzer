@@ -11,7 +11,7 @@ use server::model::{
 };
 use server::request::process_analysis_request;
 use server::tree_sitter_tree::process_tree_sitter_tree_request;
-use std::{path::Path, sync::mpsc::Sender};
+use std::{path::Path, process::exit, sync::mpsc::Sender};
 
 use crate::datadog_static_analyzer_server::state::ServerState;
 
@@ -168,7 +168,16 @@ pub async fn launch_rocket_with_endpoints(
 ) -> Result<(), Error> {
     let ignited = mount_endpoints(rocket).ignite().await?;
     let shutdown_handle = ignited.shutdown();
-    let rocket_handle = rocket::tokio::spawn(ignited.launch());
+    let rocket_handle = rocket::tokio::spawn(async {
+        let result = ignited.launch().await;
+        if let Err(e) = result {
+            eprintln!("Rocket launch error {}", e);
+            match e.kind() {
+                rocket::error::ErrorKind::Bind(_) => exit(14), // 14 (Bad Address)
+                _ => exit(1),
+            }
+        }
+    });
 
     let _ = tx.send(shutdown_handle.clone());
     // Will shutdown if the keep alive option has been passed
