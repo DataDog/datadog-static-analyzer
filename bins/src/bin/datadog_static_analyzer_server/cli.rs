@@ -48,7 +48,8 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(f) => {
-            panic!("error when parsing arguments: {}", f)
+            eprintln!("error when parsing arguments: {}", f);
+            process::exit(22); // invalid argument code
         }
     };
 
