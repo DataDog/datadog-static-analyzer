@@ -100,8 +100,22 @@ impl IntoSarif for &Edit {
                     sarif::RegionBuilder::default()
                         .start_line(self.start.line)
                         .start_column(self.start.col)
-                        .end_line(self.start.line)
-                        .end_column(self.start.col)
+                        .end_line(
+                            self.end
+                                .clone()
+                                .unwrap_or(
+                                    PositionBuilder::default().line(0).col(0).build().unwrap(),
+                                )
+                                .line,
+                        )
+                        .end_column(
+                            self.end
+                                .clone()
+                                .unwrap_or(
+                                    PositionBuilder::default().line(0).col(0).build().unwrap(),
+                                )
+                                .col,
+                        )
                         .build()
                         .unwrap(),
                 )
