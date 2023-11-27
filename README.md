@@ -13,7 +13,6 @@ If you use it in your own CI/CD pipeline, you can integrate the tool directly: s
 
 Download the latest release for your system and architecture from the [release page](https://github.com/DataDog/datadog-static-analyzer/blob/main/releases/latest).
 
-
 To get the static analyzer via shell:
 
 ```shell
