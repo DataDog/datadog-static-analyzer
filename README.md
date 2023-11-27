@@ -1,13 +1,61 @@
-# datadog-static-analyzer
+# Datadog Static Analyzer
 
-datadog-static-analyzer is the static analyzer that powers Datadog [static analysis product](https://docs.datadoghq.com/continuous_integration/static_analysis).
+datadog-static-analyzer is the static analyzer that power Datadog [static analysis](https://www.datadoghq.com/static-analysis/).
+
+## How to use Datadog Static Analysis Tool
+
+
+### Create a `static-analysis.datadog.yml` file
+
+First, make sure you follow the [documentation](https://docs.datadoghq.com/continuous_integration/static_analysis)
+and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
+
+Example of YAML file
+
+```yaml
+rulesets:
+  - python-code-style
+  - python-best-practices
+  - python-inclusive
+ignore-paths:
+  - tests
+```
+
+
+### CI/CD Integration
 
 You can use it in your CI/CD pipeline using our integration:
- - [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
- - [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
+- [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
+- [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
 
-If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/continuous_integration/static_analysis/?tab=other). 
+If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/continuous_integration/static_analysis/?tab=other).
 
+### IDE
+
+#### IntelliJ JetBrains products.
+
+
+The [Datadog IntelliJ extension](https://plugins.jetbrains.com/plugin/19495-datadog) allows you to use the static analyzer directly from all JetBrains products.
+Create a `static-analysis.datadog.yml` file, download the extension and you can start using it. You can see below an example of a suggestion to add a timeout
+when fetching data with Python with the requests module.
+
+![Datadog Static Analysis JetBrains](misc/imgs/jetbrains.gif)
+
+
+#### VS Code
+
+The [Datadog VS Code extension](https://marketplace.visualstudio.com/items?itemName=Datadog.datadog-vscode) allows you to use the static analyzer directly from VS Code.
+Create a `static-analysis.datadog.yml` file, download the extension and you can start using it.
+
+
+## List of rulesets
+
+When you onboard on the Datadog product, you can select the ruleset you want/need. If you are not using Datadog directly, 
+there is the list of common used rulesets available in the Datadog static analysis product per language.
+
+The complete list is available in [our documentation](https://docs.datadoghq.com/continuous_integration/static_analysis).
+
+The list of rulesets is available in [RULESETS.md](RULESETS.md).
 
 ## Download
 
