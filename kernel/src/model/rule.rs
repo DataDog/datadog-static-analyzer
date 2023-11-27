@@ -130,6 +130,7 @@ pub struct Rule {
     pub entity_checked: Option<EntityChecked>,
     #[serde(rename = "code")]
     pub code_base64: String,
+    pub cwe: Option<String>,
     pub checksum: String,
     pub pattern: Option<String>,
     #[serde(rename = "tree_sitter_query")]
@@ -160,6 +161,22 @@ impl Rule {
             "https://docs.datadoghq.com/continuous_integration/static_analysis/rules/{}",
             self.name
         )
+    }
+
+    // Sometimes, the API returns an empty CWE as an empty string. If we have an empty
+    // string for CWE, we set the CWE to empty.
+    pub fn fix_cwe(&self) -> Rule {
+        if let Some(cwe) = &self.cwe {
+            if cwe.is_empty() {
+                let mut new_value = self.clone();
+                new_value.cwe = None;
+                new_value.clone()
+            } else {
+                self.clone()
+            }
+        } else {
+            self.clone()
+        }
     }
 
     fn decode_description(&self) -> anyhow::Result<Option<String>> {
@@ -259,6 +276,7 @@ mod tests {
             code_base64: "mycode".to_string(),
             checksum: "foobar".to_string(),
             pattern: None,
+            cwe: None,
             tree_sitter_query_base64: None,
             variables: HashMap::new(),
             tests: vec![],
@@ -276,11 +294,81 @@ mod tests {
             checksum: "3ec22eed588a89d1b2f1c967bf82041ab069ae98b3739be93ac3b22bf419f3aa"
                 .to_string(),
             pattern: None,
+            cwe: None,
             tree_sitter_query_base64: None,
             variables: HashMap::new(),
             tests: vec![],
         };
         assert!(!rule_invalid_checksum.verify_checksum());
         assert!(rule_valid_checksum.verify_checksum());
+    }
+
+    #[test]
+    fn test_fix_cwe_cwe_empty() {
+        let rule = Rule {
+            name: "myrule".to_string(),
+            short_description_base64: Some("bla".to_string()),
+            description_base64: Some("bli".to_string()),
+            category: RuleCategory::BestPractices,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: "mycode".to_string(),
+            checksum: "foobar".to_string(),
+            pattern: None,
+            cwe: None,
+            tree_sitter_query_base64: None,
+            variables: HashMap::new(),
+            tests: vec![],
+        };
+        let fixed_ruled = rule.fix_cwe();
+        assert!(fixed_ruled.cwe.is_none());
+    }
+
+    #[test]
+    fn test_fix_cwe_cwe_empty_string() {
+        let rule = Rule {
+            name: "myrule".to_string(),
+            short_description_base64: Some("bla".to_string()),
+            description_base64: Some("bli".to_string()),
+            category: RuleCategory::BestPractices,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: "mycode".to_string(),
+            checksum: "foobar".to_string(),
+            pattern: None,
+            cwe: Some("".to_string()),
+            tree_sitter_query_base64: None,
+            variables: HashMap::new(),
+            tests: vec![],
+        };
+        let fixed_ruled = rule.fix_cwe();
+        assert!(fixed_ruled.cwe.is_none());
+    }
+
+    #[test]
+    fn test_fix_cwe_cwe_non_empty_string() {
+        let rule = Rule {
+            name: "myrule".to_string(),
+            short_description_base64: Some("bla".to_string()),
+            description_base64: Some("bli".to_string()),
+            category: RuleCategory::BestPractices,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: "mycode".to_string(),
+            checksum: "foobar".to_string(),
+            pattern: None,
+            cwe: Some("1234".to_string()),
+            tree_sitter_query_base64: None,
+            variables: HashMap::new(),
+            tests: vec![],
+        };
+        let fixed_ruled = rule.fix_cwe();
+        assert!(fixed_ruled.cwe.is_some());
     }
 }

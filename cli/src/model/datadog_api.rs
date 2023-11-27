@@ -63,6 +63,7 @@ impl ApiResponseRuleset {
                     entity_checked: rule_from_api.entity_checked,
                     code_base64: rule_from_api.code,
                     category: rule_from_api.category,
+                    cwe: rule_from_api.cwe,
                     severity: rule_from_api.severity,
                     pattern: rule_from_api.pattern,
                     tree_sitter_query_base64: rule_from_api.tree_sitter_query,

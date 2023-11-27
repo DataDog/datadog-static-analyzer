@@ -35,6 +35,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             severity: r.severity.unwrap_or(RuleSeverity::Warning),
             language: r.language,
             rule_type: r.rule_type,
+            cwe: None,
             entity_checked: r.entity_checked,
             code_base64: r.code_base64.clone(),
             checksum: r.checksum.clone().unwrap_or("".to_string()),

@@ -77,7 +77,13 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         serde_json::from_str::<ApiResponse>(response_text.as_ref().unwrap().as_str());
 
     match api_response {
-        Ok(d) => Ok(d.clone().into_ruleset()),
+        Ok(d) => {
+            let mut ruleset = d.clone().into_ruleset();
+            // Let's make sure if the CWE is an empty string, we set it to none
+            let fixed_rules = ruleset.rules.iter_mut().map(|r| r.fix_cwe()).collect();
+            ruleset.rules = fixed_rules;
+            Ok(ruleset)
+        }
         Err(e) => {
             eprintln!("Error when parsing the ruleset {} {:?}", ruleset_name, e);
             eprintln!("{}", response_text.as_ref().unwrap().as_str());
