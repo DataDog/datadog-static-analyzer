@@ -1,12 +1,90 @@
-# datadog-static-analyzer
+# Datadog Static Analyzer
 
-datadog-static-analyzer is the static analyzer that powers Datadog [static analysis product](https://docs.datadoghq.com/continuous_integration/static_analysis).
+datadog-static-analyzer is the static analyzer that power Datadog [static analysis](https://www.datadoghq.com/static-analysis/).
+
+## How to use Datadog Static Analysis Tool
+
+
+### Create a `static-analysis.datadog.yml` file
+
+First, make sure you follow the [documentation](https://docs.datadoghq.com/continuous_integration/static_analysis)
+and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
+
+Example of YAML file
+
+```yaml
+rulesets:
+  - python-code-style
+  - python-best-practices
+  - python-inclusive
+ignore-paths:
+  - tests
+```
+
+
+### CI/CD Integration
 
 You can use it in your CI/CD pipeline using our integration:
- - [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
- - [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
+- [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
+- [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
 
-If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/continuous_integration/static_analysis/?tab=other). 
+If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/continuous_integration/static_analysis/?tab=other).
+
+### IDE
+
+#### IntelliJ JetBrains products.
+
+
+The [Datadog IntelliJ extension](https://plugins.jetbrains.com/plugin/19495-datadog) allows you to use the static analyzer directly from all JetBrains products.
+Create a `static-analysis.datadog.yml` file, download the extension and you can start using it. You can see below an example of a suggestion to add a timeout
+when fetching data with Python with the requests module.
+
+![Datadog Static Analysis JetBrains](misc/imgs/jetbrains.gif)
+
+
+#### VS Code
+
+The [Datadog VS Code extension](https://marketplace.visualstudio.com/items?itemName=Datadog.datadog-vscode) allows you to use the static analyzer directly from VS Code.
+Create a `static-analysis.datadog.yml` file, download the extension and you can start using it.
+
+
+## List of rulesets
+
+When you onboard on the Datadog product, you can select the ruleset you want/need. If you are not using Datadog directly, 
+there is the list of common used rulesets available in the Datadog static analysis product per language.
+
+The complete list is available in [our documentation](https://docs.datadoghq.com/continuous_integration/static_analysis).
+
+| Language      | Ruleset Name                                                                                                                                             | 
+|---------------|----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Python        | [python-code-style](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#enforce-python-code-style)                                   |  
+| Python        | [python-best-practices](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#follow-best-practices-for-writing-python-code)           |
+| Python        | [python-security](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#ensure-your-python-code-is-safe-and-secure)                    |
+| Python        | [python-pandas](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#good-practices-for-data-science-with-pandas)                     |
+| Python        | [python-flask](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#check-for-flask-best-practices-and-security)                      |
+| Python        | [python-django](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#check-for-django-best-practices-and-security)                    |
+| Python        | [python-design](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#check-python-program-structure)                                  |
+| Java          | java-best-practices                                                                                                                                      |
+| Java          | java-inclusive                                                                                                                                           |
+| Java          | java-security                                                                                                                                            |
+| Java          | java-code-style                                                                                                                                          |
+| Docker        | [docker-best-practices](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#follow-best-practices-with-using-docker)                 |
+| JavaScript    | [javascript-best-practices](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#follow-best-practices-for-writing-javascript-code)   |
+| JavaScript    | [javascript-code-style](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#enforce-javascript-code-style)                           |
+| JavaScript    | [javascript-common-security](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#common-security-rules-for-javascript)               |
+| JavaScript    | [javascript-browser-security](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#security-rules-for-javascript-web-applications)    | 
+| JavaScript    | [javascript-node-security](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#identify-potential-security-hotspots-in-node)         |
+| JavaScript    | [javascript-express](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#check-for-expressjs-best-practices-and-security)            |
+| JavaScript    | [javascript-inclusive](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#check-javascript-code-for-wording-issues)                 |
+| JavaScript    | [jsx-react](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#react-specific-linting-rules)                                        |
+| TypeScript    | [typescript-best-practices](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#follow-best-practices-for-writing-typescript-code)   |
+| TypeScript    | [typescript-code-style](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#typescript-opinionated-code-patterns)                    |
+| TypeScript    | [typescript-common-security](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#common-security-rules-for-typescript)               |
+| TypeScript    | [typescript-browser-security](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#security-rules-for-typescript-web-applications)    |
+| TypeScript    | [typescript-node-security](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#identify-potential-security-hotspots-in-node-1)       |
+| TypeScript    | [typescript-express](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#check-for-expressjs-typescript-best-practices-and-security) |
+| TypeScript    | [typescript-inclusive](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#check-python-code-for-wording-issues-1)                   |
+| TypeScript    | [tsx-react](https://docs.datadoghq.com/continuous_integration/static_analysis/rules#typescript-react-code-quality)                                       |
 
 
 ## Download
