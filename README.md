@@ -30,10 +30,8 @@ You can use it in your CI/CD pipeline using our integration:
 
 If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/continuous_integration/static_analysis/?tab=other).
 
-### IDE
 
-#### IntelliJ JetBrains products.
-
+### IntelliJ JetBrains products
 
 The [Datadog IntelliJ extension](https://plugins.jetbrains.com/plugin/19495-datadog) allows you to use the static analyzer directly from all JetBrains products.
 Create a `static-analysis.datadog.yml` file, download the extension and you can start using it. You can see below an example of a suggestion to add a timeout
@@ -42,11 +40,12 @@ when fetching data with Python with the requests module.
 ![Datadog Static Analysis JetBrains](misc/imgs/jetbrains.gif)
 
 
-#### VS Code
+### VS Code
 
 The [Datadog VS Code extension](https://marketplace.visualstudio.com/items?itemName=Datadog.datadog-vscode) allows you to use the static analyzer directly from VS Code.
 Create a `static-analysis.datadog.yml` file, download the extension and you can start using it.
 
+![Datadog Static Analysis JetBrains](misc/imgs/vscode.gif)
 
 ## List of rulesets
 
