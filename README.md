@@ -2,6 +2,9 @@
 
 datadog-static-analyzer is the static analyzer that power Datadog [static analysis](https://www.datadoghq.com/static-analysis/).
 
+> [!TIP]
+> Datadog supports open source projects. Learn more on [Datadog for Open Source Projects](https://www.datadoghq.com/partner/open-source/).
+
 ## How to use Datadog Static Analysis Tool
 
 
