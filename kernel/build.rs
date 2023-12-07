@@ -1,5 +1,26 @@
+use deno_core::extension;
+use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+fn create_deno_snapshot() {
+    extension!(deno_extension, js = ["src/analysis/js/stella.js",]);
+    let out_dir =
+        PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR environment variable not found"));
+    let snapshot_path = out_dir.join("DENO_SNAPSHOT.bin");
+
+    let _snapshot = deno_core::snapshot_util::create_snapshot(
+        deno_core::snapshot_util::CreateSnapshotOptions {
+            cargo_manifest_dir: env!("CARGO_MANIFEST_DIR"),
+            snapshot_path,
+            startup_snapshot: None,
+            skip_op_registration: false,
+            extensions: vec![deno_extension::init_ops_and_esm()],
+            compression_cb: None,
+            with_runtime_cb: None,
+        },
+    );
+}
 
 fn run<F>(name: &str, mut configure: F)
 where
@@ -15,6 +36,7 @@ where
 }
 
 fn main() {
+    create_deno_snapshot();
     struct TreeSitterProject {
         name: String,             // the directory where we clone the project
         compilation_unit: String, // name of the unit we compile
