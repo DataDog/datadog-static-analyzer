@@ -8,6 +8,7 @@ indicatif,https://crates.io/crates/indicatif,MIT,Copyright (c) 2017 Armin Ronach
 itertools,https://github.com/rust-itertools/itertools,MIT,Copyright 2015 itertools Developers
 lazy_static,https://crates.io/crates/lazy_static,MIT,Copyright 2016 lazy-static.rs Developers
 num_cpus,https://github.com/seanmonstar/num_cpus,MIT, Copyright (c) 2015 Sean McArthur
+percent-encoding,https://github.com/servo/rust-url/,MIT, Copyright (c) 2013-2022 The rust-url developers
 rayon,https://crates.io/crates/rayon,MIT,Copyright (c) 2010 The Rust Project Developers
 rocket,https://github.com/SergioBenitez/Rocket,Apache-2.0,Copyright 2016 Sergio Benitez
 tree-sitter,https://github.com/tree-sitter/tree-sitter,MIT,2014 Max Brunsfeld
