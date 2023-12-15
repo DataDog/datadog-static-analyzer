@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 // how long a rule can execute before it's a timeout.
 const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
 
+// DENO_SNAPSHOT.bin is created at compile time in build.rs
 static STARTUP_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/DENO_SNAPSHOT.bin"));
 
 // This structure is what is returned by the JavaScript code

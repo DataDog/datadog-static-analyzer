@@ -3,6 +3,13 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+// Create a snapshot of the JS runtime during compilation
+// and persist it to the package's OUT_DIR as DENO_SNAPSHOT.bin.
+// The contents of DENO_SNAPSHOT.bin will be directly included in the compiled executable later,
+// and will be accessible as a static byte slice during execution to initialize the JS runtime.
+//
+// Refer to https://doc.rust-lang.org/cargo/reference/environment-variables.html for info on
+// OUT_DIR and CARGO_MANIFEST_DIR
 fn create_deno_snapshot() {
     extension!(deno_extension, js = ["src/analysis/js/stella.js",]);
     let out_dir =
