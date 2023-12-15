@@ -1,12 +1,14 @@
 use anyhow::Result;
 use base64::Engine;
 use git2::{BlameOptions, Repository};
+use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde_sarif::sarif::{
     self, ArtifactChangeBuilder, ArtifactLocationBuilder, Fix, FixBuilder, LocationBuilder,
     MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder, Replacement,
     ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif, SarifBuilder,
     Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
+
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::rc::Rc;
@@ -218,6 +220,13 @@ fn get_sha_for_line(
     None
 }
 
+// Encode the file using percent to that filename "My Folder/file.c" is "My%20Folder/file.c"
+fn encode_filename(filename: String) -> String {
+    const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
+
+    return utf8_percent_encode(filename.as_str(), FRAGMENT).collect();
+}
+
 // Generate the tool section that reports all the rules being run
 fn generate_results(
     rules: &[Rule],
@@ -248,13 +257,12 @@ fn generate_results(
             let options = options_orig.clone();
             rule_result.violations.iter().map(move |violation| {
                 // if we find the rule for this violation, get the id, level and category
-
                 let location = LocationBuilder::default()
                     .physical_location(
                         PhysicalLocationBuilder::default()
                             .artifact_location(
                                 ArtifactLocationBuilder::default()
-                                    .uri(rule_result.filename.clone())
+                                    .uri(encode_filename(rule_result.filename.clone()))
                                     .build()
                                     .unwrap(),
                             )
@@ -280,7 +288,7 @@ fn generate_results(
                         let changes = ArtifactChangeBuilder::default()
                             .artifact_location(
                                 ArtifactLocationBuilder::default()
-                                    .uri(rule_result.filename.clone())
+                                    .uri(encode_filename(rule_result.filename.clone()))
                                     .build()?,
                             )
                             .replacements(replacements)
@@ -460,6 +468,78 @@ mod tests {
         assert_json_eq!(
             sarif_report_to_string,
             serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/continuous_integration/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+        );
+
+        // validate the schema
+        assert!(validate_data(&sarif_report_to_string));
+    }
+
+    #[test]
+    fn test_generate_with_escape_characters() {
+        let rule = RuleBuilder::default()
+            .name("my-rule".to_string())
+            .description_base64(Some("YXdlc29tZSBydWxl".to_string()))
+            .language(Language::Python)
+            .checksum("blabla".to_string())
+            .pattern(None)
+            .tree_sitter_query_base64(Some("ts-query".to_string()))
+            .category(RuleCategory::BestPractices)
+            .code_base64("Zm9vYmFyYmF6".to_string())
+            .short_description_base64(Some("c2hvcnQgZGVzY3JpcHRpb24=".to_string()))
+            .entity_checked(None)
+            .rule_type(RuleType::TreeSitterQuery)
+            .severity(RuleSeverity::Error)
+            .cwe(Some("1234".to_string()))
+            .variables(HashMap::new())
+            .tests(vec![])
+            .build()
+            .unwrap();
+
+        let rule_result = RuleResultBuilder::default()
+            .rule_name("my-rule".to_string())
+            .filename("my file/in my directory".to_string())
+            .violations(vec![ViolationBuilder::default()
+                .start(PositionBuilder::default().line(1).col(2).build().unwrap())
+                .end(PositionBuilder::default().line(3).col(4).build().unwrap())
+                .message("violation message".to_string())
+                .severity(RuleSeverity::Error)
+                .category(RuleCategory::BestPractices)
+                .fixes(vec![RosieFixBuilder::default()
+                    .description("myfix".to_string())
+                    .edits(vec![EditBuilder::default()
+                        .edit_type(EditType::Add)
+                        .start(PositionBuilder::default().line(6).col(6).build().unwrap())
+                        .end(Some(
+                            PositionBuilder::default().line(6).col(6).build().unwrap(),
+                        ))
+                        .content(Some("newcontent".to_string()))
+                        .build()
+                        .unwrap()])
+                    .build()
+                    .unwrap()])
+                .build()
+                .unwrap()])
+            .output(None)
+            .errors(vec![])
+            .execution_time_ms(42)
+            .execution_error(None)
+            .build()
+            .expect("building violation");
+
+        let sarif_report = generate_sarif_report(
+            &[rule],
+            &vec![rule_result],
+            &"mydir".to_string(),
+            false,
+            false,
+        )
+        .expect("generate sarif report");
+
+        let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
+        println!("{}", sarif_report_to_string);
+        assert_json_eq!(
+            sarif_report_to_string,
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/continuous_integration/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
