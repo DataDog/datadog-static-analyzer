@@ -112,12 +112,9 @@ pub fn analyze(
                                     );
 
                                     // filter violations that have been ignored
-                                    rule_result.violations = rule_result
+                                    rule_result
                                         .violations
-                                        .iter()
-                                        .cloned()
-                                        .filter(|v| !lines_to_ignore.contains(&v.start.line))
-                                        .collect();
+                                        .retain(|v| !lines_to_ignore.contains(&v.start.line));
                                     rule_result
                                 }
                             }

@@ -14,8 +14,8 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     let rules_with_invalid_language: Vec<ServerRule> = request
         .rules
         .iter()
+        .filter(|&v| v.language != request.language)
         .cloned()
-        .filter(|v| v.language != request.language)
         .collect();
     if !rules_with_invalid_language.is_empty() {
         return AnalysisResponse {
