@@ -1,4 +1,7 @@
-on: push
+on:
+  push:
+  pull_request:
+
 name: Check Code
 jobs:
   check_code:
@@ -42,3 +45,7 @@ jobs:
         run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
       - name: Check python rulesets - part2
         run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-django -r python-flask -r python-design
+      - name: Check Java rulesets
+        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r java-security -r java-best-practices -r java-code-style
+      - name: Check Docker rulesets
+        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r docker-best-practices
