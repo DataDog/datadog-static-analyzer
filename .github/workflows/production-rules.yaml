@@ -1,5 +1,6 @@
 on:
   push:
+  pull_request:
   schedule:
     # run every day at 9am UTC
     - cron:  '0 9 * * *'
