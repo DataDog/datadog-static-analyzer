@@ -158,7 +158,7 @@ pub struct RuleInternal {
 impl Rule {
     pub fn get_url(&self) -> String {
         format!(
-            "https://docs.datadoghq.com/continuous_integration/static_analysis/rules/{}",
+            "https://docs.datadoghq.com/static_analysis/rules/{}",
             self.name
         )
     }
