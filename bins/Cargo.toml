@@ -39,7 +39,7 @@ getopts = "0.2.21"
 num_cpus = "1.15.0"
 indicatif = "0.17.6"
 rayon = "1.7.0"
-rocket = { version = "=0.5.0-rc.3", features = ["json"] }
+rocket = { version = "0.5.0", features = ["json"] }
 
 
 # For linux and macos, we need the vendored ssl
