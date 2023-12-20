@@ -1,33 +1,5 @@
-use deno_core::extension;
-use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-
-// Create a snapshot of the JS runtime during compilation
-// and persist it to the package's OUT_DIR as DENO_SNAPSHOT.bin.
-// The contents of DENO_SNAPSHOT.bin will be directly included in the compiled executable later,
-// and will be accessible as a static byte slice during execution to initialize the JS runtime.
-//
-// Refer to https://doc.rust-lang.org/cargo/reference/environment-variables.html for info on
-// OUT_DIR and CARGO_MANIFEST_DIR
-fn create_deno_snapshot() {
-    extension!(deno_extension, js = ["src/analysis/js/stella.js",]);
-    let out_dir =
-        PathBuf::from(env::var_os("OUT_DIR").expect("OUT_DIR environment variable not found"));
-    let snapshot_path = out_dir.join("DENO_SNAPSHOT.bin");
-
-    let _snapshot = deno_core::snapshot_util::create_snapshot(
-        deno_core::snapshot_util::CreateSnapshotOptions {
-            cargo_manifest_dir: env!("CARGO_MANIFEST_DIR"),
-            snapshot_path,
-            startup_snapshot: None,
-            skip_op_registration: false,
-            extensions: vec![deno_extension::init_ops_and_esm()],
-            compression_cb: None,
-            with_runtime_cb: None,
-        },
-    );
-}
 
 fn run<F>(name: &str, mut configure: F)
 where
@@ -43,7 +15,6 @@ where
 }
 
 fn main() {
-    create_deno_snapshot();
     struct TreeSitterProject {
         name: String,             // the directory where we clone the project
         compilation_unit: String, // name of the unit we compile
