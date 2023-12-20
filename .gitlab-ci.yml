@@ -13,7 +13,7 @@ test-and-build:
     - source "$HOME/.cargo/env"
     - cargo build -r
     - cargo test
-    - apt-get install -y python3-requests
+    - apt-get install -y python python3-requests
     - python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-best-practices
     - python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-security
     - python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-code-style
