@@ -70,7 +70,8 @@ test-and-build-amd64:
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
   tags:
-    - arch:amd64
+    # TODO(jasonforal) fix this - see STAL-975
+    - arch:arm64
 
 trigger_internal_image:
   stage: release
