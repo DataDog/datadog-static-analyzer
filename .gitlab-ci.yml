@@ -4,7 +4,7 @@ stages:
   - test
   - release
 
-test-and-build:
+test-and-build-arm64:
   stage: test
   script:
     - apt-get update
@@ -18,10 +18,59 @@ test-and-build:
     - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-security
     - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-code-style
     - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-inclusive
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r tsx-react
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-code-style
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-common-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-node-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r jsx-react
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r javascript-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r javascript-node-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r javascript-common-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r java-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r java-code-style
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r java-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r csharp-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r csharp-inclusive
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r csharp-security
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
   tags:
     - arch:arm64
+
+test-and-build-amd64:
+  stage: test
+  script:
+    - apt-get update
+    - apt-get install -y git curl build-essential pkg-config libssl-dev
+    - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
+    - source "$HOME/.cargo/env"
+    - cargo build -r
+    - cargo test
+    - apt-get install -y python3 python3-requests
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-code-style
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r python-inclusive
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r tsx-react
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-code-style
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-common-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r typescript-node-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r jsx-react
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r javascript-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r javascript-node-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r javascript-common-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r java-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r java-code-style
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r java-security
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r csharp-best-practices
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r csharp-inclusive
+    - python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r csharp-security
+  variables:
+    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
+  tags:
+    - arch:amd64
 
 trigger_internal_image:
   stage: release
