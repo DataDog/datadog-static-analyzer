@@ -33,5 +33,5 @@ jobs:
             csharp-best-practices csharp-inclusive csharp-security \
             # docker-best-practices (see STAL-607)\
             do \
-            python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
+            python3 misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
           done
