@@ -53,7 +53,13 @@ pub fn execute_rule(
 
     let started = lock.lock().expect("should lock mutex");
 
+    // See https://github.com/denoland/deno_core/issues/217
+    // This is a workaround to prevent a bug.
+    // See https://github.com/denoland/deno/pull/20495/files
+    deno_core::JsRuntime::init_platform(None);
+
     thread::spawn(move || {
+        deno_core::JsRuntime::init_platform(None);
         let mut runtime = JsRuntime::new(RuntimeOptions {
             startup_snapshot: Some(Snapshot::Static(STARTUP_DATA)),
             ..Default::default()
