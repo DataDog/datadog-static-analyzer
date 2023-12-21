@@ -16,6 +16,12 @@ cargo build
 cargo run --bin datadog-static-analyzer -- --directory <SOURCE> --output result.json --format sarif --debug yes
 ```
 
+## Start a local server
+
+```shell
+cargo run --bin datadog-static-analyzer-server -- --port <server-port> -a <server-address>
+```
+
 ## Run tests
 
 Run all tests
