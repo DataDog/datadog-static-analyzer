@@ -70,8 +70,7 @@ test-and-build-amd64:
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
   tags:
-    # TODO(jasonforal) fix this - see STAL-975
-    - arch:arm64
+    - arch:amd64
 
 trigger_internal_image:
   stage: release
@@ -85,8 +84,8 @@ trigger_internal_image:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: images
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
-    RELEASE_TAG: 2023122001
-    BUILD_TAG:   2023122001
+    RELEASE_TAG: 2023122101
+    BUILD_TAG:   2023122101
     TMPL_SRC_IMAGE: v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     RELEASE_STAGING: "true"
     RELEASE_PROD: "true"

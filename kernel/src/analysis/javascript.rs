@@ -3,18 +3,25 @@ use crate::model::analysis::{
 };
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
-use deno_core::{v8, FastString, JsRuntime, RuntimeOptions, Snapshot};
+use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
 // how long a rule can execute before it's a timeout.
 const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
 
-// DENO_SNAPSHOT.bin is created at compile time in build.rs
-static STARTUP_DATA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/DENO_SNAPSHOT.bin"));
+lazy_static! {
+    static ref STARTUP_DATA: Vec<u8> = {
+        let code: FastString = FastString::from_static(include_str!("./js/stella.js"));
+        let mut rt = JsRuntimeForSnapshot::new(Default::default(), Default::default());
+        rt.execute_script("common_js", code).unwrap();
+        rt.snapshot().to_vec()
+    };
+}
 
 // This structure is what is returned by the JavaScript code
 #[derive(Deserialize, Debug, Serialize, Clone)]
@@ -53,15 +60,9 @@ pub fn execute_rule(
 
     let started = lock.lock().expect("should lock mutex");
 
-    // See https://github.com/denoland/deno_core/issues/217
-    // This is a workaround to prevent a bug.
-    // See https://github.com/denoland/deno/pull/20495/files
-    deno_core::JsRuntime::init_platform(None);
-
     thread::spawn(move || {
-        deno_core::JsRuntime::init_platform(None);
         let mut runtime = JsRuntime::new(RuntimeOptions {
-            startup_snapshot: Some(Snapshot::Static(STARTUP_DATA)),
+            startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
             ..Default::default()
         });
 
