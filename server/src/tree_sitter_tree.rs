@@ -1,39 +1,54 @@
 use crate::constants::{ERROR_CODE_NOT_BASE64, ERROR_CODE_NO_ROOT_NODE};
+use crate::model::tree_sitter_tree_node::ServerTreeSitterNode;
 use crate::model::tree_sitter_tree_request::TreeSitterRequest;
 use crate::model::tree_sitter_tree_response::TreeSitterResponse;
 use kernel::analysis::tree_sitter::{get_tree, map_node};
 use kernel::utils::decode_base64_string;
 
 // Return the tree for the language and code sent as parameter.
+#[tracing::instrument(skip_all)]
 pub fn process_tree_sitter_tree_request(request: TreeSitterRequest) -> TreeSitterResponse {
-    let decoded = decode_base64_string(request.code_base64);
+    tracing::debug!("Processing tree-sitter AST generation request");
 
     let no_root_node = TreeSitterResponse {
         result: None,
         errors: vec![ERROR_CODE_NO_ROOT_NODE.to_string()],
     };
 
-    if decoded.is_err() {
+    let Ok(decoded) = decode_base64_string(request.code_base64) else {
+        tracing::info!("Validation error: code is not a base64 string");
         return TreeSitterResponse {
             result: None,
             errors: vec![ERROR_CODE_NOT_BASE64.to_string()],
         };
-    }
+    };
 
-    let tree = get_tree(&decoded.unwrap(), &request.language);
+    tracing::debug!(
+        "Getting tree-sitter tree (code length: {} bytes)",
+        &decoded.as_bytes().len()
+    );
 
-    if tree.is_none() {
+    // Note: [get_tree] returns None if the call to tree_sitter::Parser::set_language returns an Err
+    let result = get_tree(&decoded, &request.language);
+    if result.is_none() {
+        tracing::warn!(
+            "Unable to create tree-sitter parser for language `{}`",
+            request.language
+        );
         return no_root_node;
     }
-    let root_node = map_node(tree.unwrap().root_node());
 
-    if root_node.is_none() {
+    if let Some(result) =
+        result.map(|tree| map_node(tree.root_node()).map(ServerTreeSitterNode::from))
+    {
+        tracing::info!("Successfully completed tree-sitter AST generation");
+        TreeSitterResponse {
+            result,
+            errors: vec![],
+        }
+    } else {
+        tracing::info!("Generated AST contained no root node");
         return no_root_node;
-    }
-
-    TreeSitterResponse {
-        result: root_node.map(|node| node.into()),
-        errors: vec![],
     }
 }
 

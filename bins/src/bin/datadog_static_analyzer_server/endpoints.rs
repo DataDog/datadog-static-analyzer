@@ -102,11 +102,13 @@ fn languages() -> Value {
 
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
 fn analyze(request: Json<AnalysisRequest>) -> Value {
+    tracing::debug!("{:?}", &request.0);
     json!(process_analysis_request(request.into_inner()))
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
 fn get_tree(request: Json<TreeSitterRequest>) -> Value {
+    tracing::debug!("{:?}", &request.0);
     json!(process_tree_sitter_tree_request(request.into_inner()))
 }
 

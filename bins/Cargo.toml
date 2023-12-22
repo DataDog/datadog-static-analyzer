@@ -40,6 +40,7 @@ num_cpus = "1.15.0"
 indicatif = "0.17.6"
 rayon = "1.7.0"
 rocket = { version = "=0.5.0-rc.3", features = ["json"] }
+tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
 
 
 # For linux and macos, we need the vendored ssl

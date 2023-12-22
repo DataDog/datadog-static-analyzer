@@ -5,6 +5,9 @@ mod state;
 mod utils;
 
 pub async fn start() {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
     // prepare the rocket based on the cli args.
     // NOTE: shared state is already managed by the rocket. No need to use `manage` again.
     // we get the state back just in case we want to add a particular fairing based on it.
