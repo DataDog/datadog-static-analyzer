@@ -1,3 +1,5 @@
+use tracing_subscriber::EnvFilter;
+
 mod cli;
 mod endpoints;
 mod fairings;
@@ -15,7 +17,8 @@ pub async fn start() {
     // set fairings
     rocket = rocket
         .attach(fairings::Cors)
-        .attach(fairings::CustomHeaders);
+        .attach(fairings::CustomHeaders)
+        .attach(fairings::TracingFairing);
     if state.is_keepalive_enabled {
         rocket = rocket.attach(fairings::KeepAlive);
     }

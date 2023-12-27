@@ -1,3 +1,4 @@
+use crate::datadog_static_analyzer_server::fairings::TraceSpan;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use rocket::{
     fs::NamedFile,
@@ -92,7 +93,8 @@ fn shutdown_post(state: &State<ServerState>, shutdown: Shutdown) -> Status {
 
 /// Gets a list of supported languages.
 #[rocket::get("/languages", format = "application/json")]
-fn languages() -> Value {
+fn languages(span: TraceSpan) -> Value {
+    let _entered = span.enter();
     let languages: Vec<Value> = kernel::model::common::ALL_LANGUAGES
         .iter()
         .map(|x| json!(x))
@@ -101,13 +103,15 @@ fn languages() -> Value {
 }
 
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
-fn analyze(request: Json<AnalysisRequest>) -> Value {
+fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
+    let _entered = span.enter();
     tracing::debug!("{:?}", &request.0);
     json!(process_analysis_request(request.into_inner()))
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
-fn get_tree(request: Json<TreeSitterRequest>) -> Value {
+fn get_tree(span: TraceSpan, request: Json<TreeSitterRequest>) -> Value {
+    let _entered = span.enter();
     tracing::debug!("{:?}", &request.0);
     json!(process_tree_sitter_tree_request(request.into_inner()))
 }
@@ -123,7 +127,12 @@ pub fn get_revision() -> String {
 }
 
 #[rocket::get("/static/<name>")]
-async fn serve_static(server_configuration: &State<ServerState>, name: &str) -> Option<NamedFile> {
+async fn serve_static(
+    span: TraceSpan,
+    server_configuration: &State<ServerState>,
+    name: &str,
+) -> Option<NamedFile> {
+    let _entered = span.enter();
     if server_configuration.static_directory.is_none()
         || name.contains("..")
         || name.starts_with('.')
