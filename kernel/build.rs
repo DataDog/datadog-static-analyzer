@@ -145,6 +145,14 @@ fn main() {
             files: vec!["scanner.cc".to_string()],
             cpp: true,
         },
+        TreeSitterProject {
+            name: "tree-sitter-c".to_string(),
+            compilation_unit: "tree-sitter-c".to_string(),
+            repository: "https://github.com/tree-sitter/tree-sitter-c".to_string(),
+            build_dir: ["tree-sitter-c", "src"].iter().collect(),
+            files: vec!["parser.c".to_string()],
+            cpp: false,
+        },
     ];
 
     // for each project
