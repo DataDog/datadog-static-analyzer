@@ -10,7 +10,10 @@ use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::utils::decode_base64_string;
 
+#[tracing::instrument(skip_all)]
 pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
+    tracing::debug!("Processing analysis request");
+
     let rules_with_invalid_language: Vec<ServerRule> = request
         .rules
         .iter()
@@ -18,6 +21,14 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .cloned()
         .collect();
     if !rules_with_invalid_language.is_empty() {
+        for rule in rules_with_invalid_language {
+            tracing::info!(
+                "Validation error: request language is `{}`, but rule `{}` language is `{}`",
+                request.language,
+                &rule.name,
+                rule.language
+            );
+        }
         return AnalysisResponse {
             rule_responses: vec![],
             errors: vec![ERROR_CODE_LANGUAGE_MISMATCH.to_string()],
@@ -47,14 +58,30 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .collect();
 
     // Convert the rules from the server into internal rules
-    let rules_converted: Result<Vec<RuleInternal>, anyhow::Error> = server_rules_to_rules
+    let rules: Result<Vec<RuleInternal>, anyhow::Error> = server_rules_to_rules
         .iter()
-        .map(|r| r.to_rule_internal())
+        .map(|r| {
+            let rule_internal = r.to_rule_internal();
+            if let Err(err) = &rule_internal {
+                tracing::info!(
+                    "Validation error: request rule could not be parsed (reason: {})",
+                    err
+                )
+            }
+            rule_internal
+        })
         .collect::<Result<Vec<RuleInternal>, anyhow::Error>>();
+    let Ok(rules) = rules else {
+        return AnalysisResponse {
+            rule_responses: vec![],
+            errors: vec![ERROR_DECODING_BASE64.to_string()],
+        };
+    };
 
     // let's try to decode the code
     let code_decoded_attempt = decode_base64_string(request.code_base64);
     if code_decoded_attempt.is_err() {
+        tracing::info!("Validation error: code is not a base64 string");
         return AnalysisResponse {
             rule_responses: vec![],
             errors: vec![ERROR_CODE_NOT_BASE64.to_string()],
@@ -65,7 +92,10 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     // have a valid checksum, we return an error.
     for rule in &server_rules_to_rules {
         if !rule.verify_checksum() {
-            eprintln!("Rule {} has an invalid checksum", rule.name);
+            tracing::info!(
+                "Validation error: request rule `{}` has invalid checksum",
+                rule.name
+            );
             return AnalysisResponse {
                 rule_responses: vec![],
                 errors: vec![ERROR_CHECKSUM_MISMATCH.to_string()],
@@ -73,44 +103,49 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         }
     }
 
+    let rules_count = rules.len();
+    let rules_str = if rules_count == 1 { "rule" } else { "rules" };
+    let rules_list = rules
+        .iter()
+        .map(|r| r.name.as_str())
+        .collect::<Vec<&str>>()
+        .join(", ");
     // execute the rule. If we fail to convert, return an error.
-    match rules_converted {
-        Ok(rules) => {
-            let rule_results = analyze(
-                &request.language,
-                rules,
-                &request.filename,
-                code_decoded_attempt.unwrap().as_str(),
-                &AnalysisOptions {
-                    use_debug: false,
-                    log_output: request
-                        .options
-                        .map(|o| o.log_output.unwrap_or(false))
-                        .unwrap_or(false),
-                },
-            );
-
-            let rule_responses = rule_results
-                .iter()
-                .map(|rr| RuleResponse {
-                    identifier: rr.rule_name.clone(),
-                    violations: rr.violations.iter().map(violation_to_server).collect(),
-                    errors: rr.errors.clone(),
-                    execution_error: rr.execution_error.clone(),
-                    output: rr.output.clone(),
-                    execution_time_ms: rr.execution_time_ms,
-                })
-                .collect();
-
-            AnalysisResponse {
-                rule_responses,
-                errors: vec![],
-            }
-        }
-        Err(_) => AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![ERROR_DECODING_BASE64.to_string()],
+    let rule_results = analyze(
+        &request.language,
+        rules,
+        &request.filename,
+        code_decoded_attempt.unwrap().as_str(),
+        &AnalysisOptions {
+            use_debug: false,
+            log_output: request
+                .options
+                .map(|o| o.log_output.unwrap_or(false))
+                .unwrap_or(false),
         },
+    );
+
+    let rule_responses = rule_results
+        .iter()
+        .map(|rr| RuleResponse {
+            identifier: rr.rule_name.clone(),
+            violations: rr.violations.iter().map(violation_to_server).collect(),
+            errors: rr.errors.clone(),
+            execution_error: rr.execution_error.clone(),
+            output: rr.output.clone(),
+            execution_time_ms: rr.execution_time_ms,
+        })
+        .collect();
+
+    tracing::info!(
+        "Successfully completed analysis for {} {} ({})",
+        rules_count,
+        rules_str,
+        rules_list
+    );
+    AnalysisResponse {
+        rule_responses,
+        errors: vec![],
     }
 }
 
