@@ -12,6 +12,7 @@ base64 = { workspace = true }
 derive_builder = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = "2.0.2"

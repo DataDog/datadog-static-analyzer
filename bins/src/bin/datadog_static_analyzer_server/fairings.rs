@@ -1,3 +1,4 @@
+use rocket::request::{FromRequest, Outcome};
 use rocket::{
     fairing::{Fairing, Info, Kind},
     http::Header,
@@ -7,6 +8,8 @@ use server::constants::{
     SERVER_HEADER_KEEPALIVE_ENABLED, SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION,
     SERVER_HEADER_SHUTDOWN_ENABLED,
 };
+use tracing::Span;
+use uuid::Uuid;
 
 use super::{
     endpoints::{get_revision, get_version},
@@ -92,5 +95,151 @@ impl Fairing for KeepAlive {
                 }
             }
         }
+    }
+}
+
+/// Provides functionality to associate a UUIDv4 per request.
+///
+/// Rocket 0.5.0 does not generate per-request IDs (see: https://github.com/rwf2/Rocket/issues/21)
+/// Until upstream natively supports this, we use a custom [Fairing] to generate one.
+pub struct TracingFairing;
+
+/// A per-request struct wrapping a [Span].
+//
+// Note: We need to expose the Span's `enter` function manually because Rocket's API does not support the `tracing` crate.
+// Thus, every route that wants to have a trace span and request ID will need to use this struct.
+pub struct TraceSpan {
+    span: Span,
+    /// An HTTP request id.
+    ///
+    /// Note: This could either be an arbitrary user-supplied string or auto-generated as a UUID v4
+    pub request_id: String,
+}
+
+impl TraceSpan {
+    /// Calls [enter][tracing::span::Span::enter] on the underlying [Span]
+    pub fn enter(&self) -> tracing::span::Entered<'_> {
+        self.span.enter()
+    }
+}
+
+/// A newtype Option representing a [Span] that is used to conform to the [Request::local_cache] API
+struct FairingTraceSpan(Option<Span>);
+
+/// A newtype Option representing a [String] request ID that is used to conform to the [Request::local_cache] API
+struct FairingRequestId(Option<String>);
+
+#[rocket::async_trait]
+impl Fairing for TracingFairing {
+    fn info(&self) -> Info {
+        Info {
+            name: "Trace Span",
+            kind: Kind::Request | Kind::Response,
+        }
+    }
+
+    async fn on_request(&self, req: &mut Request<'_>, _data: &mut Data<'_>) {
+        let request_id = req
+            .headers()
+            .get_one("X-Request-Id")
+            .map(String::from)
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
+
+        let request_span = tracing::info_span!(
+            "http_request",
+            "http.request_id" = request_id.as_str(),
+            "http.method" = req.method().as_str(),
+            "http.uri" = req.uri().path().as_str(),
+            "http.status_code" = tracing::field::Empty
+        );
+
+        let _ = req.local_cache(|| FairingRequestId(Some(request_id)));
+        let _ = req.local_cache(|| FairingTraceSpan(Some(request_span)));
+    }
+
+    async fn on_response<'r>(&self, req: &'r Request<'_>, res: &mut Response<'r>) {
+        let span = req
+            .local_cache(|| FairingTraceSpan(None))
+            .0
+            .clone()
+            .expect("Span should be instantiated by on_request");
+        let span = span.entered();
+        span.record("http.status_code", res.status().code);
+
+        let request_id = req
+            .local_cache(|| FairingRequestId(None))
+            .0
+            .as_deref()
+            .expect("Request id should be instantiated by on_request");
+
+        res.set_header(Header::new("X-Request-Id", request_id));
+    }
+}
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for TraceSpan {
+    type Error = ();
+
+    async fn from_request(req: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        let request_id = req
+            .local_cache(|| FairingRequestId(None))
+            .0
+            .clone()
+            .expect("Span should be instantiated by on_request");
+        let span = req
+            .local_cache(|| FairingTraceSpan(None))
+            .0
+            .clone()
+            .expect("Span should be instantiated by on_request");
+
+        Outcome::Success(Self { span, request_id })
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use rocket::config::LogLevel::Off;
+    use rocket::local::blocking::Client;
+    use rocket::{Build, Config, Rocket};
+
+    fn silent_rocket() -> Rocket<Build> {
+        let config = Config {
+            log_level: Off,
+            ..Config::default()
+        };
+        rocket::custom(&config)
+    }
+
+    /// Tests that TracingFairing echoes any X-Request-Id passed in
+    #[test]
+    fn echo_request_id() {
+        let passed_in_id = "1+2+3+4+5+6+7+8+9+10";
+        let rocket = silent_rocket().attach(TracingFairing);
+
+        let client = Client::tracked(rocket).unwrap();
+        let req = client
+            .get("/")
+            .header(Header::new("X-Request-Id", passed_in_id));
+        let response = req.dispatch();
+        assert_eq!(
+            response.headers().get_one("X-Request-Id"),
+            Some(passed_in_id)
+        )
+    }
+
+    /// Tests that TracingFairing generates a UUID v4 if X-Request-Id isn't specified
+    #[test]
+    fn auto_generates_missing_request_id() {
+        let rocket = silent_rocket().attach(TracingFairing);
+        let client = Client::tracked(rocket).unwrap();
+        let req = client.get("/");
+        let response = req.dispatch();
+        let returned_uuid_request_id = response
+            .headers()
+            .get_one("X-Request-Id")
+            .map(|value| Uuid::parse_str(value).is_ok())
+            .unwrap_or(false);
+        assert!(returned_uuid_request_id);
     }
 }
