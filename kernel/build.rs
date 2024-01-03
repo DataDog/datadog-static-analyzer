@@ -169,7 +169,8 @@ fn main() {
         TreeSitterProject {
             name: "tree-sitter-c".to_string(),
             compilation_unit: "tree-sitter-c".to_string(),
-            repository: "https://github.com/tree-sitter/tree-sitter-c".to_string(),
+            repository: "https://github.com/tree-sitter/tree-sitter-c.git".to_string(),
+            commit_hash: "212a80f86452bb1316324fa0db730cf52f29e05a".to_string(),
             build_dir: ["tree-sitter-c", "src"].iter().collect(),
             files: vec!["parser.c".to_string()],
             cpp: false,
