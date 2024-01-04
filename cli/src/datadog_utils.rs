@@ -27,6 +27,9 @@ pub fn get_datadog_variable_value(variable: &str) -> anyhow::Result<String> {
         let name = format!("{}_{}", prefix, variable);
         let var_content = env::var(name);
         if let Ok(var_value) = var_content {
+            if var_value.is_empty() {
+                continue;
+            }
             return Ok(var_value);
         }
     }
