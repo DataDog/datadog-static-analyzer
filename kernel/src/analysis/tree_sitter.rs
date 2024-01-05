@@ -22,7 +22,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_tsx() -> tree_sitter::Language;
         fn tree_sitter_hcl() -> tree_sitter::Language;
         fn tree_sitter_yaml() -> tree_sitter::Language;
-
+        fn tree_sitter_c() -> tree_sitter::Language;
     }
 
     match language {
@@ -39,6 +39,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Terraform => unsafe { tree_sitter_hcl() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
         Language::Yaml => unsafe { tree_sitter_yaml() },
+        Language::C => unsafe { tree_sitter_c() },
     }
 }
 
@@ -346,6 +347,21 @@ rulesets:
         let t = get_tree(source_code, &Language::Yaml);
         assert!(t.is_some());
         assert_eq!("stream", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_c_get_tree() {
+        let source_code = r#"
+    #include <stdio.h>
+
+    int main(void)
+    {
+        printf("Hello, World!\n");
+    }
+"#;
+        let t = get_tree(source_code, &Language::Go);
+        assert!(t.is_some());
+        assert_eq!("source_file", t.unwrap().root_node().kind());
     }
 
     // test the number of node we should retrieve when executing a rule

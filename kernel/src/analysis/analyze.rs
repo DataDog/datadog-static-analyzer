@@ -25,7 +25,8 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
         | Language::Csharp
         | Language::Java
         | Language::Kotlin
-        | Language::Swift => {
+        | Language::Swift
+        | Language::C => {
             vec!["//no-dd-sa", "//datadog-disable"]
         }
         Language::Json => {
@@ -112,12 +113,9 @@ pub fn analyze(
                                     );
 
                                     // filter violations that have been ignored
-                                    rule_result.violations = rule_result
+                                    rule_result
                                         .violations
-                                        .iter()
-                                        .cloned()
-                                        .filter(|v| !lines_to_ignore.contains(&v.start.line))
-                                        .collect();
+                                        .retain(|v| !lines_to_ignore.contains(&v.start.line));
                                     rule_result
                                 }
                             }

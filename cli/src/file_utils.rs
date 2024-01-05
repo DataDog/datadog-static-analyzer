@@ -19,6 +19,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Terraform, &["tf"]),
     (Language::TypeScript, &["ts", "tsx"]),
     (Language::Yaml, &["yml", "yaml"]),
+    (Language::C, &["c"]),
 ];
 
 static FILE_EXACT_MATCH_PER_LANGUAGE_LIST: &[(Language, &[&str])] =
