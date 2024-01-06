@@ -1,5 +1,6 @@
 on: push
 
+name: Software Composition Analysis
 jobs:
   software-composition-analysis:
     runs-on: ubuntu-latest
