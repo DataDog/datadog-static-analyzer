@@ -15,5 +15,5 @@ jobs:
         dd_app_key: ${{ secrets.DD_APP_KEY }}
         dd_service: datadog-static-analyzer
         dd_env: github-action
-        dd_site: ${{ secrets.DD_APP_KEY }}
+        dd_site: ${{ secrets.DD_SITE }}
 
