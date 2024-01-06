@@ -1,0 +1,19 @@
+on: push
+
+jobs:
+  software-composition-analysis:
+    runs-on: ubuntu-latest
+    name: Datadog SBOM Generation and Upload
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Generate SBOM and Upload
+      id: software-composition-analysis
+      uses: DataDog/datadog-sca-github-action@main
+      with:
+        dd_api_key: ${{ secrets.DD_API_KEY }}
+        dd_app_key: ${{ secrets.DD_APP_KEY }}
+        dd_service: datadog-static-analyzer
+        dd_env: github-action
+        dd_site: ${{ secrets.DD_APP_KEY }}
+
