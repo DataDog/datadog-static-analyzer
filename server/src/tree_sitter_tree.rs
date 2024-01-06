@@ -48,7 +48,7 @@ pub fn process_tree_sitter_tree_request(request: TreeSitterRequest) -> TreeSitte
         }
     } else {
         tracing::info!("Generated AST contained no root node");
-        return no_root_node;
+        no_root_node
     }
 }
 
