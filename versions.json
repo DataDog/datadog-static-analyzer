@@ -24,7 +24,7 @@
                 },
                 "macos": {
                     "x86_64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.2.0/datadog-static-analyzer-server-x86_64-apple-darwin.zip",
-                    "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.2.01/datadog-static-analyzer-server-aarch64-apple-darwin.zip"
+                    "aarch64": "https://github.com/DataDog/datadog-static-analyzer/releases/download/0.2.0/datadog-static-analyzer-server-aarch64-apple-darwin.zip"
                 }
             }
         },
