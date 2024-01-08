@@ -229,7 +229,9 @@ fn encode_filename(filename: String) -> String {
         .add(b'>')
         .add(b'`')
         .add(b'[')
-        .add(b']');
+        .add(b']')
+        .add(b'#')
+        .add(b'%');
 
     return utf8_percent_encode(filename.as_str(), FRAGMENT).collect();
 }
