@@ -166,6 +166,24 @@ fn main() {
             files: vec!["scanner.cc".to_string()],
             cpp: true,
         },
+        TreeSitterProject {
+            name: "tree-sitter-ruby".to_string(),
+            compilation_unit: "tree-sitter-ruby-parser".to_string(),
+            repository: "https://github.com/tree-sitter/tree-sitter-ruby".to_string(),
+            build_dir: ["tree-sitter-ruby", "src"].iter().collect(),
+            commit_hash: "4d9ad3f010fdc47a8433adcf9ae30c8eb8475ae7".to_string(),
+            files: vec!["parser.c".to_string()],
+            cpp: false,
+        },
+        TreeSitterProject {
+            name: "tree-sitter-ruby".to_string(),
+            compilation_unit: "tree-sitter-ruby-scanner".to_string(),
+            repository: "https://github.com/tree-sitter/tree-sitter-ruby".to_string(),
+            build_dir: ["tree-sitter-ruby", "src"].iter().collect(),
+            commit_hash: "4d9ad3f010fdc47a8433adcf9ae30c8eb8475ae7".to_string(),
+            files: vec!["scanner.cc".to_string()],
+            cpp: true,
+        },
     ];
 
     // for each project
