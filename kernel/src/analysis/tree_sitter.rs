@@ -18,6 +18,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_json() -> tree_sitter::Language;
         fn tree_sitter_kotlin() -> tree_sitter::Language;
         fn tree_sitter_python() -> tree_sitter::Language;
+        fn tree_sitter_ruby() -> tree_sitter::Language;
         fn tree_sitter_rust() -> tree_sitter::Language;
         fn tree_sitter_tsx() -> tree_sitter::Language;
         fn tree_sitter_hcl() -> tree_sitter::Language;
@@ -34,6 +35,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Kotlin => unsafe { tree_sitter_kotlin() },
         Language::Json => unsafe { tree_sitter_json() },
         Language::Python => unsafe { tree_sitter_python() },
+        Language::Ruby => unsafe { tree_sitter_ruby() },
         Language::Rust => unsafe { tree_sitter_rust() },
         Language::Swift => swift_language(),
         Language::Terraform => unsafe { tree_sitter_hcl() },
@@ -286,6 +288,20 @@ function foo() {console.log("bar");}"#;
         let t = get_tree(source_code, &Language::Json);
         assert!(t.is_some());
         assert_eq!("document", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_ruby_get_tree() {
+        let source_code = r#"def greeting
+  puts "Hello Ruby!"
+  return
+end
+
+greeting()
+"#;
+        let t = get_tree(source_code, &Language::Ruby);
+        assert!(t.is_some());
+        assert_eq!("program", t.unwrap().root_node().kind());
     }
 
     #[test]

@@ -14,6 +14,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::JavaScript, &["js", "jsx"]),
     (Language::Kotlin, &["kt", "kts"]),
     (Language::Python, &["py", "py3"]),
+    (Language::Ruby, &["rb"]),
     (Language::Rust, &["rs"]),
     (Language::Swift, &["swift"]),
     (Language::Terraform, &["tf"]),

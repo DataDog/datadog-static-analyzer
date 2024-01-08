@@ -38,6 +38,8 @@ pub enum Language {
     Kotlin,
     #[serde(rename = "PYTHON")]
     Python,
+    #[serde(rename = "RUBY")]
+    Ruby,
     #[serde(rename = "RUST")]
     Rust,
     #[serde(rename = "SWIFT")]
@@ -60,6 +62,7 @@ pub static ALL_LANGUAGES: &[Language] = &[
     Language::Json,
     Language::Kotlin,
     Language::Python,
+    Language::Ruby,
     Language::Rust,
     Language::Swift,
     Language::TypeScript,
@@ -78,6 +81,7 @@ impl fmt::Display for Language {
             Self::Json => "json",
             Self::Kotlin => "kotlin",
             Self::Python => "python",
+            Self::Ruby => "ruby",
             Self::Rust => "rust",
             Self::Swift => "swift",
             Self::Terraform => "terraform",
