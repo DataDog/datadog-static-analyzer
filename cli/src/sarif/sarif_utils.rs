@@ -222,7 +222,16 @@ fn get_sha_for_line(
 
 // Encode the file using percent to that filename "My Folder/file.c" is "My%20Folder/file.c"
 fn encode_filename(filename: String) -> String {
-    const FRAGMENT: &AsciiSet = &CONTROLS.add(b' ').add(b'"').add(b'<').add(b'>').add(b'`');
+    const FRAGMENT: &AsciiSet = &CONTROLS
+        .add(b' ')
+        .add(b'"')
+        .add(b'<')
+        .add(b'>')
+        .add(b'`')
+        .add(b'[')
+        .add(b']')
+        .add(b'#')
+        .add(b'%');
 
     return utf8_percent_encode(filename.as_str(), FRAGMENT).collect();
 }
