@@ -16,7 +16,7 @@ jobs:
         override: true
         default: true
     - name: cargo install sbom
-      run: cargo install cargo-sbom
+      run: cargo install --version 0.8.4 cargo-sbom
     - name: cargo generate sbom
       run: |
         cargo sbom --cargo-package kernel --output-format cyclone_dx_json_1_4 > kernel.json
