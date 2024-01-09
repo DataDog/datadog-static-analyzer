@@ -8,6 +8,15 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+    - name: Install Stable + Rustfmt + Clippy
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: clippy
+        override: true
+        default: true
+    - name: build
+      run: cargo build
     - name: Generate SBOM and Upload
       id: software-composition-analysis
       uses: DataDog/datadog-sca-github-action@main
