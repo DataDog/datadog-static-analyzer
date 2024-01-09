@@ -8,6 +8,21 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
+    - name: Install Stable + Rustfmt + Clippy
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        components: clippy
+        override: true
+        default: true
+    - name: cargo install sbom
+      run: cargo install --version 0.8.4 cargo-sbom
+    - name: cargo generate sbom
+      run: |
+        cargo sbom --cargo-package kernel --output-format cyclone_dx_json_1_4 > kernel.json
+        cargo sbom --cargo-package bins --output-format cyclone_dx_json_1_4 > bins.json
+        cargo sbom --cargo-package cli --output-format cyclone_dx_json_1_4 > cli.json
+        cargo sbom --cargo-package server --output-format cyclone_dx_json_1_4 > server.json
     - name: Generate SBOM and Upload
       id: software-composition-analysis
       uses: DataDog/datadog-sca-github-action@main
