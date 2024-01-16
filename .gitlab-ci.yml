@@ -74,6 +74,8 @@ test-and-build-amd64:
 
 trigger_internal_image:
   stage: release
+  only:
+    - main
   trigger:
     project: DataDog/images
     branch: master
