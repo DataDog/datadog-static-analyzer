@@ -1,11 +1,5 @@
 # Contributing
 
-
-## Ideas of improvements
-
- - Build the tree-sitter query only once instead of rebuilding for each file.
-
-
 ## Code Organization
 
 The code is organized in four main directories:

@@ -2,6 +2,7 @@ use crate::model::common::Language;
 use base64::engine::general_purpose;
 use base64::Engine;
 
+use crate::analysis::tree_sitter::get_query;
 use crate::model::rule_test::RuleTest;
 use crate::model::violation::Violation;
 use anyhow::anyhow;
@@ -142,7 +143,7 @@ pub struct Rule {
 // This structure is used internally to handle rules.
 // Since we do not support AST of Pattern rules anymore, we
 // only have the tree-sitter query that is already pre-compiled.
-#[derive(Clone, Builder, Serialize, Debug)]
+#[derive(Debug)]
 pub struct RuleInternal {
     pub name: String,
     pub short_description: Option<String>,
@@ -151,7 +152,7 @@ pub struct RuleInternal {
     pub severity: RuleSeverity,
     pub language: Language,
     pub code: String,
-    pub tree_sitter_query: Option<String>,
+    pub tree_sitter_query: tree_sitter::Query,
     pub variables: HashMap<String, String>,
 }
 
@@ -204,13 +205,14 @@ impl Rule {
             .map(|s| anyhow::Ok(String::from_utf8(general_purpose::STANDARD.decode(s)?)?))
             .transpose()?;
 
-        let tree_sitter_query_code = String::from_utf8(
+        let tree_sitter_query = String::from_utf8(
             general_purpose::STANDARD.decode(
                 self.tree_sitter_query_base64
                     .as_ref()
                     .ok_or_else(|| anyhow!("tree sitter query is empty"))?,
             )?,
         )?;
+        let tree_sitter_query = get_query(&tree_sitter_query, &self.language)?;
 
         Ok(RuleInternal {
             name: self.name.clone(),
@@ -220,7 +222,7 @@ impl Rule {
             severity: self.severity,
             language: self.language,
             code,
-            tree_sitter_query: Some(tree_sitter_query_code),
+            tree_sitter_query,
             variables: self.variables.clone(),
         })
     }

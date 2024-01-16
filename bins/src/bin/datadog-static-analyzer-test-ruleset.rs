@@ -25,7 +25,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
     let rules = vec![rule_internal];
     let analyze_result = analyze(
         &rule.language,
-        rules,
+        &rules,
         test.filename.as_str(),
         code.as_str(),
         &analysis_options,

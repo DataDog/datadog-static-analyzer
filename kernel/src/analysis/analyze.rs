@@ -1,6 +1,6 @@
 use crate::analysis::javascript::execute_rule;
-use crate::analysis::tree_sitter::{get_query, get_query_nodes, get_tree};
-use crate::model::analysis::{AnalysisOptions, ERROR_INVALID_QUERY};
+use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
+use crate::model::analysis::AnalysisOptions;
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::collections::HashMap;
@@ -57,7 +57,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
 // 4. Collect results and errors
 pub fn analyze(
     language: &Language,
-    rules: Vec<RuleInternal>,
+    rules: &[RuleInternal],
     filename: &str,
     code: &str,
     analysis_option: &AnalysisOptions,
@@ -73,62 +73,43 @@ pub fn analyze(
         },
         |tree| {
             rules
-                .into_iter()
+                .iter()
                 .map(|rule| {
-                    let invalid_query_result = RuleResult {
-                        rule_name: rule.name.clone(),
-                        filename: filename.to_string(),
-                        violations: vec![],
-                        errors: vec![ERROR_INVALID_QUERY.to_string()],
-                        execution_error: None,
-                        execution_time_ms: 0,
-                        output: None,
-                    };
-
                     if analysis_option.use_debug {
                         eprintln!("Apply rule {} file {}", rule.name, filename);
                     }
 
-                    if let Some(tree_sitter_query) = &rule.tree_sitter_query {
-                        let query_try = get_query(tree_sitter_query.as_str(), &rule.language);
+                    let nodes = get_query_nodes(
+                        &tree,
+                        &rule.tree_sitter_query,
+                        filename,
+                        code,
+                        &HashMap::new(),
+                    );
 
-                        match query_try {
-                            Ok(query) => {
-                                let nodes =
-                                    get_query_nodes(&tree, &query, filename, code, &HashMap::new());
-
-                                if nodes.is_empty() {
-                                    RuleResult {
-                                        rule_name: rule.name.clone(),
-                                        filename: filename.to_string(),
-                                        violations: vec![],
-                                        errors: vec![],
-                                        execution_error: None,
-                                        execution_time_ms: 0,
-                                        output: None,
-                                    }
-                                } else {
-                                    let mut rule_result = execute_rule(
-                                        rule,
-                                        nodes,
-                                        filename.to_string(),
-                                        analysis_option.clone(),
-                                    );
-
-                                    // filter violations that have been ignored
-                                    rule_result.violations = rule_result
-                                        .violations
-                                        .iter()
-                                        .cloned()
-                                        .filter(|v| !lines_to_ignore.contains(&v.start.line))
-                                        .collect();
-                                    rule_result
-                                }
-                            }
-                            Err(_) => invalid_query_result,
+                    if nodes.is_empty() {
+                        RuleResult {
+                            rule_name: rule.name.clone(),
+                            filename: filename.to_string(),
+                            violations: vec![],
+                            errors: vec![],
+                            execution_error: None,
+                            execution_time_ms: 0,
+                            output: None,
                         }
                     } else {
-                        invalid_query_result
+                        let mut rule_result = execute_rule(
+                            rule,
+                            nodes,
+                            filename.to_string(),
+                            analysis_option.clone(),
+                        );
+
+                        // filter violations that have been ignored
+                        rule_result
+                            .violations
+                            .retain(|v| !lines_to_ignore.contains(&v.start.line));
+                        rule_result
                     }
                 })
                 .collect()
@@ -139,6 +120,7 @@ pub fn analyze(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::tree_sitter::get_query;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use std::collections::HashMap;
@@ -184,7 +166,7 @@ function visit(node, filename, code) {
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(QUERY_CODE.to_string()),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
             variables: HashMap::new(),
         };
 
@@ -194,7 +176,7 @@ function visit(node, filename, code) {
         };
         let results = analyze(
             &Language::Python,
-            vec![rule],
+            &vec![rule],
             "myfile.py",
             PYTHON_CODE,
             &analysis_options,
@@ -249,7 +231,7 @@ function visit(node, filename, code) {
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code1.to_string(),
-            tree_sitter_query: Some(QUERY_CODE.to_string()),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
             variables: HashMap::new(),
         };
         let rule2 = RuleInternal {
@@ -260,7 +242,7 @@ function visit(node, filename, code) {
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code2.to_string(),
-            tree_sitter_query: Some(QUERY_CODE.to_string()),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
             variables: HashMap::new(),
         };
 
@@ -270,7 +252,7 @@ function visit(node, filename, code) {
         };
         let results = analyze(
             &Language::Python,
-            vec![rule1, rule2],
+            &vec![rule1, rule2],
             "myfile.py",
             PYTHON_CODE,
             &analysis_options,
@@ -360,7 +342,7 @@ for(var i = 0; i <= 10; i--){}
             severity: RuleSeverity::Notice,
             language: Language::JavaScript,
             code: rule_code1.to_string(),
-            tree_sitter_query: Some(tree_sitter_query.to_string()),
+            tree_sitter_query: get_query(tree_sitter_query, &Language::JavaScript).unwrap(),
             variables: HashMap::new(),
         };
 
@@ -370,7 +352,7 @@ for(var i = 0; i <= 10; i--){}
         };
         let results = analyze(
             &Language::JavaScript,
-            vec![rule1],
+            &vec![rule1],
             "myfile.js",
             js_code,
             &analysis_options,
@@ -414,7 +396,7 @@ def foo():
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code1.to_string(),
-            tree_sitter_query: Some(tree_sitter_query.to_string()),
+            tree_sitter_query: get_query(tree_sitter_query, &Language::Python).unwrap(),
             variables: HashMap::new(),
         };
 
@@ -424,7 +406,7 @@ def foo():
         };
         let results = analyze(
             &Language::Python,
-            vec![rule1],
+            &vec![rule1],
             "myfile.py",
             python_code,
             &analysis_options,
@@ -468,7 +450,7 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(QUERY_CODE.to_string()),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
             variables: HashMap::new(),
         };
 
@@ -478,7 +460,7 @@ def foo(arg1):
         };
         let results = analyze(
             &Language::Python,
-            vec![rule],
+            &vec![rule],
             "myfile.py",
             c,
             &analysis_options,
@@ -486,40 +468,5 @@ def foo(arg1):
         assert_eq!(1, results.len());
         let result = results.get(0).unwrap();
         assert!(result.violations.is_empty());
-    }
-
-    // test what happens when there is no tree-sitter
-    #[test]
-    fn test_execution_invalid_query() {
-        let rule = RuleInternal {
-            name: "myrule".to_string(),
-            short_description: Some("short desc".to_string()),
-            description: Some("description".to_string()),
-            category: RuleCategory::CodeStyle,
-            severity: RuleSeverity::Notice,
-            language: Language::Python,
-            code: "code".to_string(),
-            tree_sitter_query: None, // None means there is no query or we fail to parse it
-            variables: HashMap::new(),
-        };
-
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-        };
-        let results = analyze(
-            &Language::Python,
-            vec![rule],
-            "myfile.py",
-            "code",
-            &analysis_options,
-        );
-        assert_eq!(1, results.len());
-        let result = results.get(0).unwrap();
-        assert_eq!(1, result.errors.len());
-        assert_eq!(
-            &ERROR_INVALID_QUERY.to_string(),
-            result.errors.get(0).unwrap()
-        )
     }
 }

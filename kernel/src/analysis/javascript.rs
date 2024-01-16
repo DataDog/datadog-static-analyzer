@@ -33,7 +33,7 @@ struct StellaExecution {
 // execute a rule. It is the exposed function to execute a rule and start the underlying
 // JS runtime.
 pub fn execute_rule(
-    rule: RuleInternal,
+    rule: &RuleInternal,
     match_nodes: Vec<MatchNode>,
     filename: String,
     analysis_options: AnalysisOptions,
@@ -78,7 +78,7 @@ pub fn execute_rule(
         // execute the rule and return
         let res = execute_rule_internal(
             &mut runtime,
-            &rule,
+            rule,
             &match_nodes,
             filename,
             &analysis_options,
@@ -362,14 +362,20 @@ mod tests {
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -416,14 +422,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -470,6 +482,7 @@ def foo(arg1):
     pass
         "#;
         let tree = get_tree(c, &Language::Python).unwrap();
+        let query = get_query(q, &Language::Python).unwrap();
         let rule = RuleInternal {
             name: "myrule".to_string(),
             short_description: Some("short desc".to_string()),
@@ -478,14 +491,13 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
-        let query = get_query(q, &Language::Python).unwrap();
-        let nodes = get_query_nodes(&tree, &query, "plop", c, &HashMap::new());
+        let nodes = get_query_nodes(&tree, &rule.tree_sitter_query, "plop", c, &HashMap::new());
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -539,14 +551,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -598,14 +616,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -651,14 +675,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
