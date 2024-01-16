@@ -33,7 +33,7 @@ struct StellaExecution {
 // execute a rule. It is the exposed function to execute a rule and start the underlying
 // JS runtime.
 pub fn execute_rule(
-    rule: RuleInternal,
+    rule: &RuleInternal,
     match_nodes: Vec<MatchNode>,
     filename: String,
     analysis_options: AnalysisOptions,
@@ -60,118 +60,120 @@ pub fn execute_rule(
 
     let started = lock.lock().expect("should lock mutex");
 
-    thread::spawn(move || {
-        let mut runtime = JsRuntime::new(RuntimeOptions {
-            startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
-            ..Default::default()
+    thread::scope(|scope| {
+        scope.spawn(|| {
+            let mut runtime = JsRuntime::new(RuntimeOptions {
+                startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
+                ..Default::default()
+            });
+
+            let handle = runtime.v8_isolate().thread_safe_handle();
+
+            assert!(
+                tx_runtime.send(handle).is_ok(),
+                "we should be able to send the handle to the main thread"
+            );
+
+            let (mutex, cvar) = &*condvar_thread;
+
+            // execute the rule and return
+            let res = execute_rule_internal(
+                &mut runtime,
+                rule,
+                &match_nodes,
+                filename,
+                &analysis_options,
+            );
+
+            // send the result back
+            let send_result_result = tx_result.send(Some(res));
+            if use_debug && send_result_result.is_err() {
+                eprintln!(
+                    "rule {}:{} - error when sending results",
+                    rule_name_copy_thr.clone(),
+                    filename_copy_thr.clone()
+                );
+            }
+
+            let _ = mutex.lock();
+            // notify the main thread we are done with the execution
+            cvar.notify_one();
         });
 
-        let handle = runtime.v8_isolate().thread_safe_handle();
+        let handle = rx_runtime.recv();
 
-        assert!(
-            tx_runtime.send(handle).is_ok(),
-            "we should be able to send the handle to the main thread"
+        // Wait for the rule to execute. If the rule times out, we return a specific RuleResult
+        let cond_result = cvar.wait_timeout(
+            started,
+            Duration::from_millis(JAVASCRIPT_EXECUTION_TIMEOUT_MS),
         );
 
-        let (mutex, cvar) = &*condvar_thread;
+        // terminate javascript execution so that the thread we started is stopping
+        handle
+            .expect("should have a javascript handler")
+            .terminate_execution();
+        let end = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_millis();
+        let execution_time_ms = end - start;
 
-        // execute the rule and return
-        let res = execute_rule_internal(
-            &mut runtime,
-            &rule,
-            &match_nodes,
-            filename,
-            &analysis_options,
-        );
-
-        // send the result back
-        let send_result_result = tx_result.send(Some(res));
-        if use_debug && send_result_result.is_err() {
-            eprintln!(
-                "rule {}:{} - error when sending results",
-                rule_name_copy_thr.clone(),
-                filename_copy_thr.clone()
-            );
-        }
-
-        let _ = mutex.lock();
-        // notify the main thread we are done with the execution
-        cvar.notify_one();
-    });
-
-    let handle = rx_runtime.recv();
-
-    // Wait for the rule to execute. If the rule times out, we return a specific RuleResult
-    let cond_result = cvar.wait_timeout(
-        started,
-        Duration::from_millis(JAVASCRIPT_EXECUTION_TIMEOUT_MS),
-    );
-
-    // terminate javascript execution so that the thread we started is stopping
-    handle
-        .expect("should have a javascript handler")
-        .terminate_execution();
-    let end = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-    let execution_time_ms = end - start;
-
-    // drop the thread. Note that it does not terminate the thread, it just put
-    // it out of scope.
-    match cond_result {
-        Ok(v) => {
-            if v.1.timed_out() {
-                if use_debug {
-                    eprintln!(
-                        "[{}] rule:file {}:{} TIMED OUT, execution time: {} ms",
-                        end,
-                        rule_name_copy.as_str(),
-                        filename_copy.as_str(),
-                        execution_time_ms
-                    );
-                }
-                RuleResult {
-                    rule_name: rule_name_copy,
-                    filename: filename_copy,
-                    violations: vec![],
-                    errors: vec![ERROR_RULE_TIMEOUT.to_string()],
-                    execution_error: None,
-                    output: None,
-                    execution_time_ms,
-                }
-            } else if let Some(res) = rx_result.try_recv().unwrap_or(None) {
-                RuleResult {
-                    rule_name: res.rule_name,
-                    filename: res.filename,
-                    violations: res.violations,
-                    errors: res.errors,
-                    execution_error: res.execution_error,
-                    execution_time_ms,
-                    output: res.output,
-                }
-            } else {
-                RuleResult {
-                    rule_name: rule_name_copy,
-                    filename: filename_copy,
-                    violations: vec![],
-                    errors: vec![ERROR_RULE_EXECUTION.to_string()],
-                    execution_error: None,
-                    output: None,
-                    execution_time_ms,
+        // drop the thread. Note that it does not terminate the thread, it just put
+        // it out of scope.
+        match cond_result {
+            Ok(v) => {
+                if v.1.timed_out() {
+                    if use_debug {
+                        eprintln!(
+                            "[{}] rule:file {}:{} TIMED OUT, execution time: {} ms",
+                            end,
+                            rule_name_copy.as_str(),
+                            filename_copy.as_str(),
+                            execution_time_ms
+                        );
+                    }
+                    RuleResult {
+                        rule_name: rule_name_copy,
+                        filename: filename_copy,
+                        violations: vec![],
+                        errors: vec![ERROR_RULE_TIMEOUT.to_string()],
+                        execution_error: None,
+                        output: None,
+                        execution_time_ms,
+                    }
+                } else if let Some(res) = rx_result.try_recv().unwrap_or(None) {
+                    RuleResult {
+                        rule_name: res.rule_name,
+                        filename: res.filename,
+                        violations: res.violations,
+                        errors: res.errors,
+                        execution_error: res.execution_error,
+                        execution_time_ms,
+                        output: res.output,
+                    }
+                } else {
+                    RuleResult {
+                        rule_name: rule_name_copy,
+                        filename: filename_copy,
+                        violations: vec![],
+                        errors: vec![ERROR_RULE_EXECUTION.to_string()],
+                        execution_error: None,
+                        output: None,
+                        execution_time_ms,
+                    }
                 }
             }
+            Err(_) => RuleResult {
+                rule_name: rule_name_copy,
+                filename: filename_copy,
+                violations: vec![],
+                errors: vec![ERROR_RULE_EXECUTION.to_string()],
+                execution_error: None,
+                output: None,
+                execution_time_ms,
+            },
         }
-        Err(_) => RuleResult {
-            rule_name: rule_name_copy,
-            filename: filename_copy,
-            violations: vec![],
-            errors: vec![ERROR_RULE_EXECUTION.to_string()],
-            execution_error: None,
-            output: None,
-            execution_time_ms,
-        },
-    }
+    })
 }
 
 // execute a rule with deno. It creates the JavaScript runtimes and execute
@@ -362,14 +364,20 @@ mod tests {
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -416,14 +424,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -470,6 +484,7 @@ def foo(arg1):
     pass
         "#;
         let tree = get_tree(c, &Language::Python).unwrap();
+        let query = get_query(q, &Language::Python).unwrap();
         let rule = RuleInternal {
             name: "myrule".to_string(),
             short_description: Some("short desc".to_string()),
@@ -478,14 +493,13 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
-        let query = get_query(q, &Language::Python).unwrap();
-        let nodes = get_query_nodes(&tree, &query, "plop", c, &HashMap::new());
+        let nodes = get_query_nodes(&tree, &rule.tree_sitter_query, "plop", c, &HashMap::new());
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -539,14 +553,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -598,14 +618,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {
@@ -651,14 +677,20 @@ def foo(arg1):
             severity: RuleSeverity::Notice,
             language: Language::Python,
             code: rule_code.to_string(),
-            tree_sitter_query: Some(q.to_string()),
+            tree_sitter_query: query,
             variables: HashMap::new(),
         };
 
-        let nodes = get_query_nodes(&tree, &query, "myfile.py", c, &HashMap::new());
+        let nodes = get_query_nodes(
+            &tree,
+            &rule.tree_sitter_query,
+            "myfile.py",
+            c,
+            &HashMap::new(),
+        );
 
         let rule_execution = execute_rule(
-            rule,
+            &rule,
             nodes,
             "foo.py".to_string(),
             AnalysisOptions {

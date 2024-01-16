@@ -375,7 +375,7 @@ fn main() -> Result<()> {
                 Ok(file_content) => {
                     let res = analyze(
                         language,
-                        rules_for_language.clone(),
+                        &rules_for_language,
                         path.strip_prefix(directory_path)
                             .unwrap()
                             .to_str()

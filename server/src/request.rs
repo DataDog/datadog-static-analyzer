@@ -113,7 +113,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     // execute the rule. If we fail to convert, return an error.
     let rule_results = analyze(
         &request.language,
-        rules,
+        &rules,
         &request.filename,
         code_decoded_attempt.unwrap().as_str(),
         &AnalysisOptions {
