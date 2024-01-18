@@ -33,7 +33,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
             vec!["//no-dd-sa", "//datadog-disable"]
         }
         Language::Json => {
-            vec!["impossiblestringtoreach"]
+            vec!["impossiblestringtoreach", "testing build cache"]
         }
     };
 
