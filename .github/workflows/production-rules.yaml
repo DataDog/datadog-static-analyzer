@@ -31,6 +31,10 @@ jobs:
             jsx-react javascript-aws javascript-best-practices javascript-browser-security javascript-code-style javascript-common-security javascript-express javascript-inclusive javascript-node-security \
             java-best-practices java-code-style java-security \
             csharp-best-practices csharp-inclusive csharp-security \
+            go-best-practices go-security \
+            ruby-best-practices ruby-code-style \
+            rspec-best-practices rspec-code-style \
+            rails-best-practice \
             # docker-best-practices (see STAL-607)\
             do \
             python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
