@@ -86,3 +86,32 @@ jobs:
         run: mkdir -p target/release && tar -xf artifacts.tar -C target/release
       - name: Run Integration Test for JavaScript/TypeScript
         run: ./misc/integration-test-js-ts.sh
+
+  integration_test_production_rules:
+    runs-on: ubuntu-latest
+    needs: cargo_build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries_${{ github.sha }}
+      - name: Extract binaries
+        run: mkdir -p target/release && tar -xf artifacts.tar -C target/release
+      - name: Install packages
+        run: sudo apt-get install python3-requests
+      - name: Test all production rules
+        run: |
+          for ruleset in \
+            python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
+            tsx-react typescript-aws typescript-best-practices typescript-browser-security typescript-code-style typescript-common-security typescript-express typescript-inclusive typescript-node-security \
+            jsx-react javascript-aws javascript-best-practices javascript-browser-security javascript-code-style javascript-common-security javascript-express javascript-inclusive javascript-node-security \
+            java-best-practices java-code-style java-security \
+            csharp-best-practices csharp-inclusive csharp-security \
+            go-best-practices go-security \
+            ruby-best-practices ruby-code-style \
+            rspec-best-practices rspec-code-style \
+            rails-best-practices \
+            # docker-best-practices (see STAL-607)\
+            do \
+            python misc/test-production-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
+          done
