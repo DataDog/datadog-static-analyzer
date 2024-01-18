@@ -4,73 +4,85 @@ on:
   schedule:
     # run every day at 9am UTC
     - cron:  '0 9 * * *'
+
+env:
+  DD_API_KEY: ${{ secrets.DD_API_KEY }}
+  DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+  DD_SITE: ${{ vars.DD_SITE }}
+
 name: Run Integration tests
 jobs:
-  integration_test_git:
+  cargo_build:
     runs-on: ubuntu-latest
     env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
+      CARGO_INCREMENTAL: 0
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: stable
-            components: clippy
-            override: true
-            default: true
+          toolchain: stable
+          profile: minimal
+      - name: Use cache for cargo build
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Compile
+        run: cargo build --release
+      - name: Build archive
+        run: |
+          tar -cf artifacts.tar -C target/release \
+          datadog-static-analyzer \
+          datadog-static-analyzer-server
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries_${{ github.sha }}
+          path: artifacts.tar
+          if-no-files-found: error
+
+  integration_test_git:
+    runs-on: ubuntu-latest
+    needs: cargo_build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: binaries_${{ github.sha }}
+      - name: Extract binaries
+        run: mkdir -p target/release && tar -xf artifacts.tar -C target/release
       - name: Run Integration Test for Git
         run: ./misc/integration-test-git.sh
   integration_test_python:
     runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
+    needs: cargo_build
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
+          name: binaries_${{ github.sha }}
+      - name: Extract binaries
+        run: mkdir -p target/release && tar -xf artifacts.tar -C target/release
       - name: Run Integration Test for Python
         run: ./misc/integration-test-python.sh
   integration_test_docker:
     runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
+    needs: cargo_build
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
+          name: binaries_${{ github.sha }}
+      - name: Extract binaries
+        run: mkdir -p target/release && tar -xf artifacts.tar -C target/release
       - name: Run Integration Test for Docker
         run: ./misc/integration-test-docker.sh
   integration_test_jsts:
     runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
+    needs: cargo_build
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
+          name: binaries_${{ github.sha }}
+      - name: Extract binaries
+        run: mkdir -p target/release && tar -xf artifacts.tar -C target/release
       - name: Run Integration Test for JavaScript/TypeScript
         run: ./misc/integration-test-js-ts.sh

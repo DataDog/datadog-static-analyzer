@@ -1,12 +1,10 @@
 #!/bin/bash
 
-cargo build -r
-
 ## A Python repository
 echo "Checking django repository"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
-git clone https://github.com/gothinkster/django-realworld-example-app.git "${REPO_DIR}"
+git clone --depth 1 https://github.com/gothinkster/django-realworld-example-app.git "${REPO_DIR}"
 
 echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
