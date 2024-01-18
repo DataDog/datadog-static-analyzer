@@ -3,7 +3,7 @@ members = ["bins", "cli", "kernel", "server"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.2"
+version = "0.2.3"
 
 [profile.release]
 lto = true
