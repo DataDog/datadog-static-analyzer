@@ -193,9 +193,9 @@ fn main() {
     // 2. Build the project
     let base_dir = env::current_dir().unwrap();
     for proj in &tree_sitter_projects {
-        let project_dir = format!("{}@{}", &proj.name, &proj.commit_hash);
+        let project_dir = format!(".vendor/{}@{}", &proj.name, &proj.commit_hash);
         if !Path::new(&project_dir).exists() {
-            assert!(run("mkdir", |cmd| { cmd.arg(&project_dir) }));
+            assert!(run("mkdir", |cmd| { cmd.args(["-p", &project_dir]) }));
             env::set_current_dir(&project_dir).unwrap();
             assert!(run("git", |cmd| { cmd.args(["init", "-q"]) }));
             assert!(run("git", |cmd| {

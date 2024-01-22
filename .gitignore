@@ -16,8 +16,8 @@ Cargo.lock
 # files from vim
 *~
 
-# tree-sitter sources
-kernel/tree-sitter-*/
+# tree-sitter grammar sources
+kernel/.vendor/
 
 # IntelliJ
 .idea
