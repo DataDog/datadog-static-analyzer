@@ -17,7 +17,7 @@ Cargo.lock
 *~
 
 # tree-sitter grammar sources
-kernel/.vendor/
+crates/static-analysis-kernel/.vendor/
 
 # IntelliJ
 .idea
