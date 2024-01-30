@@ -5,7 +5,7 @@ version.workspace = true
 
 [dependencies]
 # local
-kernel = {path = "../kernel" }
+kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
 # workspace
 anyhow = { workspace = true }
 base64 = { workspace = true }

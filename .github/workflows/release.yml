@@ -51,7 +51,7 @@ jobs:
         if: startsWith(matrix.os, 'ubuntu')
       - name: Set the version
         shell: bash
-        run: sed  "s/development/$GITHUB_SHA/g" kernel/src/constants.rs > bla && rm kernel/src/constants.rs && mv bla kernel/src/constants.rs
+        run: sed  "s/development/$GITHUB_SHA/g" crates/static-analysis-kernel/src/constants.rs > bla && rm crates/static-analysis-kernel/src/constants.rs && mv bla crates/static-analysis-kernel/src/constants.rs
       - name: Release the CLI
         uses: taiki-e/upload-rust-binary-action@v1
         with:

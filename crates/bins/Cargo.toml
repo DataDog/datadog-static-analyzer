@@ -28,8 +28,8 @@ features = [
 [dependencies]
 # local
 cli = { path = "../cli" }
-kernel = { path = "../kernel" }
-server = { path = "../server" }
+kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
+server = { package = "static-analysis-server", path = "../static-analysis-server" }
 # workspace
 anyhow = { workspace = true }
 itertools = { workspace = true }

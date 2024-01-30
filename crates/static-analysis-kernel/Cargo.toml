@@ -1,5 +1,5 @@
 [package]
-name = "kernel"
+name = "static-analysis-kernel"
 edition = "2021"
 version.workspace = true
 
