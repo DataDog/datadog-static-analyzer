@@ -16,6 +16,31 @@ pub struct AnalysisOptions {
     pub use_debug: bool,
 }
 
+// Represent the lines to ignores for a file. If we need to ignore all rules on a file, it's in the
+// lines_to_ignore attribute. If it's only specific rules, it's in the rules_to_ignore
+pub struct LinesToIgnore {
+    pub lines_to_ignore_per_rule: HashMap<u32, Vec<String>>,
+    pub lines_to_ignore: Vec<u32>,
+}
+
+impl LinesToIgnore {
+    // return if a specific rule should be ignored
+    // rule_name is the full rule name like rule1/rule2
+    // line is the line of the violation
+    // lines_to_ignore is the list of lines to ignore for all rules or per rules
+    pub fn should_filter_rule(&self, rule_name: &str, line: u32) -> bool {
+        if self.lines_to_ignore.contains(&line) {
+            return true;
+        }
+
+        if let Some(rules) = self.lines_to_ignore_per_rule.get(&line) {
+            return rules.contains(&rule_name.to_string());
+        }
+
+        false
+    }
+}
+
 // Used only internally
 pub struct AnalysisContext {
     pub tree_sitter_tree: tree_sitter::Tree,
@@ -49,4 +74,28 @@ pub struct MatchNode {
     #[serde(rename = "capturesList")]
     pub captures_list: HashMap<String, Vec<TreeSitterNode>>,
     pub context: MatchNodeContext,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::analysis::LinesToIgnore;
+    use std::collections::HashMap;
+
+    #[test]
+    fn test_lines_to_ignores() {
+        let mut lines_per_rule: HashMap<u32, Vec<String>> = HashMap::new();
+        lines_per_rule.insert(13, vec!["ruleset/rule".to_string()]);
+
+        let lines_to_ignore = LinesToIgnore {
+            lines_to_ignore: vec![10, 42],
+            lines_to_ignore_per_rule: lines_per_rule,
+        };
+
+        assert!(!lines_to_ignore.should_filter_rule("foo/bar", 11));
+        assert!(lines_to_ignore.should_filter_rule("foo/bar", 10));
+        assert!(lines_to_ignore.should_filter_rule("ruleset/rule", 10));
+        assert!(!lines_to_ignore.should_filter_rule("ruleset/rule", 11));
+        assert!(lines_to_ignore.should_filter_rule("ruleset/rule", 13));
+        assert!(!lines_to_ignore.should_filter_rule("foo/bar", 13));
+    }
 }
