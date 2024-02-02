@@ -492,4 +492,39 @@ def foo(arg1):
         let result = results.get(0).unwrap();
         assert!(result.violations.is_empty());
     }
+
+    #[test]
+    fn test_get_lines_to_ignore() {
+        // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
+        // no-dd-sa on line 7 so we ignore all rules on line 8
+        let code = "foo\n\n# no-dd-sa ruleset1/rule1\n\nbar\n\n# no-dd-sa\n";
+
+        let lines_to_ignore = get_lines_to_ignore(code, &Language::Python);
+
+        // test lines to ignore for all rules
+        assert_eq!(1, lines_to_ignore.lines_to_ignore.len());
+        assert!(!lines_to_ignore.lines_to_ignore.contains(&1));
+        assert!(lines_to_ignore.lines_to_ignore.contains(&8));
+
+        // test lines to ignore for some rules
+        assert_eq!(1, lines_to_ignore.lines_to_ignore_per_rule.len());
+        assert!(lines_to_ignore.lines_to_ignore_per_rule.contains_key(&4));
+        assert_eq!(
+            1,
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&4)
+                .unwrap()
+                .len()
+        );
+        assert_eq!(
+            "ruleset1/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&4)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+    }
 }

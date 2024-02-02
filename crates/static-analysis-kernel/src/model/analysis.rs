@@ -24,10 +24,10 @@ pub struct LinesToIgnore {
 }
 
 impl LinesToIgnore {
-    // return if a specific rule should be ignored
-    // rule_name is the full rule name like rule1/rule2
-    // line is the line of the violation
-    // lines_to_ignore is the list of lines to ignore for all rules or per rules
+    /// return if a specific rule should be ignored
+    ///  - rule_name is the full rule name like rule1/rule2
+    ///  - line is the line of the violation
+    /// returns true if the rule should be ignored
     pub fn should_filter_rule(&self, rule_name: &str, line: u32) -> bool {
         if self.lines_to_ignore.contains(&line) {
             return true;
