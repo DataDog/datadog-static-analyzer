@@ -40,11 +40,8 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     };
 
     for line in code.lines() {
-        let line_without_whitespaces: String = line
-            .clone()
-            .chars()
-            .filter(|c| !c.is_whitespace())
-            .collect();
+        let line_without_whitespaces: String =
+            line.chars().filter(|c| !c.is_whitespace()).collect();
         for p in &disabling_patterns {
             if line_without_whitespaces.contains(p) {
                 // get the rulesets/rules being referenced on the line
