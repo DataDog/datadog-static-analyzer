@@ -60,11 +60,8 @@ fn print_configuration(configuration: &CliConfiguration) {
     println!("#rules loaded       : {}", configuration.rules.len());
     println!("source directory    : {}", configuration.source_directory);
     println!(
-        "source subdirectory : {}",
-        configuration
-            .source_subdirectory
-            .clone()
-            .unwrap_or("none".to_string())
+        "subdirectories      : {}",
+        configuration.source_subdirectories.clone().join(",")
     );
     println!("output file         : {}", configuration.output_file);
     println!("output format       : {}", output_format_str);
@@ -98,7 +95,7 @@ fn main() -> Result<()> {
         "directory to scan (valid existing directory)",
         "/path/to/code/to/analyze",
     );
-    opts.optopt(
+    opts.optmulti(
         "u",
         "subdirectory",
         "subdirectory to scan within the repository",
@@ -188,7 +185,7 @@ fn main() -> Result<()> {
     let mut ignore_paths: Vec<String> = Vec::new();
     let ignore_paths_from_options = matches.opt_strs("p");
     let directory_to_analyze_option = matches.opt_str("i");
-    let subdirectory_to_analyze_option = matches.opt_str("u");
+    let subdirectories_to_analyze_option = matches.opt_strs("u");
 
     let rules_file = matches.opt_str("r");
 
@@ -262,7 +259,7 @@ fn main() -> Result<()> {
 
     let files_to_analyze = get_files(
         directory_to_analyze.as_str(),
-        subdirectory_to_analyze_option.clone(),
+        subdirectories_to_analyze_option.clone(),
         &ignore_paths,
     )
     .expect("unable to get the list of files to analyze");
@@ -280,7 +277,7 @@ fn main() -> Result<()> {
         use_configuration_file,
         ignore_gitignore,
         source_directory: directory_to_analyze.clone(),
-        source_subdirectory: subdirectory_to_analyze_option.clone(),
+        source_subdirectories: subdirectories_to_analyze_option.clone(),
         ignore_paths,
         rules_file,
         output_format,
