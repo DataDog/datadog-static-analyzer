@@ -49,9 +49,12 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
                     .to_string()
                     .replace("//", "")
                     .replace("/*", "")
-                    .replace(['#', ':'], "")
+                    .replace("*/", "")
+                    .replace('#', "")
                     .replace("no-dd-sa", "")
                     .replace("datadog-disable", "")
+                    .replace(':', "")
+                    .replace(',', " ")
                     .split(' ')
                     .filter(|e| e.contains('/'))
                     .map(|e| e.to_string())
@@ -494,7 +497,7 @@ def foo(arg1):
     }
 
     #[test]
-    fn test_get_lines_to_ignore() {
+    fn test_get_lines_to_ignore_python() {
         // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
         // no-dd-sa on line 7 so we ignore all rules on line 8
         let code = "foo\n\n# no-dd-sa ruleset1/rule1\n\nbar\n\n# no-dd-sa\n";
@@ -524,6 +527,114 @@ def foo(arg1):
                 .get(&4)
                 .unwrap()
                 .get(0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_get_lines_to_ignore_javascript() {
+        // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
+        // no-dd-sa on line 7 so we ignore all rules on line 8
+        let code = r#"
+ /*
+ * no-dd-sa */
+line4("bar");
+/* no-dd-sa */
+line6("bar");
+// no-dd-sa ruleset/rule1,ruleset/rule2
+line8("bar");
+// no-dd-sa ruleset/rule1, ruleset/rule3
+line10("bar");
+/* no-dd-sa ruleset/rule1, ruleset/rule4 */
+line12("bar");
+/*no-dd-sa ruleset/rule1, ruleset/rule5*/
+line14("bar");
+// no-dd-sa:ruleset/rule1
+line16("bar");
+// no-dd-sa
+line18("foo")
+//no-dd-sa
+line20("foo")
+        "#;
+
+        let lines_to_ignore = get_lines_to_ignore(code, &Language::JavaScript);
+
+        // test lines to ignore for all rules
+        assert_eq!(3, lines_to_ignore.lines_to_ignore.len());
+        assert!(!lines_to_ignore.lines_to_ignore.contains(&1));
+        assert!(lines_to_ignore.lines_to_ignore.contains(&18));
+        assert!(lines_to_ignore.lines_to_ignore.contains(&20));
+        assert_eq!(5, lines_to_ignore.lines_to_ignore_per_rule.len());
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&8)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule2",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&8)
+                .unwrap()
+                .get(1)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&10)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule3",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&10)
+                .unwrap()
+                .get(1)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&12)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule4",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&12)
+                .unwrap()
+                .get(1)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&14)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule5",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&14)
+                .unwrap()
+                .get(1)
                 .unwrap()
         );
     }
