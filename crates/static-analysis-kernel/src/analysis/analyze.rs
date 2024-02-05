@@ -1,12 +1,14 @@
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
-use crate::model::analysis::AnalysisOptions;
+use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::collections::HashMap;
 
-fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
-    let mut lines_to_ignore = vec![];
+fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
+    let mut lines_to_ignore_for_all_rules = vec![];
+    let mut lines_to_ignore_per_rules: HashMap<u32, Vec<String>> = HashMap::new();
+
     let mut line_number = 1u32;
     let disabling_patterns = match language {
         Language::Python
@@ -19,9 +21,9 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
         Language::JavaScript | Language::TypeScript => {
             vec![
                 "//no-dd-sa",
-                "/*no-dd-sa*/",
+                "/*no-dd-sa",
                 "//datadog-disable",
-                "/*datadog-disable*/",
+                "/*datadog-disable",
             ]
         }
         Language::Go
@@ -42,12 +44,36 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> Vec<u32> {
             line.chars().filter(|c| !c.is_whitespace()).collect();
         for p in &disabling_patterns {
             if line_without_whitespaces.contains(p) {
-                lines_to_ignore.push(line_number + 1);
+                // get the rulesets/rules being referenced on the line
+                let parts: Vec<String> = line
+                    .to_string()
+                    .replace("//", "")
+                    .replace("/*", "")
+                    .replace("*/", "")
+                    .replace('#', "")
+                    .replace("no-dd-sa", "")
+                    .replace("datadog-disable", "")
+                    .replace(':', "")
+                    .replace(',', " ")
+                    .split(' ')
+                    .filter(|e| e.contains('/'))
+                    .map(|e| e.to_string())
+                    .collect();
+
+                // no ruleset/rules specified, we just ignore everything
+                if parts.is_empty() {
+                    lines_to_ignore_for_all_rules.push(line_number + 1);
+                } else {
+                    lines_to_ignore_per_rules.insert(line_number + 1, parts.clone());
+                }
             }
         }
         line_number += 1;
     }
-    lines_to_ignore
+    LinesToIgnore {
+        lines_to_ignore: lines_to_ignore_for_all_rules,
+        lines_to_ignore_per_rule: lines_to_ignore_per_rules,
+    }
 }
 
 // main function
@@ -106,9 +132,9 @@ pub fn analyze(
                         );
 
                         // filter violations that have been ignored
-                        rule_result
-                            .violations
-                            .retain(|v| !lines_to_ignore.contains(&v.start.line));
+                        rule_result.violations.retain(|v| {
+                            !lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line)
+                        });
                         rule_result
                     }
                 })
@@ -468,5 +494,148 @@ def foo(arg1):
         assert_eq!(1, results.len());
         let result = results.get(0).unwrap();
         assert!(result.violations.is_empty());
+    }
+
+    #[test]
+    fn test_get_lines_to_ignore_python() {
+        // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
+        // no-dd-sa on line 7 so we ignore all rules on line 8
+        let code = "foo\n\n# no-dd-sa ruleset1/rule1\n\nbar\n\n# no-dd-sa\n";
+
+        let lines_to_ignore = get_lines_to_ignore(code, &Language::Python);
+
+        // test lines to ignore for all rules
+        assert_eq!(1, lines_to_ignore.lines_to_ignore.len());
+        assert!(!lines_to_ignore.lines_to_ignore.contains(&1));
+        assert!(lines_to_ignore.lines_to_ignore.contains(&8));
+
+        // test lines to ignore for some rules
+        assert_eq!(1, lines_to_ignore.lines_to_ignore_per_rule.len());
+        assert!(lines_to_ignore.lines_to_ignore_per_rule.contains_key(&4));
+        assert_eq!(
+            1,
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&4)
+                .unwrap()
+                .len()
+        );
+        assert_eq!(
+            "ruleset1/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&4)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_get_lines_to_ignore_javascript() {
+        // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
+        // no-dd-sa on line 7 so we ignore all rules on line 8
+        let code = r#"
+ /*
+ * no-dd-sa */
+line4("bar");
+/* no-dd-sa */
+line6("bar");
+// no-dd-sa ruleset/rule1,ruleset/rule2
+line8("bar");
+// no-dd-sa ruleset/rule1, ruleset/rule3
+line10("bar");
+/* no-dd-sa ruleset/rule1, ruleset/rule4 */
+line12("bar");
+/*no-dd-sa ruleset/rule1, ruleset/rule5*/
+line14("bar");
+// no-dd-sa:ruleset/rule1
+line16("bar");
+// no-dd-sa
+line18("foo")
+//no-dd-sa
+line20("foo")
+        "#;
+
+        let lines_to_ignore = get_lines_to_ignore(code, &Language::JavaScript);
+
+        // test lines to ignore for all rules
+        assert_eq!(3, lines_to_ignore.lines_to_ignore.len());
+        assert!(!lines_to_ignore.lines_to_ignore.contains(&1));
+        assert!(lines_to_ignore.lines_to_ignore.contains(&18));
+        assert!(lines_to_ignore.lines_to_ignore.contains(&20));
+        assert_eq!(5, lines_to_ignore.lines_to_ignore_per_rule.len());
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&8)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule2",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&8)
+                .unwrap()
+                .get(1)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&10)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule3",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&10)
+                .unwrap()
+                .get(1)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&12)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule4",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&12)
+                .unwrap()
+                .get(1)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule1",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&14)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+        assert_eq!(
+            "ruleset/rule5",
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&14)
+                .unwrap()
+                .get(1)
+                .unwrap()
+        );
     }
 }
