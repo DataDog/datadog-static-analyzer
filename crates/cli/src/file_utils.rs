@@ -161,6 +161,25 @@ pub fn get_files(
     Ok(files_to_return)
 }
 
+/// try to find if one of the subdirectory used to scan a repository is going outside the
+/// repository directory. If yes, this is unsafe, scans outside the repository and should
+/// not run.
+pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String]) -> bool {
+    let directory_canonicalized = directory_path
+        .canonicalize()
+        .expect("cannot canonicalize repository directory");
+    return subdirectories.iter().all(|subdirectory| {
+        let new_path = directory_path
+            .join(subdirectory)
+            .canonicalize()
+            .expect("canonicalize subdirectory");
+        if !new_path.starts_with(directory_canonicalized.clone()) {
+            return false;
+        }
+        true
+    });
+}
+
 // filter the file according to a list of extensions
 fn match_extension(path: &Path, extensions: &[String]) -> bool {
     match path.extension() {
@@ -269,6 +288,20 @@ mod tests {
                 .collect::<Vec<&String>>()
                 .len()
         )
+    }
+
+    #[test]
+    fn test_are_subdirectories_safe() {
+        let directory = Path::new("/tmp");
+        assert!(!are_subdirectories_safe(
+            directory,
+            &vec!["../".to_string()]
+        ));
+        assert!(are_subdirectories_safe(directory, &vec![]));
+        assert!(are_subdirectories_safe(
+            directory,
+            &vec!["../tmp".to_string()]
+        ));
     }
 
     /// Filter files bigger than one kilobyte and make sure files

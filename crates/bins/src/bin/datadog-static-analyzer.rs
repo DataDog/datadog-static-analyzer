@@ -1,6 +1,8 @@
 use cli::config_file::read_config_file;
 use cli::datadog_utils::get_rules_from_rulesets;
-use cli::file_utils::{filter_files_for_language, get_files, read_files_from_gitignore};
+use cli::file_utils::{
+    are_subdirectories_safe, filter_files_for_language, get_files, read_files_from_gitignore,
+};
 use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
@@ -185,7 +187,7 @@ fn main() -> Result<()> {
     let mut ignore_paths: Vec<String> = Vec::new();
     let ignore_paths_from_options = matches.opt_strs("p");
     let directory_to_analyze_option = matches.opt_str("i");
-    let subdirectories_to_analyze_option = matches.opt_strs("u");
+    let subdirectories_to_analyze = matches.opt_strs("u");
 
     let rules_file = matches.opt_str("r");
 
@@ -200,6 +202,11 @@ fn main() -> Result<()> {
 
     if !directory_path.is_dir() {
         eprintln!("directory to analyze is not correct");
+        exit(1)
+    }
+
+    if !are_subdirectories_safe(directory_path, &subdirectories_to_analyze) {
+        eprintln!("sub-directories are not safe and point outside of the repository");
         exit(1)
     }
 
@@ -259,7 +266,7 @@ fn main() -> Result<()> {
 
     let files_to_analyze = get_files(
         directory_to_analyze.as_str(),
-        subdirectories_to_analyze_option.clone(),
+        subdirectories_to_analyze.clone(),
         &ignore_paths,
     )
     .expect("unable to get the list of files to analyze");
@@ -277,7 +284,7 @@ fn main() -> Result<()> {
         use_configuration_file,
         ignore_gitignore,
         source_directory: directory_to_analyze.clone(),
-        source_subdirectories: subdirectories_to_analyze_option.clone(),
+        source_subdirectories: subdirectories_to_analyze.clone(),
         ignore_paths,
         rules_file,
         output_format,
