@@ -85,11 +85,12 @@ pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> 
     read_files_from_gitignore_internal(&gitignore_path)
 }
 
-// get the files to analyze from the directory. This function walks the directory
-// to analyze recursively and gets all the files.
+/// get the files to analyze from the directory. This function walks the directory
+/// to analyze recursively and gets all the files.
+/// if passed, subdirectories_to_analyze are subdirectories within the directory.
 pub fn get_files(
     directory: &str,
-    subdirectory: Option<String>,
+    subdirectories_to_analyze: Vec<String>,
     paths_to_ignore: &[String],
 ) -> Result<Vec<PathBuf>> {
     let mut files_to_return: Vec<PathBuf> = vec![];
@@ -97,61 +98,86 @@ pub fn get_files(
     // This is the directory that contains the .git files, we do not need to keep them.
     let git_directory = format!("{}/.git", &directory);
 
-    let directory_to_walk: String = match subdirectory {
-        Some(sd) => {
-            let sd_str = sd.as_str();
-            let p = Path::new(directory).join(sd_str);
-            p.as_os_str().to_str().unwrap().to_string()
-        }
-        None => directory.to_string(),
+    let directories_to_walk: Vec<String> = if !subdirectories_to_analyze.is_empty() {
+        subdirectories_to_analyze
+            .iter()
+            .map(|p| {
+                let sd_str = p.as_str();
+                let p = Path::new(directory).join(sd_str);
+                p.as_os_str().to_str().unwrap().to_string()
+            })
+            .collect()
+    } else {
+        vec![directory.to_string()]
     };
 
-    for entry in WalkDir::new(directory_to_walk.as_str()) {
-        let dir_entry = entry?;
-        let entry = dir_entry.path();
+    for directory_to_walk in directories_to_walk {
+        for entry in WalkDir::new(directory_to_walk.as_str()) {
+            let dir_entry = entry?;
+            let entry = dir_entry.path();
 
-        // we only include if this is a file and not a symlink
-        // we should NEVER follow symlink for security reason (an attacker could then
-        // attempt to add a symlink outside the repo and read content outside of the
-        // repo with a custom rule.
-        let mut should_include = entry.is_file() && !entry.is_symlink();
-        let path_buf = entry.to_path_buf();
+            // we only include if this is a file and not a symlink
+            // we should NEVER follow symlink for security reason (an attacker could then
+            // attempt to add a symlink outside the repo and read content outside of the
+            // repo with a custom rule.
+            let mut should_include = entry.is_file() && !entry.is_symlink();
+            let path_buf = entry.to_path_buf();
 
-        // check if the path should be ignored by a glob or not.
-        for path_to_ignore in paths_to_ignore {
-            // skip empty path to ignore
-            if path_to_ignore.is_empty() {
-                continue;
+            // check if the path should be ignored by a glob or not.
+            for path_to_ignore in paths_to_ignore {
+                // skip empty path to ignore
+                if path_to_ignore.is_empty() {
+                    continue;
+                }
+
+                let relative_path_str = path_buf
+                    .strip_prefix(directory)
+                    .ok()
+                    .and_then(|p| p.to_str())
+                    .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
+                if glob_match(path_to_ignore.as_str(), relative_path_str) {
+                    should_include = false;
+                }
+
+                let relative_path_res = path_buf.strip_prefix(directory);
+
+                if let Ok(relative_path) = relative_path_res {
+                    if relative_path.starts_with(Path::new(path_to_ignore.as_str())) {
+                        should_include = false;
+                    }
+                }
             }
 
-            let relative_path_str = path_buf
-                .strip_prefix(directory)
-                .ok()
-                .and_then(|p| p.to_str())
-                .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
-            if glob_match(path_to_ignore.as_str(), relative_path_str) {
+            // do not include the git directory.
+            if entry.starts_with(git_directory.as_str()) {
                 should_include = false;
             }
 
-            let relative_path_res = path_buf.strip_prefix(directory);
-
-            if let Ok(relative_path) = relative_path_res {
-                if relative_path.starts_with(Path::new(path_to_ignore.as_str())) {
-                    should_include = false;
-                }
+            if should_include {
+                files_to_return.push(entry.to_path_buf());
             }
-        }
-
-        // do not include the git directory.
-        if entry.starts_with(git_directory.as_str()) {
-            should_include = false;
-        }
-
-        if should_include {
-            files_to_return.push(entry.to_path_buf());
         }
     }
     Ok(files_to_return)
+}
+
+/// try to find if one of the subdirectory used to scan a repository is going outside the
+/// repository directory. If yes, this is unsafe, scans outside the repository and should
+/// not run.
+pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String]) -> bool {
+    let directory_canonicalized = directory_path
+        .canonicalize()
+        .expect("cannot canonicalize repository directory");
+    return subdirectories.iter().all(|subdirectory| {
+        let new_path = directory_path
+            .join(subdirectory)
+            .canonicalize()
+            .expect("canonicalize subdirectory");
+        if !new_path.starts_with(directory_canonicalized.clone()) {
+            return false;
+        }
+        true
+    });
 }
 
 // filter the file according to a list of extensions
@@ -241,6 +267,7 @@ mod tests {
     use super::*;
     use kernel::model::common::OutputFormat::Sarif;
     use std::collections::HashMap;
+    use std::env;
     use std::path::Path;
 
     #[test]
@@ -264,6 +291,23 @@ mod tests {
         )
     }
 
+    #[test]
+    fn test_are_subdirectories_safe() {
+        // Create temporary directories and have a directory called plop inside.
+        let directory_dir = env::temp_dir();
+        let plop_dir = directory_dir.join("plop");
+        if !Path::exists(plop_dir.as_path()) {
+            fs::create_dir(&plop_dir).expect("can create dir");
+        }
+
+        let directory = directory_dir.as_path();
+        assert!(!are_subdirectories_safe(directory, &["../".to_string()]));
+        assert!(are_subdirectories_safe(directory, &vec![]));
+        assert!(are_subdirectories_safe(directory, &["plop".to_string()]));
+
+        fs::remove_dir(plop_dir).expect("cannot remove dir")
+    }
+
     /// Filter files bigger than one kilobyte and make sure files
     /// less than one kilobyte are not being filtered.
     #[test]
@@ -277,7 +321,7 @@ mod tests {
             use_configuration_file: true,
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
-            source_subdirectory: None,
+            source_subdirectories: vec![],
             ignore_paths: vec![],
             rules_file: None,
             output_format: Sarif, // SARIF or JSON
@@ -319,7 +363,7 @@ mod tests {
         let empty_paths_to_ignore = vec![];
         let files = get_files(
             current_path.display().to_string().as_str(),
-            None,
+            vec![],
             &empty_paths_to_ignore,
         );
         assert!(files.is_ok());
@@ -335,7 +379,7 @@ mod tests {
         let ignore_paths = vec!["**/src/**/lib.rs".to_string()];
         let files = get_files(
             current_path.display().to_string().as_str(),
-            None,
+            vec![],
             &ignore_paths,
         );
         assert!(files.is_ok());
@@ -357,7 +401,7 @@ mod tests {
         let empty_paths_to_ignore = vec![];
         let files = get_files(
             current_path.display().to_string().as_str(),
-            Some(subdirectory.into_os_string().into_string().unwrap()),
+            vec![subdirectory.into_os_string().into_string().unwrap()],
             &empty_paths_to_ignore,
         );
 
@@ -377,7 +421,7 @@ mod tests {
         let ignore_paths = vec!["src".to_string()];
         let files = get_files(
             current_path.display().to_string().as_str(),
-            None,
+            vec![],
             &ignore_paths,
         );
         assert!(files.is_ok());
@@ -393,7 +437,7 @@ mod tests {
         let ignore_paths = vec!["src/lib.rs".to_string()];
         let files = get_files(
             current_path.display().to_string().as_str(),
-            None,
+            vec![],
             &ignore_paths,
         );
         assert!(files.is_ok());
@@ -409,7 +453,7 @@ mod tests {
         let ignore_paths = vec!["foo".to_string()];
         let files = get_files(
             current_path.display().to_string().as_str(),
-            None,
+            vec![],
             &ignore_paths,
         );
         assert!(files.is_ok());
@@ -450,7 +494,7 @@ mod tests {
         let empty_paths_to_ignore = vec![];
         let files = get_files(
             current_path.display().to_string().as_str(),
-            None,
+            vec![],
             &empty_paths_to_ignore,
         );
         assert!(files.is_ok());
