@@ -267,6 +267,7 @@ mod tests {
     use super::*;
     use kernel::model::common::OutputFormat::Sarif;
     use std::collections::HashMap;
+    use std::env;
     use std::path::Path;
 
     #[test]
@@ -292,16 +293,19 @@ mod tests {
 
     #[test]
     fn test_are_subdirectories_safe() {
-        let directory = Path::new("/tmp");
-        assert!(!are_subdirectories_safe(
-            directory,
-            &vec!["../".to_string()]
-        ));
+        // Create temporary directories and have a directory called plop inside.
+        let directory_dir = env::temp_dir();
+        let plop_dir = directory_dir.join("plop");
+        if !Path::exists(plop_dir.as_path()) {
+            fs::create_dir(&plop_dir).expect("can create dir");
+        }
+
+        let directory = directory_dir.as_path();
+        assert!(!are_subdirectories_safe(directory, &["../".to_string()]));
         assert!(are_subdirectories_safe(directory, &vec![]));
-        assert!(are_subdirectories_safe(
-            directory,
-            &vec!["../tmp".to_string()]
-        ));
+        assert!(are_subdirectories_safe(directory, &["plop".to_string()]));
+
+        fs::remove_dir(plop_dir).expect("cannot remove dir")
     }
 
     /// Filter files bigger than one kilobyte and make sure files
