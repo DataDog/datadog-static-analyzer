@@ -440,7 +440,7 @@ fn main() -> Result<()> {
             "rule", "filename", "location", "category", "severity", "message"
         ]);
         for rule_result in &all_rule_results {
-            if rule_result.violations.len() > 0 {
+            if !rule_result.violations.is_empty() {
                 for violation in &rule_result.violations {
                     let position = format!(
                         "{}:{}-{}:{}",
