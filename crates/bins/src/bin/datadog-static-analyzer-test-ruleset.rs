@@ -34,7 +34,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
     if analyze_result.is_empty() {
         Err(Error::msg("no violation result"))
     } else {
-        let first_results = analyze_result.get(0).unwrap();
+        let first_results = analyze_result.first().unwrap();
 
         if first_results.violations.len() != test.annotation_count as usize {
             let error =
