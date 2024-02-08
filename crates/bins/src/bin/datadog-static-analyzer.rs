@@ -432,7 +432,10 @@ fn main() -> Result<()> {
     if nb_violations > 0 {
         let mut table = Table::new();
         let format = format::FormatBuilder::new()
-            .separator(format::LinePosition::Title, format::LineSeparator::new('-', '-', '-', '-'))
+            .separator(
+                format::LinePosition::Title,
+                format::LineSeparator::new('-', '-', '-', '-'),
+            )
             .padding(1, 1)
             .build();
         table.set_format(format);
