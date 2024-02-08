@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate prettytable;
-
 use cli::config_file::read_config_file;
 use cli::datadog_utils::get_rules_from_rulesets;
 use cli::file_utils::{
@@ -20,9 +17,9 @@ use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::sarif::sarif_utils::generate_sarif_report;
+use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
-use prettytable::{format, Table};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;
@@ -116,6 +113,11 @@ fn main() -> Result<()> {
     opts.optopt("d", "debug", "use debug mode", "yes/no");
     opts.optopt("f", "format", "format of the output file", "json/sarif/csv");
     opts.optopt("o", "output", "output file name", "output.json");
+    opts.optflag(
+        "",
+        "print_violations",
+        "print a list with all the violations that were found",
+    );
     opts.optopt("c", "cpus", "set the number of CPU, use to parallelize (default is the number of cores on the platform)", "--cpus 5");
     opts.optmulti(
         "p",
@@ -169,6 +171,7 @@ fn main() -> Result<()> {
     let use_staging = matches.opt_present("s");
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
+    let print_violations = matches.opt_present("print_violations");
 
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {
@@ -429,43 +432,6 @@ fn main() -> Result<()> {
         end_timestamp - start_timestamp
     );
 
-    if nb_violations > 0 {
-        let mut table = Table::new();
-        let format = format::FormatBuilder::new()
-            .separator(
-                format::LinePosition::Title,
-                format::LineSeparator::new('-', '-', '-', '-'),
-            )
-            .padding(1, 1)
-            .build();
-        table.set_format(format);
-        table.set_titles(row![
-            "rule", "filename", "location", "category", "severity", "message"
-        ]);
-        for rule_result in &all_rule_results {
-            if !rule_result.violations.is_empty() {
-                for violation in &rule_result.violations {
-                    let position = format!(
-                        "{}:{}-{}:{}",
-                        violation.start.line,
-                        violation.start.col,
-                        violation.end.line,
-                        violation.end.col
-                    );
-                    table.add_row(row![
-                        rule_result.rule_name,
-                        rule_result.filename,
-                        position,
-                        violation.category.to_string(),
-                        violation.severity.to_string(),
-                        violation.message
-                    ]);
-                }
-            }
-        }
-        table.printstd();
-    }
-
     // If the performance statistics are enabled, we show the total execution time per rule
     // and the rule that timed-out.
     if enable_performance_statistics {
@@ -505,6 +471,10 @@ fn main() -> Result<()> {
         for v in rules_timed_out {
             println!("Rule {} timed out on file {}", v.rule_name, v.filename);
         }
+    }
+
+    if print_violations && nb_violations > 0 {
+        violations_table::print_violations_table(&all_rule_results);
     }
 
     let value = match configuration.output_format {
