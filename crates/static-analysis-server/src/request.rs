@@ -114,6 +114,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     let rule_results = analyze(
         &request.language,
         &rules,
+        None,
         &request.filename,
         code_decoded_attempt.unwrap().as_str(),
         &AnalysisOptions {

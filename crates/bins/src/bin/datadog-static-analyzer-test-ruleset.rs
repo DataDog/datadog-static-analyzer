@@ -26,6 +26,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
     let analyze_result = analyze(
         &rule.language,
         &rules,
+        None,
         test.filename.as_str(),
         code.as_str(),
         &analysis_options,

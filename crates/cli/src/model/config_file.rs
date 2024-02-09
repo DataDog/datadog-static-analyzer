@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fmt;
 
 use serde;
@@ -5,8 +6,34 @@ use serde::{Deserialize, Serialize};
 
 // the configuration file from the repository
 #[derive(Deserialize, Debug, Serialize)]
-pub struct ConfigFile {
+pub struct ConfigFile2 {
     pub rulesets: Vec<String>,
+    #[serde(rename(serialize = "ignore-paths", deserialize = "ignore-paths"))]
+    pub ignore_paths: Option<Vec<String>>,
+    #[serde(rename(serialize = "ignore-gitignore", deserialize = "ignore-gitignore"))]
+    pub ignore_gitignore: Option<bool>,
+    #[serde(rename(serialize = "max-file-size-kb", deserialize = "max-file-size-kb"))]
+    pub max_file_size_kb: Option<u64>,
+}
+
+#[derive(Deserialize, Debug, Serialize, Clone)]
+pub struct PathConfig {
+    pub only: Option<Vec<String>>,
+    pub ignore: Option<Vec<String>>,
+}
+
+#[derive(Deserialize, Debug, Serialize)]
+pub struct RulesetConfig {
+    #[serde(flatten)]
+    pub paths: PathConfig,
+    pub rules: Option<HashMap<String, PathConfig>>,
+}
+
+#[derive(Deserialize, Debug, Serialize)]
+pub struct ConfigFile {
+    pub rulesets: HashMap<String, RulesetConfig>,
+    #[serde(flatten)]
+    pub paths: PathConfig,
     #[serde(rename(serialize = "ignore-paths", deserialize = "ignore-paths"))]
     pub ignore_paths: Option<Vec<String>>,
     #[serde(rename(serialize = "ignore-gitignore", deserialize = "ignore-gitignore"))]
@@ -17,19 +44,6 @@ pub struct ConfigFile {
 
 impl fmt::Display for ConfigFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let rules_string = self.rulesets.join(",");
-        let ignore_path_string = match &self.ignore_paths {
-            Some(i) => i.join(","),
-            None => "".to_string(),
-        };
-        write!(
-            f,
-            "rulesets: {}, ignore paths: {}, ignore .gitignore: {}",
-            rules_string,
-            ignore_path_string,
-            self.ignore_gitignore
-                .map(|v| v.to_string())
-                .unwrap_or("undefined".to_string())
-        )
+        write!(f, "{:}", self)
     }
 }

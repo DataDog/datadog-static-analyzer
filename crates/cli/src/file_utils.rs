@@ -1,4 +1,4 @@
-use crate::model::cli_configuration::CliConfiguration;
+use crate::model::cli_configuration::{CliConfiguration, PathConfigStack};
 use anyhow::Result;
 use glob_match::glob_match;
 use kernel::model::common::Language;
@@ -85,6 +85,24 @@ pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> 
     read_files_from_gitignore_internal(&gitignore_path)
 }
 
+pub fn check_can_scan(paths: &PathConfigStack, filename: &str) -> bool {
+    let file_path = Path::new(filename);
+    for ignore in &paths.ignore {
+        if glob_match(ignore, filename) || file_path.starts_with(Path::new(ignore)) {
+            return false;
+        }
+    }
+    for only_vec in &paths.only {
+        let found = only_vec
+            .iter()
+            .any(|only| glob_match(only, filename) || file_path.starts_with(Path::new(only)));
+        if !found {
+            return false;
+        }
+    }
+    return true;
+}
+
 /// get the files to analyze from the directory. This function walks the directory
 /// to analyze recursively and gets all the files.
 /// if passed, subdirectories_to_analyze are subdirectories within the directory.
@@ -92,6 +110,7 @@ pub fn get_files(
     directory: &str,
     subdirectories_to_analyze: Vec<String>,
     paths_to_ignore: &[String],
+    paths_to_use: &Option<Vec<String>>,
 ) -> Result<Vec<PathBuf>> {
     let mut files_to_return: Vec<PathBuf> = vec![];
 
@@ -123,6 +142,14 @@ pub fn get_files(
             let mut should_include = entry.is_file() && !entry.is_symlink();
             let path_buf = entry.to_path_buf();
 
+            let relative_path_str = path_buf
+                .strip_prefix(directory)
+                .ok()
+                .and_then(|p| p.to_str())
+                .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
+
+            let relative_path_res = path_buf.strip_prefix(directory);
+
             // check if the path should be ignored by a glob or not.
             for path_to_ignore in paths_to_ignore {
                 // skip empty path to ignore
@@ -130,22 +157,29 @@ pub fn get_files(
                     continue;
                 }
 
-                let relative_path_str = path_buf
-                    .strip_prefix(directory)
-                    .ok()
-                    .and_then(|p| p.to_str())
-                    .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
                 if glob_match(path_to_ignore.as_str(), relative_path_str) {
                     should_include = false;
                 }
-
-                let relative_path_res = path_buf.strip_prefix(directory);
 
                 if let Ok(relative_path) = relative_path_res {
                     if relative_path.starts_with(Path::new(path_to_ignore.as_str())) {
                         should_include = false;
                     }
                 }
+            }
+
+            // check if the path is in the "use" list
+            if let Some(only_paths) = paths_to_use {
+                should_include = should_include
+                    && only_paths.iter().any(|path_to_use| {
+                        if glob_match(path_to_use, relative_path_str) {
+                            return true;
+                        }
+                        if let Ok(relative_path) = relative_path_res {
+                            return relative_path.starts_with(Path::new(path_to_use));
+                        }
+                        return false;
+                    });
             }
 
             // do not include the git directory.
@@ -328,6 +362,7 @@ mod tests {
             output_file: "foo".to_string(),
             num_cpus: 2, // of cpus to use for parallelism
             rules: vec![],
+            rule_restrictions: HashMap::new(),
             max_file_size_kb: 1,
             use_staging: false,
         };
@@ -361,10 +396,12 @@ mod tests {
 
         // first, we get the list of files without any path to ignore
         let empty_paths_to_ignore = vec![];
+        let no_paths_to_use = None;
         let files = get_files(
             current_path.display().to_string().as_str(),
             vec![],
             &empty_paths_to_ignore,
+            &no_paths_to_use,
         );
         assert!(files.is_ok());
         let f = &files.unwrap();
@@ -381,6 +418,7 @@ mod tests {
             current_path.display().to_string().as_str(),
             vec![],
             &ignore_paths,
+            &no_paths_to_use,
         );
         assert!(files.is_ok());
         let f = &files.unwrap();
@@ -399,10 +437,12 @@ mod tests {
 
         // first, we get the list of files without any path to ignore
         let empty_paths_to_ignore = vec![];
+        let no_paths_to_use = None;
         let files = get_files(
             current_path.display().to_string().as_str(),
             vec![subdirectory.into_os_string().into_string().unwrap()],
             &empty_paths_to_ignore,
+            &no_paths_to_use,
         );
 
         assert_eq!(2, files.unwrap().len());
@@ -416,6 +456,7 @@ mod tests {
         let file_to_find = Path::new(current_path.display().to_string().as_str())
             .join("src")
             .join("lib.rs");
+        let no_paths_to_use = None;
 
         // now, we one path to ignore, we should filter.
         let ignore_paths = vec!["src".to_string()];
@@ -423,6 +464,7 @@ mod tests {
             current_path.display().to_string().as_str(),
             vec![],
             &ignore_paths,
+            &no_paths_to_use,
         );
         assert!(files.is_ok());
         let f = &files.unwrap();
@@ -439,6 +481,7 @@ mod tests {
             current_path.display().to_string().as_str(),
             vec![],
             &ignore_paths,
+            &no_paths_to_use,
         );
         assert!(files.is_ok());
         let f = &files.unwrap();
@@ -455,6 +498,7 @@ mod tests {
             current_path.display().to_string().as_str(),
             vec![],
             &ignore_paths,
+            &no_paths_to_use,
         );
         assert!(files.is_ok());
         let f = &files.unwrap();
@@ -492,10 +536,12 @@ mod tests {
         let current_path = std::env::current_dir().unwrap();
 
         let empty_paths_to_ignore = vec![];
+        let no_paths_to_use = None;
         let files = get_files(
             current_path.display().to_string().as_str(),
             vec![],
             &empty_paths_to_ignore,
+            &no_paths_to_use,
         );
         assert!(files.is_ok());
         let files = &files.unwrap();
