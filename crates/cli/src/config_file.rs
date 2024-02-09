@@ -58,27 +58,36 @@ mod tests {
     fn parse_config_file_with_rulesets_only() {
         let data = r#"
 rulesets:
-  - python-security
+  python-security:
     "#;
         let res = parse_config_file(data);
         assert!(res.is_ok());
-        assert!(res.unwrap().ignore_paths.is_none());
+        assert!(res.as_ref().unwrap().paths.only.is_none());
+        assert!(res.as_ref().unwrap().paths.ignore.is_none());
     }
 
     // test with everything: rulesets and ignore-paths
     #[test]
-    fn parse_config_file_with_rulesets_and_ignore_paths() {
+    fn parse_config_file_with_rulesets_and_paths() {
         let data = r#"
 rulesets:
-  - python-security
-ignore-paths:
+  python-security:
+only:
+  - path_a
+  - "bins/**/foo/*"
+ignore:
   - "**/test/**"
   - path1
     "#;
         let res = parse_config_file(data);
         assert!(res.is_ok());
-        assert!(res.as_ref().unwrap().ignore_paths.is_some());
-        let ignore_paths = &res.unwrap().ignore_paths.unwrap();
+        assert!(res.as_ref().unwrap().paths.only.is_some());
+        let only_paths = res.as_ref().unwrap().paths.only.as_ref().unwrap();
+        assert_eq!(2, only_paths.len());
+        assert_eq!("path_a", only_paths.get(0).unwrap().as_str());
+        assert_eq!("bins/**/foo/*", only_paths.get(1).unwrap().as_str());
+        assert!(res.as_ref().unwrap().paths.ignore.is_some());
+        let ignore_paths = &res.unwrap().paths.ignore.unwrap();
         assert_eq!(2, ignore_paths.len());
         assert_eq!("**/test/**", ignore_paths.get(0).unwrap().as_str());
         assert_eq!("path1", ignore_paths.get(1).unwrap().as_str());

@@ -56,13 +56,13 @@ fn get_rules_from_config(config: &ConfigFile, use_staging: bool) -> Result<Vec<R
     let base_pcr = get_path_config_stack(&config.paths);
     let mut rules_with_paths = Vec::new();
     for (ruleset_name, ruleset_cfg) in &config.rulesets {
-        let rules = get_ruleset(&ruleset_name, use_staging)?.rules;
+        let rules = get_ruleset(ruleset_name, use_staging)?.rules;
         let ruleset_pcr = extend_paths(&base_pcr, &ruleset_cfg.paths);
         for rule in rules {
-            if let Some((_, basename)) = rule.name.split_once("/") {
+            if let Some((_, basename)) = rule.name.split_once('/') {
                 let paths = match ruleset_cfg.rules.as_ref().and_then(|r| r.get(basename)) {
                     None => ruleset_pcr.clone(),
-                    Some(paths) => extend_paths(&ruleset_pcr, &paths),
+                    Some(paths) => extend_paths(&ruleset_pcr, paths),
                 };
                 rules_with_paths.push(RuleWithPaths { rule, paths });
             }
@@ -310,10 +310,7 @@ fn main() -> Result<()> {
             .map(|r| (r.rule.name.clone(), r.paths.clone()))
             .collect();
 
-        // copy the ignore paths from the configuration file
-        if let Some(v) = conf.ignore_paths {
-            ignore_paths.extend(v);
-        }
+        // copy the only and ignore paths from the configuration file
         if let Some(v) = conf.paths.ignore {
             ignore_paths.extend(v);
         }
@@ -570,11 +567,7 @@ fn main() -> Result<()> {
             serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => match generate_sarif_report(
-            &configuration
-                .rules
-                .iter()
-                .map(|r| r.clone())
-                .collect::<Vec<Rule>>(),
+            &configuration.rules.to_vec(),
             &all_rule_results,
             &directory_to_analyze,
             add_git_info,

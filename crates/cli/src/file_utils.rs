@@ -100,7 +100,7 @@ pub fn check_can_scan(paths: &PathConfigStack, filename: &str) -> bool {
             return false;
         }
     }
-    return true;
+    true
 }
 
 /// get the files to analyze from the directory. This function walks the directory
@@ -178,7 +178,7 @@ pub fn get_files(
                         if let Ok(relative_path) = relative_path_res {
                             return relative_path.starts_with(Path::new(path_to_use));
                         }
-                        return false;
+                        false
                     });
             }
 
