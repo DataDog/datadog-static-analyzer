@@ -357,6 +357,7 @@ mod tests {
             source_directory: "bla".to_string(),
             source_subdirectories: vec![],
             ignore_paths: vec![],
+            only_paths: None,
             rules_file: None,
             output_format: Sarif, // SARIF or JSON
             output_file: "foo".to_string(),
