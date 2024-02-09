@@ -118,7 +118,12 @@ fn main() -> Result<()> {
         "print-violations",
         "print a list with all the violations that were found",
     );
-    opts.optopt("c", "cpus", "set the number of CPU, use to parallelize (default is the number of cores on the platform)", "--cpus 5");
+    opts.optopt(
+        "c",
+        "cpus",
+        format!("allow N CPUs at once; if unspecified, defaults to the number of logical cores on the platform or {}, whichever is less", DEFAULT_MAX_CPUS).as_str(),
+        "--cpus 5",
+    );
     opts.optmulti(
         "p",
         "ignore-path",
@@ -278,12 +283,15 @@ fn main() -> Result<()> {
     )
     .expect("unable to get the list of files to analyze");
 
-    // we try to get the amount of cpu from the system. if the user set an option to force
-    // the value. it overrides the value.
-    let num_cpus = matches
+    let num_cores_requested = matches
         .opt_str("c")
-        .map(|x| x.parse::<usize>().unwrap())
-        .unwrap_or(num_cpus::get());
+        .map(|val| {
+            val.parse::<usize>()
+                .context("unable to parse `cpus` flag as integer")
+        })
+        .transpose()?;
+    // Select the number of cores to use based on the user's CLI arg (or lack of one)
+    let num_cpus = choose_cpu_count(num_cores_requested);
 
     // build the configuration object that contains how the CLI should behave.
     let configuration = CliConfiguration {
@@ -503,4 +511,14 @@ fn main() -> Result<()> {
     file.write_all(value.as_bytes())
         .context("error when writing results")?;
     Ok(())
+}
+
+const DEFAULT_MAX_CPUS: usize = 8;
+
+/// Returns the user's requested core count, clamped to the number of logical cores on the system.
+/// If unspecified, up to [DEFAULT_MAX_CPUS] CPUs will be used.
+fn choose_cpu_count(user_input: Option<usize>) -> usize {
+    let logical_cores = num_cpus::get();
+    let cores = user_input.unwrap_or(DEFAULT_MAX_CPUS);
+    usize::min(logical_cores, cores)
 }
