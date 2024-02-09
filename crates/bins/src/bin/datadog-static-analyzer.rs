@@ -115,7 +115,7 @@ fn main() -> Result<()> {
     opts.optopt("o", "output", "output file name", "output.json");
     opts.optflag(
         "",
-        "print_violations",
+        "print-violations",
         "print a list with all the violations that were found",
     );
     opts.optopt("c", "cpus", "set the number of CPU, use to parallelize (default is the number of cores on the platform)", "--cpus 5");
@@ -171,7 +171,7 @@ fn main() -> Result<()> {
     let use_staging = matches.opt_present("s");
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
-    let print_violations = matches.opt_present("print_violations");
+    let print_violations = matches.opt_present("print-violations");
 
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {

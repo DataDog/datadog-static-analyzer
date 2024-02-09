@@ -1,6 +1,3 @@
-#[macro_use]
-extern crate prettytable;
-
 pub mod config_file;
 pub mod constants;
 pub mod csv;

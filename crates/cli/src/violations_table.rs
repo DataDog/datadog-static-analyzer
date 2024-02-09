@@ -1,7 +1,7 @@
 use kernel::model::rule::RuleResult;
-use prettytable::{format, Table};
+use prettytable::{format, row, Table};
 
-pub fn print_violations_table(rule_results: &Vec<RuleResult>) {
+pub fn print_violations_table(rule_results: &[RuleResult]) {
     let mut table = Table::new();
     let format = format::FormatBuilder::new()
         .separator(
