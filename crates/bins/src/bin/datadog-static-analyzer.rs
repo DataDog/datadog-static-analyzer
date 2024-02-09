@@ -17,6 +17,7 @@ use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::sarif::sarif_utils::generate_sarif_report;
+use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
 use rayon::prelude::*;
@@ -112,6 +113,11 @@ fn main() -> Result<()> {
     opts.optopt("d", "debug", "use debug mode", "yes/no");
     opts.optopt("f", "format", "format of the output file", "json/sarif/csv");
     opts.optopt("o", "output", "output file name", "output.json");
+    opts.optflag(
+        "",
+        "print-violations",
+        "print a list with all the violations that were found",
+    );
     opts.optopt(
         "c",
         "cpus",
@@ -170,6 +176,7 @@ fn main() -> Result<()> {
     let use_staging = matches.opt_present("s");
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
+    let print_violations = matches.opt_present("print-violations");
 
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {
@@ -472,6 +479,10 @@ fn main() -> Result<()> {
         for v in rules_timed_out {
             println!("Rule {} timed out on file {}", v.rule_name, v.filename);
         }
+    }
+
+    if print_violations && nb_violations > 0 {
+        violations_table::print_violations_table(&all_rule_results);
     }
 
     let value = match configuration.output_format {
