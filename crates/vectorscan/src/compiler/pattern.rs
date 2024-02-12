@@ -201,6 +201,24 @@ pub enum EodMatchBehavior {
     Only,
 }
 
+/// A possible unbounded `u32` width
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub enum Width {
+    Unbounded,
+    Bounded(u32),
+}
+
+impl From<ffi::c_uint> for Width {
+    fn from(value: ffi::c_uint) -> Self {
+        // Hyperscan will indicate an unbounded width (e.g. the max width of regex `abc+`) with `u32::MAX`
+        if value == u32::MAX {
+            Width::Unbounded
+        } else {
+            Width::Bounded(value)
+        }
+    }
+}
+
 /// Metadata about the internals of how Hyperscan will treat a [`Pattern`]
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct PatternInfo {
@@ -210,13 +228,12 @@ pub struct PatternInfo {
     /// or the [`SINGLE_MATCH`](Flags::SINGLE_MATCH) flag) this may represent a conservative lower bound
     /// for the true minimum length of a match.
     pub min_width: u32,
-    /// The maximum length in bytes of a match for the pattern. If the pattern has an unbounded maximum length,
-    /// this will be set to the maximum value of an unsigned int [`u32::MAX`].
+    /// The maximum length in bytes of a match for the pattern.
     ///
     /// Note: in some cases when using advanced features to suppress matches (such as extended parameters
     /// or the [`SINGLE_MATCH`](Flags::SINGLE_MATCH) flag) this may represent a conservative lower bound
     /// for the true maximum length of a match.
-    pub max_width: u32,
+    pub max_width: Width,
     /// Whether the pattern can produce matches that are not returned in order, such as those produced by assertions
     pub unordered_matches: bool,
     /// How the pattern behaves at EOD
@@ -235,7 +252,7 @@ impl PatternInfo {
         };
         Self {
             min_width: expr_info.min_width,
-            max_width: expr_info.max_width,
+            max_width: expr_info.max_width.into(),
             unordered_matches,
             eod_behavior,
         }
