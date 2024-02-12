@@ -239,6 +239,13 @@ impl Rule {
         hasher.update(self.code_base64.clone().as_bytes());
         format!("{:x}", hasher.finalize())
     }
+
+    /// Produce a string that is used to get the config_hash. The generated string should change
+    /// if we think that the rules change and may trigger new results.
+    pub fn get_config_hash_string(&self) -> String {
+        let pattern_string = self.pattern.clone().unwrap_or("no pattern".to_string());
+        format!("{}:{}:{}", self.name, pattern_string, self.code_base64).to_string()
+    }
 }
 
 impl fmt::Display for Rule {
