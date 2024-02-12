@@ -13,6 +13,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 derive_builder = { workspace = true }
 serde-sarif = { workspace = true }
+sha2 = { workspace = true }
 # other
 git2 = "0.18.0"
 glob-match = "0.2.1"
@@ -22,7 +23,6 @@ reqwest = { version = "0.11", features = ["blocking", "json"] }
 serde_yaml = "0.9.21"
 valico = "4.0.0"
 walkdir = "2.3.3"
-md5 = "0.7.0"
 
 [dev-dependencies]
 assert-json-diff = "2.0.2"

@@ -1,5 +1,6 @@
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::Rule;
+use sha2::{Digest, Sha256};
 
 /// represents the CLI configuratoin
 #[derive(Clone)]
@@ -38,7 +39,12 @@ impl CliConfiguration {
             self.max_file_size_kb,
             self.source_subdirectories.join(",")
         );
-        format!("{:x}", md5::compute(full_config_string))
+        // compute the hash using sha2
+        Sha256::digest(full_config_string.into_bytes())
+            .as_slice()
+            .iter()
+            .map(|x| format!("{:x?}", x))
+            .collect::<String>()
     }
 }
 
@@ -85,7 +91,7 @@ mod tests {
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "5d7273dec32b80788b4d3eac46c866f0"
+            "f1c6525be466a8fc4038d6a183e9f782b32fc7b9afc7eef61cae53265aee4"
         );
     }
 }
