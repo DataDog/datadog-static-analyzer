@@ -40,11 +40,7 @@ impl CliConfiguration {
             self.source_subdirectories.join(",")
         );
         // compute the hash using sha2
-        Sha256::digest(full_config_string.into_bytes())
-            .as_slice()
-            .iter()
-            .map(|x| format!("{:x?}", x))
-            .collect::<String>()
+        format!("{:x}", Sha256::digest(full_config_string.as_bytes()))
     }
 }
 
@@ -91,7 +87,7 @@ mod tests {
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "f1c6525be466a8fc4038d6a183e9f782b32fc7b9afc7eef61cae53265aee4"
+            "f1c65205be466a08fc4038d6a183e9f782b32fc7b9afc7eef61cae53265aee04"
         );
     }
 }
