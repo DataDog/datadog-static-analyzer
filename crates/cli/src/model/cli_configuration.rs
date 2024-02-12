@@ -24,7 +24,11 @@ impl CliConfiguration {
     /// to run the analysis. To compute the digest, we take the attributes that are important to
     /// run and replicate the analysis such as the ignored paths and rules.
     pub fn generate_diff_aware_digest(&self) -> String {
-        let rules_string: Vec<String> = self.rules.iter().map(|r| r.to_string()).collect();
+        let rules_string: Vec<String> = self
+            .rules
+            .iter()
+            .map(|r| r.get_config_hash_string())
+            .collect();
 
         let full_config_string = format!(
             "{}:{}:{}::{}:{}",
@@ -81,7 +85,7 @@ mod tests {
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "0b95aaf4f78299151673f12017952546"
+            "5d7273dec32b80788b4d3eac46c866f0"
         );
     }
 }
