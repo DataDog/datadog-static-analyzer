@@ -4,7 +4,7 @@ use serde;
 use serde::{Deserialize, Serialize};
 
 // the configuration file from the repository
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Debug, Serialize, PartialEq)]
 pub struct ConfigFile {
     pub rulesets: Vec<String>,
     #[serde(rename(serialize = "ignore-paths", deserialize = "ignore-paths"))]

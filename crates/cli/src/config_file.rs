@@ -52,6 +52,7 @@ pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigF
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::config_file::ConfigFile;
 
     // test when we have only rulesets. We should then have the ignore-paths set to None
     #[test]
@@ -60,9 +61,16 @@ mod tests {
 rulesets:
   - python-security
     "#;
+        let expected = ConfigFile {
+            rulesets: vec!["python-security".to_string()],
+            ignore_paths: None,
+            ignore_gitignore: None,
+            max_file_size_kb: None,
+        };
+
         let res = parse_config_file(data);
         assert!(res.is_ok());
-        assert!(res.unwrap().ignore_paths.is_none());
+        assert_eq!(expected, res.unwrap());
     }
 
     // test with everything: rulesets and ignore-paths
@@ -75,17 +83,21 @@ ignore-paths:
   - "**/test/**"
   - path1
     "#;
+
+        let expected = ConfigFile {
+            rulesets: vec!["python-security".to_string()],
+            ignore_paths: Some(vec!["**/test/**".to_string(), "path1".to_string()]),
+            ignore_gitignore: None,
+            max_file_size_kb: None,
+        };
+
         let res = parse_config_file(data);
         assert!(res.is_ok());
-        assert!(res.as_ref().unwrap().ignore_paths.is_some());
-        let ignore_paths = &res.unwrap().ignore_paths.unwrap();
-        assert_eq!(2, ignore_paths.len());
-        assert_eq!("**/test/**", ignore_paths.get(0).unwrap().as_str());
-        assert_eq!("path1", ignore_paths.get(1).unwrap().as_str());
+        assert_eq!(expected, res.unwrap());
     }
 
     // No ruleset available in the data means that we have no configuration file
-    // whatsoever and we should return None
+    // whatsoever and we should return Err
     #[test]
     fn parse_config_file_no_rulesets() {
         let data = r#"
