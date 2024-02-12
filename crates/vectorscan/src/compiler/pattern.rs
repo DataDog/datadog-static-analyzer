@@ -7,6 +7,7 @@ use crate::compiler::error::HsCompileError;
 use crate::error::{check_ffi_result, Error};
 use bitflags::bitflags;
 use core::ffi;
+use std::borrow::Cow;
 use vectorscan_sys::hs;
 
 bitflags! {
@@ -265,6 +266,7 @@ pub struct PatternBuilder {
     flags: Option<Flags>,
     extensions: Option<Extensions>,
     id: Option<u32>,
+    literal: bool,
 }
 impl PatternBuilder {
     /// Returns a new builder
@@ -274,7 +276,15 @@ impl PatternBuilder {
             flags: None,
             extensions: None,
             id: None,
+            literal: false,
         }
+    }
+
+    /// If `is_literal` is true, the expression will be parsed as a literal.
+    /// If false, the expression will be parsed as a regex.
+    pub fn literal(mut self, is_literal: bool) -> Self {
+        self.literal = is_literal;
+        self
     }
 
     /// Sets the [`Flags`] of this Pattern
@@ -297,7 +307,12 @@ impl PatternBuilder {
 
     /// Validates the Pattern via Hyperscan and returns it if valid.
     pub fn try_build(self) -> Result<Pattern, Error> {
-        Pattern::try_new(self.expression, self.flags, self.extensions, self.id)
+        let expression = if self.literal {
+            Expression::Literal(self.expression)
+        } else {
+            Expression::Regex(self.expression)
+        };
+        Pattern::try_new(expression, self.flags, self.extensions, self.id)
     }
 
     /// Validates the Pattern via Hyperscan, returning it if valid.
@@ -322,27 +337,83 @@ impl PatternBuilder {
 // Abstractions should be built over it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Pattern {
-    expression: String,
+    expression: Expression,
     flags: Flags,
     extensions: Extensions,
     id: u32,
     info: PatternInfo,
 }
 
+/// A string representation of this pattern's expression
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum Expression {
+    Literal(String),
+    Regex(String),
+}
+
+impl Expression {
+    /// Formats the Expression as it will be sent to Hyperscan, handling all escaping required.
+    pub(crate) fn to_hyperscan_expression(&self) -> Cow<str> {
+        match &self {
+            Expression::Literal(string) => {
+                let escaped_hex = Self::format_escaped_hex(string.as_str());
+                Cow::Owned(escaped_hex)
+            }
+            Expression::Regex(string) => Cow::Borrowed(string.as_str()),
+        }
+    }
+
+    /// Formats an escaped hex representation of the bytes of a string.
+    ///
+    /// # Example
+    /// * input:  `hello`
+    /// * output: `\x68\x65\x6C\x6C\x6F`
+    ///
+    /// Hyperscan will parse input in this format as a literal instead of a regex.
+    fn format_escaped_hex(input: &str) -> String {
+        const HEX_CHARS: &[u8; 16] = b"0123456789ABCDEF";
+
+        let mut escaped = String::with_capacity(input.len() * 4);
+
+        for byte in input.as_bytes() {
+            let byte = *byte as usize;
+            let first = HEX_CHARS[byte >> 4] as char;
+            let second = HEX_CHARS[byte & 0x0F] as char;
+            escaped.push('\\');
+            escaped.push('x');
+            escaped.push(first);
+            escaped.push(second);
+        }
+        escaped
+    }
+}
+
+impl Expression {
+    /// Extracts a string slice of the Expression (without indicating whether
+    /// it is a [`Literal`](Expression::Literal) or a [`Regex`](Expression::Regex))
+    pub fn as_str(&self) -> &str {
+        match self {
+            Expression::Literal(string) => string.as_str(),
+            Expression::Regex(string) => string.as_str(),
+        }
+    }
+}
+
 impl Pattern {
+    /// Creates a new [`PatternBuilder`], which builds a [`Pattern`]
     #[allow(clippy::new_ret_no_self)]
     pub fn new(expression: impl Into<String>) -> PatternBuilder {
         PatternBuilder::new(expression)
     }
 
-    pub(crate) fn try_new(
-        expression: impl Into<String>,
+    /// An internal function for constructing the Pattern
+    fn try_new(
+        expression: Expression,
         flags: Option<Flags>,
         extensions: Option<Extensions>,
         id: Option<u32>,
     ) -> Result<Self, Error> {
-        let expression = expression.into();
-        let c_string = expression.try_to_cstring()?;
+        let c_string = expression.to_hyperscan_expression().try_to_cstring()?;
         let flags = flags.unwrap_or(Flags::empty());
         let extensions = extensions.unwrap_or(Extensions::empty());
         let expr_info = get_expr_info(c_string, flags.bits(), extensions.to_ffi())?;
@@ -359,8 +430,8 @@ impl Pattern {
 
     /// The raw regex pattern, without `/`, and without flags. For example, `"abcdef"`, not `"/abcdef/i"`.
     /// This is guaranteed to be a valid [`std::ffi::CString`]
-    pub fn expression(&self) -> &str {
-        self.expression.as_str()
+    pub fn expression(&self) -> &Expression {
+        &self.expression
     }
 
     pub fn flags(&self) -> Flags {
@@ -383,7 +454,51 @@ impl Pattern {
     /// not to fail because of an invariant enforced upon struct initialization.
     pub fn to_c_string(&self) -> std::ffi::CString {
         self.expression
+            .to_hyperscan_expression()
             .try_to_cstring()
             .expect("should not have been able to construct Pattern with invalid CString")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Expression, Pattern};
+    use crate::database::BlockDatabase;
+    use crate::runtime::Scratch;
+    use crate::scan::HsMatch;
+
+    #[test]
+    fn test_hex_escape_fn() {
+        // Helper function to reduce test verbosity
+        fn escaped(input: &str) -> String {
+            Expression::format_escaped_hex(input)
+        }
+
+        assert_eq!(escaped("ab|c)^"), r#"\x61\x62\x7C\x63\x29\x5E"#);
+        assert_eq!(escaped("👋🌎"), r#"\xF0\x9F\x91\x8B\xF0\x9F\x8C\x8E"#);
+        assert_eq!(escaped(""), r#""#);
+        assert_eq!(escaped("\n 	"), r#"\x0A\x20\x09"#);
+        assert_eq!(escaped("\\x68\\x69"), r#"\x5C\x78\x36\x38\x5C\x78\x36\x39"#);
+    }
+
+    /// Pass in a string that Hyperscan will parse as a literal instead of a regex
+    #[test]
+    fn test_literal() {
+        let regex_pattern = Pattern::new("^a$").id(1).literal(false).build();
+        let mut regex_db = BlockDatabase::try_new([&regex_pattern]).unwrap();
+        let literal_pattern = Pattern::new("^a$").id(2).literal(true).build();
+        let mut literal_db = BlockDatabase::try_new([&literal_pattern]).unwrap();
+        let scratch = Scratch::try_new_for(&regex_db).unwrap();
+
+        // Helper closure to reduce test verbosity
+        let find = |db: &mut BlockDatabase, str: &str| -> Option<HsMatch> {
+            db.find(&scratch, str.as_bytes()).unwrap()
+        };
+
+        assert_eq!(find(&mut regex_db, "^a$"), None);
+        assert_eq!(find(&mut literal_db, "^a$"), Some(HsMatch::new(2, 0, 3)));
+
+        assert_eq!(find(&mut regex_db, "a"), Some(HsMatch::new(1, 0, 1)));
+        assert_eq!(find(&mut literal_db, "a"), None);
     }
 }

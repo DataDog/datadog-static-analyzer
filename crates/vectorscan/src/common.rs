@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use std::borrow::Cow;
 use std::ffi::{CString, NulError};
 
 /// A helper trait to improve the ergonomics for library consumers by allowing them
@@ -27,5 +28,14 @@ impl TryToCString for &String {
 impl TryToCString for &str {
     fn try_to_cstring(&self) -> Result<CString, NulError> {
         CString::new(self.to_string().into_bytes())
+    }
+}
+
+impl TryToCString for Cow<'_, str> {
+    fn try_to_cstring(&self) -> Result<CString, NulError> {
+        match self {
+            Cow::Borrowed(str) => (*str).try_to_cstring(),
+            Cow::Owned(string) => string.try_to_cstring(),
+        }
     }
 }
