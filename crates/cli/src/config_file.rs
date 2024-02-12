@@ -52,54 +52,307 @@ pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigF
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::config_file::ConfigFile;
+    use crate::model::config_file::{
+        ConfigFile, PathConfig, RuleConfig, RulesetConfig, RulesetConfigs,
+    };
+    use std::collections::HashMap;
 
-    // test when we have only rulesets. We should then have the ignore-paths set to None
+    // `rulesets` parsed as a list of ruleset names
     #[test]
-    fn parse_config_file_with_rulesets_only() {
+    fn test_parse_with_rulesets_as_list() {
         let data = r#"
 rulesets:
   - python-security
+  - go-best-practices
     "#;
         let expected = ConfigFile {
-            rulesets: vec!["python-security".to_string()],
-            ignore_paths: None,
-            ignore_gitignore: None,
-            max_file_size_kb: None,
+            rulesets: RulesetConfigs(HashMap::from([
+                ("python-security".to_string(), RulesetConfig::default()),
+                ("go-best-practices".to_string(), RulesetConfig::default()),
+            ])),
+            ..ConfigFile::default()
         };
 
         let res = parse_config_file(data);
-        assert!(res.is_ok());
         assert_eq!(expected, res.unwrap());
     }
 
-    // test with everything: rulesets and ignore-paths
+    // `rulesets` parsed as a map from rule name to config.
     #[test]
-    fn parse_config_file_with_rulesets_and_ignore_paths() {
+    fn test_parse_with_rulesets_as_map() {
         let data = r#"
 rulesets:
-  - python-security
-ignore-paths:
-  - "**/test/**"
-  - path1
+  python-security:
+  go-best-practices:
+    only:
+      - "one/two"
+      - "foo/**/*.go"
+    ignore:
+      - "tres/cuatro"
+      - "bar/**/*.go"
+  java-security:
+    rules:
+      random-iv:
     "#;
-
         let expected = ConfigFile {
-            rulesets: vec!["python-security".to_string()],
-            ignore_paths: Some(vec!["**/test/**".to_string(), "path1".to_string()]),
-            ignore_gitignore: None,
-            max_file_size_kb: None,
+            rulesets: RulesetConfigs(HashMap::from([
+                ("python-security".to_string(), RulesetConfig::default()),
+                (
+                    "go-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            only: Some(vec!["one/two".to_string(), "foo/**/*.go".to_string()]),
+                            ignore: Some(vec![
+                                "tres/cuatro".to_string(),
+                                "bar/**/*.go".to_string(),
+                            ]),
+                        },
+                        rules: None,
+                    },
+                ),
+                (
+                    "java-security".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig::default(),
+                        rules: Some(HashMap::from([(
+                            "random-iv".to_string(),
+                            RuleConfig::default(),
+                        )])),
+                    },
+                ),
+            ])),
+            ..ConfigFile::default()
         };
 
         let res = parse_config_file(data);
-        assert!(res.is_ok());
+        assert_eq!(expected, res.unwrap());
+    }
+
+    // `rulesets` parsed as a list of map from rule name to config.
+    #[test]
+    fn test_parse_with_rulesets_as_list_of_maps() {
+        let data = r#"
+rulesets:
+  - python-security
+  - c-best-practices:
+  - go-best-practices:
+      only:
+        - "one/two"
+        - "foo/**/*.go"
+      ignore:
+        - "tres/cuatro"
+        - "bar/**/*.go"
+      rules:
+        self-assignment:
+  - ruby-best-practices:
+    only:
+      - "cinq/six"
+    ignore:
+      - "sete/oito"
+    rules:
+      no-then:
+    "#;
+        let expected = ConfigFile {
+            rulesets: RulesetConfigs(HashMap::from([
+                ("python-security".to_string(), RulesetConfig::default()),
+                ("c-best-practices".to_string(), RulesetConfig::default()),
+                (
+                    "go-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            only: Some(vec!["one/two".to_string(), "foo/**/*.go".to_string()]),
+                            ignore: Some(vec![
+                                "tres/cuatro".to_string(),
+                                "bar/**/*.go".to_string(),
+                            ]),
+                        },
+                        rules: Some(HashMap::from([(
+                            "self-assignment".to_string(),
+                            RuleConfig::default(),
+                        )])),
+                    },
+                ),
+                (
+                    "ruby-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            only: Some(vec!["cinq/six".to_string()]),
+                            ignore: Some(vec!["sete/oito".to_string()]),
+                        },
+                        rules: Some(HashMap::from([(
+                            "no-then".to_string(),
+                            RuleConfig::default(),
+                        )])),
+                    },
+                ),
+            ])),
+            ..ConfigFile::default()
+        };
+
+        let res = parse_config_file(data);
+        assert_eq!(expected, res.unwrap());
+    }
+
+    // A mixed list and map of rulesets is not valid.
+    #[test]
+    fn test_cannot_parse_with_rulesets_as_mixed_list_and_map() {
+        let data = r#"
+rulesets:
+  - python-security
+  go-best-practices:
+    only:
+      - "one/two"
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+
+        let data = r#"
+rulesets:
+  go-best-practices:
+    only:
+      - "one/two"
+  - python-security
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+
+        let data = r#"
+rulesets:
+  go-best-practices:
+  - python-security
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+    }
+
+    // Some malformed rulesets when specified as a list of maps.
+    #[test]
+    fn test_cannot_parse_invalid_list_of_map_rulesets() {
+        let data = r#"
+rulesets:
+  - ruby-best-practices:
+    only:
+      - "um/dois"
+    ignore:
+      - "tres/cuatro"
+    only:
+      - "cinq/six"
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+
+        let data = r#"
+rulesets:
+  - ruby-best-practices:
+    only:
+      - "um/dois"
+    ignore:
+      - "tres/cuatro"
+    foobar:
+      - "cinq/six"
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+    }
+
+    // Rule definitions can be parsed.
+    #[test]
+    fn test_parse_rules() {
+        let data = r#"
+rulesets:
+  python-security:
+    rules:
+      no-eval:
+        only:
+          - "py/**"
+        ignore:
+          - "py/insecure/**"
+    "#;
+        let expected = ConfigFile {
+            rulesets: RulesetConfigs(HashMap::from([(
+                "python-security".to_string(),
+                RulesetConfig {
+                    paths: PathConfig::default(),
+                    rules: Some(HashMap::from([(
+                        "no-eval".to_string(),
+                        RuleConfig {
+                            paths: PathConfig {
+                                only: Some(vec!["py/**".to_string()]),
+                                ignore: Some(vec!["py/insecure/**".to_string()]),
+                            },
+                        },
+                    )])),
+                },
+            )])),
+            ..ConfigFile::default()
+        };
+
+        let res = parse_config_file(data);
+        assert_eq!(expected, res.unwrap());
+    }
+
+    // Rules cannot be specified as lists of maps.
+    #[test]
+    fn test_cannot_parse_rules_as_list_of_maps() {
+        let data = r#"
+rulesets:
+  python-security:
+    rules:
+      - no-eval:
+          only:
+            - "py/**"
+          ignore:
+            - "py/insecure/**"
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+    }
+
+    // test with everything
+    #[test]
+    fn test_parse_all_other_options() {
+        let data = r#"
+rulesets:
+  - python-security
+only:
+  - "py/**/foo/*.py"
+ignore:
+  - "py/testing/*.py"
+ignore-paths:
+  - "**/test/**"
+  - path1
+ignore-gitignore: false
+max-file-size-kb: 512
+    "#;
+
+        let expected = ConfigFile {
+            rulesets: RulesetConfigs(HashMap::from([(
+                "python-security".to_string(),
+                RulesetConfig::default(),
+            )])),
+            paths: PathConfig {
+                only: Some(vec!["py/**/foo/*.py".to_string()]),
+                ignore: Some(vec!["py/testing/*.py".to_string()]),
+            },
+            ignore_paths: Some(vec!["**/test/**".to_string(), "path1".to_string()]),
+            ignore_gitignore: Some(false),
+            max_file_size_kb: Some(512),
+        };
+
+        let res = parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
     // No ruleset available in the data means that we have no configuration file
     // whatsoever and we should return Err
     #[test]
-    fn parse_config_file_no_rulesets() {
+    fn test_parse_no_rulesets() {
         let data = r#"
     "#;
         let res = parse_config_file(data);
