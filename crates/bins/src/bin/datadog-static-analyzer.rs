@@ -583,6 +583,7 @@ fn main() -> Result<()> {
             &directory_to_analyze,
             add_git_info,
             configuration.use_debug,
+            configuration.generate_diff_aware_digest(),
         ) {
             Ok(report) => {
                 serde_json::to_string(&report).expect("error when getting the SARIF report")
