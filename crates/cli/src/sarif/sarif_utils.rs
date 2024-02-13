@@ -34,6 +34,7 @@ pub struct SarifGenerationOptions {
     pub add_git_info: bool,
     pub git_repo: Option<Rc<Repository>>,
     pub debug: bool,
+    pub config_digest: String,
 }
 
 impl IntoSarif for &Rule {
@@ -168,7 +169,7 @@ impl IntoSarif for &Edit {
 }
 
 // Generate the tool section that reports all the rules being run
-fn generate_tool_section(rules: &[Rule]) -> Result<Tool> {
+fn generate_tool_section(rules: &[Rule], options: &SarifGenerationOptions) -> Result<Tool> {
     let driver: ToolComponent = ToolComponentBuilder::default()
         .name("datadog-static-analyzer")
         .information_uri("https://www.datadoghq.com")
@@ -177,6 +178,15 @@ fn generate_tool_section(rules: &[Rule]) -> Result<Tool> {
                 .iter()
                 .map(|e| e.into_sarif())
                 .collect::<Vec<ReportingDescriptor>>(),
+        )
+        .properties(
+            PropertyBagBuilder::default()
+                .tags(vec![format!(
+                    "DATADOG_DIFF_AWARE_CONFIG_DIGEST:{}",
+                    options.config_digest
+                )])
+                .build()
+                .unwrap(),
         )
         .build()?;
 
@@ -356,6 +366,7 @@ pub fn generate_sarif_report(
     directory: &String,
     add_git_info: bool,
     debug: bool,
+    config_digest: String,
 ) -> Result<Sarif> {
     // if we enable git info, we are then getting the repository object. We put that
     // into an `Arc` object to be able to clone the object.
@@ -374,10 +385,11 @@ pub fn generate_sarif_report(
         add_git_info,
         git_repo: repository,
         debug,
+        config_digest,
     };
 
     let run = RunBuilder::default()
-        .tool(generate_tool_section(rules)?)
+        .tool(generate_tool_section(rules, &options)?)
         .results(generate_results(rules, rules_results, options)?)
         .build()?;
 
@@ -469,14 +481,14 @@ mod tests {
             &"mydir".to_string(),
             false,
             false,
+            "5d7273dec32b80788b4d3eac46c866f0".to_string(),
         )
         .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
-        println!("{}", sarif_report_to_string);
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
@@ -541,14 +553,14 @@ mod tests {
             &"mydir".to_string(),
             false,
             false,
+            "5d7273dec32b80788b4d3eac46c866f0".to_string(),
         )
         .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
-        println!("{}", sarif_report_to_string);
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
@@ -615,6 +627,7 @@ mod tests {
             &"mydir".to_string(),
             false,
             false,
+            "5d7273dec32b80788b4d3eac46c866f0".to_string(),
         )
         .expect("generate sarif report");
         assert!(sarif_report

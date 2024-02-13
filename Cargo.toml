@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.3"
+version = "0.2.4"
 
 [profile.release]
 lto = true
@@ -18,3 +18,7 @@ derive_builder = "0.12"
 serde-sarif = "0.4"
 sha2 = "0.10.7"
 tracing = "0.1.40"
+
+# We're getting instability in macOS CI with cc 1.0.85, so pin to 1.0.83 until we can investigate further
+[patch.crates-io]
+cc = { git = "https://github.com/rust-lang/cc-rs", tag = "1.0.83" }
