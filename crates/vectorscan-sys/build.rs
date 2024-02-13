@@ -57,7 +57,7 @@ fn main() {
     }
 
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
-        "windows" => panic!("Vectorscan cannot be compiled for os: windows"),
+        "windows" => todo!("Vectorscan cannot yet be compiled for os `windows`"),
         "macos" => println!("cargo:rustc-link-lib=c++"),
         "linux" => println!("cargo:rustc-link-lib=stdc++"),
         _ => println!("cargo:rustc-link-lib=stdc++"),
