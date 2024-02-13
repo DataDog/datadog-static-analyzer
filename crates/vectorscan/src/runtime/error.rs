@@ -2,12 +2,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use vectorscan_sys::hs;
 
 /// A type for runtime Hyperscan function errors
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub struct ErrorCode(pub i32);
 
 impl ErrorCode {
@@ -98,6 +98,12 @@ impl Display for ErrorCode {
             },
             self.0
         )
+    }
+}
+
+impl Debug for ErrorCode {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ErrorCode({})", self)
     }
 }
 
