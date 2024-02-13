@@ -32,6 +32,13 @@ pub struct HsMatch {
 }
 
 impl HsMatch {
+    pub(crate) fn new(id: u32, start_idx: usize, end_idx: usize) -> Self {
+        Self {
+            id: PatternId(id),
+            start_idx,
+            end_idx,
+        }
+    }
     pub fn pattern_id(&self) -> PatternId {
         self.id
     }
@@ -113,11 +120,8 @@ impl BlockDatabase {
         // and Hyperscan just echoes this pointer back to us without touching it.
         let callback = unsafe { &mut *(context as *mut T) };
 
-        let hs_match = HsMatch {
-            id: PatternId(id),
-            start_idx: from as usize,
-            end_idx: to as usize,
-        };
+        let hs_match = HsMatch::new(id, from as usize, to as usize);
+
         match callback(hs_match) {
             ControlFlow::Continue(_) => 0,
             ControlFlow::Break(_) => 1,
