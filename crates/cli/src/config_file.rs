@@ -52,9 +52,7 @@ pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigF
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::config_file::{
-        ConfigFile, PathConfig, RuleConfig, RulesetConfig, RulesetConfigs,
-    };
+    use crate::model::config_file::{ConfigFile, PathConfig, RuleConfig, RulesetConfig};
     use std::collections::HashMap;
 
     // `rulesets` parsed as a list of ruleset names
@@ -66,10 +64,10 @@ rulesets:
   - go-best-practices
     "#;
         let expected = ConfigFile {
-            rulesets: RulesetConfigs(HashMap::from([
+            rulesets: HashMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 ("go-best-practices".to_string(), RulesetConfig::default()),
-            ])),
+            ]),
             ..ConfigFile::default()
         };
 
@@ -95,7 +93,7 @@ rulesets:
       random-iv:
     "#;
         let expected = ConfigFile {
-            rulesets: RulesetConfigs(HashMap::from([
+            rulesets: HashMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 (
                     "go-best-practices".to_string(),
@@ -120,7 +118,7 @@ rulesets:
                         )])),
                     },
                 ),
-            ])),
+            ]),
             ..ConfigFile::default()
         };
 
@@ -153,7 +151,7 @@ rulesets:
       no-then:
     "#;
         let expected = ConfigFile {
-            rulesets: RulesetConfigs(HashMap::from([
+            rulesets: HashMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 ("c-best-practices".to_string(), RulesetConfig::default()),
                 (
@@ -185,7 +183,7 @@ rulesets:
                         )])),
                     },
                 ),
-            ])),
+            ]),
             ..ConfigFile::default()
         };
 
@@ -274,7 +272,7 @@ rulesets:
           - "py/insecure/**"
     "#;
         let expected = ConfigFile {
-            rulesets: RulesetConfigs(HashMap::from([(
+            rulesets: HashMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
                     paths: PathConfig::default(),
@@ -288,7 +286,7 @@ rulesets:
                         },
                     )])),
                 },
-            )])),
+            )]),
             ..ConfigFile::default()
         };
 
@@ -332,10 +330,7 @@ max-file-size-kb: 512
     "#;
 
         let expected = ConfigFile {
-            rulesets: RulesetConfigs(HashMap::from([(
-                "python-security".to_string(),
-                RulesetConfig::default(),
-            )])),
+            rulesets: HashMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
                 only: Some(vec!["py/**/foo/*.py".to_string()]),
                 ignore: Some(vec!["py/testing/*.py".to_string()]),
