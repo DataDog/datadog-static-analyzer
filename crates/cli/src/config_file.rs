@@ -57,7 +57,7 @@ mod tests {
 
     // `rulesets` parsed as a list of ruleset names
     #[test]
-    fn test_parse_with_rulesets_as_list() {
+    fn test_parse_rulesets_as_list_of_strings() {
         let data = r#"
 rulesets:
   - python-security
@@ -77,7 +77,7 @@ rulesets:
 
     // `rulesets` parsed as a map from rule name to config.
     #[test]
-    fn test_parse_with_rulesets_as_map() {
+    fn test_parse_rulesets_as_map() {
         let data = r#"
 rulesets:
   python-security:
@@ -126,132 +126,13 @@ rulesets:
         assert_eq!(expected, res.unwrap());
     }
 
-    // `rulesets` parsed as a list of map from rule name to config.
+    // Catch the incorrect configuration where the rulesets are a list of maps.
     #[test]
-    fn test_parse_with_rulesets_as_list_of_maps() {
+    fn test_cannot_parse_rulesets_as_list_of_maps() {
         let data = r#"
 rulesets:
-  - python-security
   - c-best-practices:
   - go-best-practices:
-      only:
-        - "one/two"
-        - "foo/**/*.go"
-      ignore:
-        - "tres/cuatro"
-        - "bar/**/*.go"
-      rules:
-        self-assignment:
-  - ruby-best-practices:
-    only:
-      - "cinq/six"
-    ignore:
-      - "sete/oito"
-    rules:
-      no-then:
-    "#;
-        let expected = ConfigFile {
-            rulesets: HashMap::from([
-                ("python-security".to_string(), RulesetConfig::default()),
-                ("c-best-practices".to_string(), RulesetConfig::default()),
-                (
-                    "go-best-practices".to_string(),
-                    RulesetConfig {
-                        paths: PathConfig {
-                            only: Some(vec!["one/two".to_string(), "foo/**/*.go".to_string()]),
-                            ignore: Some(vec![
-                                "tres/cuatro".to_string(),
-                                "bar/**/*.go".to_string(),
-                            ]),
-                        },
-                        rules: Some(HashMap::from([(
-                            "self-assignment".to_string(),
-                            RuleConfig::default(),
-                        )])),
-                    },
-                ),
-                (
-                    "ruby-best-practices".to_string(),
-                    RulesetConfig {
-                        paths: PathConfig {
-                            only: Some(vec!["cinq/six".to_string()]),
-                            ignore: Some(vec!["sete/oito".to_string()]),
-                        },
-                        rules: Some(HashMap::from([(
-                            "no-then".to_string(),
-                            RuleConfig::default(),
-                        )])),
-                    },
-                ),
-            ]),
-            ..ConfigFile::default()
-        };
-
-        let res = parse_config_file(data);
-        assert_eq!(expected, res.unwrap());
-    }
-
-    // A mixed list and map of rulesets is not valid.
-    #[test]
-    fn test_cannot_parse_with_rulesets_as_mixed_list_and_map() {
-        let data = r#"
-rulesets:
-  - python-security
-  go-best-practices:
-    only:
-      - "one/two"
-    "#;
-
-        let res = parse_config_file(data);
-        assert!(res.is_err());
-
-        let data = r#"
-rulesets:
-  go-best-practices:
-    only:
-      - "one/two"
-  - python-security
-    "#;
-
-        let res = parse_config_file(data);
-        assert!(res.is_err());
-
-        let data = r#"
-rulesets:
-  go-best-practices:
-  - python-security
-    "#;
-
-        let res = parse_config_file(data);
-        assert!(res.is_err());
-    }
-
-    // Some malformed rulesets when specified as a list of maps.
-    #[test]
-    fn test_cannot_parse_invalid_list_of_map_rulesets() {
-        let data = r#"
-rulesets:
-  - ruby-best-practices:
-    only:
-      - "um/dois"
-    ignore:
-      - "tres/cuatro"
-    only:
-      - "cinq/six"
-    "#;
-
-        let res = parse_config_file(data);
-        assert!(res.is_err());
-
-        let data = r#"
-rulesets:
-  - ruby-best-practices:
-    only:
-      - "um/dois"
-    ignore:
-      - "tres/cuatro"
-    foobar:
-      - "cinq/six"
     "#;
 
         let res = parse_config_file(data);
@@ -260,7 +141,7 @@ rulesets:
 
     // Cannot have repeated ruleset configurations.
     #[test]
-    fn test_cannot_parse_ruleset_config_with_repeated_names() {
+    fn test_cannot_parse_rulesets_with_repeated_names() {
         let data = r#"
 rulesets:
   - go-best-practices
@@ -275,16 +156,6 @@ rulesets:
   go-best-practices:
   go-security:
   go-best-practices:
-    "#;
-
-        let res = parse_config_file(data);
-        assert!(res.is_err());
-
-        let data = r#"
-rulesets:
-  - go-best-practices:
-  - go-security:
-  - go-best-practices:
     "#;
 
         let res = parse_config_file(data);
@@ -327,9 +198,19 @@ rulesets:
         assert_eq!(expected, res.unwrap());
     }
 
-    // Rules cannot be specified as lists of maps.
+    // Rules cannot be specified as lists of strings or maps.
     #[test]
-    fn test_cannot_parse_rules_as_list_of_maps() {
+    fn test_cannot_parse_rules_as_list() {
+        let data = r#"
+rulesets:
+  python-security:
+    rules:
+      - no-eval
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+
         let data = r#"
 rulesets:
   python-security:
@@ -339,6 +220,25 @@ rulesets:
             - "py/**"
           ignore:
             - "py/insecure/**"
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+    }
+
+    // Rules cannot be repeated.
+    #[test]
+    fn test_cannot_parse_repeated_rules() {
+        let data = r#"
+rulesets:
+  python-security:
+    rules:
+      no-eval:
+        only:
+          - "foo"
+      no-eval:
+        ignore:
+          - "bar"
     "#;
 
         let res = parse_config_file(data);

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::model::serialization::deserialize_rulesetconfigs;
+use crate::model::serialization::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
 
 use serde;
 use serde::{Deserialize, Serialize};
@@ -30,6 +30,7 @@ pub struct RulesetConfig {
     #[serde(flatten)]
     pub paths: PathConfig,
     // Rule-specific configurations.
+    #[serde(default, deserialize_with = "deserialize_ruleconfigs")]
     pub rules: Option<HashMap<String, RuleConfig>>,
 }
 

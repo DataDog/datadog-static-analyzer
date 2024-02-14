@@ -1,20 +1,16 @@
-use crate::model::config_file::RulesetConfig;
+use crate::model::config_file::{RuleConfig, RulesetConfig};
 use serde::de::{Error, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::Deserializer;
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 
-// Used as an intermediate deserialization step when lists of maps are involved.
-struct NamedRulesetConfig {
-    name: String,
-    cfg: RulesetConfig,
-}
-
-// Special deserializer for a RulesetConfig map.
-// For backwards compatibility, we want to support lists of strings and maps from name to ruleset
-// config. Also, to be forgiving of mistakes, we want to support lists of maps (see
-// NamedRulesetConfig's deserializer for more details).
+/// Special deserializer for a `RulesetConfig` map.
+///
+/// For backwards compatibility, we want to support lists of strings and maps from name to ruleset
+/// config.
+/// Lists of strings produce maps of empty `RulesetConfig`s.
+/// Duplicate rulesets are rejected.
 pub fn deserialize_rulesetconfigs<'de, D>(
     deserializer: D,
 ) -> Result<HashMap<String, RulesetConfig>, D::Error>
@@ -29,21 +25,21 @@ where
             formatter.write_str("a list of strings or map from string to ruleset configuration")
         }
 
-        // Deserialize a list using the NamedRulesetConfig deserializer.
+        /// Deserializes a list of strings.
         fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
         where
             A: SeqAccess<'de>,
         {
             let mut out = HashMap::new();
-            while let Some(rc) = seq.next_element::<NamedRulesetConfig>()? {
-                if out.insert(rc.name.clone(), rc.cfg).is_some() {
-                    return Err(Error::custom(format!("duplicate ruleset: {}", rc.name)));
+            while let Some(name) = seq.next_element::<String>()? {
+                if out.insert(name.clone(), RulesetConfig::default()).is_some() {
+                    return Err(Error::custom(format!("duplicate ruleset: {}", name)));
                 }
             }
             Ok(out)
         }
 
-        // Deserialize a map. The values are RulesetConfig.
+        /// Deserializes a map of string to `RulesetConfig`.
         fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
         where
             A: MapAccess<'de>,
@@ -51,7 +47,7 @@ where
             let mut out = HashMap::new();
             while let Some((k, v)) = map.next_entry::<String, RulesetConfig>()? {
                 if out.insert(k.clone(), v).is_some() {
-                    return Err(Error::custom(format!("duplicate ruleset: {}", k)));
+                    return Err(Error::custom(format!("found duplicate ruleset: {}", k)));
                 }
             }
             Ok(out)
@@ -60,99 +56,38 @@ where
     deserializer.deserialize_any(RulesetConfigsVisitor {})
 }
 
-// Deserializer for NamedRulesetConfig.
-// This handles three cases:
-// 1. A string is deserialized as a RulesetConfig without options.
-// 2. A single-element map from a name to a RulesetConfig is converted to a NamedRulesetConfig.
-// 3. A map with more than 1 element is deserialized elementwise and its content populated into
-//    a NamedRulesetConfig.
-// The last case sounds weird, but is intended to account for the case where the user forgets
-// to indent the map.
-// We go through all this trouble for backwards compatibility: previous versions of the static
-// analyzer use a string list for the `rulesets` configuration field, but new versions want to
-// be able to use a map. Therefore, we need to be able to deserialize both. And we know that
-// users may make mistakes if they ever need to change from a string list to a map, so we try
-// hard to accommodate them.
-impl<'de> Deserialize<'de> for NamedRulesetConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct NamedRulesetConfigVisitor {}
-        impl<'de> Visitor<'de> for NamedRulesetConfigVisitor {
-            type Value = NamedRulesetConfig;
+/// Deserializer for a `RuleConfig` map which rejects duplicate rules.
+pub fn deserialize_ruleconfigs<'de, D>(
+    deserializer: D,
+) -> Result<Option<HashMap<String, RuleConfig>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct RuleConfigVisitor {}
+    impl<'de> Visitor<'de> for RuleConfigVisitor {
+        type Value = Option<HashMap<String, RuleConfig>>;
 
-            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                formatter.write_str(
-                    "a string, ruleset configuration, or map from string to ruleset configuration",
-                )
-            }
+        fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+            formatter.write_str("an optional map from string to rule configuration")
+        }
 
-            // String. Build a NamedRulesetConfig without options.
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            // String. Build a NamedRulesetConfig without options.
-            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                Ok(NamedRulesetConfig {
-                    name: v,
-                    cfg: RulesetConfig::default(),
-                })
-            }
-
-            // Map. See the description above.
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                let mut out = match map.next_entry::<String, RulesetConfig>()? {
-                    None => {
-                        return Err(Error::missing_field("name"));
-                    }
-                    Some((k, v)) => NamedRulesetConfig { name: k, cfg: v },
-                };
-                // If the user forgot to indent, we populate the object field by field.
-                while let Some(x) = map.next_key::<String>()? {
-                    match x.as_str() {
-                        "only" => {
-                            if out.cfg.paths.only.is_some() {
-                                return Err(Error::duplicate_field("only"));
-                            } else {
-                                out.cfg.paths.only = Some(map.next_value()?);
-                            }
-                        }
-                        "ignore" => {
-                            if out.cfg.paths.ignore.is_some() {
-                                return Err(Error::duplicate_field("ignore"));
-                            } else {
-                                out.cfg.paths.ignore = Some(map.next_value()?);
-                            }
-                        }
-                        "rules" => {
-                            if out.cfg.rules.is_some() {
-                                return Err(Error::duplicate_field("rules"));
-                            } else {
-                                out.cfg.rules = Some(map.next_value()?);
-                            }
-                        }
-                        "" => {
-                            // Ignore empty keys
-                        }
-                        otherwise => {
-                            return Err(Error::custom(format!("unknown field: {}", otherwise)));
-                        }
-                    }
+        /// Deserializes a map of string to `RuleConfig`.
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut out = HashMap::new();
+            while let Some((k, v)) = map.next_entry::<String, RuleConfig>()? {
+                if out.insert(k.clone(), v).is_some() {
+                    return Err(Error::custom(format!("found duplicate rule: {}", k)));
                 }
-                Ok(out)
+            }
+            if out.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(out))
             }
         }
-        deserializer.deserialize_any(NamedRulesetConfigVisitor {})
     }
+    deserializer.deserialize_any(RuleConfigVisitor {})
 }
