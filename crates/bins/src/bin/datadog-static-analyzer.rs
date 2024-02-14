@@ -246,13 +246,15 @@ fn main() -> Result<()> {
             exit(1);
         }
 
-        let rules_from_api =
-            get_rules_from_rulesets(&conf.rulesets.keys().cloned().collect_vec(), use_staging)
-                .context("error when reading rules from API")?;
-        rules.extend_from_slice(&rules_from_api);
+        let rulesets = conf.rulesets.keys().cloned().collect_vec();
+        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
+        rules.extend(rules_from_api.context("error when reading rules from API")?);
         path_restrictions = PathRestrictions::from_config(&conf);
 
         // copy the only and ignore paths from the configuration file
+        if let Some(v) = conf.ignore_paths {
+            ignore_paths.extend(v);
+        }
         if let Some(v) = conf.paths.ignore {
             ignore_paths.extend(v);
         }
