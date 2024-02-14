@@ -4,7 +4,7 @@ use std::fmt;
 use serde;
 use serde::{Deserialize, Serialize};
 
-#[derive(Deserialize, Debug, Serialize, Clone)]
+#[derive(Deserialize, Debug, Serialize, Default, Clone)]
 pub struct PathConfig {
     pub only: Option<Vec<String>>,
     pub ignore: Option<Vec<String>>,

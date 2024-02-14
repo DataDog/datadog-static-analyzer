@@ -1,23 +1,7 @@
+use crate::path_restrictions::PathRestrictions;
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::Rule;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-
-// Vectors of references to the "only" and "ignore" paths in the configuration file.
-#[derive(Clone, Debug)]
-pub struct PathConfigStack {
-    // Subsequent levels of "only", setting new restrictions each.
-    pub only: Vec<Vec<String>>,
-    // A vector of "ignore"
-    pub ignore: Vec<String>,
-}
-
-// A rule with the "only" and "ignore" paths that apply to it.
-#[derive(Clone)]
-pub struct RuleWithPaths {
-    pub rule: Rule,
-    pub paths: PathConfigStack,
-}
 
 /// represents the CLI configuratoin
 #[derive(Clone)]
@@ -34,7 +18,7 @@ pub struct CliConfiguration {
     pub output_file: String,
     pub num_cpus: usize, // of cpus to use for parallelism
     pub rules: Vec<Rule>,
-    pub rule_restrictions: HashMap<String, PathConfigStack>,
+    pub path_restrictions: PathRestrictions,
     pub max_file_size_kb: u64,
     pub use_staging: bool,
 }
@@ -102,7 +86,7 @@ mod tests {
                 variables: HashMap::new(),
                 tests: vec![],
             }],
-            rule_restrictions: HashMap::new(),
+            path_restrictions: PathRestrictions::default(),
             max_file_size_kb: 1,
             use_staging: false,
         };

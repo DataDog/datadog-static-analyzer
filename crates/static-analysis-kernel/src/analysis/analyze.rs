@@ -3,7 +3,7 @@ use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut lines_to_ignore_for_all_rules = vec![];
@@ -84,11 +84,23 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
 pub fn analyze(
     language: &Language,
     rules: &[RuleInternal],
-    enabled_rules: Option<HashSet<String>>,
     filename: &str,
     code: &str,
     analysis_option: &AnalysisOptions,
 ) -> Vec<RuleResult> {
+    analyze_from_iter(language, rules.iter(), filename, code, analysis_option)
+}
+
+pub fn analyze_from_iter<'a, I>(
+    language: &Language,
+    rules: I,
+    filename: &str,
+    code: &str,
+    analysis_option: &AnalysisOptions,
+) -> Vec<RuleResult>
+where
+    I: Iterator<Item = &'a RuleInternal>,
+{
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
     get_tree(code, language).map_or_else(
@@ -100,11 +112,6 @@ pub fn analyze(
         },
         |tree| {
             rules
-                .iter()
-                .filter(|rule| {
-                    enabled_rules.is_none()
-                        || enabled_rules.as_ref().unwrap().get(&rule.name).is_some()
-                })
                 .map(|rule| {
                     if analysis_option.use_debug {
                         eprintln!("Apply rule {} file {}", rule.name, filename);
@@ -208,7 +215,6 @@ function visit(node, filename, code) {
         let results = analyze(
             &Language::Python,
             &vec![rule],
-            None,
             "myfile.py",
             PYTHON_CODE,
             &analysis_options,
@@ -285,7 +291,6 @@ function visit(node, filename, code) {
         let results = analyze(
             &Language::Python,
             &vec![rule1, rule2],
-            None,
             "myfile.py",
             PYTHON_CODE,
             &analysis_options,
@@ -386,7 +391,6 @@ for(var i = 0; i <= 10; i--){}
         let results = analyze(
             &Language::JavaScript,
             &vec![rule1],
-            None,
             "myfile.js",
             js_code,
             &analysis_options,
@@ -441,7 +445,6 @@ def foo():
         let results = analyze(
             &Language::Python,
             &vec![rule1],
-            None,
             "myfile.py",
             python_code,
             &analysis_options,
@@ -496,7 +499,6 @@ def foo(arg1):
         let results = analyze(
             &Language::Python,
             &vec![rule],
-            None,
             "myfile.py",
             c,
             &analysis_options,

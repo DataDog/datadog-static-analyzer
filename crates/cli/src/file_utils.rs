@@ -1,4 +1,5 @@
-use crate::model::cli_configuration::{CliConfiguration, PathConfigStack};
+use crate::model::cli_configuration::CliConfiguration;
+use crate::model::config_file::PathConfig;
 use anyhow::Result;
 use glob_match::glob_match;
 use kernel::model::common::Language;
@@ -83,24 +84,6 @@ pub fn read_files_from_gitignore_internal(path: &PathBuf) -> Result<Vec<String>>
 pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> {
     let gitignore_path = Path::new(source_directory).join(".gitignore");
     read_files_from_gitignore_internal(&gitignore_path)
-}
-
-pub fn check_can_scan(paths: &PathConfigStack, filename: &str) -> bool {
-    let file_path = Path::new(filename);
-    for ignore in &paths.ignore {
-        if glob_match(ignore, filename) || file_path.starts_with(Path::new(ignore)) {
-            return false;
-        }
-    }
-    for only_vec in &paths.only {
-        let found = only_vec
-            .iter()
-            .any(|only| glob_match(only, filename) || file_path.starts_with(Path::new(only)));
-        if !found {
-            return false;
-        }
-    }
-    true
 }
 
 /// get the files to analyze from the directory. This function walks the directory
@@ -193,6 +176,34 @@ pub fn get_files(
         }
     }
     Ok(files_to_return)
+}
+
+fn matches_pattern(pattern: &str, path: &str) -> bool {
+    if glob_match(pattern, path) {
+        return true;
+    }
+    return Path::new(path).starts_with(Path::new(pattern));
+}
+
+pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
+    if let Some(ignore) = &paths.ignore {
+        if ignore
+            .iter()
+            .any(|pattern| matches_pattern(pattern, file_name))
+        {
+            return false;
+        }
+    }
+    if let Some(only) = &paths.only {
+        if only
+            .iter()
+            .any(|pattern| matches_pattern(pattern, file_name))
+        {
+            return true;
+        }
+        return false;
+    }
+    true
 }
 
 /// try to find if one of the subdirectory used to scan a repository is going outside the
@@ -299,6 +310,7 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::cli_configuration::PathRestrictions;
     use kernel::model::common::OutputFormat::Sarif;
     use std::collections::HashMap;
     use std::env;
@@ -363,7 +375,7 @@ mod tests {
             output_file: "foo".to_string(),
             num_cpus: 2, // of cpus to use for parallelism
             rules: vec![],
-            rule_restrictions: HashMap::new(),
+            path_restrictions: PathRestrictions::default(),
             max_file_size_kb: 1,
             use_staging: false,
         };

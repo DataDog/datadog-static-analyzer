@@ -1,13 +1,12 @@
 use cli::config_file::read_config_file;
-use cli::datadog_utils::get_ruleset;
+use cli::datadog_utils::get_rules_from_rulesets;
 use cli::file_utils::{
-    are_subdirectories_safe, check_can_scan, filter_files_for_language, get_files,
-    read_files_from_gitignore,
+    are_subdirectories_safe, filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::model::config_file::{ConfigFile, PathConfig};
+use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
-use kernel::analysis::analyze::analyze;
+use kernel::analysis::analyze::analyze_from_iter;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
@@ -16,81 +15,18 @@ use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 use anyhow::{Context, Result};
 use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
-use cli::model::cli_configuration::{CliConfiguration, PathConfigStack, RuleWithPaths};
+use cli::model::cli_configuration::CliConfiguration;
+use cli::path_restrictions::PathRestrictions;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
 use std::time::SystemTime;
 use std::{env, fs};
-
-fn get_path_config_stack(a: &PathConfig) -> PathConfigStack {
-    let only = match &a.only {
-        None => vec![],
-        Some(paths) => vec![paths.clone()],
-    };
-    let ignore = match &a.ignore {
-        None => vec![],
-        Some(paths) => paths.clone(),
-    };
-    PathConfigStack { only, ignore }
-}
-
-fn extend_paths(base: &PathConfigStack, paths: &PathConfig) -> PathConfigStack {
-    let new_stack = get_path_config_stack(paths);
-    let mut only = base.only.clone();
-    only.extend(new_stack.only);
-    let mut ignore = base.ignore.clone();
-    ignore.extend(new_stack.ignore);
-    PathConfigStack {
-        only,
-        ignore: ignore.iter().unique().cloned().collect(),
-    }
-}
-
-// Get all the rules from different rulesets from Datadog
-fn get_rules_from_config(config: &ConfigFile, use_staging: bool) -> Result<Vec<RuleWithPaths>> {
-    let base_pcr = get_path_config_stack(&config.paths);
-    let mut rules_with_paths = Vec::new();
-    for (ruleset_name, ruleset_cfg) in &config.rulesets {
-        let rules = get_ruleset(ruleset_name, use_staging)?.rules;
-        let ruleset_pcr = extend_paths(&base_pcr, &ruleset_cfg.paths);
-        for rule in rules {
-            if let Some((_, basename)) = rule.name.split_once('/') {
-                let paths = match ruleset_cfg.rules.as_ref().and_then(|r| r.get(basename)) {
-                    None => ruleset_pcr.clone(),
-                    Some(paths) => extend_paths(&ruleset_pcr, paths),
-                };
-                rules_with_paths.push(RuleWithPaths { rule, paths });
-            }
-        }
-    }
-    Ok(rules_with_paths)
-}
-
-// Returns a list of rules that should be applied to this file.
-pub fn filter_rules(
-    rules: &[RuleInternal],
-    cfg: &CliConfiguration,
-    file_path: &str,
-) -> HashSet<String> {
-    let restrictions = &cfg.rule_restrictions;
-    let mut output = HashSet::new();
-    for rule in rules {
-        let can_scan = match restrictions.get(&rule.name) {
-            None => true,
-            Some(paths) => check_can_scan(paths, file_path),
-        };
-        if can_scan {
-            output.insert(rule.name.clone());
-        }
-    }
-    output
-}
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -297,7 +233,7 @@ fn main() -> Result<()> {
     let configuration_file: Option<ConfigFile> =
         read_config_file(directory_to_analyze.as_str()).unwrap();
     let mut rules: Vec<Rule> = Vec::new();
-    let mut rule_restrictions = HashMap::new();
+    let mut path_restrictions = PathRestrictions::default();
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
@@ -309,13 +245,11 @@ fn main() -> Result<()> {
             exit(1);
         }
 
-        let rules_from_api = get_rules_from_config(&conf, use_staging)
-            .context("error when reading rules from API")?;
-        rules.extend(rules_from_api.iter().map(|r| r.rule.clone()));
-        rule_restrictions = rules_from_api
-            .iter()
-            .map(|r| (r.rule.name.clone(), r.paths.clone()))
-            .collect();
+        let rules_from_api =
+            get_rules_from_rulesets(&conf.rulesets.keys().cloned().collect_vec(), use_staging)
+                .context("error when reading rules from API")?;
+        rules.extend_from_slice(&rules_from_api);
+        path_restrictions = PathRestrictions::from_config(&conf);
 
         // copy the only and ignore paths from the configuration file
         if let Some(v) = conf.paths.ignore {
@@ -386,7 +320,7 @@ fn main() -> Result<()> {
         output_format,
         num_cpus,
         rules,
-        rule_restrictions,
+        path_restrictions,
         output_file,
         max_file_size_kb,
         use_staging,
@@ -479,12 +413,14 @@ fn main() -> Result<()> {
                         .unwrap()
                         .to_str()
                         .expect("path contains non-Unicode characters");
-                    let enabled_rules =
-                        filter_rules(&rules_for_language, &configuration, file_path);
-                    let res = analyze(
+                    let mut rule_filter = configuration
+                        .path_restrictions
+                        .get_filter_for_file(file_path);
+                    let res = analyze_from_iter(
                         language,
-                        &rules_for_language,
-                        Some(enabled_rules),
+                        rules_for_language
+                            .iter()
+                            .filter(|r| rule_filter.rule_is_included(&r.name)),
                         file_path,
                         &file_content,
                         &analysis_options,
