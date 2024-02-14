@@ -1,3 +1,4 @@
+use crate::model::config_file::PathConfig;
 use crate::path_restrictions::PathRestrictions;
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::Rule;
@@ -11,8 +12,7 @@ pub struct CliConfiguration {
     pub ignore_gitignore: bool,
     pub source_directory: String,
     pub source_subdirectories: Vec<String>,
-    pub ignore_paths: Vec<String>,
-    pub only_paths: Option<Vec<String>>,
+    pub path_config: PathConfig,
     pub rules_file: Option<String>,
     pub output_format: OutputFormat, // SARIF or JSON
     pub output_file: String,
@@ -35,8 +35,15 @@ impl CliConfiguration {
             .collect();
 
         let full_config_string = format!(
-            "{}:{}:{}::{}:{}",
-            self.ignore_paths.join(","),
+            "{}:{}:{}:{}::{}:{}",
+            self.path_config
+                .ignore
+                .as_ref()
+                .map_or("".to_string(), |v| v.join(",")),
+            self.path_config
+                .only
+                .as_ref()
+                .map_or("".to_string(), |v| v.join(",")),
             self.ignore_gitignore,
             rules_string.join(","),
             self.max_file_size_kb,
@@ -63,8 +70,7 @@ mod tests {
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
             source_subdirectories: vec![],
-            only_paths: None,
-            ignore_paths: vec![],
+            path_config: PathConfig::default(),
             rules_file: None,
             output_format: Sarif, // SARIF or JSON
             output_file: "foo".to_string(),
@@ -92,7 +98,7 @@ mod tests {
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "f1c65205be466a08fc4038d6a183e9f782b32fc7b9afc7eef61cae53265aee04"
+            "aadc07afa2ab7afb253e52a9be80bf7a756f953ce1f6de80f8717f0fa9584360"
         );
     }
 }

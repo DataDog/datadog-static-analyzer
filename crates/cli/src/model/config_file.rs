@@ -7,7 +7,7 @@ use serde;
 use serde::{Deserialize, Serialize};
 
 // Lists of directories and glob patterns to include/exclude from the analysis.
-#[derive(Deserialize, Serialize, Debug, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]
 pub struct PathConfig {
     // Analyze only these directories and patterns.
     pub only: Option<Vec<String>>,

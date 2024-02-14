@@ -28,7 +28,9 @@ impl PathRestrictions {
             };
             if let Some(rules) = &ruleset_config.rules {
                 for (name, rule_config) in rules {
-                    restriction.rules.insert(name.clone(), rule_config.clone());
+                    restriction
+                        .rules
+                        .insert(name.clone(), rule_config.paths.clone());
                 }
             }
             out.rulesets.insert(name.clone(), restriction);
@@ -107,5 +109,190 @@ impl<'a> RuleFilter<'a> {
             None => true,
             Some(paths) => is_allowed_by_path_config(paths, &self.file_path),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::model::config_file::{ConfigFile, PathConfig, RuleConfig, RulesetConfig};
+    use crate::path_restrictions::PathRestrictions;
+    use std::collections::HashMap;
+
+    // By default, everything is included.
+    #[test]
+    fn empty_restrictions() {
+        let config_file = ConfigFile {
+            rulesets: HashMap::from([("go-security".to_string(), RulesetConfig::default())]),
+            ..Default::default()
+        };
+        let path_restrictions = PathRestrictions::from_config(&config_file);
+        let mut filter = path_restrictions.get_filter_for_file("src/main.go");
+        assert!(filter.rule_is_included("go-security/is-included"));
+        assert!(filter.rule_is_included("any-ruleset/is-included"));
+    }
+
+    // Can include and exclude rulesets.
+    #[test]
+    fn ruleset_restrictions() {
+        let config_file = ConfigFile {
+            rulesets: HashMap::from([
+                (
+                    "go-security".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            ignore: Some(vec!["test/**".to_string()]),
+                            only: None,
+                        },
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "go-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            ignore: None,
+                            only: Some(vec!["*/code/**".to_string()]),
+                        },
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            ..Default::default()
+        };
+        let path_restrictions = PathRestrictions::from_config(&config_file);
+        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
+        assert!(!filter.rule_is_included("go-security/anything"));
+        assert!(!filter.rule_is_included("go-best-practices/any-other-thing"));
+        assert!(filter.rule_is_included("any-other-ruleset/anything-at-all"));
+        let mut filter = path_restrictions.get_filter_for_file("uno/code/proto.go");
+        assert!(filter.rule_is_included("go-security/anything"));
+        assert!(filter.rule_is_included("go-best-practices/any-other-thing"));
+        assert!(filter.rule_is_included("any-other-ruleset/anything-at-all"));
+    }
+
+    // Can include and exclude individual rules.
+    #[test]
+    fn rule_restrictions() {
+        let config_file = ConfigFile {
+            rulesets: HashMap::from([
+                (
+                    "go-security".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig::default(),
+                        rules: Some(HashMap::from([(
+                            "nil-deref".to_string(),
+                            RuleConfig {
+                                paths: PathConfig {
+                                    ignore: Some(vec!["test/**".to_string()]),
+                                    only: None,
+                                },
+                            },
+                        )])),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "go-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig::default(),
+                        rules: Some(HashMap::from([(
+                            "use-gofmt".to_string(),
+                            RuleConfig {
+                                paths: PathConfig {
+                                    ignore: None,
+                                    only: Some(vec!["*/code/**".to_string()]),
+                                },
+                            },
+                        )])),
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            ..Default::default()
+        };
+        let path_restrictions = PathRestrictions::from_config(&config_file);
+        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
+        assert!(!filter.rule_is_included("go-security/nil-deref"));
+        assert!(filter.rule_is_included("go-security/other-rule"));
+        assert!(!filter.rule_is_included("go-best-practices/use-gofmt"));
+        assert!(filter.rule_is_included("go-best-practices/other-rule"));
+        let mut filter = path_restrictions.get_filter_for_file("uno/code/proto.go");
+        assert!(filter.rule_is_included("go-security/nil-deref"));
+        assert!(filter.rule_is_included("go-security/other-rule"));
+        assert!(filter.rule_is_included("go-best-practices/use-gofmt"));
+        assert!(filter.rule_is_included("go-best-practices/other-rule"));
+    }
+
+    // Can combine inclusion and exclusions for rules and rulesets.
+    #[test]
+    fn ruleset_and_rule_restrictions() {
+        let config_file = ConfigFile {
+            rulesets: HashMap::from([(
+                "go-security".to_string(),
+                RulesetConfig {
+                    paths: PathConfig {
+                        only: Some(vec!["test/**".to_string()]),
+                        ignore: None,
+                    },
+                    rules: Some(HashMap::from([(
+                        "nil-deref".to_string(),
+                        RuleConfig {
+                            paths: PathConfig {
+                                ignore: Some(vec!["test/main.go".to_string()]),
+                                only: None,
+                            },
+                        },
+                    )])),
+                    ..Default::default()
+                },
+            )]),
+            ..Default::default()
+        };
+        let path_restrictions = PathRestrictions::from_config(&config_file);
+        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
+        assert!(!filter.rule_is_included("go-security/nil-deref"));
+        assert!(filter.rule_is_included("go-security/other-rule"));
+        let mut filter = path_restrictions.get_filter_for_file("test/not_main.go");
+        assert!(filter.rule_is_included("go-security/nil-deref"));
+        assert!(filter.rule_is_included("go-security/other-rule"));
+    }
+
+    // Can do prefix and glob pattern matching.
+    #[test]
+    fn prefix_and_glob_matching() {
+        let config_file = ConfigFile {
+            rulesets: HashMap::from([
+                (
+                    "go-security".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            only: Some(vec!["test/**/foo.go".to_string()]),
+                            ignore: None,
+                        },
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "go-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            only: None,
+                            ignore: Some(vec!["uno/code".to_string()]),
+                        },
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            ..Default::default()
+        };
+        let path_restrictions = PathRestrictions::from_config(&config_file);
+        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
+        assert!(!filter.rule_is_included("go-security/anything"));
+        let mut filter = path_restrictions.get_filter_for_file("test/main/foo.go");
+        assert!(filter.rule_is_included("go-security/anything"));
+        let mut filter = path_restrictions.get_filter_for_file("uno/code/proto.go");
+        assert!(!filter.rule_is_included("go-best-practices/anything"));
+        let mut filter = path_restrictions.get_filter_for_file("uno/proto.go");
+        assert!(filter.rule_is_included("go-best-practices/anything"));
     }
 }

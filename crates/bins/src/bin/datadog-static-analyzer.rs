@@ -4,7 +4,7 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_size, filter_files_for_language, get_files,
     read_files_from_gitignore,
 };
-use cli::model::config_file::ConfigFile;
+use cli::model::config_file::{ConfigFile, PathConfig};
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze_from_iter;
@@ -49,15 +49,13 @@ fn print_configuration(configuration: &CliConfiguration) {
 
     let languages = get_languages_for_rules(&configuration.rules);
     let languages_string: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
-    let ignore_paths_str = if configuration.ignore_paths.is_empty() {
-        "no ignore path".to_string()
-    } else {
-        configuration.ignore_paths.join(",")
+    let ignore_paths_str = match &configuration.path_config.ignore {
+        Some(x) if !x.as_slice().is_empty() => x.join(","),
+        _ => "no ignore path".to_string(),
     };
-    let only_paths_str = if configuration.only_paths.is_none() {
-        "all".to_string()
-    } else {
-        configuration.only_paths.as_ref().unwrap().join(",")
+    let only_paths_str = match &configuration.path_config.only {
+        Some(x) => x.join(","),
+        None => "all paths".to_string(),
     };
 
     println!("Configuration");
@@ -292,11 +290,19 @@ fn main() -> Result<()> {
 
     let languages = get_languages_for_rules(&rules);
 
+    let path_config = PathConfig {
+        ignore: if ignore_paths.is_empty() {
+            None
+        } else {
+            Some(ignore_paths)
+        },
+        only: only_paths,
+    };
+
     let files_to_analyze = get_files(
         directory_to_analyze.as_str(),
         subdirectories_to_analyze.clone(),
-        &ignore_paths,
-        &only_paths,
+        &path_config,
     )
     .expect("unable to get the list of files to analyze");
 
@@ -317,8 +323,7 @@ fn main() -> Result<()> {
         ignore_gitignore,
         source_directory: directory_to_analyze.clone(),
         source_subdirectories: subdirectories_to_analyze.clone(),
-        ignore_paths,
-        only_paths,
+        path_config,
         rules_file,
         output_format,
         num_cpus,
