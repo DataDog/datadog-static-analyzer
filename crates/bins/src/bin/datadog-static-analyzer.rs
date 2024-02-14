@@ -361,7 +361,6 @@ fn main() -> Result<()> {
     let files_filtered_by_size = filter_files_by_size(&files_to_analyze, &configuration);
 
     for language in &languages {
-
         let files_for_language = filter_files_for_language(&files_filtered_by_size, language);
 
         if files_for_language.is_empty() {
