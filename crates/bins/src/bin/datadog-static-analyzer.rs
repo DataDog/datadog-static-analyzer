@@ -1,5 +1,5 @@
 use cli::config_file::read_config_file;
-use cli::datadog_utils::get_rules_from_rulesets;
+use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets};
 use cli::file_utils::{
     are_subdirectories_safe, filter_files_for_language, get_files, read_files_from_gitignore,
 };
@@ -251,18 +251,28 @@ fn main() -> Result<()> {
         // if there is no config file, we must read the rules from a file.
         // Otherwise, we exit.
         if rules_file.is_none() {
-            eprintln!("no configuration and no rule files specified. Please have a static-analysis.datadog.yml file or specify rules with -r");
-            print_usage(&program, opts);
-            exit(1);
+            println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
+            println!("Check the following resources to configure your rules:");
+            println!(
+                " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
+            );
+            println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
+            let rulesets_from_api =
+                get_all_default_rulesets(use_staging).expect("cannot get default rules");
+            let rules_from_api: Vec<Rule> = rulesets_from_api
+                .iter()
+                .flat_map(|v| v.rules.clone())
+                .collect();
+            rules.extend(rules_from_api);
+        } else {
+            let rulesets_from_file = get_rulesets_from_file(rules_file.clone().unwrap().as_str());
+            let rules_from_file: Vec<Rule> = rulesets_from_file
+                .context("cannot read ruleset")?
+                .iter()
+                .flat_map(|v| v.rules.clone())
+                .collect();
+            rules.extend(rules_from_file);
         }
-
-        let rulesets_from_file = get_rulesets_from_file(rules_file.clone().unwrap().as_str());
-        let rules_from_file: Vec<Rule> = rulesets_from_file
-            .context("cannot read ruleset")?
-            .iter()
-            .flat_map(|v| v.rules.clone())
-            .collect();
-        rules.extend(rules_from_file);
     }
 
     // add ignore path from the options
@@ -354,12 +364,6 @@ fn main() -> Result<()> {
     for language in &languages {
         let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
-        println!(
-            "Analyzing {} {:?} files",
-            files_for_language.len(),
-            language
-        );
-
         // we only use the progress bar when the debug mode is not active, otherwise, it puts
         // too much information on the screen.
         let progress_bar = if !configuration.use_debug {
@@ -378,6 +382,13 @@ fn main() -> Result<()> {
                     .context("cannot convert to rule internal")
             })
             .collect::<Result<Vec<_>>>()?;
+
+        println!(
+            "Analyzing {} {:?} files using {} rules",
+            files_for_language.len(),
+            language,
+            rules_for_language.len()
+        );
 
         if use_debug {
             println!(

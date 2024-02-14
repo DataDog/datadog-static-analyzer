@@ -6,6 +6,23 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ApiDefaultRulesetAttributes {
+    #[serde(rename = "rulesets")]
+    pub rulesets: Vec<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ApiDefaultRuleset {
+    pub id: String,
+    pub attributes: ApiDefaultRulesetAttributes,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ApiResponseDefaultRuleset {
+    pub data: ApiDefaultRuleset,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApiResponseRuleTest {
     pub annotation_count: u32,
     pub filename: String,

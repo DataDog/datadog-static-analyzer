@@ -4,10 +4,24 @@ use anyhow::{anyhow, Result};
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
 
-use crate::model::datadog_api::ApiResponse;
+use crate::model::datadog_api::{ApiResponse, ApiResponseDefaultRuleset};
 
 const STAGING_DATADOG_SITE: &str = "datad0g.com";
 const DEFAULT_DATADOG_SITE: &str = "datadoghq.com";
+
+const DEFAULT_RULESETS_LANGAGES: &[&str] = &[
+    "CSHARP",
+    "DOCKERFILE",
+    "GO",
+    "JAVA",
+    "JAVASCRIPT",
+    "KOTLIN",
+    "PYTHON",
+    "RUBY",
+    "SWIFT",
+    "TYPESCRIPT",
+    "YAML",
+];
 
 // Get all the rules from different rulesets from Datadog
 pub fn get_rules_from_rulesets(rulesets_name: &[String], use_staging: bool) -> Result<Vec<Rule>> {
@@ -93,6 +107,61 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
             Err(anyhow!("error {:?}", e))
         }
     }
+}
+
+pub fn get_default_rulesets_name_for_language(
+    language: String,
+    use_staging: bool,
+) -> Result<Vec<String>> {
+    let site = get_datadog_site(use_staging);
+
+    let url = format!(
+        "https://api.{}/api/v2/static-analysis/default-rulesets/{}",
+        site, language
+    );
+
+    let request_builder = reqwest::blocking::Client::new()
+        .get(url)
+        .header("Content-Type", "application/json");
+
+    let server_response = request_builder
+        .send()
+        .expect("error when querying the datadog server");
+
+    let response_text = &server_response.text();
+    let api_response =
+        serde_json::from_str::<ApiResponseDefaultRuleset>(response_text.as_ref().unwrap().as_str());
+
+    match api_response {
+        Ok(d) => Ok(d.data.attributes.rulesets),
+        Err(e) => {
+            eprintln!(
+                "Error when getting the default rulesets for language {} {:?}",
+                language, e
+            );
+            eprintln!("{}", response_text.as_ref().unwrap().as_str());
+            Err(anyhow!("error {:?}", e))
+        }
+    }
+}
+
+/// Get all the default rulesets available at DataDog. Take all the language
+/// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
+pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
+    let rules: Vec<RuleSet> = DEFAULT_RULESETS_LANGAGES
+        .iter()
+        .flat_map(|language| {
+            let ruleset_names =
+                get_default_rulesets_name_for_language(language.to_string(), use_staging)
+                    .expect("fail to get default rulesets");
+            let rulesets: Vec<RuleSet> = ruleset_names
+                .iter()
+                .map(|ruleset| get_ruleset(ruleset, use_staging).expect("cannot fetch ruleset"))
+                .collect();
+            rulesets
+        })
+        .collect();
+    Ok(rules)
 }
 
 #[cfg(test)]
