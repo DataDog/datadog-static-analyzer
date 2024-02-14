@@ -36,7 +36,9 @@ where
         {
             let mut out = HashMap::new();
             while let Some(rc) = seq.next_element::<NamedRulesetConfig>()? {
-                out.insert(rc.name, rc.cfg);
+                if out.insert(rc.name.clone(), rc.cfg).is_some() {
+                    return Err(Error::custom(format!("duplicate ruleset: {}", rc.name)));
+                }
             }
             Ok(out)
         }
@@ -48,7 +50,9 @@ where
         {
             let mut out = HashMap::new();
             while let Some((k, v)) = map.next_entry::<String, RulesetConfig>()? {
-                out.insert(k, v);
+                if out.insert(k.clone(), v).is_some() {
+                    return Err(Error::custom(format!("duplicate ruleset: {}", k)));
+                }
             }
             Ok(out)
         }

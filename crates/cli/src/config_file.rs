@@ -258,6 +258,39 @@ rulesets:
         assert!(res.is_err());
     }
 
+    // Cannot have repeated ruleset configurations.
+    #[test]
+    fn test_cannot_parse_ruleset_config_with_repeated_names() {
+        let data = r#"
+rulesets:
+  - go-best-practices
+  - go-security
+  - go-best-practices
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+        let data = r#"
+rulesets:
+  go-best-practices:
+  go-security:
+  go-best-practices:
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+
+        let data = r#"
+rulesets:
+  - go-best-practices:
+  - go-security:
+  - go-best-practices:
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+    }
+
     // Rule definitions can be parsed.
     #[test]
     fn test_parse_rules() {
