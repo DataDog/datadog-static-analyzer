@@ -1,7 +1,8 @@
 use cli::config_file::read_config_file;
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets};
 use cli::file_utils::{
-    are_subdirectories_safe, filter_files_for_language, get_files, read_files_from_gitignore,
+    are_subdirectories_safe, filter_files_by_size, filter_files_for_language, get_files,
+    read_files_from_gitignore,
 };
 use cli::model::config_file::ConfigFile;
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
@@ -357,11 +358,22 @@ fn main() -> Result<()> {
         .unwrap()
         .as_secs();
 
+    let files_filtered_by_size = filter_files_by_size(&files_to_analyze, &configuration);
+
     for language in &languages {
-        let files_for_language = filter_files_for_language(&files_to_analyze, language);
+
+        let files_for_language = filter_files_for_language(&files_filtered_by_size, language);
+
         if files_for_language.is_empty() {
             continue;
         }
+
+        println!(
+            "Analyzing {} {:?} files",
+            files_for_language.len(),
+            language
+        );
+
         // we only use the progress bar when the debug mode is not active, otherwise, it puts
         // too much information on the screen.
         let progress_bar = if !configuration.use_debug {
