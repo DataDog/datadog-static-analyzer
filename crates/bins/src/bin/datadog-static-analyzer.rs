@@ -363,7 +363,9 @@ fn main() -> Result<()> {
 
     for language in &languages {
         let files_for_language = filter_files_for_language(&files_to_analyze, language);
-
+        if files_for_language.is_empty() {
+            continue;
+        }
         // we only use the progress bar when the debug mode is not active, otherwise, it puts
         // too much information on the screen.
         let progress_bar = if !configuration.use_debug {

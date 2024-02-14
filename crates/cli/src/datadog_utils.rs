@@ -17,10 +17,6 @@ const DEFAULT_RULESETS_LANGAGES: &[&str] = &[
     "JAVASCRIPT",
     "KOTLIN",
     "PYTHON",
-    "RUBY",
-    "SWIFT",
-    "TYPESCRIPT",
-    "YAML",
 ];
 
 // Get all the rules from different rulesets from Datadog
@@ -69,7 +65,7 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
     let api_key = get_datadog_variable_value("API_KEY");
 
     let url = format!(
-        "https://api.{}/api/v2/static-analysis/rulesets/{}",
+        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false",
         site, ruleset_name
     );
 
@@ -172,5 +168,14 @@ mod tests {
     fn test_get_datadog_site() {
         assert_eq!(get_datadog_site(true), STAGING_DATADOG_SITE);
         assert_eq!(get_datadog_site(false), DEFAULT_DATADOG_SITE);
+    }
+
+    #[test]
+    fn test_get_default_rulesets() {
+        let default_ruleset =
+            get_all_default_rulesets(false).expect("get default rulesets from API");
+        assert!(default_ruleset.len() >= 24);
+        let rules_count: usize = default_ruleset.iter().map(|r| r.rules.len()).sum();
+        assert!(rules_count > 100);
     }
 }
