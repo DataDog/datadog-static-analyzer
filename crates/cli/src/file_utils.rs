@@ -311,7 +311,7 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::cli_configuration::PathRestrictions;
+    use crate::path_restrictions::PathRestrictions;
     use kernel::model::common::OutputFormat::Sarif;
     use std::collections::HashMap;
     use std::env;
