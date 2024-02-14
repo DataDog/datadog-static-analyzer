@@ -86,9 +86,8 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         .send()
         .expect("error when querying the datadog server");
 
-    let response_text = &server_response.text();
-    let api_response =
-        serde_json::from_str::<ApiResponse>(response_text.as_ref().unwrap().as_str());
+    let response_text = &server_response.text()?;
+    let api_response = serde_json::from_str::<ApiResponse>(response_text);
 
     match api_response {
         Ok(d) => {
@@ -100,7 +99,7 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         }
         Err(e) => {
             eprintln!("Error when parsing the ruleset {} {:?}", ruleset_name, e);
-            eprintln!("{}", response_text.as_ref().unwrap().as_str());
+            eprintln!("{}", response_text);
             Err(anyhow!("error {:?}", e))
         }
     }
@@ -121,13 +120,10 @@ pub fn get_default_rulesets_name_for_language(
         .get(url)
         .header("Content-Type", "application/json");
 
-    let server_response = request_builder
-        .send()
-        .expect("error when querying the datadog server");
+    let server_response = request_builder.send()?;
 
-    let response_text = &server_response.text();
-    let api_response =
-        serde_json::from_str::<ApiResponseDefaultRuleset>(response_text.as_ref().unwrap().as_str());
+    let response_text = &server_response.text()?;
+    let api_response = serde_json::from_str::<ApiResponseDefaultRuleset>(response_text);
 
     match api_response {
         Ok(d) => Ok(d.data.attributes.rulesets),
@@ -136,7 +132,7 @@ pub fn get_default_rulesets_name_for_language(
                 "Error when getting the default rulesets for language {} {:?}",
                 language, e
             );
-            eprintln!("{}", response_text.as_ref().unwrap().as_str());
+            eprintln!("{}", response_text);
             Err(anyhow!("error {:?}", e))
         }
     }
@@ -145,20 +141,17 @@ pub fn get_default_rulesets_name_for_language(
 /// Get all the default rulesets available at DataDog. Take all the language
 /// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
 pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
-    let rules: Vec<RuleSet> = DEFAULT_RULESETS_LANGUAGES
-        .iter()
-        .flat_map(|language| {
-            let ruleset_names =
-                get_default_rulesets_name_for_language(language.to_string(), use_staging)
-                    .expect("fail to get default rulesets");
-            let rulesets: Vec<RuleSet> = ruleset_names
-                .iter()
-                .map(|ruleset| get_ruleset(ruleset, use_staging).expect("cannot fetch ruleset"))
-                .collect();
-            rulesets
-        })
-        .collect();
-    Ok(rules)
+    let mut result: Vec<RuleSet> = vec![];
+
+    for language in DEFAULT_RULESETS_LANGUAGES {
+        let ruleset_names =
+            get_default_rulesets_name_for_language(language.to_string(), use_staging)?;
+
+        for ruleset_name in ruleset_names {
+            result.push(get_ruleset(ruleset_name.as_str(), use_staging)?);
+        }
+    }
+    Ok(result)
 }
 
 #[cfg(test)]
