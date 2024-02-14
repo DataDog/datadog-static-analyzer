@@ -287,21 +287,22 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
         .iter()
         .filter(|f| {
             let metadata = fs::metadata(f);
-            let too_big = &metadata
+            let too_big = metadata
                 .as_ref()
                 .map(|x| x.len() > max_len_bytes)
                 .unwrap_or(false);
 
-            if configuration.use_debug {
+            if configuration.use_debug && too_big {
                 eprintln!(
-                    "File {} too big (size {} bytes, max size {} kb)",
+                    "File {} too big (size {} bytes, max size {} kb ({} bytes))",
                     f.display(),
                     &metadata.map(|x| x.len()).unwrap_or(0),
-                    configuration.max_file_size_kb
+                    configuration.max_file_size_kb,
+                    max_len_bytes
                 )
             }
 
-            f.is_file() && !*too_big
+            f.is_file() && !too_big
         })
         .cloned()
         .collect();
