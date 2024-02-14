@@ -10,10 +10,19 @@ git clone https://github.com/gothinkster/django-realworld-example-app.git "${REP
 
 # Test without the static-analysis.datadog.yml file
 rm -f "${REPO_DIR}/static-analysis.datadog.yml"
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze django repository"
+  exit 1
+fi
+
+RES=`jq '.runs[0].results | length ' "${REPO_DIR}/results1.json"`
+
+echo "Found $RES errors on first run"
+
+if [ "$RES" -lt "18" ]; then
+  echo "not enough errors found"
   exit 1
 fi
 
@@ -25,10 +34,19 @@ echo " - python-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-django" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze django repository"
+  exit 1
+fi
+
+RES=`jq '.runs[0].results | length ' "${REPO_DIR}/results2.json"`
+
+echo "Found $RES errors on second run"
+
+if [ "$RES" -lt "18" ]; then
+  echo "not enough errors found"
   exit 1
 fi
 

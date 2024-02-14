@@ -163,13 +163,4 @@ mod tests {
         assert_eq!(get_datadog_site(true), STAGING_DATADOG_SITE);
         assert_eq!(get_datadog_site(false), DEFAULT_DATADOG_SITE);
     }
-
-    #[test]
-    fn test_get_default_rulesets() {
-        let default_ruleset =
-            get_all_default_rulesets(false).expect("get default rulesets from API");
-        assert!(default_ruleset.len() >= 24);
-        let rules_count: usize = default_ruleset.iter().map(|r| r.rules.len()).sum();
-        assert!(rules_count > 100);
-    }
 }
