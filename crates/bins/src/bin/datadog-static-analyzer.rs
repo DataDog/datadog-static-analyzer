@@ -248,8 +248,7 @@ fn main() -> Result<()> {
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB)
     } else {
         use_configuration_file = false;
-        // if there is no config file, we must read the rules from a file.
-        // Otherwise, we exit.
+        // if there is no config file, we take the default rules from our APIs.
         if rules_file.is_none() {
             println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
             println!("Check the following resources to configure your rules:");
@@ -259,19 +258,16 @@ fn main() -> Result<()> {
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             let rulesets_from_api =
                 get_all_default_rulesets(use_staging).expect("cannot get default rules");
-            let rules_from_api: Vec<Rule> = rulesets_from_api
-                .iter()
-                .flat_map(|v| v.rules.clone())
-                .collect();
-            rules.extend(rules_from_api);
+
+            rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
         } else {
             let rulesets_from_file = get_rulesets_from_file(rules_file.clone().unwrap().as_str());
-            let rules_from_file: Vec<Rule> = rulesets_from_file
-                .context("cannot read ruleset")?
-                .iter()
-                .flat_map(|v| v.rules.clone())
-                .collect();
-            rules.extend(rules_from_file);
+            rules.extend(
+                rulesets_from_file
+                    .context("cannot read ruleset from file")?
+                    .into_iter()
+                    .flat_map(|v| v.rules),
+            );
         }
     }
 

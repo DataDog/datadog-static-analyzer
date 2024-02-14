@@ -9,7 +9,7 @@ use crate::model::datadog_api::{ApiResponse, ApiResponseDefaultRuleset};
 const STAGING_DATADOG_SITE: &str = "datad0g.com";
 const DEFAULT_DATADOG_SITE: &str = "datadoghq.com";
 
-const DEFAULT_RULESETS_LANGAGES: &[&str] = &[
+const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "CSHARP",
     "DOCKERFILE",
     "GO",
@@ -17,6 +17,7 @@ const DEFAULT_RULESETS_LANGAGES: &[&str] = &[
     "JAVASCRIPT",
     "KOTLIN",
     "PYTHON",
+    "TYPESCRIPT",
 ];
 
 // Get all the rules from different rulesets from Datadog
@@ -144,7 +145,7 @@ pub fn get_default_rulesets_name_for_language(
 /// Get all the default rulesets available at DataDog. Take all the language
 /// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
 pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
-    let rules: Vec<RuleSet> = DEFAULT_RULESETS_LANGAGES
+    let rules: Vec<RuleSet> = DEFAULT_RULESETS_LANGUAGES
         .iter()
         .flat_map(|language| {
             let ruleset_names =
