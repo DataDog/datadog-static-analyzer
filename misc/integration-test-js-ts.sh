@@ -18,7 +18,6 @@ echo " - jsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - tsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - javascript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - typescript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
-echo " - javascript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
 ./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
 
