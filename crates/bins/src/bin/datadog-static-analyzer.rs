@@ -237,7 +237,8 @@ fn main() -> Result<()> {
             exit(1);
         }
 
-        let rules_from_api = get_rules_from_rulesets(&conf.rulesets, use_staging);
+        let rulesets = conf.rulesets.keys().cloned().collect_vec();
+        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
         rules.extend(rules_from_api.context("error when reading rules from API")?);
 
         // copy the ignore paths from the configuration file
