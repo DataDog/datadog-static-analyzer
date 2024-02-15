@@ -3,7 +3,7 @@ members = ["crates/*"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.4"
+version = "0.2.5"
 
 [profile.release]
 lto = true
