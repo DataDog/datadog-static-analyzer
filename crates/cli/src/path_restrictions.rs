@@ -75,7 +75,7 @@ enum Known {
 impl<'a> RuleFilter<'a> {
     /// Returns whether the given rule applies to the file.
     pub fn rule_is_included(&mut self, rule_name: &str) -> bool {
-        let (ruleset, short_name) = rule_name.split_once('/').unwrap();
+        let (ruleset, short_name) = split_rule_name(rule_name);
         let known = match self.known_rulesets.get(ruleset) {
             Some(known) => known.clone(),
             None => match self.restrictions.rulesets.get(ruleset) {
@@ -109,6 +109,13 @@ impl<'a> RuleFilter<'a> {
             None => true,
             Some(paths) => is_allowed_by_path_config(paths, &self.file_path),
         }
+    }
+}
+
+fn split_rule_name(name: &str) -> (&str, &str) {
+    match name.split_once('/') {
+        None => ("", name),
+        Some((ruleset, short_name)) => (ruleset, short_name),
     }
 }
 
