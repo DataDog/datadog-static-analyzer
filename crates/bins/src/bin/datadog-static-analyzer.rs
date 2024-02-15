@@ -386,12 +386,6 @@ fn main() -> Result<()> {
             continue;
         }
 
-        println!(
-            "Analyzing {} {:?} files",
-            files_for_language.len(),
-            language
-        );
-
         // we only use the progress bar when the debug mode is not active, otherwise, it puts
         // too much information on the screen.
         let progress_bar = if !configuration.use_debug {
