@@ -164,17 +164,13 @@ pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
             return false;
         }
     }
-    if let Some(only) = &paths.only {
-        if only
+    match &paths.only {
+        None => true,
+        Some(only) => only
             .iter()
             .filter(|p| !p.is_empty())
-            .any(|pattern| matches_pattern(pattern, file_name))
-        {
-            return true;
-        }
-        return false;
+            .any(|pattern| matches_pattern(pattern, file_name)),
     }
-    true
 }
 
 /// try to find if one of the subdirectory used to scan a repository is going outside the
@@ -288,43 +284,6 @@ mod tests {
     use std::env;
     use std::path::Path;
 
-    macro_rules! assert_ok {
-        ($cond:expr) => {
-            match $cond {
-                Ok(t) => t,
-                Err(e) => {
-                    panic!("assertion failed, expected Ok(..), got Err({:?})", e);
-                }
-            }
-        };
-    }
-
-    fn check_file_list(
-        list: &[PathBuf],
-        must_contain: &[&str],
-        must_not_contain: &[&str],
-    ) -> Result<(), String> {
-        let current_path = std::env::current_dir().unwrap();
-        let actual_set: HashSet<PathBuf> = HashSet::from_iter(list.iter().cloned());
-        for name in must_contain {
-            if !actual_set.contains(&current_path.join(name)) {
-                return Err(format!(
-                    "file {} not found in list when it was expected",
-                    name
-                ));
-            }
-        }
-        for name in must_not_contain {
-            if actual_set.contains(&current_path.join(name)) {
-                return Err(format!(
-                    "file {} found in list when it was not expected",
-                    name
-                ));
-            }
-        }
-        Ok(())
-    }
-
     #[test]
     fn get_gitignore_exists() {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -406,6 +365,34 @@ mod tests {
         assert!(fl.is_empty());
     }
 
+    macro_rules! assert_contains_files {
+        ($files:expr, $wanted:expr) => {
+            let current_path = std::env::current_dir().unwrap();
+            let actual_set: HashSet<&PathBuf> = HashSet::from_iter($files.iter());
+            for name in $wanted {
+                assert!(
+                    actual_set.contains(&current_path.join(name)),
+                    "file {} not found in list when it was expected",
+                    name
+                );
+            }
+        };
+    }
+
+    macro_rules! assert_not_contains_files {
+        ($files:expr, $wanted:expr) => {
+            let current_path = std::env::current_dir().unwrap();
+            let actual_set: HashSet<&PathBuf> = HashSet::from_iter($files.iter());
+            for name in $wanted {
+                assert!(
+                    !actual_set.contains(&current_path.join(name)),
+                    "file {} found in list when it was not expected",
+                    name
+                );
+            }
+        };
+    }
+
     // make sure we can get the list of rules from a directory and that the
     // ignore-paths correctly works when we pass a glob.
     #[test]
@@ -414,64 +401,54 @@ mod tests {
 
         // first, we get the list of files without any path to ignore
         let empty_config = PathConfig::default();
-        let files = get_files(&current_path, vec![], &empty_config);
-        assert_ok!(check_file_list(
-            &files.unwrap(),
-            &[
+        let files = get_files(&current_path, vec![], &empty_config).unwrap();
+        assert_contains_files!(
+            files,
+            [
                 "src/lib.rs",
                 "src/sarif/sarif_utils.rs",
                 "src/model/config_file.rs",
-            ],
-            &[]
-        ));
+            ]
+        );
 
         // now, we add one glob pattern to ignore
         let path_config = PathConfig {
             ignore: Some(vec!["src/**/lib.rs".to_string()]),
             only: None,
         };
-        let files = get_files(&current_path, vec![], &path_config);
-        assert_ok!(check_file_list(
-            &files.unwrap(),
-            &["src/sarif/sarif_utils.rs", "src/model/config_file.rs"],
-            &["src/lib.rs"]
-        ));
+        let files = get_files(&current_path, vec![], &path_config).unwrap();
+        assert_contains_files!(
+            files,
+            ["src/sarif/sarif_utils.rs", "src/model/config_file.rs"]
+        );
+        assert_not_contains_files!(files, ["src/lib.rs"]);
 
         // now, we add one path prefix to ignore
         let path_config = PathConfig {
             ignore: Some(vec!["src/model".to_string()]),
             only: None,
         };
-        let files = get_files(&current_path, vec![], &path_config);
-        assert_ok!(check_file_list(
-            &files.unwrap(),
-            &["src/sarif/sarif_utils.rs", "src/lib.rs",],
-            &["src/model/config_file.rs"]
-        ));
+        let files = get_files(&current_path, vec![], &path_config).unwrap();
+        assert_contains_files!(files, ["src/sarif/sarif_utils.rs", "src/lib.rs",]);
+        assert_not_contains_files!(files, ["src/model/config_file.rs"]);
 
         // now we add one glob pattern to require
         let path_config = PathConfig {
             ignore: None,
             only: Some(vec!["**/config_file.rs".to_string()]),
         };
-        let files = get_files(&current_path, vec![], &path_config);
-        assert_ok!(check_file_list(
-            &files.unwrap(),
-            &["src/model/config_file.rs"],
-            &["src/lib.rs"]
-        ));
+        let files = get_files(&current_path, vec![], &path_config).unwrap();
+        assert_contains_files!(files, ["src/model/config_file.rs"]);
+        assert_not_contains_files!(files, ["src/lib.rs"]);
 
         // now we add one glob path prefix to require
         let path_config = PathConfig {
             ignore: None,
             only: Some(vec!["src/model".to_string()]),
         };
-        let files = get_files(&current_path, vec![], &path_config);
-        assert_ok!(check_file_list(
-            &files.unwrap(),
-            &["src/model/config_file.rs"],
-            &["src/lib.rs"]
-        ));
+        let files = get_files(&current_path, vec![], &path_config).unwrap();
+        assert_contains_files!(files, ["src/model/config_file.rs"]);
+        assert_not_contains_files!(files, ["src/lib.rs"]);
     }
 
     #[test]

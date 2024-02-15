@@ -291,11 +291,7 @@ fn main() -> Result<()> {
     let languages = get_languages_for_rules(&rules);
 
     let path_config = PathConfig {
-        ignore: if ignore_paths.is_empty() {
-            None
-        } else {
-            Some(ignore_paths)
-        },
+        ignore: Some(ignore_paths),
         only: only_paths,
     };
 
