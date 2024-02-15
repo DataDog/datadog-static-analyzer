@@ -247,7 +247,7 @@ fn main() -> Result<()> {
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
         rules.extend(rules_from_api.context("error when reading rules from API")?);
-        path_restrictions = PathRestrictions::from_config(&conf);
+        path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
 
         // copy the only and ignore paths from the configuration file
         if let Some(v) = conf.ignore_paths {
