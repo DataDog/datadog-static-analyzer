@@ -8,10 +8,24 @@ datadog-static-analyzer is the static analyzer engine for Datadog [static analys
 ## How to use Datadog Static Analysis Tool
 
 
-### Create a `static-analysis.datadog.yml` file
+### Quick Start
 
-First, make sure you follow the [documentation](https://docs.datadoghq.com/continuous_integration/static_analysis)
+1. Download the binary from the [releases](https://github.com/DataDog/datadog-static-analyzer/releases)
+2. Run the analyzer on your repository (as shown below)
+3. It will run the analyzer with the default rules available for the support languages
+
+```shell
+datadog-static-analyzer --directory /path/to/directory --output report.csv --format csv
+```
+
+### Advanced Usage
+
+You can choose the rules to use to scan your repository by creating a `static-analysis.datadog.yml` file.
+
+First, make sure you follow the [documentation](https://docs.datadoghq.com/code_analysis/static_analysis)
 and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
+
+All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules). Your `static-analysis.datadog.yml` must contains all the rulesets available from the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules)
 
 Example of YAML file
 
