@@ -22,7 +22,7 @@ datadog-static-analyzer --directory /path/to/directory --output report.csv --for
 
 You can choose the rules to use to scan your repository by creating a `static-analysis.datadog.yml` file.
 
-First, make sure you follow the [documentation](https://docs.datadoghq.com/continuous_integration/static_analysis)
+First, make sure you follow the [documentation](https://docs.datadoghq.com/code_analysis/static_analysis)
 and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
 
 All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules). Your `static-analysis.datadog.yml` must contains all the rulesets available from the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules)
