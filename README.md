@@ -12,6 +12,7 @@ datadog-static-analyzer is the static analyzer engine for Datadog [static analys
 
 1. Download the binary from the [releases](https://github.com/DataDog/datadog-static-analyzer/releases)
 2. Run the analyzer on your repository (as shown below)
+3. It will run the analyzer with the default rules available for the support languages
 
 ```shell
 datadog-static-analyzer --directory /path/to/directory --output report.csv --format csv
