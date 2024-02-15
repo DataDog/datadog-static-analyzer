@@ -26,12 +26,10 @@ impl PathRestrictions {
                 paths: ruleset_config.paths.clone(),
                 ..Default::default()
             };
-            if let Some(rules) = &ruleset_config.rules {
-                for (name, rule_config) in rules {
-                    restriction
-                        .rules
-                        .insert(name.clone(), rule_config.paths.clone());
-                }
+            for (name, rule_config) in &ruleset_config.rules {
+                restriction
+                    .rules
+                    .insert(name.clone(), rule_config.paths.clone());
             }
             out.rulesets.insert(name.clone(), restriction);
         }
@@ -143,30 +141,30 @@ mod tests {
                 "ignores-test".to_string(),
                 RulesetConfig {
                     paths: PathConfig {
-                        ignore: Some(vec!["test/**".to_string()]),
+                        ignore: vec!["test/**".to_string()],
                         only: None,
                     },
-                    rules: None,
+                    rules: HashMap::new(),
                 },
             ),
             (
                 "only-code".to_string(),
                 RulesetConfig {
                     paths: PathConfig {
-                        ignore: None,
+                        ignore: vec![],
                         only: Some(vec!["*/code/**".to_string()]),
                     },
-                    rules: None,
+                    rules: HashMap::new(),
                 },
             ),
             (
                 "test-but-not-code".to_string(),
                 RulesetConfig {
                     paths: PathConfig {
-                        ignore: Some(vec!["*/code/**".to_string()]),
+                        ignore: vec!["*/code/**".to_string()],
                         only: Some(vec!["test/**".to_string()]),
                     },
-                    rules: None,
+                    rules: HashMap::new(),
                 },
             ),
         ]);
@@ -195,12 +193,12 @@ mod tests {
             "a-ruleset".to_string(),
             RulesetConfig {
                 paths: PathConfig::default(),
-                rules: Some(HashMap::from([
+                rules: HashMap::from([
                     (
                         "ignores-test".to_string(),
                         RuleConfig {
                             paths: PathConfig {
-                                ignore: Some(vec!["test/**".to_string()]),
+                                ignore: vec!["test/**".to_string()],
                                 only: None,
                             },
                         },
@@ -209,7 +207,7 @@ mod tests {
                         "only-code".to_string(),
                         RuleConfig {
                             paths: PathConfig {
-                                ignore: None,
+                                ignore: vec![],
                                 only: Some(vec!["*/code/**".to_string()]),
                             },
                         },
@@ -218,12 +216,12 @@ mod tests {
                         "test-but-not-code".to_string(),
                         RuleConfig {
                             paths: PathConfig {
-                                ignore: Some(vec!["*/code/**".to_string()]),
+                                ignore: vec!["*/code/**".to_string()],
                                 only: Some(vec!["test/**".to_string()]),
                             },
                         },
                     ),
-                ])),
+                ]),
             },
         )]);
         let path_restrictions = PathRestrictions::from_ruleset_configs(&config);
@@ -252,17 +250,17 @@ mod tests {
             RulesetConfig {
                 paths: PathConfig {
                     only: Some(vec!["test/**".to_string()]),
-                    ignore: None,
+                    ignore: vec![],
                 },
-                rules: Some(HashMap::from([(
+                rules: HashMap::from([(
                     "ignores-code".to_string(),
                     RuleConfig {
                         paths: PathConfig {
-                            ignore: Some(vec!["*/code/**".to_string()]),
+                            ignore: vec!["*/code/**".to_string()],
                             only: None,
                         },
                     },
-                )])),
+                )]),
             },
         )]);
         let path_restrictions = PathRestrictions::from_ruleset_configs(&config);
@@ -292,7 +290,7 @@ mod tests {
                 RulesetConfig {
                     paths: PathConfig {
                         only: Some(vec!["test/**/foo.go".to_string()]),
-                        ignore: None,
+                        ignore: vec![],
                     },
                     ..Default::default()
                 },
@@ -302,7 +300,7 @@ mod tests {
                 RulesetConfig {
                     paths: PathConfig {
                         only: None,
-                        ignore: Some(vec!["uno/code".to_string()]),
+                        ignore: vec!["uno/code".to_string()],
                     },
                     ..Default::default()
                 },

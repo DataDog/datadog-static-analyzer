@@ -12,7 +12,8 @@ pub struct PathConfig {
     // Analyze only these directories and patterns.
     pub only: Option<Vec<String>>,
     // Do not analyze any of these directories and patterns.
-    pub ignore: Option<Vec<String>>,
+    #[serde(default)]
+    pub ignore: Vec<String>,
 }
 
 // Configuration for a single rule.
@@ -31,27 +32,61 @@ pub struct RulesetConfig {
     pub paths: PathConfig,
     // Rule-specific configurations.
     #[serde(default, deserialize_with = "deserialize_ruleconfigs")]
-    pub rules: Option<HashMap<String, RuleConfig>>,
+    pub rules: HashMap<String, RuleConfig>,
 }
 
-// the configuration file from the repository
+// The parsed configuration file without any legacy fields.
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default)]
+#[serde(from = "RawConfigFile")]
 pub struct ConfigFile {
     // Configurations for the rulesets.
-    #[serde(deserialize_with = "deserialize_rulesetconfigs")]
     pub rulesets: HashMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]
     pub paths: PathConfig,
-    // For backwards compatibility. Its content will be added to paths.ignore.
-    #[serde(rename(serialize = "ignore-paths", deserialize = "ignore-paths"))]
-    pub ignore_paths: Option<Vec<String>>,
     // Ignore all the paths in the .gitignore file.
-    #[serde(rename(serialize = "ignore-gitignore", deserialize = "ignore-gitignore"))]
+    #[serde(rename = "ignore-gitignore")]
     pub ignore_gitignore: Option<bool>,
     // Analyze only files up to this size.
-    #[serde(rename(serialize = "max-file-size-kb", deserialize = "max-file-size-kb"))]
+    #[serde(rename = "max-file-size-kb")]
     pub max_file_size_kb: Option<u64>,
+}
+
+// The raw configuration file format with legacy fields and other quirks.
+#[derive(Deserialize)]
+struct RawConfigFile {
+    // Configurations for the rulesets.
+    #[serde(deserialize_with = "deserialize_rulesetconfigs")]
+    rulesets: HashMap<String, RulesetConfig>,
+    // Paths to include/exclude from analysis.
+    #[serde(flatten)]
+    paths: PathConfig,
+    // For backwards compatibility. Its content will be added to paths.ignore.
+    #[serde(rename = "ignore-paths")]
+    ignore_paths: Option<Vec<String>>,
+    // Ignore all the paths in the .gitignore file.
+    #[serde(rename = "ignore-gitignore")]
+    ignore_gitignore: Option<bool>,
+    // Analyze only files up to this size.
+    #[serde(rename = "max-file-size-kb")]
+    max_file_size_kb: Option<u64>,
+}
+
+impl From<RawConfigFile> for ConfigFile {
+    fn from(value: RawConfigFile) -> Self {
+        ConfigFile {
+            rulesets: value.rulesets,
+            paths: {
+                let mut paths = value.paths;
+                if let Some(ignore) = value.ignore_paths {
+                    paths.ignore.extend(ignore);
+                }
+                paths
+            },
+            ignore_gitignore: value.ignore_gitignore,
+            max_file_size_kb: value.max_file_size_kb,
+        }
+    }
 }
 
 impl fmt::Display for ConfigFile {

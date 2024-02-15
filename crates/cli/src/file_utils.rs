@@ -155,14 +155,13 @@ fn matches_pattern(pattern: &str, path: &str) -> bool {
 }
 
 pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
-    if let Some(ignore) = &paths.ignore {
-        if ignore
-            .iter()
-            .filter(|p| !p.is_empty())
-            .any(|pattern| matches_pattern(pattern, file_name))
-        {
-            return false;
-        }
+    if paths
+        .ignore
+        .iter()
+        .filter(|p| !p.is_empty())
+        .any(|pattern| matches_pattern(pattern, file_name))
+    {
+        return false;
     }
     match &paths.only {
         None => true,
@@ -413,7 +412,7 @@ mod tests {
 
         // now, we add one glob pattern to ignore
         let path_config = PathConfig {
-            ignore: Some(vec!["src/**/lib.rs".to_string()]),
+            ignore: vec!["src/**/lib.rs".to_string()],
             only: None,
         };
         let files = get_files(&current_path, vec![], &path_config).unwrap();
@@ -425,7 +424,7 @@ mod tests {
 
         // now, we add one path prefix to ignore
         let path_config = PathConfig {
-            ignore: Some(vec!["src/model".to_string()]),
+            ignore: vec!["src/model".to_string()],
             only: None,
         };
         let files = get_files(&current_path, vec![], &path_config).unwrap();
@@ -434,7 +433,7 @@ mod tests {
 
         // now we add one glob pattern to require
         let path_config = PathConfig {
-            ignore: None,
+            ignore: vec![],
             only: Some(vec!["**/config_file.rs".to_string()]),
         };
         let files = get_files(&current_path, vec![], &path_config).unwrap();
@@ -443,7 +442,7 @@ mod tests {
 
         // now we add one glob path prefix to require
         let path_config = PathConfig {
-            ignore: None,
+            ignore: vec![],
             only: Some(vec!["src/model".to_string()]),
         };
         let files = get_files(&current_path, vec![], &path_config).unwrap();
