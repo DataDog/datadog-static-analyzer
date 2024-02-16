@@ -25,16 +25,16 @@ You can choose the rules to use to scan your repository by creating a `static-an
 First, make sure you follow the [documentation](https://docs.datadoghq.com/code_analysis/static_analysis)
 and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
 
-All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules). Your `static-analysis.datadog.yml` must contains all the rulesets available from the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules)
+All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules). Your `static-analysis.datadog.yml` must contain all the rulesets available from the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules)
 
 Example of YAML file
 
 ```yaml
 rulesets:
-  - python-code-style
-  - python-best-practices
-  - python-inclusive
-ignore-paths:
+  python-code-style:
+  python-best-practices:
+  python-inclusive:
+ignore:
   - tests
 ```
 
@@ -127,26 +127,51 @@ Set the following variables to configure an analysis:
 ## Configuration file
 
 The static analyzer can be configured using a `static-analysis.datadog.yml` file
-at the root directory of the repository. This is a YAML file with the following entries:
+at the root directory of the repository. This is a YAML file with the following fields:
 
- - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a full list)
- - `ignore-paths`: list of paths (glob) to ignore
- - `ignore-gitignore`: a boolean to indicate if files in `.gitignore` should be ignored (default: `false`)
- - `max-file-size-kb`: all files above this size are ignored (default: 200KB)
+ - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a full list). It is specified as a map from a ruleset name to its configuration.
+ - `only`: an optional list of glob patterns or path prefixes; only files that match one of them may be analyzed.
+ - `ignore`: an optional list of glob patterns or path prefixes; files that match any of them will be ignored.
+ - `ignore-gitignore`: an optional boolean to indicate if files in `.gitignore` should be ignored (default: `false`).
+ - `max-file-size-kb`: an optional number specifying a size in kilobytes; all files above this size are ignored (default: 200KB).
 
+A ruleset configuration may contain the following optional fields:
+
+ - `only`: a list of glob patterns or path prefixes; only files that match one of them may be analyzed for this ruleset.
+ - `ignore`: a list of glob patterns or path prefixes; files that match any of them will be ignored for this ruleset.
+ - `rules`: extra configuration for individual rules. It is specified as a map from a rule name to its configuration. Note that all rules are used even if they are not specified here.
+
+A rule configuration may contain the following optional fields:
+
+- `only`: a list of glob patterns or path prefixes; only files that match one of them may be analyzed for this rule.
+- `ignore`: a list of glob patterns or path prefixes; files that match any of them will be ignored for this rule.
 
 Example of configuration:
 
 ```yaml
 rulesets:
-  - python-code-style
-  - python-best-practices
-  - python-inclusive
-ignore-paths:
-  - tests
+  python-code-style:
+  python-best-practices:
+    ignore:
+      - src/**/*.generated.py
+    rules:
+      no-generic-exception:
+        only:
+          - src/new-code
+  python-inclusive:
+only:
+  - src
+ignore:
+  - src/tests
 ignore-gitignore: false
 max-file-size-kb: 100
 ```
+
+### Compatibility notes
+
+The field `ignore` was called `ignore-paths` in old versions of the Static Analyzer. The previous name is still recognized for backwards compatibility.
+
+Old versions of the Static Analyzer accepted a list of strings for the field `rulesets`. This is still accepted for backwards compatibility.
 
 ## Other Tools
 
