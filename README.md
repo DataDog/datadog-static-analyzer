@@ -75,7 +75,7 @@ The list of rulesets is available in [RULESETS.md](RULESETS.md).
 
 ## Download
 
-Download the latest release for your system and architecture from the [release page](https://github.com/DataDog/datadog-static-analyzer/blob/main/releases/latest).
+Download the latest release for your system and architecture from the [release page](https://github.com/DataDog/datadog-static-analyzer/releases/latest).
 
 To get the static analyzer via shell:
 
