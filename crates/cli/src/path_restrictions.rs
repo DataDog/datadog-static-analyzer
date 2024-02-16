@@ -38,76 +38,18 @@ impl PathRestrictions {
         out
     }
 
-    /// Returns a RuleFilter for the given path.
-    pub fn get_filter_for_file(&self, file_path: &str) -> RuleFilter {
-        RuleFilter {
-            restrictions: self,
-            file_path: file_path.to_string(),
-            known_rulesets: HashMap::new(),
-        }
-    }
-}
-
-/// An object that provides a function to check if a rule applies to a predetermined file.
-pub struct RuleFilter<'a> {
-    /// The restrictions that apply.
-    restrictions: &'a PathRestrictions,
-    /// The path of the file to check.
-    file_path: String,
-    /// A cache of results for particular rulesets.
-    ///
-    /// Since one ruleset contains multiple alerts, this cache prevents checking the conditions
-    /// for the same ruleset repeatedly.
-    known_rulesets: HashMap<String, Known>,
-}
-
-/// Result for a ruleset.
-#[derive(PartialEq, Clone)]
-enum Known {
-    /// The file passes this ruleset's restrictions.
-    Included,
-    /// The file does not pass this ruleset's restrictions.
-    Excluded,
-    /// The result depends on the particular rule.
-    Depends,
-}
-
-impl<'a> RuleFilter<'a> {
-    /// Returns whether the given rule applies to the file.
-    pub fn rule_is_included(&mut self, rule_name: &str) -> bool {
+    /// Returns whether the given rule applies to a file.
+    pub fn rule_applies(&self, rule_name: &str, file_path: &str) -> bool {
         let (ruleset, short_name) = split_rule_name(rule_name);
-        let known = match self.known_rulesets.get(ruleset) {
-            Some(known) => known.clone(),
-            None => match self.restrictions.rulesets.get(ruleset) {
-                None => Known::Included,
-                Some(restrictions) => {
-                    let known = if !is_allowed_by_path_config(&restrictions.paths, &self.file_path)
-                    {
-                        Known::Excluded
-                    } else if restrictions.rules.is_empty() {
-                        Known::Included
-                    } else {
-                        Known::Depends
-                    };
-                    self.known_rulesets
-                        .insert(ruleset.to_string(), known.clone());
-                    known
-                }
-            },
-        };
-        if known != Known::Depends {
-            return known == Known::Included;
-        }
-        match self
-            .restrictions
-            .rulesets
-            .get(ruleset)
-            .unwrap()
-            .rules
-            .get(short_name)
-        {
+        match self.rulesets.get(ruleset) {
             None => true,
-            Some(paths) => is_allowed_by_path_config(paths, &self.file_path),
+            Some(restrictions) => {
+                is_allowed_by_path_config(&restrictions.paths, file_path)
+                    && match restrictions.rules.get(short_name) {
+                        None => true,
+                        Some(paths) => is_allowed_by_path_config(paths, file_path),
+                    }
+            }
         }
     }
 }
@@ -129,10 +71,9 @@ mod tests {
     #[test]
     fn empty_restrictions() {
         let config = HashMap::from([("defined-ruleset".to_string(), RulesetConfig::default())]);
-        let path_restrictions = PathRestrictions::from_ruleset_configs(&config);
-        let mut filter = path_restrictions.get_filter_for_file("src/main.go");
-        assert!(filter.rule_is_included("defined-ruleset/any-rule"));
-        assert!(filter.rule_is_included("other-ruleset/any-rule"));
+        let restrictions = PathRestrictions::from_ruleset_configs(&config);
+        assert!(&restrictions.rule_applies("defined-ruleset/any-rule", "src/main.go"));
+        assert!(restrictions.rule_applies("other-ruleset/any-rule", "src/main.go"));
     }
 
     // Can include and exclude rulesets.
@@ -170,22 +111,19 @@ mod tests {
                 },
             ),
         ]);
-        let path_restrictions = PathRestrictions::from_ruleset_configs(&config);
-        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
-        assert!(!filter.rule_is_included("ignores-test/any-rule"));
-        assert!(!filter.rule_is_included("only-code/any-rule"));
-        assert!(filter.rule_is_included("test-but-not-code/any-rule"));
-        assert!(filter.rule_is_included("any-ruleset/any-rule"));
-        let mut filter = path_restrictions.get_filter_for_file("uno/code/proto.go");
-        assert!(filter.rule_is_included("ignores-test/any-rule"));
-        assert!(filter.rule_is_included("only-code/any-rule"));
-        assert!(!filter.rule_is_included("test-but-not-code/any-rule"));
-        assert!(filter.rule_is_included("any-ruleset/any-rule"));
-        let mut filter = path_restrictions.get_filter_for_file("test/code/proto_test.go");
-        assert!(!filter.rule_is_included("ignores-test/any-rule"));
-        assert!(filter.rule_is_included("only-code/any-rule"));
-        assert!(!filter.rule_is_included("test-but-not-code/any-rule"));
-        assert!(filter.rule_is_included("any-ruleset/any-rule"));
+        let restrictions = PathRestrictions::from_ruleset_configs(&config);
+        assert!(!&restrictions.rule_applies("ignores-test/any-rule", "test/main.go"));
+        assert!(!restrictions.rule_applies("only-code/any-rule", "test/main.go"));
+        assert!(restrictions.rule_applies("test-but-not-code/any-rule", "test/main.go"));
+        assert!(restrictions.rule_applies("any-ruleset/any-rule", "test/main.go"));
+        assert!(restrictions.rule_applies("ignores-test/any-rule", "uno/code/proto.go"));
+        assert!(restrictions.rule_applies("only-code/any-rule", "uno/code/proto.go"));
+        assert!(!restrictions.rule_applies("test-but-not-code/any-rule", "uno/code/proto.go"));
+        assert!(restrictions.rule_applies("any-ruleset/any-rule", "uno/code/proto.go"));
+        assert!(!restrictions.rule_applies("ignores-test/any-rule", "test/code/proto_test.go"));
+        assert!(restrictions.rule_applies("only-code/any-rule", "test/code/proto_test.go"));
+        assert!(!restrictions.rule_applies("test-but-not-code/any-rule", "test/code/proto_test.go"));
+        assert!(restrictions.rule_applies("any-ruleset/any-rule", "test/code/proto_test.go"));
     }
 
     // Can include and exclude individual rules.
@@ -226,22 +164,21 @@ mod tests {
                 ])),
             },
         )]);
-        let path_restrictions = PathRestrictions::from_ruleset_configs(&config);
-        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
-        assert!(!filter.rule_is_included("a-ruleset/ignores-test"));
-        assert!(!filter.rule_is_included("a-ruleset/only-code"));
-        assert!(filter.rule_is_included("a-ruleset/test-but-not-code"));
-        assert!(filter.rule_is_included("a-ruleset/any-ruleset"));
-        let mut filter = path_restrictions.get_filter_for_file("uno/code/proto.go");
-        assert!(filter.rule_is_included("a-ruleset/ignores-test"));
-        assert!(filter.rule_is_included("a-ruleset/only-code"));
-        assert!(!filter.rule_is_included("a-ruleset/test-but-not-code"));
-        assert!(filter.rule_is_included("a-ruleset/any-ruleset"));
-        let mut filter = path_restrictions.get_filter_for_file("test/code/proto_test.go");
-        assert!(!filter.rule_is_included("a-ruleset/ignores-test"));
-        assert!(filter.rule_is_included("a-ruleset/only-code"));
-        assert!(!filter.rule_is_included("a-ruleset/test-but-not-code"));
-        assert!(filter.rule_is_included("a-ruleset/any-ruleset"));
+        let restrictions = PathRestrictions::from_ruleset_configs(&config);
+        assert!(!restrictions.rule_applies("a-ruleset/ignores-test", "test/main.go"));
+        assert!(!restrictions.rule_applies("a-ruleset/only-code", "test/main.go"));
+        assert!(restrictions.rule_applies("a-ruleset/test-but-not-code", "test/main.go"));
+        assert!(restrictions.rule_applies("a-ruleset/any-ruleset", "test/main.go"));
+        assert!(restrictions.rule_applies("a-ruleset/ignores-test", "uno/code/proto.go"));
+        assert!(restrictions.rule_applies("a-ruleset/only-code", "uno/code/proto.go"));
+        assert!(!restrictions.rule_applies("a-ruleset/test-but-not-code", "uno/code/proto.go"));
+        assert!(restrictions.rule_applies("a-ruleset/any-ruleset", "uno/code/proto.go"));
+        assert!(!restrictions.rule_applies("a-ruleset/ignores-test", "test/code/proto_test.go"));
+        assert!(restrictions.rule_applies("a-ruleset/only-code", "test/code/proto_test.go"));
+        assert!(
+            !restrictions.rule_applies("a-ruleset/test-but-not-code", "test/code/proto_test.go")
+        );
+        assert!(restrictions.rule_applies("a-ruleset/any-ruleset", "test/code/proto_test.go"));
     }
 
     // Can combine inclusion and exclusions for rules and rulesets.
@@ -265,22 +202,19 @@ mod tests {
                 )])),
             },
         )]);
-        let path_restrictions = PathRestrictions::from_ruleset_configs(&config);
-        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
-        assert!(filter.rule_is_included("only-test/ignores-code"));
-        assert!(filter.rule_is_included("only-test/any-rule"));
-        assert!(filter.rule_is_included("any-ruleset/ignores-code"));
-        assert!(filter.rule_is_included("any-ruleset/any-rule"));
-        let mut filter = path_restrictions.get_filter_for_file("test/code/proto_test.go");
-        assert!(!filter.rule_is_included("only-test/ignores-code"));
-        assert!(filter.rule_is_included("only-test/any-rule"));
-        assert!(filter.rule_is_included("any-ruleset/ignores-code"));
-        assert!(filter.rule_is_included("any-ruleset/any-rule"));
-        let mut filter = path_restrictions.get_filter_for_file("foo/code/main.go");
-        assert!(!filter.rule_is_included("only-test/ignores-code"));
-        assert!(!filter.rule_is_included("only-test/any-rule"));
-        assert!(filter.rule_is_included("any-ruleset/ignores-code"));
-        assert!(filter.rule_is_included("any-ruleset/any-rule"));
+        let restrictions = PathRestrictions::from_ruleset_configs(&config);
+        assert!(restrictions.rule_applies("only-test/ignores-code", "test/main.go"));
+        assert!(restrictions.rule_applies("only-test/any-rule", "test/main.go"));
+        assert!(restrictions.rule_applies("any-ruleset/ignores-code", "test/main.go"));
+        assert!(restrictions.rule_applies("any-ruleset/any-rule", "test/main.go"));
+        assert!(!restrictions.rule_applies("only-test/ignores-code", "test/code/proto_test.go"));
+        assert!(restrictions.rule_applies("only-test/any-rule", "test/code/proto_test.go"));
+        assert!(restrictions.rule_applies("any-ruleset/ignores-code", "test/code/proto_test.go"));
+        assert!(restrictions.rule_applies("any-ruleset/any-rule", "test/code/proto_test.go"));
+        assert!(!restrictions.rule_applies("only-test/ignores-code", "foo/code/main.go"));
+        assert!(!restrictions.rule_applies("only-test/any-rule", "foo/code/main.go"));
+        assert!(restrictions.rule_applies("any-ruleset/ignores-code", "foo/code/main.go"));
+        assert!(restrictions.rule_applies("any-ruleset/any-rule", "foo/code/main.go"));
     }
 
     // Can do prefix and glob pattern matching.
@@ -308,18 +242,14 @@ mod tests {
                 },
             ),
         ]);
-        let path_restrictions = PathRestrictions::from_ruleset_configs(&config);
-        let mut filter = path_restrictions.get_filter_for_file("test/main.go");
-        assert!(!filter.rule_is_included("only-test-starstar-foo-glob/rule"));
-        assert!(filter.rule_is_included("ignore-uno-code-prefix/rule"));
-        let mut filter = path_restrictions.get_filter_for_file("test/main/foo.go");
-        assert!(filter.rule_is_included("only-test-starstar-foo-glob/rule"));
-        assert!(filter.rule_is_included("ignore-uno-code-prefix/rule"));
-        let mut filter = path_restrictions.get_filter_for_file("uno/code/proto.go");
-        assert!(!filter.rule_is_included("only-test-starstar-foo-glob/rule"));
-        assert!(!filter.rule_is_included("ignore-uno-code-prefix/rule"));
-        let mut filter = path_restrictions.get_filter_for_file("uno/proto.go");
-        assert!(!filter.rule_is_included("only-test-starstar-foo-glob/rule"));
-        assert!(filter.rule_is_included("ignore-uno-code-prefix/rule"));
+        let restrictions = PathRestrictions::from_ruleset_configs(&config);
+        assert!(!restrictions.rule_applies("only-test-starstar-foo-glob/rule", "test/main.go"));
+        assert!(restrictions.rule_applies("ignore-uno-code-prefix/rule", "test/main.go"));
+        assert!(restrictions.rule_applies("only-test-starstar-foo-glob/rule", "test/main/foo.go"));
+        assert!(restrictions.rule_applies("ignore-uno-code-prefix/rule", "test/main/foo.go"));
+        assert!(!restrictions.rule_applies("only-test-starstar-foo-glob/rule", "uno/code/proto.go"));
+        assert!(!restrictions.rule_applies("ignore-uno-code-prefix/rule", "uno/code/proto.go"));
+        assert!(!restrictions.rule_applies("only-test-starstar-foo-glob/rule", "uno/proto.go"));
+        assert!(restrictions.rule_applies("ignore-uno-code-prefix/rule", "uno/proto.go"));
     }
 }

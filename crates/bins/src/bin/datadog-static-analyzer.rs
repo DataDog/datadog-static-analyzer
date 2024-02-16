@@ -430,14 +430,13 @@ fn main() -> Result<()> {
                         .unwrap()
                         .to_str()
                         .expect("path contains non-Unicode characters");
-                    let mut rule_filter = configuration
-                        .path_restrictions
-                        .get_filter_for_file(file_path);
                     let res = analyze_from_iter(
                         language,
-                        rules_for_language
-                            .iter()
-                            .filter(|r| rule_filter.rule_is_included(&r.name)),
+                        rules_for_language.iter().filter(|r| {
+                            configuration
+                                .path_restrictions
+                                .rule_applies(&r.name, file_path)
+                        }),
                         file_path,
                         &file_content,
                         &analysis_options,
