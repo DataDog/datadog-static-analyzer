@@ -6,50 +6,53 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Information about a project to compile with CMake
+/// Git repository information about a dependency to compile with CMake.
+/// These are fetched during build time to avoid using git submodules.
 struct Dependency {
-    /// A pretty name for the dependency
-    name: &'static str,
-    /// The source directory of the dependency's source code
-    src_dir: PathBuf,
-    /// A filename that should be present if the git submodule was initialized
-    probe_filename: &'static str,
+    /// The repository URL
+    url: String,
+    /// The commit hash to pin to
+    commit_hash: String,
+    /// The folder that will contain the fetched source of this dependency
+    source_path: PathBuf,
+}
+
+impl Dependency {
+    fn new(pretty_name: &str, url: &str, commit_hash: &str) -> Self {
+        let source_path = PathBuf::from(env::var("OUT_DIR").unwrap())
+            .join("vendored-sources")
+            .join(pretty_name);
+        Self {
+            url: url.to_string(),
+            commit_hash: commit_hash.to_string(),
+            source_path,
+        }
+    }
 }
 
 fn main() {
-    let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
-    let vendor_dir = manifest_dir.join("vendor");
-    println!("cargo:rerun-if-changed={}", vendor_dir.display());
-    let hs_dep = Dependency {
-        name: "vectorscan",
-        src_dir: vendor_dir.join("vectorscan"),
-        probe_filename: "LICENSE",
-    };
-    let pcre_dep = Dependency {
-        name: "pcre",
-        src_dir: vendor_dir.join("pcre"),
-        probe_filename: "LICENCE",
-    };
+    println!("cargo:rerun-if-changed=build.rs");
+
+    let hs_dependency = Dependency::new(
+        "vectorscan-5.4.11",
+        "https://github.com/VectorCamp/vectorscan",
+        "d29730e1cb9daaa66bda63426cdce83505d2c809",
+    );
+    let pcre_dependency = Dependency::new(
+        "pcre-8.45",
+        "https://github.com/luvit/pcre",
+        "5c78f7d5d7f41bdd4be4867ef3a1030af3e973e3",
+    );
 
     let dependencies = if cfg!(feature = "chimera") {
-        vec![&hs_dep, &pcre_dep]
+        vec![&hs_dependency, &pcre_dependency]
     } else {
-        vec![&hs_dep]
+        vec![&hs_dependency]
     };
 
     for dependency in dependencies {
-        if !dependency.src_dir.join(dependency.probe_filename).exists() {
-            println!("cargo:warning=retrieving {} git submodule", dependency.name);
-            assert!(Command::new("git")
-                .args([
-                    "submodule",
-                    "update",
-                    "--init",
-                    "--recommend-shallow",
-                    dependency.src_dir.to_str().unwrap()
-                ])
-                .status()
-                .is_ok_and(|exit_status| exit_status.success()));
+        if !dependency.source_path.exists() {
+            assert!(fetch_dependency(&dependency));
         }
     }
 
@@ -60,7 +63,7 @@ fn main() {
         _ => println!("cargo:rustc-link-lib=stdc++"),
     }
 
-    let mut hs_cmake = cmake::Config::new(&hs_dep.src_dir);
+    let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
     hs_cmake
         // Override Vectorscan's defaults
         .define("BUILD_EXAMPLES", "OFF")
@@ -69,10 +72,11 @@ fn main() {
     #[cfg(feature = "chimera")]
     {
         hs_cmake
-            .define("PCRE_SOURCE", pcre_dep.src_dir.as_os_str())
+            .define("PCRE_SOURCE", &pcre_dependency.source_path)
             .define("BUILD_CHIMERA", "ON")
-            // Clang 15 bumps "unqualified-std-cast-call" from a warning to an error. Chimera has libraries that
-            // use unqualified `std::move`, so we silence them to prevent a build failure.
+            .cflag("-Wno-unknown-warning-option")
+            .cxxflag("-Wno-unknown-warning-option")
+            // Clang 15 workaround for `ch_compile.cpp`
             .cxxflag("-Wno-unqualified-std-cast-call");
     }
 
@@ -90,6 +94,7 @@ fn main() {
     #[cfg(feature = "generate-bindings")]
     {
         use bindgen::callbacks::{IntKind, ParseCallbacks};
+        let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         println!("cargo:rerun-if-changed={}/hs.h", manifest_dir.display());
 
         /// A callback to allow overriding bindgen's chosen Rust integer type for variables
@@ -160,4 +165,27 @@ fn main() {
             println!("cargo:warning=wrote Chimera bindings to {:?}", dest_file);
         }
     }
+}
+
+/// A helper function to shallow fetch a Git repository.
+fn fetch_dependency(dep: &Dependency) -> bool {
+    fn run(command: &str, args: &[&str]) -> bool {
+        Command::new(command)
+            .args(args)
+            .status()
+            .is_ok_and(|exit_status| exit_status.success())
+    }
+    let base_dir = env::current_dir().unwrap();
+
+    run("mkdir", &["-p", &dep.source_path.to_string_lossy()])
+        && env::set_current_dir(&dep.source_path).is_ok()
+        && run("git", &["init", "-q"])
+        && run("git", &["remote", "add", "origin", &dep.url])
+        && run(
+            "git",
+            &["fetch", "-q", "--depth", "1", "origin", &dep.commit_hash],
+        )
+        && run("git", &["checkout", "-q", "FETCH_HEAD"])
+        && run("rm", &["-rf", ".git"])
+        && env::set_current_dir(base_dir).is_ok()
 }
