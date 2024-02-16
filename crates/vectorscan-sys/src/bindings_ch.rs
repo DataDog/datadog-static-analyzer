@@ -28,6 +28,10 @@ pub const CH_ERROR_MATCHLIMIT: u32 = 1;
 pub const CH_ERROR_RECURSIONLIMIT: u32 = 2;
 pub const CH_CAPTURE_FLAG_INACTIVE: u32 = 0;
 pub const CH_CAPTURE_FLAG_ACTIVE: u32 = 1;
+extern "C" {
+    #[link_name = "\u{1}_free"]
+    pub fn libc_free(arg1: *mut ::core::ffi::c_void);
+}
 #[doc = " A type containing information on the target platform which may optionally be\n provided to the compile calls (@ref hs_compile(), @ref hs_compile_multi(),\n @ref hs_compile_ext_multi()).\n\n A hs_platform_info structure may be populated for the current platform by\n using the @ref hs_populate_platform() call."]
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]

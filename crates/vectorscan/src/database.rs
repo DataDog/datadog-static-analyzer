@@ -13,7 +13,7 @@ use std::ptr;
 use std::ptr::NonNull;
 use vectorscan_sys::hs;
 
-/// A wrapper struct to handle clean-up of the underlying [`hs::hs_database_t`]
+/// A wrapper struct to handle clean-up of the underlying [`hs_database_t`](hs::hs_database_t).
 #[derive(Debug)]
 #[repr(transparent)]
 pub(crate) struct DatabaseWrapper(NonNull<hs::hs_database_t>);
@@ -26,12 +26,33 @@ impl DatabaseWrapper {
     pub(crate) fn as_ptr(&self) -> *mut hs::hs_database_t {
         self.0.as_ptr()
     }
+
     pub(crate) fn size(&self) -> Result<usize, Error> {
         let database_size = &mut 0_usize;
         let hs_error = unsafe { hs::hs_database_size(self.0.as_ptr(), &mut *database_size) };
 
         check_ffi_result(hs_error, None)?;
         Ok(*database_size)
+    }
+
+    pub(crate) fn info(&self) -> Result<String, Error> {
+        let mut info_ptr = ptr::null_mut();
+        let hs_error = unsafe { hs::hs_database_info(self.as_ptr(), &mut info_ptr) };
+        check_ffi_result(hs_error, None)?;
+
+        // Safety: If there was no `hs_error`, this will not be a null pointer.
+        let c_str = unsafe { ffi::CStr::from_ptr(info_ptr) };
+        let info = c_str
+            .to_str()
+            .expect("Hyperscan should always send valid UTF-8")
+            .to_string();
+
+        // Safety: Hyperscan used malloc to allocate this string, and it expects the caller to
+        // release the memory. Thus, this is guaranteed to be non-null, and won't be a double-free.
+        //
+        // Source: https://github.com/VectorCamp/vectorscan/blob/d29730e1cb9daaa66bda63426cdce83505d2c809/src/database.c#L390
+        unsafe { hs::libc_free(info_ptr as *mut ffi::c_void) }
+        Ok(info)
     }
 }
 
@@ -121,7 +142,45 @@ impl BlockDatabase {
         self.0.size()
     }
 
+    /// Returns a string containing the version and platform information for the database.
+    pub fn info(&self) -> Result<String, Error> {
+        self.0.info()
+    }
+
     pub(crate) fn as_ptr(&self) -> *mut hs::hs_database_t {
         self.0.as_ptr()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn new_db_wrapper() -> DatabaseWrapper {
+        let pattern = Pattern::new("abc+").build();
+        BlockDatabase::try_new([&pattern]).unwrap().0
+    }
+
+    /// Tests the FFI call to [`hs::hs_database_info`]
+    #[test]
+    fn get_info() {
+        let db = new_db_wrapper();
+        // The info string will vary based on platform, so just check for the version prelude
+        let db_info = db.info().unwrap();
+        assert!(db_info.starts_with(&format!(
+            "Version: {}.{}.{}",
+            hs::HS_MAJOR,
+            hs::HS_MINOR,
+            hs::HS_PATCH,
+        )));
+    }
+
+    /// Tests the FFI call to [`hs::hs_database_size`]
+    #[test]
+    fn get_size() {
+        let db = new_db_wrapper();
+        let db_size = db.size().unwrap();
+        // The size of the database's bytecode can change by platform, so just check for non-zero
+        assert!(db_size > 0);
     }
 }
