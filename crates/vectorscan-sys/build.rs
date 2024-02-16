@@ -30,6 +30,21 @@ impl Dependency {
     }
 }
 
+/// At a high level, this build script builds [Vectorscan](https://github.com/VectorCamp/vectorscan), a fork
+/// of [Hyperscan](https://github.com/intel/hyperscan), a high-performance multiple regex matching library.
+///
+/// The freshly-built `hs` library is then announced to rustc's linker for use in the compilation process.
+///
+/// This script can also build [Chimera](https://intel.github.io/hyperscan/dev-reference/chimera.html), which
+/// is an officially-supported regex engine that functions as a hybrid between Hyperscan and PCRE,
+/// with full support for PCRE syntax. While disabled by default, Chimera can be activated with feature `chimera`.
+///
+/// Lastly, `bindgen` is used to automatically create low-level bindings between Hyperscan's C ABI and Rust.
+/// These bindings are pre-generated at `src/bindings_hs.rs` and `src/bindings_ch.rs` for convenience (so
+/// that library consumers don't need to install multiple dependencies just to generate the required bindings).
+///
+/// However, if compiled with the `generate-bindings` feature, this crate will freshly generate bindings
+/// and save them to its `OUT_DIR`.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
@@ -65,12 +80,13 @@ fn main() {
 
     let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
     hs_cmake
-        // Override Vectorscan's defaults
+        // Override Vectorscan's default build configuration.
         .define("BUILD_EXAMPLES", "OFF")
         .define("BUILD_BENCHMARKS", "OFF");
 
     #[cfg(feature = "chimera")]
     {
+        // Turn on the Chimera build flag, and point it to the extracted pcre folder.
         hs_cmake
             .define("PCRE_SOURCE", &pcre_dependency.source_path)
             .define("BUILD_CHIMERA", "ON")
@@ -97,7 +113,11 @@ fn main() {
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         println!("cargo:rerun-if-changed={}/hs.h", manifest_dir.display());
 
-        /// A callback to allow overriding bindgen's chosen Rust integer type for variables
+        /// Bindgen provides hooks for user-defined callbacks to change the mapping between C and Rust types.
+        /// While it is good at ascertaining types by default, libraries may have specific invariants
+        /// that bindgen couldn't possibly know about.
+        ///
+        /// This [`ParseCallbacks`] provides an ergonomic way of overriding the chosen Rust integer type for variables.
         #[derive(Debug)]
         struct ForceInts<const N: usize>([&'static str; N], IntKind);
         impl<const N: usize> ParseCallbacks for ForceInts<N> {
@@ -117,6 +137,7 @@ fn main() {
         let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
         let include_dir = out_dir.join("include");
 
+        // This is the shared configuration we use when compiling either Hyperscan or Chimera.
         let base_builder = bindgen::Builder::default()
             .header("hs.h")
             .use_core()
@@ -124,6 +145,7 @@ fn main() {
             .clang_args(&["-x", "c++", "-std=c++11"])
             .clang_arg(format!("-I{}", include_dir.display()));
 
+        // These are Hyperscan-specific configurations, as well as tweaks to generate more accurate bindings.
         let hs_builder = base_builder
             .clone()
             .allowlist_type("^hs_.+")
@@ -161,6 +183,8 @@ fn main() {
 
         #[cfg(feature = "chimera")]
         {
+            // These are Chimera-specific configurations, which are identical to their Hyperscan counterparts
+            // except for `hs` being replaced by `ch` in names.
             let ch_builder = base_builder
                 .clone()
                 .allowlist_type("^ch_.+")
