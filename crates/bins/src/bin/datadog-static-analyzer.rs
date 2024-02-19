@@ -367,11 +367,18 @@ fn main() -> Result<()> {
                             d.base_sha,
                             d.files.join(",")
                         );
+                    } else {
+                        println!(
+                            "diff-aware enabled, based sha {}, scanning only {}/{} files",
+                            d.base_sha,
+                            d.files.len(),
+                            files_to_analyze.len()
+                        )
                     }
                     Some(d)
                 }
                 Err(e) => {
-                    eprintln!("diff aware not enabled - error when receiving diff-aware data from Datadog");
+                    eprintln!("diff aware not enabled (error when receiving diff-aware data from Datadog), proceeding with full scan.");
                     if configuration.use_debug {
                         eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
                     }
@@ -380,7 +387,7 @@ fn main() -> Result<()> {
                 }
             },
             Err(e) => {
-                eprintln!("diff aware not enabled - unable to generate diff-aware request data");
+                eprintln!("diff aware not enabled (unable to generate diff-aware request data), proceeding with full scan.");
 
                 if configuration.use_debug {
                     eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
@@ -522,7 +529,7 @@ fn main() -> Result<()> {
         .sum();
 
     println!(
-        "Found {} violations in {} files using {} rules within {} secs",
+        "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
         nb_violations,
         total_files_analyzed,
         configuration.rules.len(),
