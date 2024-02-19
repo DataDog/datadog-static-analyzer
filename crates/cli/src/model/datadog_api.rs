@@ -5,6 +5,77 @@ use kernel::model::ruleset::RuleSet;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// Data for diff-aware scanning
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareResponseDataAttributes {
+    #[serde(rename = "files")]
+    pub files: Vec<String>,
+    #[serde(rename = "base_sha")]
+    pub base_sha: String,
+}
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareResponseData {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "attributes")]
+    pub attributes: DiffAwareResponseDataAttributes,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareResponse {
+    #[serde(rename = "data")]
+    pub data: DiffAwareResponseData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareRequestDataAttributes {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "sha")]
+    pub sha: String,
+    #[serde(rename = "branch")]
+    pub branch: String,
+    #[serde(rename = "repository_url")]
+    pub repository_url: String,
+    #[serde(rename = "config_hash")]
+    pub config_hash: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareRequestData {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "type")]
+    pub request_type: String,
+    #[serde(rename = "attributes")]
+    pub attributes: DiffAwareRequestDataAttributes,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareRequest {
+    #[serde(rename = "data")]
+    pub data: DiffAwareRequestData,
+}
+
+/// Data structure to get all attributes and argument for the request.
+/// This is used to consolidate all the data we need instead of taking them
+/// all one by one.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareRequestArguments {
+    pub sha: String,
+    pub branch: String,
+    pub repository_url: String,
+    pub config_hash: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DiffAwareData {
+    pub base_sha: String,
+    pub files: Vec<String>,
+}
+
+// Data for the default rules
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApiDefaultRulesetAttributes {
     #[serde(rename = "rulesets")]
@@ -21,6 +92,8 @@ pub struct ApiDefaultRuleset {
 pub struct ApiResponseDefaultRuleset {
     pub data: ApiDefaultRuleset,
 }
+
+// Data for the rules
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApiResponseRuleTest {

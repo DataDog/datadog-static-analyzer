@@ -13,6 +13,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::rc::Rc;
 
+use crate::model::datadog_api::DiffAwareData;
 use kernel::model::rule::RuleSeverity;
 use kernel::model::{
     common::PositionBuilder,
@@ -35,6 +36,7 @@ pub struct SarifGenerationOptions {
     pub git_repo: Option<Rc<Repository>>,
     pub debug: bool,
     pub config_digest: String,
+    pub diff_aware_parameters: Option<DiffAwareData>,
 }
 
 impl IntoSarif for &Rule {
@@ -170,6 +172,26 @@ impl IntoSarif for &Edit {
 
 // Generate the tool section that reports all the rules being run
 fn generate_tool_section(rules: &[Rule], options: &SarifGenerationOptions) -> Result<Tool> {
+    let mut tags = vec![];
+    tags.push(format!(
+        "DATADOG_DIFF_AWARE_CONFIG_DIGEST:{}",
+        options.config_digest
+    ));
+
+    // if diff-aware is enabled and we got diff-aware data from the backend, we add it in the sarif file
+    if let Some(diff_aware) = &options.diff_aware_parameters {
+        tags.push("DATADOG_DIFF_AWARE_ENABLED:true".to_string());
+        tags.push(format!(
+            "DATADOG_DIFF_AWARE_BASE_SHA:{}",
+            diff_aware.base_sha
+        ));
+        diff_aware.files.iter().for_each(|f| {
+            tags.push(format!("DATADOG_DIFF_AWARE_FILE:{}", f));
+        })
+    } else {
+        tags.push("DATADOG_DIFF_AWARE_ENABLED:false".to_string());
+    }
+
     let driver: ToolComponent = ToolComponentBuilder::default()
         .name("datadog-static-analyzer")
         .information_uri("https://www.datadoghq.com")
@@ -179,15 +201,7 @@ fn generate_tool_section(rules: &[Rule], options: &SarifGenerationOptions) -> Re
                 .map(|e| e.into_sarif())
                 .collect::<Vec<ReportingDescriptor>>(),
         )
-        .properties(
-            PropertyBagBuilder::default()
-                .tags(vec![format!(
-                    "DATADOG_DIFF_AWARE_CONFIG_DIGEST:{}",
-                    options.config_digest
-                )])
-                .build()
-                .unwrap(),
-        )
+        .properties(PropertyBagBuilder::default().tags(tags).build().unwrap())
         .build()?;
 
     Ok(ToolBuilder::default().driver(driver).build()?)
@@ -367,6 +381,7 @@ pub fn generate_sarif_report(
     add_git_info: bool,
     debug: bool,
     config_digest: String,
+    diff_aware_parameters: Option<DiffAwareData>,
 ) -> Result<Sarif> {
     // if we enable git info, we are then getting the repository object. We put that
     // into an `Arc` object to be able to clone the object.
@@ -386,6 +401,7 @@ pub fn generate_sarif_report(
         git_repo: repository,
         debug,
         config_digest,
+        diff_aware_parameters,
     };
 
     let run = RunBuilder::default()
@@ -482,13 +498,43 @@ mod tests {
             false,
             false,
             "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+            None,
         )
         .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+        );
+
+        // validate the schema
+        assert!(validate_data(&sarif_report_to_string));
+    }
+
+    // Ensure that diff-aware scanning information are correctly surfaced
+    #[test]
+    fn test_generate_sarif_diff_aware_scanning() {
+        let diff_aware_infos = DiffAwareData {
+            base_sha: "d495287772cc8123136b89e8cf5afecbed671823".to_string(),
+            files: vec!["path/to/file.py".to_string()],
+        };
+
+        let sarif_report = generate_sarif_report(
+            &[],
+            &vec![],
+            &"mydir".to_string(),
+            false,
+            false,
+            "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+            Some(diff_aware_infos),
+        )
+        .expect("generate sarif report");
+
+        let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
+        assert_json_eq!(
+            sarif_report_to_string,
+            serde_json::json!({"runs":[{"results":[],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_DIFF_AWARE_ENABLED:true","DATADOG_DIFF_AWARE_BASE_SHA:d495287772cc8123136b89e8cf5afecbed671823","DATADOG_DIFF_AWARE_FILE:path/to/file.py"]},"rules":[]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
@@ -554,13 +600,14 @@ mod tests {
             false,
             false,
             "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+            None,
         )
         .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
         );
 
         // validate the schema
@@ -628,6 +675,7 @@ mod tests {
             false,
             false,
             "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+            None,
         )
         .expect("generate sarif report");
         assert!(sarif_report

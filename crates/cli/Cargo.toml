@@ -14,6 +14,7 @@ serde_json = { workspace = true }
 derive_builder = { workspace = true }
 serde-sarif = { workspace = true }
 sha2 = { workspace = true }
+uuid = { workspace = true }
 # other
 git2 = "0.18.0"
 glob-match = "0.2.1"
