@@ -1,0 +1,10 @@
+[package]
+name = "vectorscan"
+version = "0.0.0"
+license = "Apache-2.0"
+edition = "2021"
+
+[dependencies]
+bitflags = "2.4.2"
+thiserror = "1.0.56"
+vectorscan-sys = { path = "../vectorscan-sys" }

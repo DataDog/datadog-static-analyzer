@@ -1,5 +1,11 @@
 [workspace]
 members = ["crates/*"]
+default-members = [
+    "crates/bins",
+    "crates/cli",
+    "crates/static-analysis-kernel",
+    "crates/static-analysis-server",
+]
 resolver = "2"
 
 [workspace.package]

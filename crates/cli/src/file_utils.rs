@@ -181,14 +181,16 @@ pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String])
         .canonicalize()
         .expect("cannot canonicalize repository directory");
     return subdirectories.iter().all(|subdirectory| {
-        let new_path = directory_path
-            .join(subdirectory)
-            .canonicalize()
-            .expect("canonicalize subdirectory");
-        if !new_path.starts_with(directory_canonicalized.clone()) {
-            return false;
+        let new_path = directory_path.join(subdirectory).canonicalize();
+        match new_path {
+            Err(e) => panic!("error when checking directory {}: {}", subdirectory, e),
+            Ok(p) => {
+                if !p.starts_with(directory_canonicalized.clone()) {
+                    return false;
+                }
+                true
+            }
         }
-        true
     });
 }
 
