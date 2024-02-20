@@ -283,6 +283,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::env;
     use std::path::Path;
+    use tempfile::{tempdir, TempDir};
 
     #[test]
     fn get_gitignore_exists() {
@@ -365,13 +366,37 @@ mod tests {
         assert!(fl.is_empty());
     }
 
+    struct TestDir {
+        dir: TempDir,
+    }
+
+    impl TestDir {
+        fn new() -> Self {
+            TestDir {
+                dir: tempdir().unwrap(),
+            }
+        }
+
+        fn base_path(&self) -> String {
+            self.dir.path().display().to_string()
+        }
+
+        fn add_file(&self, path: &str) {
+            let full_path = self.dir.path().join(path);
+            if let Some(dir) = full_path.parent() {
+                fs::create_dir_all(dir).unwrap();
+            }
+            fs::File::create(full_path).unwrap();
+        }
+    }
+
     macro_rules! assert_contains_files {
-        ($files:expr, $wanted:expr) => {
-            let current_path = std::env::current_dir().unwrap();
+        ($basepath:expr, $files:expr, $wanted:expr) => {
+            let base_path = Path::new($basepath);
             let actual_set: HashSet<&PathBuf> = HashSet::from_iter($files.iter());
             for name in $wanted {
                 assert!(
-                    actual_set.contains(&current_path.join(name)),
+                    actual_set.contains(&base_path.join(name)),
                     "file {} not found in list when it was expected",
                     name
                 );
@@ -380,12 +405,12 @@ mod tests {
     }
 
     macro_rules! assert_not_contains_files {
-        ($files:expr, $wanted:expr) => {
-            let current_path = std::env::current_dir().unwrap();
+        ($basepath:expr, $files:expr, $wanted:expr) => {
+            let base_path = Path::new($basepath);
             let actual_set: HashSet<&PathBuf> = HashSet::from_iter($files.iter());
             for name in $wanted {
                 assert!(
-                    !actual_set.contains(&current_path.join(name)),
+                    !actual_set.contains(&base_path.join(name)),
                     "file {} found in list when it was not expected",
                     name
                 );
@@ -397,58 +422,74 @@ mod tests {
     // ignore-paths correctly works when we pass a glob.
     #[test]
     fn get_list_of_files_with_path_config() {
-        let current_path = std::env::current_dir().unwrap().display().to_string();
+        let test_dir = TestDir::new();
+        test_dir.add_file("src/a/main.rs");
+        test_dir.add_file("src/a/other.rs");
+        test_dir.add_file("src/b/main.rs");
+        test_dir.add_file("test/a/main.rs");
+        test_dir.add_file("test/a/other.rs");
+        test_dir.add_file("test/b/main.rs");
+        let base_path = test_dir.base_path();
 
         // first, we get the list of files without any path to ignore
         let empty_config = PathConfig::default();
-        let files = get_files(&current_path, vec![], &empty_config).unwrap();
+        let files = get_files(&base_path, vec![], &empty_config).unwrap();
         assert_contains_files!(
+            &base_path,
             files,
             [
-                "src/lib.rs",
-                "src/sarif/sarif_utils.rs",
-                "src/model/config_file.rs",
+                "src/a/main.rs",
+                "src/b/main.rs",
+                "test/a/main.rs",
+                "test/a/other.rs",
+                "test/b/main.rs",
             ]
         );
 
         // now, we add one glob pattern to ignore
         let path_config = PathConfig {
-            ignore: Some(vec!["src/**/lib.rs".to_string()]),
+            ignore: Some(vec!["src/**/main.rs".to_string()]),
             only: None,
         };
-        let files = get_files(&current_path, vec![], &path_config).unwrap();
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
         assert_contains_files!(
+            &base_path,
             files,
-            ["src/sarif/sarif_utils.rs", "src/model/config_file.rs"]
+            [
+                "src/a/other.rs",
+                "test/a/main.rs",
+                "test/a/other.rs",
+                "test/b/main.rs"
+            ]
         );
-        assert_not_contains_files!(files, ["src/lib.rs"]);
+        assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "src/b/main.rs"]);
 
         // now, we add one path prefix to ignore
         let path_config = PathConfig {
-            ignore: Some(vec!["src/model".to_string()]),
+            ignore: Some(vec!["src/a".to_string()]),
             only: None,
         };
-        let files = get_files(&current_path, vec![], &path_config).unwrap();
-        assert_contains_files!(files, ["src/sarif/sarif_utils.rs", "src/lib.rs",]);
-        assert_not_contains_files!(files, ["src/model/config_file.rs"]);
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        assert_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs",]);
+        assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);
 
         // now we add one glob pattern to require
         let path_config = PathConfig {
             ignore: None,
-            only: Some(vec!["**/config_file.rs".to_string()]),
+            only: Some(vec!["**/other.rs".to_string()]),
         };
-        let files = get_files(&current_path, vec![], &path_config).unwrap();
-        assert_contains_files!(files, ["src/model/config_file.rs"]);
-        assert_not_contains_files!(files, ["src/lib.rs"]);
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        assert_contains_files!(&base_path, files, ["src/a/other.rs", "test/a/other.rs"]);
+        assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "test/a/main.rs"]);
 
         // now we add one glob path prefix to require
         let path_config = PathConfig {
             ignore: None,
-            only: Some(vec!["src/model".to_string()]),
+            only: Some(vec!["src/a".to_string()]),
         };
-        let files = get_files(&current_path, vec![], &path_config).unwrap();
-        assert_contains_files!(files, ["src/model/config_file.rs"]);
-        assert_not_contains_files!(files, ["src/lib.rs"]);
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        assert_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);
+        assert_not_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs"]);
     }
 
     #[test]

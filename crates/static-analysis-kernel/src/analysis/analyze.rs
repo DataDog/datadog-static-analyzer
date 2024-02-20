@@ -3,6 +3,7 @@ use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
@@ -81,17 +82,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
 // 2. Run the tree-sitter query and build the object that hold the match
 // 3. Execute the rule
 // 4. Collect results and errors
-pub fn analyze(
-    language: &Language,
-    rules: &[RuleInternal],
-    filename: &str,
-    code: &str,
-    analysis_option: &AnalysisOptions,
-) -> Vec<RuleResult> {
-    analyze_from_iter(language, rules.iter(), filename, code, analysis_option)
-}
-
-pub fn analyze_from_iter<'a, I>(
+pub fn analyze<I>(
     language: &Language,
     rules: I,
     filename: &str,
@@ -99,7 +90,8 @@ pub fn analyze_from_iter<'a, I>(
     analysis_option: &AnalysisOptions,
 ) -> Vec<RuleResult>
 where
-    I: Iterator<Item = &'a RuleInternal>,
+    I: IntoIterator,
+    I::Item: Borrow<RuleInternal>,
 {
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
@@ -112,7 +104,9 @@ where
         },
         |tree| {
             rules
+                .into_iter()
                 .map(|rule| {
+                    let rule = rule.borrow();
                     if analysis_option.use_debug {
                         eprintln!("Apply rule {} file {}", rule.name, filename);
                     }

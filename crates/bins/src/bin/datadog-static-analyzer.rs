@@ -7,7 +7,7 @@ use cli::file_utils::{
 use cli::model::config_file::{ConfigFile, PathConfig};
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
-use kernel::analysis::analyze::analyze_from_iter;
+use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
@@ -430,7 +430,7 @@ fn main() -> Result<()> {
                         .unwrap()
                         .to_str()
                         .expect("path contains non-Unicode characters");
-                    let res = analyze_from_iter(
+                    let res = analyze(
                         language,
                         rules_for_language.iter().filter(|r| {
                             configuration
