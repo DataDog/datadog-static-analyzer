@@ -58,8 +58,8 @@ pub fn get_datadog_variable_value(variable: &str) -> anyhow::Result<String> {
 
 // if we put the first argument to true staging, override the value and use staging.
 // otherwise, use the DD_SITE variable or the default site
-fn get_datadog_site(force_staging: Option<bool>) -> String {
-    if force_staging.unwrap_or(false) {
+fn get_datadog_site(use_staging: bool) -> String {
+    if use_staging {
         STAGING_DATADOG_SITE.to_string()
     } else {
         get_datadog_variable_value("SITE").unwrap_or(DEFAULT_DATADOG_SITE.to_string())
@@ -70,7 +70,7 @@ fn get_datadog_site(force_staging: Option<bool>) -> String {
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
 // the rulesets. We then extract all the rulesets
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
-    let site = get_datadog_site(Some(use_staging));
+    let site = get_datadog_site(use_staging);
     let app_key = get_datadog_variable_value("APP_KEY");
     let api_key = get_datadog_variable_value("API_KEY");
 
@@ -118,7 +118,7 @@ pub fn get_default_rulesets_name_for_language(
     language: String,
     use_staging: bool,
 ) -> Result<Vec<String>> {
-    let site = get_datadog_site(Some(use_staging));
+    let site = get_datadog_site(use_staging);
 
     let url = format!(
         "https://api.{}/api/v2/static-analysis/default-rulesets/{}",
@@ -178,7 +178,7 @@ pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
 /// the list of files). Those information will later be added in the
 /// results.
 pub fn get_diff_aware_information(arguments: DiffAwareRequestArguments) -> Result<DiffAwareData> {
-    let site = get_datadog_site(None);
+    let site = get_datadog_site(false);
     let app_key = get_datadog_variable_value("APP_KEY")?;
     let api_key = get_datadog_variable_value("API_KEY")?;
 
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_get_datadog_site() {
-        assert_eq!(get_datadog_site(Some(true)), STAGING_DATADOG_SITE);
-        assert_eq!(get_datadog_site(Some(false)), DEFAULT_DATADOG_SITE);
+        assert_eq!(get_datadog_site(true), STAGING_DATADOG_SITE);
+        assert_eq!(get_datadog_site(false), DEFAULT_DATADOG_SITE);
     }
 }
