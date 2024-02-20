@@ -1,6 +1,8 @@
 Component,Origin,License,Copyright
 anyhow,https://crates.io/crates/anyhow,MIT,Copyright (c) 2019 David Tolnay
 base64,https://github.com/marshallpierce/rust-base64,Apache-2.0,Copyright (c) 2015 Alice Maz
+bitflags,https://github.com/bitflags/bitflags,MIT,Copyright (c) 2014 The Rust Project Developers
+cmake-rs,https://github.com/rust-lang/cmake-rs,MIT,Copyright (c) 2014 Alex Crichton
 deno-core,https://github.com/denoland/deno,MIT,Copyright 2018-2023 the Deno authors
 git2,https://crates.io/crates/git2,MIT,Copyright (c) 2014 Alex Crichton
 glob-match,https://crates.io/crates/glob-match,MIT, Copyright (c) 2023 Devon Govett
@@ -12,14 +14,18 @@ percent-encoding,https://github.com/servo/rust-url/,MIT, Copyright (c) 2013-2022
 prettytable-rs,https://github.com/phsym/prettytable-rs/,BSD-3-Clause,Copyright (c) 2022 Pierre-Henri Symoneaux
 rayon,https://crates.io/crates/rayon,MIT,Copyright (c) 2010 The Rust Project Developers
 rocket,https://github.com/SergioBenitez/Rocket,Apache-2.0,Copyright 2016 Sergio Benitez
+rust-bindgen,https://github.com/rust-lang/rust-bindgen,BSD-3-Clause,Copyright (c) 2013 Jyun-Yan You
 tree-sitter,https://github.com/tree-sitter/tree-sitter,MIT,2014 Max Brunsfeld
 sarif-rs,https://github.com/psastras/sarif-rs,MIT,Copyright (c) 2021 Paul Sastrasinh
 serde,https://github.com/serde-rs/serde,Apache-2.0,2015 David Tolnay and Serde contributors
 serde_json,https://github.com/serde-rs/json,Apache-2.0,2015 David Tolnay and Serde contributors
 serde_yaml,https://github.com/dtolnay/serde-yaml,Apache-2.0,2016 David Tolnay
 sha2,https://crates.io/crates/sha2,Apache-2.0,Copyright (c) 2006-2009 Graydon Hoare 2009-2013 Mozilla Foundation 2016 Artyom Pavlov
+tempfile,https://crates.io/crates/tempfile,Apache-2.0,Copyright (c) 2015 Steven Allen
+thiserror,https://github.com/dtolnay/thiserror,MIT,Copyright (c) 2019 David Tolnay
 tracing,https://crates.io/crates/tracing,MIT,Copyright (c) 2019 Tokio Contributors
 tracing-subscriber,https://crates.io/crates/tracing-subscriber,MIT,Copyright (c) 2019 Tokio Contributors
 uuid,https://crates.io/crates/uuid,MIT,Copyright 2018 The Uuid Developers
 valico,https://github.com/s-panferov/valico,MIT,Copyright (c) 2014 Stanislav Panferov
+vectorscan,https://github.com/VectorCamp/vectorscan,BSD-3-Clause,Copyright (c) 2020 VectorCamp PC
 walkdir,https://github.com/BurntSushi/walkdir,MIT,Copyright (c) 2015 Andrew Gallant
