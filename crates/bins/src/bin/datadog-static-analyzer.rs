@@ -1,8 +1,10 @@
 use cli::config_file::read_config_file;
-use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets};
+use cli::datadog_utils::{
+    get_all_default_rulesets, get_diff_aware_information, get_rules_from_rulesets,
+};
 use cli::file_utils::{
-    are_subdirectories_safe, filter_files_by_size, filter_files_for_language, get_files,
-    read_files_from_gitignore,
+    are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
+    filter_files_for_language, get_files, read_files_from_gitignore,
 };
 use cli::model::config_file::{ConfigFile, PathConfig};
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
@@ -17,6 +19,7 @@ use anyhow::{Context, Result};
 use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
+use cli::model::datadog_api::DiffAwareData;
 use cli::path_restrictions::PathRestrictions;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use cli::violations_table;
@@ -130,6 +133,11 @@ fn main() -> Result<()> {
         format!("allow N CPUs at once; if unspecified, defaults to the number of logical cores on the platform or {}, whichever is less", DEFAULT_MAX_CPUS).as_str(),
         "--cpus 5",
     );
+    opts.optflag(
+        "w",
+        "diff-aware",
+        "enable diff-aware scanning (only for Datadog users)",
+    );
     opts.optmulti(
         "p",
         "ignore-path",
@@ -172,6 +180,8 @@ fn main() -> Result<()> {
         exit(1);
     }
 
+    let diff_aware_requested = matches.opt_present("w");
+
     if !matches.opt_present("o") {
         eprintln!("output file not specified");
         print_usage(&program, opts);
@@ -195,7 +205,7 @@ fn main() -> Result<()> {
 
     let use_debug = *matches
         .opt_str("d")
-        .map(|value| value == "yes")
+        .map(|value| value == "yes" || value == "true")
         .get_or_insert(env::var_os("DD_SA_DEBUG").is_some());
     let output_file = matches
         .opt_str("o")
@@ -301,7 +311,7 @@ fn main() -> Result<()> {
         only: only_paths,
     };
 
-    let files_to_analyze = get_files(
+    let files_in_repository = get_files(
         directory_to_analyze.as_str(),
         subdirectories_to_analyze.clone(),
         &path_config,
@@ -362,6 +372,54 @@ fn main() -> Result<()> {
         println!("Skipping checksum verification");
     }
 
+    // check if we do a diff-aware scan
+    let diff_aware_parameters: Option<DiffAwareData> = if diff_aware_requested {
+        match configuration.generate_diff_aware_request_data() {
+            Ok(params) => match get_diff_aware_information(params) {
+                Ok(d) => {
+                    if configuration.use_debug {
+                        println!(
+                            "diff aware enabled, base sha: {}, files to scan {}",
+                            d.base_sha,
+                            d.files.join(",")
+                        );
+                    } else {
+                        println!(
+                            "diff-aware enabled, based sha {}, scanning only {}/{} files",
+                            d.base_sha,
+                            d.files.len(),
+                            files_in_repository.len()
+                        )
+                    }
+                    Some(d)
+                }
+                Err(e) => {
+                    eprintln!("diff aware not enabled (error when receiving diff-aware data from Datadog), proceeding with full scan.");
+                    if configuration.use_debug {
+                        eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
+                    }
+
+                    None
+                }
+            },
+            Err(e) => {
+                eprintln!("diff aware not enabled (unable to generate diff-aware request data), proceeding with full scan.");
+
+                if configuration.use_debug {
+                    eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
+                }
+
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if configuration.use_debug {
+        println!("diff aware data: {:?}", diff_aware_parameters);
+    }
+
     // we always keep one thread free and some room for the management threads that monitor
     // the rule execution.
     let ideal_threads = ((configuration.num_cpus as f32 - 1.0) * 0.90) as usize;
@@ -377,10 +435,29 @@ fn main() -> Result<()> {
         .unwrap()
         .as_secs();
 
-    let files_filtered_by_size = filter_files_by_size(&files_to_analyze, &configuration);
+    let files_filtered_by_size = filter_files_by_size(&files_in_repository, &configuration);
 
+    // if diff-aware is enabled, we filter the files and keep only the files we want to analyze from diff-aware
+    let files_to_analyze = if let Some(dap) = &diff_aware_parameters {
+        filter_files_by_diff_aware_info(&files_filtered_by_size, directory_path, dap)
+    } else {
+        files_filtered_by_size
+    };
+
+    if configuration.use_debug && diff_aware_parameters.is_some() {
+        println!(
+            "{} files to scan with diff-aware: {}",
+            files_to_analyze.len(),
+            files_to_analyze
+                .iter()
+                .map(|x| x.as_os_str().to_str().unwrap().to_string())
+                .join(",")
+        );
+    }
+
+    // Finally run the analysis
     for language in &languages {
-        let files_for_language = filter_files_for_language(&files_filtered_by_size, language);
+        let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
         if files_for_language.is_empty() {
             continue;
@@ -475,7 +552,7 @@ fn main() -> Result<()> {
         .sum();
 
     println!(
-        "Found {} violations in {} files using {} rules within {} secs",
+        "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
         nb_violations,
         total_files_analyzed,
         configuration.rules.len(),
@@ -539,6 +616,7 @@ fn main() -> Result<()> {
             add_git_info,
             configuration.use_debug,
             configuration.generate_diff_aware_digest(),
+            diff_aware_parameters,
         ) {
             Ok(report) => {
                 serde_json::to_string(&report).expect("error when getting the SARIF report")
