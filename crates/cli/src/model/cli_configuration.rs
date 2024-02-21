@@ -1,6 +1,8 @@
 use crate::model::datadog_api::DiffAwareRequestArguments;
 use anyhow::anyhow;
 use git2::Repository;
+use crate::model::config_file::PathConfig;
+use crate::path_restrictions::PathRestrictions;
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::Rule;
 use sha2::{Digest, Sha256};
@@ -13,12 +15,13 @@ pub struct CliConfiguration {
     pub ignore_gitignore: bool,
     pub source_directory: String,
     pub source_subdirectories: Vec<String>,
-    pub ignore_paths: Vec<String>,
+    pub path_config: PathConfig,
     pub rules_file: Option<String>,
     pub output_format: OutputFormat, // SARIF or JSON
     pub output_file: String,
     pub num_cpus: usize, // of cpus to use for parallelism
     pub rules: Vec<Rule>,
+    pub path_restrictions: PathRestrictions,
     pub max_file_size_kb: u64,
     pub use_staging: bool,
 }
@@ -41,8 +44,15 @@ impl CliConfiguration {
 
         // println!("rules string: {}", rules_string.join("|"));
         let full_config_string = format!(
-            "{}:{}:{}::{}:{}",
-            self.ignore_paths.join(","),
+            "{}:{}:{}:{}::{}:{}",
+            self.path_config
+                .ignore
+                .as_ref()
+                .map_or("".to_string(), |v| v.join(",")),
+            self.path_config
+                .only
+                .as_ref()
+                .map_or("".to_string(), |v| v.join(",")),
             self.ignore_gitignore,
             rules_string.join(","),
             self.max_file_size_kb,
@@ -106,7 +116,7 @@ mod tests {
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
             source_subdirectories: vec![],
-            ignore_paths: vec![],
+            path_config: PathConfig::default(),
             rules_file: None,
             output_format: Sarif, // SARIF or JSON
             output_file: "foo".to_string(),
@@ -128,12 +138,13 @@ mod tests {
                 variables: HashMap::new(),
                 tests: vec![],
             }],
+            path_restrictions: PathRestrictions::default(),
             max_file_size_kb: 1,
             use_staging: false,
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "f1c65205be466a08fc4038d6a183e9f782b32fc7b9afc7eef61cae53265aee04"
+            "aadc07afa2ab7afb253e52a9be80bf7a756f953ce1f6de80f8717f0fa9584360"
         );
     }
 }

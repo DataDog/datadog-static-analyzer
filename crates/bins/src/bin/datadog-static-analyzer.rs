@@ -6,7 +6,7 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::model::config_file::ConfigFile;
+use cli::model::config_file::{ConfigFile, PathConfig};
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
@@ -20,6 +20,7 @@ use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
+use cli::path_restrictions::PathRestrictions;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use cli::violations_table;
 use getopts::Options;
@@ -51,10 +52,13 @@ fn print_configuration(configuration: &CliConfiguration) {
 
     let languages = get_languages_for_rules(&configuration.rules);
     let languages_string: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
-    let ignore_paths_str = if configuration.ignore_paths.is_empty() {
-        "no ignore path".to_string()
-    } else {
-        configuration.ignore_paths.join(",")
+    let ignore_paths_str = match &configuration.path_config.ignore {
+        Some(x) if !x.as_slice().is_empty() => x.join(","),
+        _ => "no ignore path".to_string(),
+    };
+    let only_paths_str = match &configuration.path_config.only {
+        Some(x) => x.join(","),
+        None => "all paths".to_string(),
     };
 
     println!("Configuration");
@@ -73,6 +77,7 @@ fn print_configuration(configuration: &CliConfiguration) {
     println!("output file         : {}", configuration.output_file);
     println!("output format       : {}", output_format_str);
     println!("ignore paths        : {}", ignore_paths_str);
+    println!("only paths          : {}", only_paths_str);
     println!("ignore gitignore    : {}", configuration.ignore_gitignore);
     println!(
         "use config file     : {}",
@@ -211,6 +216,7 @@ fn main() -> Result<()> {
     let ignore_paths_from_options = matches.opt_strs("p");
     let directory_to_analyze_option = matches.opt_str("i");
     let subdirectories_to_analyze = matches.opt_strs("u");
+    let mut only_paths: Option<Vec<String>> = None;
 
     let rules_file = matches.opt_str("r");
 
@@ -236,6 +242,7 @@ fn main() -> Result<()> {
     let configuration_file: Option<ConfigFile> =
         read_config_file(directory_to_analyze.as_str()).unwrap();
     let mut rules: Vec<Rule> = Vec::new();
+    let mut path_restrictions = PathRestrictions::default();
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
@@ -250,11 +257,16 @@ fn main() -> Result<()> {
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
         rules.extend(rules_from_api.context("error when reading rules from API")?);
+        path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
 
-        // copy the ignore paths from the configuration file
+        // copy the only and ignore paths from the configuration file
         if let Some(v) = conf.ignore_paths {
             ignore_paths.extend(v);
         }
+        if let Some(v) = conf.paths.ignore {
+            ignore_paths.extend(v);
+        }
+        only_paths = conf.paths.only;
 
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB)
@@ -297,7 +309,7 @@ fn main() -> Result<()> {
     let files_in_repository = get_files(
         directory_to_analyze.as_str(),
         subdirectories_to_analyze.clone(),
-        &ignore_paths,
+        &path_config,
     )
     .expect("unable to get the list of files to analyze");
 
@@ -318,11 +330,12 @@ fn main() -> Result<()> {
         ignore_gitignore,
         source_directory: directory_to_analyze.clone(),
         source_subdirectories: subdirectories_to_analyze.clone(),
-        ignore_paths,
+        path_config,
         rules_file,
         output_format,
         num_cpus,
         rules,
+        path_restrictions,
         output_file,
         max_file_size_kb,
         use_staging,
@@ -482,29 +495,38 @@ fn main() -> Result<()> {
         // take the relative path for the analysis
         let rule_results: Vec<RuleResult> = files_for_language
             .into_par_iter()
-            .flat_map(|path| match fs::read_to_string(&path) {
-                Ok(file_content) => {
-                    let res = analyze(
+            .flat_map(|path| {
+                let relative_path = path
+                    .strip_prefix(directory_path)
+                    .unwrap()
+                    .to_str()
+                    .expect("path contains non-Unicode characters");
+                let mut selected_rules = rules_for_language
+                    .iter()
+                    .filter(|r| {
+                        configuration
+                            .path_restrictions
+                            .rule_applies(&r.name, relative_path)
+                    })
+                    .peekable();
+                let res = if selected_rules.peek().is_none() {
+                    vec![]
+                } else if let Ok(file_content) = fs::read_to_string(&path) {
+                    analyze(
                         language,
-                        &rules_for_language,
-                        path.strip_prefix(directory_path)
-                            .unwrap()
-                            .to_str()
-                            .expect("path contains non-Unicode characters"),
+                        selected_rules,
+                        relative_path,
                         &file_content,
                         &analysis_options,
-                    );
-
-                    if let Some(pb) = &progress_bar {
-                        pb.inc(1);
-                    }
-
-                    res
-                }
-                Err(_) => {
+                    )
+                } else {
                     eprintln!("error when getting content of path {}", &path.display());
                     vec![]
+                };
+                if let Some(pb) = &progress_bar {
+                    pb.inc(1);
                 }
+                res
             })
             .collect();
         all_rule_results.append(rule_results.clone().as_mut());
