@@ -423,35 +423,38 @@ fn main() -> Result<()> {
         // take the relative path for the analysis
         let rule_results: Vec<RuleResult> = files_for_language
             .into_par_iter()
-            .flat_map(|path| match fs::read_to_string(&path) {
-                Ok(file_content) => {
-                    let file_path = path
-                        .strip_prefix(directory_path)
-                        .unwrap()
-                        .to_str()
-                        .expect("path contains non-Unicode characters");
-                    let res = analyze(
+            .flat_map(|path| {
+                let relative_path = path
+                    .strip_prefix(directory_path)
+                    .unwrap()
+                    .to_str()
+                    .expect("path contains non-Unicode characters");
+                let mut selected_rules = rules_for_language
+                    .iter()
+                    .filter(|r| {
+                        configuration
+                            .path_restrictions
+                            .rule_applies(&r.name, relative_path)
+                    })
+                    .peekable();
+                let res = if selected_rules.peek().is_none() {
+                    vec![]
+                } else if let Ok(file_content) = fs::read_to_string(&path) {
+                    analyze(
                         language,
-                        rules_for_language.iter().filter(|r| {
-                            configuration
-                                .path_restrictions
-                                .rule_applies(&r.name, file_path)
-                        }),
-                        file_path,
+                        selected_rules,
+                        relative_path,
                         &file_content,
                         &analysis_options,
-                    );
-
-                    if let Some(pb) = &progress_bar {
-                        pb.inc(1);
-                    }
-
-                    res
-                }
-                Err(_) => {
+                    )
+                } else {
                     eprintln!("error when getting content of path {}", &path.display());
                     vec![]
+                };
+                if let Some(pb) = &progress_bar {
+                    pb.inc(1);
                 }
+                res
             })
             .collect();
         all_rule_results.append(rule_results.clone().as_mut());

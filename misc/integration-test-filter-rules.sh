@@ -7,7 +7,7 @@ REPO_DIR="$(mktemp -d)"
 UNFILTERED_OUTPUT="${REPO_DIR}/results-unfiltered.csv"
 FILTERED_OUTPUT="${REPO_DIR}/results-filtered.csv"
 EXPECTED_FILTERED_OUT='^test/server/verifySpec.ts,typescript-node-security/|^routes.login.ts,typescript-node-security/sql-injection'
-git clone https://github.com/juice-shop/juice-shop.git "${REPO_DIR}"
+git clone --depth=1 https://github.com/juice-shop/juice-shop.git "${REPO_DIR}"
 
 cat << EOT > "${REPO_DIR}/static-analysis.datadog.yml"
 rulesets:
