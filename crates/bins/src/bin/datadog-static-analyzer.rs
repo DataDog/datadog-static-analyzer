@@ -533,7 +533,7 @@ fn main() -> Result<()> {
             serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => match generate_sarif_report(
-            &configuration.rules.to_vec(),
+            &configuration.rules,
             &all_rule_results,
             &directory_to_analyze,
             add_git_info,
