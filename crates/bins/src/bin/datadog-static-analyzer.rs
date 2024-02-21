@@ -306,6 +306,11 @@ fn main() -> Result<()> {
 
     let languages = get_languages_for_rules(&rules);
 
+    let path_config = PathConfig {
+        ignore: Some(ignore_paths),
+        only: only_paths,
+    };
+
     let files_in_repository = get_files(
         directory_to_analyze.as_str(),
         subdirectories_to_analyze.clone(),

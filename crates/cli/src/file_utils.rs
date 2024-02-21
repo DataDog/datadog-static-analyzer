@@ -1,6 +1,6 @@
 use crate::model::cli_configuration::CliConfiguration;
-use crate::model::datadog_api::DiffAwareData;
 use crate::model::config_file::PathConfig;
+use crate::model::datadog_api::DiffAwareData;
 use anyhow::Result;
 use glob_match::glob_match;
 use kernel::model::common::Language;

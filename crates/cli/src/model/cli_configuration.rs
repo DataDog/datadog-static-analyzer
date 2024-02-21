@@ -1,8 +1,8 @@
+use crate::model::config_file::PathConfig;
+
 use crate::model::datadog_api::DiffAwareRequestArguments;
 use anyhow::anyhow;
 use git2::Repository;
-use crate::model::config_file::PathConfig;
-use crate::path_restrictions::PathRestrictions;
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::Rule;
 use sha2::{Digest, Sha256};
