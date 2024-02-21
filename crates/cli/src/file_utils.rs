@@ -279,7 +279,9 @@ pub fn filter_files_by_diff_aware_info(
     directory_path: &Path,
     diff_aware_info: &DiffAwareData,
 ) -> Vec<PathBuf> {
-    let files_to_scan: HashSet<String> = HashSet::from_iter(diff_aware_info.clone().files);
+    let files_to_scan: HashSet<&str> =
+        HashSet::from_iter(diff_aware_info.files.iter().map(|f| f.as_str()));
+
     return files
         .iter()
         .filter(|f| {
@@ -289,7 +291,7 @@ pub fn filter_files_by_diff_aware_info(
                 .to_str()
                 .expect("path contains non-Unicode characters");
 
-            files_to_scan.contains(&p.to_string())
+            files_to_scan.contains(p)
         })
         .cloned()
         .collect();
