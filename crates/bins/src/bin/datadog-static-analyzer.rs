@@ -294,7 +294,7 @@ fn main() -> Result<()> {
 
     let languages = get_languages_for_rules(&rules);
 
-    let files_to_analyze = get_files(
+    let files_in_repository = get_files(
         directory_to_analyze.as_str(),
         subdirectories_to_analyze.clone(),
         &ignore_paths,
@@ -355,8 +355,6 @@ fn main() -> Result<()> {
     }
 
     // check if we do a diff-aware scan
-    // let diff_aware_enabled = false;
-    // let mut diff_aware_parameters: Option<DiffAwareData> = None;
     let diff_aware_parameters: Option<DiffAwareData> = if diff_aware_requested {
         match configuration.generate_diff_aware_request_data() {
             Ok(params) => match get_diff_aware_information(params) {
@@ -372,7 +370,7 @@ fn main() -> Result<()> {
                             "diff-aware enabled, based sha {}, scanning only {}/{} files",
                             d.base_sha,
                             d.files.len(),
-                            files_to_analyze.len()
+                            files_in_repository.len()
                         )
                     }
                     Some(d)
@@ -419,22 +417,21 @@ fn main() -> Result<()> {
         .unwrap()
         .as_secs();
 
-    let files_filtered_by_size = filter_files_by_size(&files_to_analyze, &configuration);
+    let files_filtered_by_size = filter_files_by_size(&files_in_repository, &configuration);
 
     // if diff-aware is enabled, we filter the files and keep only the files we want to analyze from diff-aware
-    let files_filtered_with_diff_aware = if let Some(dap) = diff_aware_parameters.clone() {
-        filter_files_by_diff_aware_info(&files_to_analyze, directory_path, &dap)
+    let files_to_analyze = if let Some(dap) = &diff_aware_parameters {
+        filter_files_by_diff_aware_info(&files_filtered_by_size, directory_path, dap)
     } else {
         files_filtered_by_size
     };
 
     if configuration.use_debug && diff_aware_parameters.is_some() {
-        let files_filtered = files_filtered_with_diff_aware.clone();
         println!(
             "{} files to scan with diff-aware: {}",
-            files_filtered.len(),
-            files_filtered
-                .into_iter()
+            files_to_analyze.len(),
+            files_to_analyze
+                .iter()
                 .map(|x| x.as_os_str().to_str().unwrap().to_string())
                 .join(",")
         );
@@ -442,8 +439,7 @@ fn main() -> Result<()> {
 
     // Finally run the analysis
     for language in &languages {
-        let files_for_language =
-            filter_files_for_language(&files_filtered_with_diff_aware, language);
+        let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
         if files_for_language.is_empty() {
             continue;
