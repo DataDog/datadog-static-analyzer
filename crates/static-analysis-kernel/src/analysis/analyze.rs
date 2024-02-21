@@ -3,6 +3,7 @@ use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
@@ -81,13 +82,17 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
 // 2. Run the tree-sitter query and build the object that hold the match
 // 3. Execute the rule
 // 4. Collect results and errors
-pub fn analyze(
+pub fn analyze<I>(
     language: &Language,
-    rules: &[RuleInternal],
+    rules: I,
     filename: &str,
     code: &str,
     analysis_option: &AnalysisOptions,
-) -> Vec<RuleResult> {
+) -> Vec<RuleResult>
+where
+    I: IntoIterator,
+    I::Item: Borrow<RuleInternal>,
+{
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
     get_tree(code, language).map_or_else(
@@ -99,8 +104,9 @@ pub fn analyze(
         },
         |tree| {
             rules
-                .iter()
+                .into_iter()
                 .map(|rule| {
+                    let rule = rule.borrow();
                     if analysis_option.use_debug {
                         eprintln!("Apply rule {} file {}", rule.name, filename);
                     }

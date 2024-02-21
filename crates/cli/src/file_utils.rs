@@ -1,4 +1,5 @@
 use crate::model::cli_configuration::CliConfiguration;
+use crate::model::config_file::PathConfig;
 use anyhow::Result;
 use glob_match::glob_match;
 use kernel::model::common::Language;
@@ -91,7 +92,7 @@ pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> 
 pub fn get_files(
     directory: &str,
     subdirectories_to_analyze: Vec<String>,
-    paths_to_ignore: &[String],
+    path_config: &PathConfig,
 ) -> Result<Vec<PathBuf>> {
     let mut files_to_return: Vec<PathBuf> = vec![];
 
@@ -123,30 +124,15 @@ pub fn get_files(
             let mut should_include = entry.is_file() && !entry.is_symlink();
             let path_buf = entry.to_path_buf();
 
-            // check if the path should be ignored by a glob or not.
-            for path_to_ignore in paths_to_ignore {
-                // skip empty path to ignore
-                if path_to_ignore.is_empty() {
-                    continue;
-                }
+            let relative_path_str = path_buf
+                .strip_prefix(directory)
+                .ok()
+                .and_then(|p| p.to_str())
+                .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
 
-                let relative_path_str = path_buf
-                    .strip_prefix(directory)
-                    .ok()
-                    .and_then(|p| p.to_str())
-                    .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
-                if glob_match(path_to_ignore.as_str(), relative_path_str) {
-                    should_include = false;
-                }
-
-                let relative_path_res = path_buf.strip_prefix(directory);
-
-                if let Ok(relative_path) = relative_path_res {
-                    if relative_path.starts_with(Path::new(path_to_ignore.as_str())) {
-                        should_include = false;
-                    }
-                }
-            }
+            // check if the path is allowed by the configuration.
+            should_include =
+                should_include && is_allowed_by_path_config(path_config, relative_path_str);
 
             // do not include the git directory.
             if entry.starts_with(git_directory.as_str()) {
@@ -159,6 +145,32 @@ pub fn get_files(
         }
     }
     Ok(files_to_return)
+}
+
+fn matches_pattern(pattern: &str, path: &str) -> bool {
+    if glob_match(pattern, path) {
+        return true;
+    }
+    return Path::new(path).starts_with(Path::new(pattern));
+}
+
+pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
+    if let Some(ignore) = &paths.ignore {
+        if ignore
+            .iter()
+            .filter(|p| !p.is_empty())
+            .any(|pattern| matches_pattern(pattern, file_name))
+        {
+            return false;
+        }
+    }
+    match &paths.only {
+        None => true,
+        Some(only) => only
+            .iter()
+            .filter(|p| !p.is_empty())
+            .any(|pattern| matches_pattern(pattern, file_name)),
+    }
 }
 
 /// try to find if one of the subdirectory used to scan a repository is going outside the
@@ -268,10 +280,12 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::path_restrictions::PathRestrictions;
     use kernel::model::common::OutputFormat::Sarif;
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::env;
     use std::path::Path;
+    use tempfile::{tempdir, TempDir};
 
     #[test]
     fn get_gitignore_exists() {
@@ -325,12 +339,13 @@ mod tests {
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
             source_subdirectories: vec![],
-            ignore_paths: vec![],
+            path_config: PathConfig::default(),
             rules_file: None,
             output_format: Sarif, // SARIF or JSON
             output_file: "foo".to_string(),
             num_cpus: 2, // of cpus to use for parallelism
             rules: vec![],
+            path_restrictions: PathRestrictions::default(),
             max_file_size_kb: 1,
             use_staging: false,
         };
@@ -353,46 +368,130 @@ mod tests {
         assert!(fl.is_empty());
     }
 
+    struct TestDir {
+        dir: TempDir,
+    }
+
+    impl TestDir {
+        fn new() -> Self {
+            TestDir {
+                dir: tempdir().unwrap(),
+            }
+        }
+
+        fn base_path(&self) -> String {
+            self.dir.path().display().to_string()
+        }
+
+        fn add_file(&self, path: &str) {
+            let full_path = self.dir.path().join(path);
+            if let Some(dir) = full_path.parent() {
+                fs::create_dir_all(dir).unwrap();
+            }
+            fs::File::create(full_path).unwrap();
+        }
+    }
+
+    macro_rules! assert_contains_files {
+        ($basepath:expr, $files:expr, $wanted:expr) => {
+            let base_path = Path::new($basepath);
+            let actual_set: HashSet<&PathBuf> = HashSet::from_iter($files.iter());
+            for name in $wanted {
+                assert!(
+                    actual_set.contains(&base_path.join(name)),
+                    "file {} not found in list when it was expected",
+                    name
+                );
+            }
+        };
+    }
+
+    macro_rules! assert_not_contains_files {
+        ($basepath:expr, $files:expr, $wanted:expr) => {
+            let base_path = Path::new($basepath);
+            let actual_set: HashSet<&PathBuf> = HashSet::from_iter($files.iter());
+            for name in $wanted {
+                assert!(
+                    !actual_set.contains(&base_path.join(name)),
+                    "file {} found in list when it was not expected",
+                    name
+                );
+            }
+        };
+    }
+
     // make sure we can get the list of rules from a directory and that the
     // ignore-paths correctly works when we pass a glob.
     #[test]
-    fn get_list_of_files_with_glob() {
-        let current_path = std::env::current_dir().unwrap();
-        let file_to_find = Path::new(current_path.display().to_string().as_str())
-            .join("src")
-            .join("lib.rs");
+    fn get_list_of_files_with_path_config() {
+        let test_dir = TestDir::new();
+        test_dir.add_file("src/a/main.rs");
+        test_dir.add_file("src/a/other.rs");
+        test_dir.add_file("src/b/main.rs");
+        test_dir.add_file("test/a/main.rs");
+        test_dir.add_file("test/a/other.rs");
+        test_dir.add_file("test/b/main.rs");
+        let base_path = test_dir.base_path();
 
         // first, we get the list of files without any path to ignore
-        let empty_paths_to_ignore = vec![];
-        let files = get_files(
-            current_path.display().to_string().as_str(),
-            vec![],
-            &empty_paths_to_ignore,
+        let empty_config = PathConfig::default();
+        let files = get_files(&base_path, vec![], &empty_config).unwrap();
+        assert_contains_files!(
+            &base_path,
+            files,
+            [
+                "src/a/main.rs",
+                "src/b/main.rs",
+                "test/a/main.rs",
+                "test/a/other.rs",
+                "test/b/main.rs",
+            ]
         );
-        assert!(files.is_ok());
-        let f = &files.unwrap();
-        let find_file: Vec<String> = f
-            .iter()
-            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
-            .map(|p| p.display().to_string())
-            .collect();
-        assert_eq!(1, find_file.len());
 
-        // now, we add one path to ignore
-        let ignore_paths = vec!["**/src/**/lib.rs".to_string()];
-        let files = get_files(
-            current_path.display().to_string().as_str(),
-            vec![],
-            &ignore_paths,
+        // now, we add one glob pattern to ignore
+        let path_config = PathConfig {
+            ignore: Some(vec!["src/**/main.rs".to_string()]),
+            only: None,
+        };
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        assert_contains_files!(
+            &base_path,
+            files,
+            [
+                "src/a/other.rs",
+                "test/a/main.rs",
+                "test/a/other.rs",
+                "test/b/main.rs"
+            ]
         );
-        assert!(files.is_ok());
-        let f = &files.unwrap();
-        let find_file: Vec<String> = f
-            .iter()
-            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
-            .map(|p| p.display().to_string())
-            .collect();
-        assert_eq!(0, find_file.len()); // correctly filtered
+        assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "src/b/main.rs"]);
+
+        // now, we add one path prefix to ignore
+        let path_config = PathConfig {
+            ignore: Some(vec!["src/a".to_string()]),
+            only: None,
+        };
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        assert_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs",]);
+        assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);
+
+        // now we add one glob pattern to require
+        let path_config = PathConfig {
+            ignore: None,
+            only: Some(vec!["**/other.rs".to_string()]),
+        };
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        assert_contains_files!(&base_path, files, ["src/a/other.rs", "test/a/other.rs"]);
+        assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "test/a/main.rs"]);
+
+        // now we add one glob path prefix to require
+        let path_config = PathConfig {
+            ignore: None,
+            only: Some(vec!["src/a".to_string()]),
+        };
+        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        assert_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);
+        assert_not_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs"]);
     }
 
     #[test]
@@ -401,72 +500,13 @@ mod tests {
         let subdirectory = Path::new("src").join("sarif");
 
         // first, we get the list of files without any path to ignore
-        let empty_paths_to_ignore = vec![];
         let files = get_files(
             current_path.display().to_string().as_str(),
             vec![subdirectory.into_os_string().into_string().unwrap()],
-            &empty_paths_to_ignore,
+            &PathConfig::default(),
         );
 
         assert_eq!(2, files.unwrap().len());
-    }
-
-    // make sure we can get the list of rules from a directory and that the
-    // ignore-paths correctly works when we pass a prefix.
-    #[test]
-    fn get_list_of_files_with_prefix() {
-        let current_path = std::env::current_dir().unwrap();
-        let file_to_find = Path::new(current_path.display().to_string().as_str())
-            .join("src")
-            .join("lib.rs");
-
-        // now, we one path to ignore, we should filter.
-        let ignore_paths = vec!["src".to_string()];
-        let files = get_files(
-            current_path.display().to_string().as_str(),
-            vec![],
-            &ignore_paths,
-        );
-        assert!(files.is_ok());
-        let f = &files.unwrap();
-        let find_file: Vec<String> = f
-            .iter()
-            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
-            .map(|p| p.display().to_string())
-            .collect();
-        assert_eq!(0, find_file.len()); // correctly filtered
-
-        // now, we add the complete path to ignore, we should filter.
-        let ignore_paths = vec!["src/lib.rs".to_string()];
-        let files = get_files(
-            current_path.display().to_string().as_str(),
-            vec![],
-            &ignore_paths,
-        );
-        assert!(files.is_ok());
-        let f = &files.unwrap();
-        let find_file: Vec<String> = f
-            .iter()
-            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
-            .map(|p| p.display().to_string())
-            .collect();
-        assert_eq!(0, find_file.len()); // correctly filtered
-
-        // now, we add another directory that is totally different, we should not filter.
-        let ignore_paths = vec!["foo".to_string()];
-        let files = get_files(
-            current_path.display().to_string().as_str(),
-            vec![],
-            &ignore_paths,
-        );
-        assert!(files.is_ok());
-        let f = &files.unwrap();
-        let find_file: Vec<String> = f
-            .iter()
-            .filter(|p| p.display().to_string() == file_to_find.display().to_string())
-            .map(|p| p.display().to_string())
-            .collect();
-        assert_eq!(1, find_file.len()); // correctly filtered
     }
 
     // check that we have the correct number of extensions for each language we support.
@@ -494,11 +534,10 @@ mod tests {
     fn test_filter_files_for_language_suffix() {
         let current_path = std::env::current_dir().unwrap();
 
-        let empty_paths_to_ignore = vec![];
         let files = get_files(
             current_path.display().to_string().as_str(),
             vec![],
-            &empty_paths_to_ignore,
+            &PathConfig::default(),
         );
         assert!(files.is_ok());
         let files = &files.unwrap();

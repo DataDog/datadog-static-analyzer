@@ -26,3 +26,4 @@ walkdir = "2.3.3"
 
 [dev-dependencies]
 assert-json-diff = "2.0.2"
+tempfile = "3.10.0"
