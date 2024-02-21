@@ -74,3 +74,20 @@ jobs:
           default: true
       - name: Run Integration Test for JavaScript/TypeScript
         run: ./misc/integration-test-js-ts.sh
+  integration_test_filter_rules:
+    runs-on: ubuntu-latest
+    env:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: ${{ vars.DD_SITE }}
+    steps:
+      - uses: actions/checkout@v1
+      - name: Install Stable + Rustfmt + Clippy
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          components: clippy
+          override: true
+          default: true
+      - name: Run Integration Test for Per-Path Rule Filtering
+        run: ./misc/integration-test-filter-rules.sh
