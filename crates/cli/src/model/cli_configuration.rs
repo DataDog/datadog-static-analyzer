@@ -1,10 +1,14 @@
 use crate::model::config_file::PathConfig;
+use crate::model::datadog_api::DiffAwareRequestArguments;
 use crate::path_restrictions::PathRestrictions;
+
+use anyhow::anyhow;
+use git2::Repository;
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::Rule;
 use sha2::{Digest, Sha256};
 
-/// represents the CLI configuratoin
+/// represents the CLI configuration
 #[derive(Clone)]
 pub struct CliConfiguration {
     pub use_debug: bool,
@@ -28,12 +32,18 @@ impl CliConfiguration {
     /// to run the analysis. To compute the digest, we take the attributes that are important to
     /// run and replicate the analysis such as the ignored paths and rules.
     pub fn generate_diff_aware_digest(&self) -> String {
-        let rules_string: Vec<String> = self
+        let mut rules_string: Vec<String> = self
+            .clone()
             .rules
             .iter()
             .map(|r| r.get_config_hash_string())
             .collect();
 
+        // Important: always make sure the rules string are in the same order so that it does
+        // not depend on the order the API returned the rules.
+        rules_string.sort();
+
+        // println!("rules string: {}", rules_string.join("|"));
         let full_config_string = format!(
             "{}:{}:{}:{}::{}:{}",
             self.path_config.ignore.join(","),
@@ -48,6 +58,43 @@ impl CliConfiguration {
         );
         // compute the hash using sha2
         format!("{:x}", Sha256::digest(full_config_string.as_bytes()))
+    }
+
+    /// Generate the diff-aware data from the configuration. It attempts to read
+    /// the repository from the directory, get the repository information to get
+    /// diff-aware data. If we are not in a repository or cannot get the data
+    /// we need, we return an error.
+    pub fn generate_diff_aware_request_data(&self) -> anyhow::Result<DiffAwareRequestArguments> {
+        let config_hash = self.generate_diff_aware_digest();
+        let repository = Repository::init(&self.source_directory)?;
+        let repository_url = repository
+            .find_remote("origin")?
+            .url()
+            .unwrap_or("")
+            .to_string();
+
+        // let's get the latest commit
+        let head = repository.head()?;
+
+        let oid = head.target();
+
+        match (oid, head.name()) {
+            (Some(o), Some(h)) => Ok(DiffAwareRequestArguments {
+                repository_url,
+                config_hash,
+                sha: o.to_string(),
+                branch: h.to_string(),
+            }),
+            _ => {
+                if self.use_debug {
+                    println!(
+                        "config hash used to attempt to get diff-aware: {}",
+                        config_hash
+                    )
+                }
+                Err(anyhow!("cannot get data for diff-aware scanning"))
+            }
+        }
     }
 }
 

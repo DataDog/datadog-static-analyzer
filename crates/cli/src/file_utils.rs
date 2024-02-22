@@ -1,8 +1,10 @@
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::config_file::PathConfig;
+use crate::model::datadog_api::DiffAwareData;
 use anyhow::Result;
 use glob_match::glob_match;
 use kernel::model::common::Language;
+use std::collections::HashSet;
 use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
@@ -276,6 +278,36 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
         .collect();
 }
 
+/// Filter the files to scan for diff-aware scanning.
+///  - files is the list of files we should scan (full path on disk)
+///  - directory_path is the path of the directory
+///  - diff_aware_info is the information we got from our API about the scan to do with the list of files
+///    and base sha
+/// We return the list of files from the first arguments filtered with the list of files we should effectively
+/// scan. The returned list length must always less or equal than the initial list (first argument).
+pub fn filter_files_by_diff_aware_info(
+    files: &[PathBuf],
+    directory_path: &Path,
+    diff_aware_info: &DiffAwareData,
+) -> Vec<PathBuf> {
+    let files_to_scan: HashSet<&str> =
+        HashSet::from_iter(diff_aware_info.files.iter().map(|f| f.as_str()));
+
+    return files
+        .iter()
+        .filter(|f| {
+            let p = f
+                .strip_prefix(directory_path)
+                .unwrap()
+                .to_str()
+                .expect("path contains non-Unicode characters");
+
+            files_to_scan.contains(p)
+        })
+        .cloned()
+        .collect();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +387,28 @@ mod tests {
         d.push("resources/test/test_files_by_size/versions-empty.json");
         files2.push(d);
         assert_eq!(1, filter_files_by_size(&files2, &cli_configuration).len());
+    }
+
+    /// Filter files based on diff-aware returned files
+    #[test]
+    fn test_filter_files_by_diff_aware_info() {
+        let mut files = vec![];
+        files.push(PathBuf::from("/path/to/repo/path/to/file1.py"));
+        files.push(PathBuf::from("/path/to/repo/path/to/file2.py"));
+
+        let repository_path = Path::new("/path/to/repo/");
+
+        let diff_aware_info = DiffAwareData {
+            files: vec!["path/to/file2.py".to_string()],
+            base_sha: "9f3f1e85b0b180a753612db3c0abe2c775b1588b".to_string(),
+        };
+
+        let res = filter_files_by_diff_aware_info(&files, repository_path, &diff_aware_info);
+        assert_eq!(1, res.len());
+        assert_eq!(
+            "/path/to/repo/path/to/file2.py".to_string(),
+            res.get(0).unwrap().to_str().unwrap().to_string()
+        );
     }
 
     #[test]
