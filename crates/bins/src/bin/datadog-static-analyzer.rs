@@ -52,9 +52,10 @@ fn print_configuration(configuration: &CliConfiguration) {
 
     let languages = get_languages_for_rules(&configuration.rules);
     let languages_string: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
-    let ignore_paths_str = match &configuration.path_config.ignore {
-        Some(x) if !x.as_slice().is_empty() => x.join(","),
-        _ => "no ignore path".to_string(),
+    let ignore_paths_str = if configuration.path_config.ignore.is_empty() {
+        "no ignore path".to_string()
+    } else {
+        configuration.path_config.ignore.join(",")
     };
     let only_paths_str = match &configuration.path_config.only {
         Some(x) => x.join(","),
@@ -211,12 +212,13 @@ fn main() -> Result<()> {
         .opt_str("o")
         .context("output file must be specified")?;
 
-    // Show the ignore paths
-    let mut ignore_paths: Vec<String> = Vec::new();
+    let mut path_config = PathConfig {
+        ignore: Vec::new(),
+        only: None,
+    };
     let ignore_paths_from_options = matches.opt_strs("p");
     let directory_to_analyze_option = matches.opt_str("i");
     let subdirectories_to_analyze = matches.opt_strs("u");
-    let mut only_paths: Option<Vec<String>> = None;
 
     let rules_file = matches.opt_str("r");
 
@@ -260,13 +262,8 @@ fn main() -> Result<()> {
         path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
 
         // copy the only and ignore paths from the configuration file
-        if let Some(v) = conf.ignore_paths {
-            ignore_paths.extend(v);
-        }
-        if let Some(v) = conf.paths.ignore {
-            ignore_paths.extend(v);
-        }
-        only_paths = conf.paths.only;
+        path_config.ignore.extend(conf.paths.ignore);
+        path_config.only = conf.paths.only;
 
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB)
@@ -296,20 +293,17 @@ fn main() -> Result<()> {
     }
 
     // add ignore path from the options
-    ignore_paths.extend(ignore_paths_from_options);
+    path_config.ignore.extend(ignore_paths_from_options);
 
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
         let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str());
-        ignore_paths.extend(paths_from_gitignore.expect("error when reading gitignore file"));
+        path_config
+            .ignore
+            .extend(paths_from_gitignore.expect("error when reading gitignore file"));
     }
 
     let languages = get_languages_for_rules(&rules);
-
-    let path_config = PathConfig {
-        ignore: Some(ignore_paths),
-        only: only_paths,
-    };
 
     let files_in_repository = get_files(
         directory_to_analyze.as_str(),

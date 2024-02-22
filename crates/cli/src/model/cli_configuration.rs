@@ -46,10 +46,7 @@ impl CliConfiguration {
         // println!("rules string: {}", rules_string.join("|"));
         let full_config_string = format!(
             "{}:{}:{}:{}::{}:{}",
-            self.path_config
-                .ignore
-                .as_ref()
-                .map_or("".to_string(), |v| v.join(",")),
+            self.path_config.ignore.join(","),
             self.path_config
                 .only
                 .as_ref()

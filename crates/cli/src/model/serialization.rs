@@ -59,13 +59,13 @@ where
 /// Deserializer for a `RuleConfig` map which rejects duplicate rules.
 pub fn deserialize_ruleconfigs<'de, D>(
     deserializer: D,
-) -> Result<Option<HashMap<String, RuleConfig>>, D::Error>
+) -> Result<HashMap<String, RuleConfig>, D::Error>
 where
     D: Deserializer<'de>,
 {
     struct RuleConfigVisitor {}
     impl<'de> Visitor<'de> for RuleConfigVisitor {
-        type Value = Option<HashMap<String, RuleConfig>>;
+        type Value = HashMap<String, RuleConfig>;
 
         fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
             formatter.write_str("an optional map from string to rule configuration")
@@ -82,11 +82,7 @@ where
                     return Err(Error::custom(format!("found duplicate rule: {}", k)));
                 }
             }
-            if out.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(out))
-            }
+            Ok(out)
         }
     }
     deserializer.deserialize_any(RuleConfigVisitor {})

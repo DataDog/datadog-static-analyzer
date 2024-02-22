@@ -100,22 +100,16 @@ rulesets:
                     RulesetConfig {
                         paths: PathConfig {
                             only: Some(vec!["one/two".to_string(), "foo/**/*.go".to_string()]),
-                            ignore: Some(vec![
-                                "tres/cuatro".to_string(),
-                                "bar/**/*.go".to_string(),
-                            ]),
+                            ignore: vec!["tres/cuatro".to_string(), "bar/**/*.go".to_string()],
                         },
-                        rules: None,
+                        rules: HashMap::new(),
                     },
                 ),
                 (
                     "java-security".to_string(),
                     RulesetConfig {
                         paths: PathConfig::default(),
-                        rules: Some(HashMap::from([(
-                            "random-iv".to_string(),
-                            RuleConfig::default(),
-                        )])),
+                        rules: HashMap::from([("random-iv".to_string(), RuleConfig::default())]),
                     },
                 ),
             ]),
@@ -180,15 +174,15 @@ rulesets:
                 "python-security".to_string(),
                 RulesetConfig {
                     paths: PathConfig::default(),
-                    rules: Some(HashMap::from([(
+                    rules: HashMap::from([(
                         "no-eval".to_string(),
                         RuleConfig {
                             paths: PathConfig {
                                 only: Some(vec!["py/**".to_string()]),
-                                ignore: Some(vec!["py/insecure/**".to_string()]),
+                                ignore: vec!["py/insecure/**".to_string()],
                             },
                         },
-                    )])),
+                    )]),
                 },
             )]),
             ..ConfigFile::default()
@@ -266,9 +260,12 @@ max-file-size-kb: 512
             rulesets: HashMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
                 only: Some(vec!["py/**/foo/*.py".to_string()]),
-                ignore: Some(vec!["py/testing/*.py".to_string()]),
+                ignore: vec![
+                    "py/testing/*.py".to_string(),
+                    "**/test/**".to_string(),
+                    "path1".to_string(),
+                ],
             },
-            ignore_paths: Some(vec!["**/test/**".to_string(), "path1".to_string()]),
             ignore_gitignore: Some(false),
             max_file_size_kb: Some(512),
         };
