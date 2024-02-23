@@ -6,7 +6,7 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::model::config_file::{ConfigFile, PathConfig};
+use cli::model::config_file::{ConfigFileWithWarnings, PathConfig};
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
@@ -241,14 +241,21 @@ fn main() -> Result<()> {
         exit(1)
     }
 
-    let configuration_file: Option<ConfigFile> =
+    let configuration_file: Option<ConfigFileWithWarnings> =
         read_config_file(directory_to_analyze.as_str()).unwrap();
     let mut rules: Vec<Rule> = Vec::new();
     let mut path_restrictions = PathRestrictions::default();
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
-    if let Some(conf) = configuration_file {
+    if let Some(conf_and_info) = configuration_file {
+        let conf = conf_and_info.config_file;
+        if !conf_and_info.warnings.is_empty() {
+            for msg in conf_and_info.warnings {
+                eprintln!("Warning: {}", msg);
+            }
+        }
+
         use_configuration_file = true;
         ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
         if rules_file.is_some() {

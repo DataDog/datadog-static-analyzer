@@ -1,4 +1,4 @@
-use crate::model::config_file::{RuleConfig, RulesetConfig};
+use crate::model::config_file::{RuleConfig, RulesetConfig, RulesetConfigWithWarning};
 use serde;
 use serde::de::{Error, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
@@ -14,13 +14,13 @@ use std::fmt::Formatter;
 /// Duplicate rulesets are rejected.
 pub fn deserialize_rulesetconfigs<'de, D>(
     deserializer: D,
-) -> Result<HashMap<String, RulesetConfig>, D::Error>
+) -> Result<HashMap<String, RulesetConfigWithWarning>, D::Error>
 where
     D: Deserializer<'de>,
 {
     struct RulesetConfigsVisitor {}
     impl<'de> Visitor<'de> for RulesetConfigsVisitor {
-        type Value = HashMap<String, RulesetConfig>;
+        type Value = HashMap<String, RulesetConfigWithWarning>;
 
         fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
             formatter.write_str("a list of strings or map from string to ruleset configuration")
@@ -33,7 +33,11 @@ where
         {
             let mut out = HashMap::new();
             while let Some(nrc) = seq.next_element::<NamedRulesetConfig>()? {
-                if out.insert(nrc.name.clone(), nrc.cfg).is_some() {
+                let rrc = RulesetConfigWithWarning {
+                    config: nrc.cfg,
+                    warning: nrc.warning,
+                };
+                if out.insert(nrc.name.clone(), rrc).is_some() {
                     return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
                 }
             }
@@ -47,7 +51,11 @@ where
         {
             let mut out = HashMap::new();
             while let Some((k, v)) = map.next_entry::<String, RulesetConfig>()? {
-                if out.insert(k.clone(), v).is_some() {
+                let rrc = RulesetConfigWithWarning {
+                    config: v,
+                    warning: None,
+                };
+                if out.insert(k.clone(), rrc).is_some() {
                     return Err(Error::custom(format!("found duplicate ruleset: {}", k)));
                 }
             }
@@ -61,6 +69,7 @@ where
 struct NamedRulesetConfig {
     name: String,
     cfg: RulesetConfig,
+    warning: Option<String>,
 }
 
 /// Special deserializer for ruleset list items.
@@ -125,6 +134,7 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
                 Ok(NamedRulesetConfig {
                     name: v,
                     cfg: RulesetConfig::default(),
+                    warning: None,
                 })
             }
 
@@ -136,7 +146,11 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
                     None => {
                         return Err(Error::missing_field("name"));
                     }
-                    Some((k, v)) => NamedRulesetConfig { name: k, cfg: v },
+                    Some((k, v)) => NamedRulesetConfig {
+                        name: k.clone(),
+                        cfg: v,
+                        warning: None,
+                    },
                 };
                 // If the user forgot to indent, we populate the object field by field.
                 while let Some(x) = map.next_key::<String>()? {
@@ -170,6 +184,14 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
                         }
                     }
                 }
+                let mut warning = format!(
+                    "Ruleset `{}` specified as a list item, not as a map entry.",
+                    out.name
+                );
+                if let Some(didyoumean) = serialize_ruleset(&out.name, &out.cfg) {
+                    warning.push_str(format!("\nDid you mean...?\n{}\n", didyoumean).as_str());
+                }
+                out.warning = Some(warning);
                 Ok(out)
             }
         }
@@ -207,4 +229,22 @@ where
         }
     }
     deserializer.deserialize_any(RuleConfigVisitor {})
+}
+
+fn serialize_ruleset(name: &str, rc: &RulesetConfig) -> Option<String> {
+    let rc_str = {
+        let raw_rc_str = serde_yaml::to_string(rc).ok()?;
+        if raw_rc_str == "{}\n" {
+            "".to_string()
+        } else {
+            "\n".to_string()
+                + raw_rc_str
+                    .lines()
+                    .map(|l| "    ".to_string() + l)
+                    .collect::<Vec<String>>()
+                    .join("\n")
+                    .as_str()
+        }
+    };
+    Some(format!("  {}:{}", name, rc_str))
 }

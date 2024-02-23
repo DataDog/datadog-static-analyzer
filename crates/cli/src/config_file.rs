@@ -6,7 +6,7 @@ use std::path::Path;
 use crate::constants;
 use crate::model;
 
-fn parse_config_file(config_contents: &str) -> Result<model::config_file::ConfigFile> {
+fn parse_config_file(config_contents: &str) -> Result<model::config_file::ConfigFileWithWarnings> {
     Ok(serde_yaml::from_str(config_contents)?)
 }
 
@@ -14,7 +14,7 @@ fn parse_config_file(config_contents: &str) -> Result<model::config_file::Config
 // If it fails, we try to read static-analysis.datadog.yaml
 // If the file does not exist, we return a Ok(None).
 // If there is an error reading the file, we return a failure
-pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigFile>> {
+pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigFileWithWarnings>> {
     let yml_file_path = Path::new(path).join(format!(
         "{}.yml",
         constants::DATADOG_CONFIG_FILE_WITHOUT_PREFIX
@@ -72,7 +72,7 @@ rulesets:
         };
 
         let res = parse_config_file(data);
-        assert_eq!(expected, res.unwrap());
+        assert_eq!(expected, res.unwrap().config_file);
     }
 
     // `rulesets` parsed as a map from rule name to config.
@@ -117,7 +117,7 @@ rulesets:
         };
 
         let res = parse_config_file(data);
-        assert_eq!(expected, res.unwrap());
+        assert_eq!(expected, res.unwrap().config_file);
     }
 
     // Parse improperly formatted YAML where the rulesets are lists of maps
@@ -165,7 +165,7 @@ rulesets:
         };
 
         let res = parse_config_file(data);
-        assert_eq!(expected, res.unwrap());
+        assert_eq!(expected, res.unwrap().config_file);
     }
 
     // Cannot have repeated ruleset configurations.
@@ -224,7 +224,7 @@ rulesets:
         };
 
         let res = parse_config_file(data);
-        assert_eq!(expected, res.unwrap());
+        assert_eq!(expected, res.unwrap().config_file);
     }
 
     // Rules cannot be specified as lists of strings or maps.
@@ -306,7 +306,7 @@ max-file-size-kb: 512
         };
 
         let res = parse_config_file(data);
-        assert_eq!(expected, res.unwrap());
+        assert_eq!(expected, res.unwrap().config_file);
     }
 
     // No ruleset available in the data means that we have no configuration file
