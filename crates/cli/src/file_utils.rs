@@ -1,14 +1,19 @@
-use crate::model::cli_configuration::CliConfiguration;
-use crate::model::config_file::PathConfig;
-use crate::model::datadog_api::DiffAwareData;
-use anyhow::Result;
-use glob_match::glob_match;
-use kernel::model::common::Language;
 use std::collections::HashSet;
 use std::fs;
 use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
+
+use anyhow::Result;
+use glob_match::glob_match;
+use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
+
+use kernel::model::common::Language;
+use kernel::model::violation::Violation;
+
+use crate::model::cli_configuration::CliConfiguration;
+use crate::model::config_file::PathConfig;
+use crate::model::datadog_api::DiffAwareData;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Csharp, &["cs"]),
@@ -308,15 +313,64 @@ pub fn filter_files_by_diff_aware_info(
         .collect();
 }
 
+/// Generate a fingerprint for a violation that will uniquely identify the violation. The fingerprint is calculated
+/// as is
+///  SHA2(<file-location-in-repository> - <characters-in-directory> - <content-of-code-line> - <number of characters in line>)
+pub fn get_fingerprint_for_violation(
+    violation: &Violation,
+    repository_root: &str,
+    file: &str,
+    use_debug: bool,
+) -> Option<String> {
+    let path = Path::new(repository_root).join(file);
+    if !path.exists() || !path.is_file() {
+        return None;
+    }
+    let line = violation.start.line as usize;
+
+    match read_to_string(&path) {
+        Ok(file_content) => match file_content.lines().nth(line - 1) {
+            Some(line_content) => {
+                let line_content_stripped = line_content.replace(' ', "");
+                let hash_content = format!(
+                    "{}-{}-{}-{}",
+                    file,
+                    file.len(),
+                    line_content_stripped,
+                    line_content_stripped.len()
+                );
+                let hash = format!("{:x}", Sha256::digest(hash_content.as_bytes()));
+                Some(hash)
+            }
+            None => None,
+        },
+        Err(_) => {
+            if use_debug {
+                eprintln!(
+                    "Error when trying to read file {}",
+                    path.into_os_string().to_str().unwrap_or("")
+                );
+            }
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::path_restrictions::PathRestrictions;
-    use kernel::model::common::OutputFormat::Sarif;
     use std::collections::{HashMap, HashSet};
     use std::env;
     use std::path::Path;
+
     use tempfile::{tempdir, TempDir};
+
+    use kernel::model::common::OutputFormat::Sarif;
+    use kernel::model::common::Position;
+    use kernel::model::rule::{RuleCategory, RuleSeverity};
+
+    use crate::path_restrictions::PathRestrictions;
+
+    use super::*;
 
     #[test]
     fn get_gitignore_exists() {
@@ -337,6 +391,39 @@ mod tests {
                 .collect::<Vec<&String>>()
                 .len()
         )
+    }
+
+    #[test]
+    fn get_fingerprint_for_violation_success() {
+        let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let violation = Violation {
+            start: Position { line: 10, col: 1 },
+            end: Position { line: 12, col: 1 },
+            message: "something bad happened".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Performance,
+            fixes: vec![],
+        };
+        let directory_string = d.into_os_string().into_string().unwrap();
+        let fingerprint = get_fingerprint_for_violation(
+            &violation,
+            &directory_string,
+            "resources/test/gitignore/test1",
+            false,
+        );
+        assert!(!fingerprint.is_none());
+        assert_eq!(
+            fingerprint.unwrap(),
+            "d21ffb61a8b8ac31e1defb337faf11c9b92fc011f29eb3dc35f88fd5e145cd17".to_string()
+        );
+
+        let fingerprint_unknown_file = get_fingerprint_for_violation(
+            &violation,
+            &directory_string,
+            "path/does/not/exists",
+            false,
+        );
+        assert!(fingerprint_unknown_file.is_none());
     }
 
     #[test]

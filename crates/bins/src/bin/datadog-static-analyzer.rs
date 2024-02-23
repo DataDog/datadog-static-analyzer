@@ -369,7 +369,7 @@ fn main() -> Result<()> {
     // check if we do a diff-aware scan
     let diff_aware_parameters: Option<DiffAwareData> = if diff_aware_requested {
         match configuration.generate_diff_aware_request_data() {
-            Ok(params) => match get_diff_aware_information(params) {
+            Ok(params) => match get_diff_aware_information(&params) {
                 Ok(d) => {
                     if configuration.use_debug {
                         println!(
@@ -388,7 +388,7 @@ fn main() -> Result<()> {
                     Some(d)
                 }
                 Err(e) => {
-                    eprintln!("diff aware not enabled (error when receiving diff-aware data from Datadog), proceeding with full scan.");
+                    eprintln!("diff aware not enabled (error when receiving diff-aware data from Datadog with config hash {}, sha {}), proceeding with full scan.", &params.config_hash, &params.sha);
                     if configuration.use_debug {
                         eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
                     }

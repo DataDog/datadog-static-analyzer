@@ -177,7 +177,7 @@ pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
 /// to analyze and the base sha (e.g. the sha we used in the past to find
 /// the list of files). Those information will later be added in the
 /// results.
-pub fn get_diff_aware_information(arguments: DiffAwareRequestArguments) -> Result<DiffAwareData> {
+pub fn get_diff_aware_information(arguments: &DiffAwareRequestArguments) -> Result<DiffAwareData> {
     let site = get_datadog_site(false);
     let app_key = get_datadog_variable_value("APP_KEY")?;
     let api_key = get_datadog_variable_value("API_KEY")?;
@@ -195,10 +195,10 @@ pub fn get_diff_aware_information(arguments: DiffAwareRequestArguments) -> Resul
             request_type: "diff_aware_request".to_string(),
             attributes: DiffAwareRequestDataAttributes {
                 id: request_uuid.clone(),
-                repository_url: arguments.repository_url,
-                sha: arguments.sha,
-                branch: arguments.branch,
-                config_hash: arguments.config_hash,
+                repository_url: arguments.repository_url.clone(),
+                sha: arguments.sha.clone(),
+                branch: arguments.branch.clone(),
+                config_hash: arguments.config_hash.clone(),
             },
         },
     };
