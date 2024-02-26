@@ -331,7 +331,10 @@ pub fn get_fingerprint_for_violation(
     match read_to_string(&path) {
         Ok(file_content) => match file_content.lines().nth(line - 1) {
             Some(line_content) => {
-                let line_content_stripped = line_content.replace(' ', "");
+                let line_content_stripped = line_content
+                    .chars()
+                    .filter(|ch| !ch.is_whitespace())
+                    .collect::<String>();
                 let hash_content = format!(
                     "{}-{}-{}-{}",
                     file,
