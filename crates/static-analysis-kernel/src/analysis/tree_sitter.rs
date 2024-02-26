@@ -4,10 +4,6 @@ use anyhow::Result;
 use std::collections::HashMap;
 use tree_sitter::QueryCursor;
 
-// Swift is implemented differently. While most languages are integrated from sources,
-// the sources from the swift tree-sitter syntax do not compile and the rust package works.
-use tree_sitter_swift::language as swift_language;
-
 fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
         fn tree_sitter_c_sharp() -> tree_sitter::Language;
@@ -20,6 +16,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_python() -> tree_sitter::Language;
         fn tree_sitter_ruby() -> tree_sitter::Language;
         fn tree_sitter_rust() -> tree_sitter::Language;
+        fn tree_sitter_swift() -> tree_sitter::Language;
         fn tree_sitter_tsx() -> tree_sitter::Language;
         fn tree_sitter_hcl() -> tree_sitter::Language;
         fn tree_sitter_yaml() -> tree_sitter::Language;
@@ -37,7 +34,7 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Python => unsafe { tree_sitter_python() },
         Language::Ruby => unsafe { tree_sitter_ruby() },
         Language::Rust => unsafe { tree_sitter_rust() },
-        Language::Swift => swift_language(),
+        Language::Swift => unsafe { tree_sitter_swift() },
         Language::Terraform => unsafe { tree_sitter_hcl() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
         Language::Yaml => unsafe { tree_sitter_yaml() },
@@ -48,14 +45,16 @@ fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
 pub fn get_tree(code: &str, language: &Language) -> Option<tree_sitter::Tree> {
     let mut tree_sitter_parser = tree_sitter::Parser::new();
     let tree_sitter_language = get_tree_sitter_language(language);
-    tree_sitter_parser.set_language(tree_sitter_language).ok()?;
+    tree_sitter_parser
+        .set_language(&tree_sitter_language)
+        .ok()?;
     tree_sitter_parser.parse(code, None)
 }
 
 // build the query from tree-sitter
 pub fn get_query(query_code: &str, language: &Language) -> Result<tree_sitter::Query> {
     let tree_sitter_language = get_tree_sitter_language(language);
-    Ok(tree_sitter::Query::new(tree_sitter_language, query_code)?)
+    Ok(tree_sitter::Query::new(&tree_sitter_language, query_code)?)
 }
 
 // Get all the match nodes based on a query. For each match, we build a `MatchNode`
@@ -88,11 +87,9 @@ pub fn get_query_nodes(
 
             if let (Some(capture_name), Some(node)) = (capture_name_opt, node_opt) {
                 captures.insert(capture_name.to_string(), node.clone());
-                if !captures_list.contains_key(capture_name) {
-                    captures_list.insert(capture_name.to_string(), vec![]);
-                }
+                captures_list.entry(capture_name.to_string()).or_default();
                 captures_list
-                    .get_mut(capture_name)
+                    .get_mut(&capture_name.to_string())
                     .unwrap()
                     .push(node.clone());
             }
