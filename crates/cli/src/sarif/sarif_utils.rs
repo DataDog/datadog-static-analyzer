@@ -13,6 +13,7 @@ use serde_sarif::sarif::{
     Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
+use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
 use kernel::model::rule::RuleSeverity;
 use kernel::model::{
     common::PositionBuilder,
@@ -356,13 +357,15 @@ fn generate_results(
                 let partial_fingerprints: BTreeMap<String, String> =
                     match (sha_option, fingerprint_option) {
                         (Some(sha), Some(fp)) => BTreeMap::from([
-                            ("SHA".to_string(), sha),
-                            ("DATADOG_FINGERPRINT".to_string(), fp),
+                            (SARIF_PROPERTY_SHA.to_string(), sha),
+                            (SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(), fp),
                         ]),
                         (None, Some(fp)) => {
-                            BTreeMap::from([("DATADOG_FINGERPRINT".to_string(), fp)])
+                            BTreeMap::from([(SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(), fp)])
                         }
-                        (Some(sha), None) => BTreeMap::from([("SHA".to_string(), sha)]),
+                        (Some(sha), None) => {
+                            BTreeMap::from([(SARIF_PROPERTY_SHA.to_string(), sha)])
+                        }
                         _ => BTreeMap::new(),
                     };
 
