@@ -357,7 +357,7 @@ fn generate_results(
                     match (sha_option, fingerprint_option) {
                         (Some(sha), Some(fp)) => BTreeMap::from([
                             ("SHA".to_string(), sha),
-                            ("FINGERPRINT".to_string(), fp),
+                            ("DATADOG_FINGERPRINT".to_string(), fp),
                         ]),
                         (None, Some(fp)) => {
                             BTreeMap::from([("DATADOG_FINGERPRINT".to_string(), fp)])
