@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+use std::path::Path;
+use std::rc::Rc;
+
 use anyhow::Result;
 use base64::Engine;
 use git2::{BlameOptions, Repository};
@@ -9,17 +13,16 @@ use serde_sarif::sarif::{
     Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
-use std::collections::BTreeMap;
-use std::path::Path;
-use std::rc::Rc;
-
-use crate::model::datadog_api::DiffAwareData;
+use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
 use kernel::model::rule::RuleSeverity;
 use kernel::model::{
     common::PositionBuilder,
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
 };
+
+use crate::file_utils::get_fingerprint_for_violation;
+use crate::model::datadog_api::DiffAwareData;
 
 trait IntoSarif {
     type SarifType;
@@ -37,6 +40,7 @@ pub struct SarifGenerationOptions {
     pub debug: bool,
     pub config_digest: String,
     pub diff_aware_parameters: Option<DiffAwareData>,
+    pub repository_directory: String,
 }
 
 impl IntoSarif for &Rule {
@@ -342,10 +346,28 @@ fn generate_results(
                     violation.start.line as usize,
                     &options,
                 );
-                let partial_fingerprints: BTreeMap<String, String> = match sha_option {
-                    Some(s) => BTreeMap::from([("SHA".to_string(), s)]),
-                    None => BTreeMap::new(),
-                };
+
+                let fingerprint_option = get_fingerprint_for_violation(
+                    violation,
+                    Path::new(options.repository_directory.as_str()),
+                    Path::new(rule_result.filename.as_str()),
+                    options.debug,
+                );
+
+                let partial_fingerprints: BTreeMap<String, String> =
+                    match (sha_option, fingerprint_option) {
+                        (Some(sha), Some(fp)) => BTreeMap::from([
+                            (SARIF_PROPERTY_SHA.to_string(), sha),
+                            (SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(), fp),
+                        ]),
+                        (None, Some(fp)) => {
+                            BTreeMap::from([(SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(), fp)])
+                        }
+                        (Some(sha), None) => {
+                            BTreeMap::from([(SARIF_PROPERTY_SHA.to_string(), sha)])
+                        }
+                        _ => BTreeMap::new(),
+                    };
 
                 Ok(result_builder
                     .clone()
@@ -402,6 +424,7 @@ pub fn generate_sarif_report(
         debug,
         config_digest,
         diff_aware_parameters,
+        repository_directory: directory.clone(),
     };
 
     let run = RunBuilder::default()
@@ -417,16 +440,19 @@ pub fn generate_sarif_report(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use std::collections::HashMap;
+
     use assert_json_diff::assert_json_eq;
+    use serde_json::{from_str, Value};
+    use valico::json_schema;
+
     use kernel::model::{
         common::{Language, PositionBuilder},
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
-    use serde_json::{from_str, Value};
-    use std::collections::HashMap;
-    use valico::json_schema;
+
+    use super::*;
 
     /// Validate JSON data against the SARIF schema
     fn validate_data(v: &Value) -> bool {
