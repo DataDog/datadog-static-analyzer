@@ -318,11 +318,12 @@ pub fn filter_files_by_diff_aware_info(
 ///  SHA2(<file-location-in-repository> - <characters-in-directory> - <content-of-code-line> - <number of characters in line>)
 pub fn get_fingerprint_for_violation(
     violation: &Violation,
-    repository_root: &str,
-    file: &str,
+    repository_root: &Path,
+    file: &Path,
     use_debug: bool,
 ) -> Option<String> {
-    let path = Path::new(repository_root).join(file);
+    let path = repository_root.join(file);
+    let filename = file.to_str().unwrap_or("");
     if !path.exists() || !path.is_file() {
         return None;
     }
@@ -337,8 +338,8 @@ pub fn get_fingerprint_for_violation(
                     .collect::<String>();
                 let hash_content = format!(
                     "{}-{}-{}-{}",
-                    file,
-                    file.len(),
+                    filename,
+                    filename.len(),
                     line_content_stripped,
                     line_content_stripped.len()
                 );
@@ -410,8 +411,8 @@ mod tests {
         let directory_string = d.into_os_string().into_string().unwrap();
         let fingerprint = get_fingerprint_for_violation(
             &violation,
-            &directory_string,
-            "resources/test/gitignore/test1",
+            Path::new(directory_string.as_str()),
+            Path::new("resources/test/gitignore/test1"),
             false,
         );
         assert!(!fingerprint.is_none());
@@ -422,8 +423,8 @@ mod tests {
 
         let fingerprint_unknown_file = get_fingerprint_for_violation(
             &violation,
-            &directory_string,
-            "path/does/not/exists",
+            Path::new(directory_string.as_str()),
+            Path::new("path/does/not/exists"),
             false,
         );
         assert!(fingerprint_unknown_file.is_none());
