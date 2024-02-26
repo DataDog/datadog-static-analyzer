@@ -120,17 +120,52 @@ rulesets:
         assert_eq!(expected, res.unwrap());
     }
 
-    // Catch the incorrect configuration where the rulesets are a list of maps.
+    // Parse improperly formatted YAML where the rulesets are lists of maps
+    // or mixed lists of strings and maps.
     #[test]
-    fn test_cannot_parse_rulesets_as_list_of_maps() {
+    fn test_parse_rulesets_as_list_of_strings_and_maps() {
         let data = r#"
 rulesets:
-  - c-best-practices:
+  - c-best-practices
+  - rust-best-practices:
   - go-best-practices:
+    only:
+      - "foo"
+  - python-best-practices:
+      ignore:
+        - "bar"
     "#;
 
+        let expected = ConfigFile {
+            rulesets: HashMap::from([
+                ("c-best-practices".to_string(), RulesetConfig::default()),
+                ("rust-best-practices".to_string(), RulesetConfig::default()),
+                (
+                    "go-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            only: Some(vec!["foo".to_string()]),
+                            ignore: vec![],
+                        },
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "python-best-practices".to_string(),
+                    RulesetConfig {
+                        paths: PathConfig {
+                            only: None,
+                            ignore: vec!["bar".to_string()],
+                        },
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            ..ConfigFile::default()
+        };
+
         let res = parse_config_file(data);
-        assert!(res.is_err());
+        assert_eq!(expected, res.unwrap());
     }
 
     // Cannot have repeated ruleset configurations.
