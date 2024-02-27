@@ -189,9 +189,9 @@ fn main() {
         TreeSitterProject {
             name: "tree-sitter-swift".to_string(),
             compilation_unit: "tree-sitter-swift".to_string(),
-            repository: "https://github.com/juli1/tree-sitter-swift.git".to_string(),
+            repository: "https://github.com/alex-pinkus/tree-sitter-swift.git".to_string(),
             build_dir: "src".into(),
-            commit_hash: "e173c5fbe928dd95165c016e72c17fa2e97c5369".to_string(),
+            commit_hash: "b1b66955d420d5cf5ff268ae552f0d6e43ff66e1".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
