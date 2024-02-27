@@ -22,6 +22,11 @@ function StellaError(startLine, startCol, endLine, endCol, message, severity, ca
 function StellaConsole(startLine, startCol, endLine, endCol, message, severity, category) {
   this.lines = [];
   this.log = function (message) {
+    if (Array.isArray(message) || typeof message === "object") {
+      this.lines.push(JSON.stringify(message));
+      return;
+    }
+
     this.lines.push("" + message);
   }
 }

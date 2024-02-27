@@ -526,6 +526,7 @@ def foo(arg1):
 
     #[test]
     fn test_execute_with_console() {
+        // Test for a string
         let q = r#"
 (function_definition
     name: (identifier) @name
@@ -533,10 +534,33 @@ def foo(arg1):
 )
         "#;
 
-        let rule_code = r#"
+        let rule_code_string = r#"
 function visit(node, filename, code) {
-    console.log("bla");
-    console.log(node.captures["name"].astType);
+    foo = "bla";
+    console.log(foo);
+}
+        "#;
+
+        let rule_code_array = r#"
+function visit(node, filename, code) {
+    foo = [1, 2, 3];
+    console.log(foo);
+}
+        "#;
+
+        let rule_code_object = r#"
+function visit(node, filename, code) {
+    foo = node.captures["name"];
+    console.log(foo);
+}
+        "#;
+
+        let rule_code_null = r#"
+function visit(node, filename, code) {
+    foo = null;
+    bar = undefined;
+    console.log(foo);
+    console.log(bar);
 }
         "#;
 
@@ -546,14 +570,14 @@ def foo(arg1):
         "#;
         let tree = get_tree(c, &Language::Python).unwrap();
         let query = get_query(q, &Language::Python).unwrap();
-        let rule = RuleInternal {
+        let mut rule = RuleInternal {
             name: "myrule".to_string(),
             short_description: Some("short desc".to_string()),
             description: Some("description".to_string()),
             category: RuleCategory::CodeStyle,
             severity: RuleSeverity::Notice,
             language: Language::Python,
-            code: rule_code.to_string(),
+            code: rule_code_string.to_string(),
             tree_sitter_query: query,
             variables: HashMap::new(),
         };
@@ -568,16 +592,62 @@ def foo(arg1):
 
         let rule_execution = execute_rule(
             &rule,
-            nodes,
+            nodes.clone(),
             "foo.py".to_string(),
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
             },
         );
-        assert_eq!("myrule", rule_execution.rule_name);
+
+        // execute for string
         assert!(rule_execution.execution_error.is_none());
-        assert_eq!("bla\nidentifier", rule_execution.output.unwrap())
+        assert_eq!(rule_execution.output.unwrap(), "bla");
+
+        // execute with array
+        rule.code = rule_code_array.to_string();
+        let rule_execution = execute_rule(
+            &rule,
+            nodes.clone(),
+            "foo.py".to_string(),
+            AnalysisOptions {
+                use_debug: true,
+                log_output: true,
+            },
+        );
+
+        assert!(rule_execution.execution_error.is_none());
+        assert_eq!(rule_execution.output.unwrap(), "[1,2,3]");
+
+        // execute with object
+        rule.code = rule_code_object.to_string();
+        let rule_execution = execute_rule(
+            &rule,
+            nodes.clone(),
+            "foo.py".to_string(),
+            AnalysisOptions {
+                use_debug: true,
+                log_output: true,
+            },
+        );
+
+        assert!(rule_execution.execution_error.is_none());
+        assert_eq!(rule_execution.output.unwrap(), "{\"astType\":\"identifier\",\"start\":{\"line\":2,\"col\":5},\"end\":{\"line\":2,\"col\":8},\"fieldName\":null,\"children\":[]}");
+
+        // execute with null
+        rule.code = rule_code_null.to_string();
+        let rule_execution = execute_rule(
+            &rule,
+            nodes.clone(),
+            "foo.py".to_string(),
+            AnalysisOptions {
+                use_debug: true,
+                log_output: true,
+            },
+        );
+
+        assert!(rule_execution.execution_error.is_none());
+        assert_eq!(rule_execution.output.unwrap(), "null\nundefined");
     }
 
     // change the type of the edit, which should trigger a serialization issue
