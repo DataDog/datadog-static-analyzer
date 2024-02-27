@@ -564,6 +564,13 @@ function visit(node, filename, code) {
 }
         "#;
 
+        let rule_code_number = r#"
+function visit(node, filename, code) {
+    foo = 42;
+    console.log(foo);
+}
+        "#;
+
         let c = r#"
 def foo(arg1):
     pass
@@ -648,6 +655,21 @@ def foo(arg1):
 
         assert!(rule_execution.execution_error.is_none());
         assert_eq!(rule_execution.output.unwrap(), "null\nundefined");
+
+        // execute with a number
+        rule.code = rule_code_number.to_string();
+        let rule_execution = execute_rule(
+            &rule,
+            nodes.clone(),
+            "foo.py".to_string(),
+            AnalysisOptions {
+                use_debug: true,
+                log_output: true,
+            },
+        );
+
+        assert!(rule_execution.execution_error.is_none());
+        assert_eq!(rule_execution.output.unwrap(), "42");
     }
 
     // change the type of the edit, which should trigger a serialization issue
