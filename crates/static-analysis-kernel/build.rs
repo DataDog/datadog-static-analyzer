@@ -186,6 +186,15 @@ fn main() {
             files: vec!["scanner.cc".to_string()],
             cpp: true,
         },
+        TreeSitterProject {
+            name: "tree-sitter-swift".to_string(),
+            compilation_unit: "tree-sitter-swift".to_string(),
+            repository: "https://github.com/alex-pinkus/tree-sitter-swift.git".to_string(),
+            build_dir: "src".into(),
+            commit_hash: "b1b66955d420d5cf5ff268ae552f0d6e43ff66e1".to_string(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
+        },
     ];
 
     // For each project:
