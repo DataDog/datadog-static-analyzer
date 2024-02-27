@@ -536,6 +536,7 @@ def foo(arg1):
         let rule_code = r#"
 function visit(node, filename, code) {
     console.log("bla");
+    console.log(node.captures["name"].astType);
 }
         "#;
 
@@ -576,7 +577,7 @@ def foo(arg1):
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_none());
-        assert_eq!("bla", rule_execution.output.unwrap())
+        assert_eq!("bla\nidentifier", rule_execution.output.unwrap())
     }
 
     // change the type of the edit, which should trigger a serialization issue
