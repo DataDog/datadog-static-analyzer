@@ -170,7 +170,7 @@ fn main() {
         },
         TreeSitterProject {
             name: "tree-sitter-ruby".to_string(),
-            compilation_unit: "tree-sitter-ruby-parser".to_string(),
+            compilation_unit: "tree-sitter-ruby".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-ruby".to_string(),
             build_dir: "src".into(),
             commit_hash: "7a010836b74351855148818d5cb8170dc4df8e6a".to_string(),
