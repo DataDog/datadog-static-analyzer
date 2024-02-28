@@ -82,9 +82,10 @@ trigger_internal_image:
     - main
   trigger:
     project: DataDog/images
-    branch: master
+    branch: ${DD_IMAGES_BRANCH}
     strategy: depend
   variables:
+    DD_IMAGES_BRANCH: master
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: images
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
