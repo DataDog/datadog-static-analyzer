@@ -18,6 +18,9 @@ datadog-static-analyzer is the static analyzer engine for Datadog [static analys
 datadog-static-analyzer --directory /path/to/directory --output report.csv --format csv
 ```
 
+If you encounter an issue, read the [Frequently Asked Questions](FAQ.md) first, it may contain
+the solution to your problem.
+
 ### Advanced Usage
 
 You can choose the rules to use to scan your repository by creating a `static-analysis.datadog.yml` file.
@@ -130,7 +133,7 @@ The static analyzer can be configured using a `static-analysis.datadog.yml` file
 at the root directory of the repository. This is a YAML file with the following entries:
 
  - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a full list)
- - `ignore-paths`: list of paths (glob) to ignore
+ - `ignore`: list of paths (glob) to ignore
  - `ignore-gitignore`: a boolean to indicate if files in `.gitignore` should be ignored (default: `false`)
  - `max-file-size-kb`: all files above this size are ignored (default: 200KB)
 
@@ -142,7 +145,7 @@ rulesets:
   - python-code-style
   - python-best-practices
   - python-inclusive
-ignore-paths:
+ignore:
   - tests
 ignore-gitignore: false
 max-file-size-kb: 100

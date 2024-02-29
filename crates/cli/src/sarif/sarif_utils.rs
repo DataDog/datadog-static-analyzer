@@ -225,27 +225,44 @@ fn get_level_from_severity(severity: RuleSeverity) -> String {
     .to_string()
 }
 
+// Get the sha for the line if we have the repository.
 fn get_sha_for_line(
     filename: &str,
     line: usize,
     generation_options: &SarifGenerationOptions,
 ) -> Option<String> {
-    generation_options.git_repo.as_ref()?;
+    if let Some(git_repo) = generation_options.git_repo.as_ref() {
+        if generation_options.debug {
+            eprint!(
+                "[get_sha_for_line] Getting SHA for file {}, line {}: ",
+                filename, line
+            );
+        }
 
-    let git_repo = generation_options.git_repo.as_ref().unwrap();
-    let mut blame_options = BlameOptions::default();
-    let blame_res = git_repo.blame_file(Path::new(filename), Some(&mut blame_options));
-    if let Ok(blame) = blame_res {
-        return Some(blame.get_line(line).unwrap().final_commit_id().to_string());
-    }
+        let mut blame_options = BlameOptions::default();
+        let blame_res = git_repo.blame_file(Path::new(filename), Some(&mut blame_options));
 
-    if generation_options.debug {
-        eprintln!(
-            "[sarif-export] cannot get git blame info at {}:{}",
-            filename, line
-        )
+        if let Ok(blame) = blame_res {
+            if let Some(hunk) = blame.get_line(line) {
+                let commit_id = hunk.final_commit_id().to_string();
+
+                if generation_options.debug {
+                    eprintln!("found ({})", commit_id);
+                }
+                return Some(commit_id);
+            } else {
+                eprintln!("hunk not found");
+                return None;
+            }
+        }
+
+        if generation_options.debug {
+            eprintln!(" cannot get git blame info at {}:{}", filename, line)
+        }
+        None
+    } else {
+        None
     }
-    None
 }
 
 // Encode the file using percent to that filename "My Folder/file.c" is "My%20Folder/file.c"
@@ -341,11 +358,15 @@ fn generate_results(
                     })
                     .collect::<Result<Vec<_>>>()?;
 
-                let sha_option = get_sha_for_line(
-                    rule_result.filename.as_str(),
-                    violation.start.line as usize,
-                    &options,
-                );
+                let sha_option = if options.add_git_info {
+                    get_sha_for_line(
+                        rule_result.filename.as_str(),
+                        violation.start.line as usize,
+                        &options,
+                    )
+                } else {
+                    None
+                };
 
                 let fingerprint_option = get_fingerprint_for_violation(
                     violation,
