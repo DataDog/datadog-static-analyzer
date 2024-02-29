@@ -251,7 +251,9 @@ fn get_sha_for_line(
                 }
                 return Some(commit_id);
             } else {
-                eprintln!("hunk not found");
+                if generation_options.debug {
+                    eprintln!("hunk not found");
+                }
                 return None;
             }
         }
