@@ -225,7 +225,9 @@ fn get_level_from_severity(severity: RuleSeverity) -> String {
     .to_string()
 }
 
-// Get the sha for the line if we have the repository.
+/// Get the latest commit id/sha for a file/line. This is done to know the latest SHA for a line with
+/// a violation. Note that this function performs a `git blame` and can take significant time.
+/// Take the file/line of the SHA to get and return the SHA if found.
 fn get_sha_for_line(
     filename: &str,
     line: usize,
