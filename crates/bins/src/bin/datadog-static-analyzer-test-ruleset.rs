@@ -1,6 +1,6 @@
 use cli::datadog_utils::get_ruleset;
 use kernel::analysis::analyze::analyze;
-use kernel::model::analysis::AnalysisOptions;
+use kernel::model::analysis::{AnalysisOptions, NoArgumentProvider};
 use kernel::model::rule::Rule;
 
 use anyhow::{Error, Result};
@@ -28,6 +28,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
         &rules,
         test.filename.as_str(),
         code.as_str(),
+        &NoArgumentProvider {},
         &analysis_options,
     );
 

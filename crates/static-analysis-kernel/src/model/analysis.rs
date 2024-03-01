@@ -9,6 +9,19 @@ pub const ERROR_RULE_EXECUTION: &str = "error-execution";
 pub const ERROR_RULE_CODE_TOO_BIG: &str = "error-code-too-big";
 pub const ERROR_INVALID_QUERY: &str = "error-invalid-query";
 
+// Used to extract rule arguments.
+pub trait ArgumentProvider {
+    /// Returns the arguments that apply to the given file and the given rule.
+    fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String>;
+}
+
+pub struct NoArgumentProvider {}
+impl ArgumentProvider for NoArgumentProvider {
+    fn get_arguments(&self, _: &str, _: &str) -> HashMap<String, String> {
+        HashMap::new()
+    }
+}
+
 // Used internally to pass options to the analysis
 #[derive(Clone, Deserialize, Debug, Serialize, Builder)]
 pub struct AnalysisOptions {
@@ -52,7 +65,7 @@ pub struct AnalysisContext {
 pub struct MatchNodeContext {
     pub code: Option<String>,
     pub filename: String,
-    pub variables: HashMap<String, String>,
+    pub arguments: HashMap<String, String>,
 }
 
 // The node used to capture data in tree-sitter

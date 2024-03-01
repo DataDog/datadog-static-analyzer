@@ -11,7 +11,7 @@ use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
+use kernel::model::analysis::{AnalysisOptions, NoArgumentProvider, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 
@@ -516,6 +516,7 @@ fn main() -> Result<()> {
                         selected_rules,
                         relative_path,
                         &file_content,
+                        &NoArgumentProvider {},
                         &analysis_options,
                     )
                 } else {

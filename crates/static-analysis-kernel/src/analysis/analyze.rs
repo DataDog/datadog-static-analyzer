@@ -1,6 +1,6 @@
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
-use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
+use crate::model::analysis::{AnalysisOptions, ArgumentProvider, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
@@ -87,6 +87,7 @@ pub fn analyze<I>(
     rules: I,
     filename: &str,
     code: &str,
+    argument_provider: &dyn ArgumentProvider,
     analysis_option: &AnalysisOptions,
 ) -> Vec<RuleResult>
 where
@@ -116,7 +117,7 @@ where
                         &rule.tree_sitter_query,
                         filename,
                         code,
-                        &HashMap::new(),
+                        &argument_provider.get_arguments(filename, &rule.name),
                     );
 
                     if nodes.is_empty() {
@@ -153,6 +154,7 @@ where
 mod tests {
     use super::*;
     use crate::analysis::tree_sitter::get_query;
+    use crate::model::analysis::NoArgumentProvider;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use std::collections::HashMap;
@@ -211,6 +213,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.py",
             PYTHON_CODE,
+            &NoArgumentProvider {},
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -287,6 +290,7 @@ function visit(node, filename, code) {
             &vec![rule1, rule2],
             "myfile.py",
             PYTHON_CODE,
+            &NoArgumentProvider {},
             &analysis_options,
         );
         assert_eq!(2, results.len());
@@ -387,6 +391,7 @@ for(var i = 0; i <= 10; i--){}
             &vec![rule1],
             "myfile.js",
             js_code,
+            &NoArgumentProvider {},
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -441,6 +446,7 @@ def foo():
             &vec![rule1],
             "myfile.py",
             python_code,
+            &NoArgumentProvider {},
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -495,6 +501,7 @@ def foo(arg1):
             &vec![rule],
             "myfile.py",
             c,
+            &NoArgumentProvider {},
             &analysis_options,
         );
         assert_eq!(1, results.len());

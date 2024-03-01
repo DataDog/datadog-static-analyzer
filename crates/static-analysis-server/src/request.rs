@@ -6,7 +6,7 @@ use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use crate::model::violation::violation_to_server;
 use kernel::analysis::analyze::analyze;
-use kernel::model::analysis::AnalysisOptions;
+use kernel::model::analysis::{AnalysisOptions, NoArgumentProvider};
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::utils::decode_base64_string;
 
@@ -116,6 +116,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         &rules,
         &request.filename,
         code_decoded_attempt.unwrap().as_str(),
+        &NoArgumentProvider {},
         &AnalysisOptions {
             use_debug: false,
             log_output: request
