@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 
 /// represents the CLI configuration
 #[derive(Clone)]
-pub struct CliConfiguration {
+pub struct CliConfiguration<'a> {
     pub use_debug: bool,
     pub use_configuration_file: bool,
     pub ignore_gitignore: bool,
@@ -22,12 +22,12 @@ pub struct CliConfiguration {
     pub output_file: String,
     pub num_cpus: usize, // of cpus to use for parallelism
     pub rules: Vec<Rule>,
-    pub path_restrictions: PathRestrictions,
+    pub path_restrictions: PathRestrictions<'a>,
     pub max_file_size_kb: u64,
     pub use_staging: bool,
 }
 
-impl CliConfiguration {
+impl<'a> CliConfiguration<'a> {
     /// Generate a digest to include in SARIF files to indicate what configuration and rules were used
     /// to run the analysis. To compute the digest, we take the attributes that are important to
     /// run and replicate the analysis such as the ignored paths and rules.

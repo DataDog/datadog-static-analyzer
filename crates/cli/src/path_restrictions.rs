@@ -1,51 +1,36 @@
 use crate::file_utils::is_allowed_by_path_config;
-use crate::model::config_file::{PathConfig, RulesetConfig};
+use crate::model::config_file::RulesetConfig;
 use std::collections::HashMap;
 
 /// An object that provides operations to filter rules by the path of the file to check.
 #[derive(Default, Clone)]
-pub struct PathRestrictions {
+pub struct PathRestrictions<'a> {
     /// Per-ruleset restrictions.
-    rulesets: HashMap<String, RestrictionsForRuleset>,
+    rulesets: Option<&'a HashMap<String, RulesetConfig>>,
 }
 
-#[derive(Default, Clone)]
-struct RestrictionsForRuleset {
-    /// Per-rule path restrictions.
-    rules: HashMap<String, PathConfig>,
-    /// Path restrictions for this ruleset.
-    paths: PathConfig,
-}
-
-impl PathRestrictions {
+impl<'a> PathRestrictions<'a> {
     /// Builds a `PathRestrictions` from a map of ruleset configurations.
-    pub fn from_ruleset_configs(rulesets: &HashMap<String, RulesetConfig>) -> PathRestrictions {
-        let mut out = PathRestrictions::default();
-        for (name, ruleset_config) in rulesets {
-            let mut restriction = RestrictionsForRuleset {
-                paths: ruleset_config.paths.clone(),
-                ..Default::default()
-            };
-            for (name, rule_config) in &ruleset_config.rules {
-                restriction
-                    .rules
-                    .insert(name.clone(), rule_config.paths.clone());
-            }
-            out.rulesets.insert(name.clone(), restriction);
+    pub fn from_ruleset_configs(
+        rulesets: &'a HashMap<String, RulesetConfig>,
+    ) -> PathRestrictions<'a> {
+        PathRestrictions {
+            rulesets: Some(rulesets),
         }
-        out
     }
 
     /// Returns whether the given rule applies to a file.
     pub fn rule_applies(&self, rule_name: &str, file_path: &str) -> bool {
         let (ruleset, short_name) = split_rule_name(rule_name);
-        match self.rulesets.get(ruleset) {
+        match self.rulesets.and_then(|x| x.get(ruleset)) {
             None => true,
-            Some(restrictions) => {
-                is_allowed_by_path_config(&restrictions.paths, file_path)
-                    && match restrictions.rules.get(short_name) {
+            Some(ruleset_config) => {
+                is_allowed_by_path_config(&ruleset_config.paths, file_path)
+                    && match ruleset_config.rules.get(short_name) {
                         None => true,
-                        Some(paths) => is_allowed_by_path_config(paths, file_path),
+                        Some(rule_config) => {
+                            is_allowed_by_path_config(&rule_config.paths, file_path)
+                        }
                     }
             }
         }
