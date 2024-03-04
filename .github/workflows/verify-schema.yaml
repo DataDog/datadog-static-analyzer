@@ -1,0 +1,11 @@
+on: push
+name: Check that the JSON schema for the configuration file matches the examples
+jobs:
+  integration_tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Use Node.js
+        uses: actions/setup-node@v1
+      - run: npm install -g pajv
+      - run: make -C schema
