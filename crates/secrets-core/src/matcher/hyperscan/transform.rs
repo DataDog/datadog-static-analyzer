@@ -172,6 +172,61 @@ impl<'s> Iterator for MatchIter<'_, 's> {
         }
         None
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (min_width, max_width) = match self.pattern.width() {
+            PatternWidth::Fixed(width) => (width, Some(width)),
+            // We have to assume each capture is the minimum width it could be in order to not under-estimate the hint.
+            PatternWidth::Variable { min, max } => (min, max),
+        };
+
+        // The underlying iterator is an ExactSizeIterator, where min and max will be the number of
+        // elements left in the slice. Both are over-estimates of the true (min, max).
+        //
+        // To calculate the lowest possible minimum, we assume we're currently at the right-most
+        // bound of an actual match (i.e. ending the previous match), and that the pattern is
+        // the widest it can possibly be.
+        //
+        // Similarly, to calculate the highest possible maximum, we assume we're currently at the
+        // left-most bound of an actual match (i.e. starting a match), and that the pattern is the
+        // smallest it can possibly be.
+        //
+        // For example, for the following:
+        // Pattern: `aaa{0,6}` (min_width: 2, max_width: 8)
+        // Text   : `aaaaaaaaaaaaaaaaa`
+        //                 *
+        // Hypothetical right-most bound and max pattern max width:
+        // Text   : `aaaaaaaaaaaaaaaaa`
+        //                 *
+        //           |-----||      |
+        // There is at least 1 more match (versus "at least 10 more matches").
+        //
+        // Hypothetical left-most bound and min pattern width:
+        // Text   : `aaaaaaaaaaaaaaaaa`
+        //                 *
+        //                 ||
+        //                   ||
+        //                     ||
+        //                       ||
+        //                         ||
+        // There are at most 5 more matches (versus "at most 10 more matches").
+
+        let min_required = if let Some(max_width) = max_width {
+            self.window_end.saturating_sub(self.window_start + 1) / max_width
+        } else {
+            0
+        };
+        let lower = usize::min(self.match_iter.size_hint().0, min_required);
+
+        let max_possible = (self.window_end - self.window_start) / min_width;
+        let upper = if let Some(hinted_upper) = self.match_iter.size_hint().1 {
+            usize::min(hinted_upper, max_possible)
+        } else {
+            max_possible
+        };
+
+        (lower, Some(upper))
+    }
 }
 
 #[rustfmt::skip]
