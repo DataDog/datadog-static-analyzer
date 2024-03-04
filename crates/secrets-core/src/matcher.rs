@@ -4,6 +4,7 @@
 
 use crate::capture::{Capture, Captures};
 use crate::matcher::hyperscan::Hyperscan;
+use std::cmp::Ordering;
 use std::sync::Arc;
 
 pub mod hyperscan;
@@ -82,8 +83,8 @@ pub enum MatcherError {
     },
 }
 
-/// A unique id that identifies a pattern associated with a [`Matcher`]
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+/// A unique id that identifies a pattern associated with a [`Matcher`].
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct PatternId(pub Arc<str>);
 
@@ -101,7 +102,7 @@ impl<T: AsRef<str>> From<T> for PatternId {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct PatternMatch<'b> {
     /// The internal id of the pattern that generated this `PatternMatch`.
     pattern_id: PatternId,
@@ -111,11 +112,18 @@ pub struct PatternMatch<'b> {
     captures: Captures<'b>,
 }
 
-impl<'b> PatternMatch<'b> {
-    /// Returns the id of the pattern that generated this `PatternMatch`.
-    pub fn pattern_id(&self) -> &str {
-        &self.pattern_id.0
+impl PartialOrd for PatternMatch<'_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let self_bs = self.entire().byte_span();
+        let other_bs = other.entire().byte_span();
+        Some(
+            self_bs
+                .start_index
+                .cmp(&other_bs.start_index)
+                .then(self_bs.end_index.cmp(&other_bs.end_index)),
+        )
     }
+}
 
 impl<'b> PatternMatch<'b> {
     /// Returns the id of the pattern that generated this `PatternMatch`.
