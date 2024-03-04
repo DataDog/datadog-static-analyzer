@@ -1,0 +1,21 @@
+# Additional fields not handled by the schema are accepted.
+# (Additional field names do NOT have to start with x-. This is done for tests only.)
+rulesets:
+  - java-best-practices:
+    x-ruleset-field: abc
+    ignore: [foo]
+    only: [bar]
+    rules:
+      avoid-printstacktrace:
+        x-rule-field: abc
+        only: [foo/bar]
+        ignore: [foo/baz]
+        arguments:
+          foo: "bar"
+  - go-best-practices:
+    x-other-ruleset-field: abc
+ignore:
+  - path1/path2
+only:
+  - path2/path3
+x-root-field: abc

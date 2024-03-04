@@ -1,0 +1,7 @@
+rulesets:
+  - java-best-practices:
+    # 'rulesets/rules' is not a list.
+    rules:
+      - avoid-printstacktrace
+      - loose-coupling
+      - one-declaration-per-line

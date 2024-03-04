@@ -1,0 +1,6 @@
+rulesets:
+  - python-best-practices
+  - java-best-practices
+  - python-security
+# 'max-file-size-kb' is a number
+max-file-size-kb: "100"
