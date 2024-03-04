@@ -6,6 +6,9 @@ use crate::rule::RuleMatch;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+#[cfg(feature = "validator-http")]
+mod http;
+
 pub trait Validator {
     fn id(&self) -> &ValidatorId;
 
