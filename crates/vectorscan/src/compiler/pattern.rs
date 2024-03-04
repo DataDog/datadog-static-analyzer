@@ -406,6 +406,17 @@ impl Pattern {
         PatternBuilder::new(expression)
     }
 
+    /// Creates a clone of the [`Pattern`] with the specified id.
+    pub fn clone_with_id(&self, new_id: u32) -> Self {
+        Self {
+            expression: self.expression.clone(),
+            flags: self.flags,
+            extensions: self.extensions,
+            id: new_id,
+            info: self.info,
+        }
+    }
+
     /// An internal function for constructing the Pattern
     fn try_new(
         expression: Expression,

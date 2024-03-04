@@ -11,13 +11,19 @@ use std::ops::{ControlFlow, Range};
 use vectorscan_sys::hs;
 
 /// The pattern id that Hyperscan sends to a [`hs::hs_scan`] callback when it finds a match.
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct PatternId(pub u32);
 
 impl From<u32> for PatternId {
     fn from(value: u32) -> Self {
         Self(value)
+    }
+}
+
+impl From<PatternId> for u32 {
+    fn from(value: PatternId) -> Self {
+        value.0
     }
 }
 
@@ -32,7 +38,7 @@ pub struct HsMatch {
 }
 
 impl HsMatch {
-    pub(crate) fn new(id: u32, start_idx: usize, end_idx: usize) -> Self {
+    pub fn new(id: u32, start_idx: usize, end_idx: usize) -> Self {
         Self {
             id: PatternId(id),
             start_idx,

@@ -4,7 +4,11 @@
 
 mod common;
 pub mod compiler;
+pub use compiler::{Pattern, PatternBuilder};
 pub mod database;
 pub mod error;
+pub use error::Error;
 pub mod runtime;
-mod scan;
+pub use runtime::Scratch;
+pub mod scan;
+pub use scan::HsMatch;
