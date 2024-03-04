@@ -9,7 +9,7 @@ default = ["validator-http"]
 validator-http = ["governor", "retry", "ureq", "url"]
 
 [dependencies]
-bstr = { version = "1.9.0", default-features = false, features = ["std"] }
+bstr = "1.9.1"
 governor = { version = "0.6.3", default-features = false, features = ["std", "jitter"], optional = true }
 pcre2 = "0.2.6"
 retry = { version = "2.0.0", default-features = false, features = ["random"], optional = true }
