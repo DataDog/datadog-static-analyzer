@@ -1,0 +1,3 @@
+rulesets: [python-style]
+# 'ignore' must be a list.
+ignore: foo

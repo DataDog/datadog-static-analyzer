@@ -1,0 +1,4 @@
+rulesets:
+  - go-best-practices:
+    # 'rulesets/ignore' must be a list
+    ignore: bar

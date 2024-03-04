@@ -1,0 +1,16 @@
+rulesets:
+  - lorem_ipsum:
+    ignore:
+      - one/two
+    rules:
+      dolor:
+        ignore: [one/two]
+        only:
+          - one/two/three
+          - one/two/four
+        arguments:
+          sit_amet: "20"
+          consectetur:
+            /: 40
+            one/two/three/four: "80"
+            one/two/three/four/five: "160"

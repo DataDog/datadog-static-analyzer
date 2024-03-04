@@ -1,0 +1,6 @@
+rulesets:
+  # 'rulesets' must be a list.
+  java-best-practices:
+    only: [foo]
+  go-best-practices:
+    ignore: [bar]

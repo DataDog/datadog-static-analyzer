@@ -1,0 +1,12 @@
+rulesets:
+  - python-best-practices
+  - go-best-practices:
+  - java-best-practices:
+    rules:
+      avoid-printstacktrace:
+        only:
+          - "foo/bar"
+ignore:
+  - path1/path2
+only:
+  - path2/path3

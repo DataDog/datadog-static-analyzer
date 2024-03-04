@@ -1,0 +1,6 @@
+rulesets:
+  # The configuration for each ruleset must be aligned below the ruleset's name.
+  - java-best-practices:
+      only: [foo]
+  - go-best-practices:
+      ignore: [bar]

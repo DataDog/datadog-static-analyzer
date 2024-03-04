@@ -1,0 +1,4 @@
+rulesets:
+  - java-best-practices:
+    # 'rulesets/rules' is not a string
+    rules: avoid-printstacktrace

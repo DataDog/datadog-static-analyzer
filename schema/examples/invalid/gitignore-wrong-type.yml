@@ -1,0 +1,6 @@
+rulesets:
+  - python-best-practices
+  - java-best-practices
+  - python-security
+# 'ignore-gitignore' is a boolean
+ignore-gitignore: 42

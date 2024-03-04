@@ -1,0 +1,5 @@
+rulesets:
+  - python-best-practices
+  - java-best-practices
+  - python-security
+ignore-gitignore: false

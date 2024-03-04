@@ -1,0 +1,4 @@
+rulesets:
+  - java-best-practices:
+    # 'rulesets/only' must be a list
+    only: foo

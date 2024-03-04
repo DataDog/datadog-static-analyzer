@@ -1,0 +1,10 @@
+rulesets:
+  - java-best-practices:
+    rules:
+      avoid-printstacktrace:
+        # 'rulesets/rules/<rule>/arguments' is a map.
+        arguments:
+          - foo
+          - bar
+      loose-coupling:
+      one-declaration-per-line:
