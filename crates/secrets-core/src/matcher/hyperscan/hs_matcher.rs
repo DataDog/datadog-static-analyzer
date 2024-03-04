@@ -112,7 +112,7 @@ pub struct MatchCursor<'a, 'b> {
 /// A struct holding an along with additional owned metadata relevant to the [`NamedPattern`].
 #[derive(Debug)]
 struct IterWithMetadata<'a, 'b> {
-    pattern_name: Arc<str>,
+    pattern_id: PatternId,
     named_lookup: Option<Arc<Vec<Option<String>>>>,
     iter: MatchIter<'a, 'b>,
 }
@@ -155,17 +155,15 @@ impl<'b> Iterator for MatchCursor<'_, 'b> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             if let Some(IterWithMetadata {
-                ref pattern_name,
+                ref pattern_id,
                 ref named_lookup,
                 iter,
             }) = &mut self.current_mappers_iter
             {
                 if let Some(capture_slots) = iter.next() {
-                    let named_lookup = named_lookup
-                        .as_ref()
-                        .map(|lookup_arc| Arc::clone(lookup_arc));
+                    let named_lookup = named_lookup.as_ref().map(Arc::clone);
                     let rule_match = PatternMatch {
-                        pattern_id: Arc::clone(pattern_name),
+                        pattern_id: pattern_id.clone(),
                         full_data: self.data,
                         captures: Captures::new(named_lookup, capture_slots),
                     };
@@ -177,14 +175,14 @@ impl<'b> Iterator for MatchCursor<'_, 'b> {
             // Increment both iterators to keep them in sync
             match (self.patterns_iter.next(), self.matches_iter.next()) {
                 (Some(pattern), Some(hs_matches)) => {
-                    let pattern_name = Arc::clone(&pattern.to_name_arc());
+                    let pattern_id = pattern.id_arc();
                     let named_lookup = pattern
                         .inner()
                         .regex()
                         .and_then(|regex| regex.to_named_lookup_arc());
                     let next_iter = pattern.inner_mut().transform(hs_matches, self.data);
                     self.current_mappers_iter.replace(IterWithMetadata {
-                        pattern_name,
+                        pattern_id,
                         named_lookup,
                         iter: next_iter,
                     });
@@ -220,8 +218,9 @@ mod tests {
     use crate::matcher::hyperscan::{Hyperscan, PatternSet};
     use std::borrow::Cow;
     use std::sync::Arc;
-    use vectorscan::scan::PatternId;
     use vectorscan::HsMatch;
+    use crate::matcher::hyperscan::pattern_set::ReferenceIdMapping;
+    use crate::matcher::PatternId;
 
     /// Creates a Vec of [`HsMatch`] from tuples of (pattern_id, end_byte)
     fn hs_matches(matches: &[(u32, usize)]) -> Vec<HsMatch> {
@@ -231,11 +230,11 @@ mod tests {
             .collect::<Vec<_>>()
     }
 
-    fn p_set(patterns: &[(&str, &str)]) -> PatternSet {
+    fn p_set(patterns: &[(&str, &str)]) -> (PatternSet, ReferenceIdMapping) {
         let mut set = PatternSet::new();
-        for &(name, expression) in patterns {
+        for &(expression, name) in patterns {
             let hs_pattern = vectorscan::Pattern::new(expression).try_build().unwrap();
-            set = set.pattern((Arc::from(name), hs_pattern));
+            set = set.pattern(hs_pattern, Some(Arc::from(name)));
         }
         set.try_compile().unwrap()
     }
@@ -256,12 +255,20 @@ mod tests {
         chunked
     }
 
-    /// Cursor should yield the underlying patterns, ordered by the internal [`PatternId`] ascending,
-    /// not the user-provided pattern id.
+    /// Retrieves the first [`PatternId`] from the mapping. Panics if there are multiple.
+    fn as_pat_id(id: &str, mapping: &ReferenceIdMapping) -> PatternId {
+        let vec = mapping.get(id).unwrap();
+        if vec.len() != 1 {
+            panic!("`as_pat_id` should only be used with unique reference ids")
+        }
+        vec.first().unwrap().clone()
+    }
+
+    /// Cursor should yield the underlying patterns, ordered by the internal [`vectorscan::scan::PatternId`] ascending,
     #[test]
     fn cursor_ascending() {
         let haystack = "aaaa--bbb--ccc---aaaa-bb-bbb--ddd";
-        let pattern_set = p_set(&[("0", "(a{2})+"), ("1", "eee"), ("2", "bb"), ("3", "ddd"), ("4", "ccc")]);
+        let (pattern_set, ids) = p_set(&[("(a{2})+", "0"), ("eee", "1"), ("bb", "2"), ("ddd", "3"), ("ccc", "4")]);
         let hs_matches = hs_matches(&[
             (0, 2), (0, 3), (0, 4),
             (2, 8), (2, 9),
@@ -275,21 +282,21 @@ mod tests {
 
         let mut cursor = MatchCursor::new(hs_matches.iter(), patterns.iter_mut(), haystack.as_bytes());
 
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("0".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("0".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("2".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("2".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("2".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("3".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("4".into()));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("0", &ids)));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("0", &ids)));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("2", &ids)));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("2", &ids)));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("2", &ids)));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("3", &ids)));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("4", &ids)));
         assert_eq!(cursor.next().map(|pm| pm.pattern_id), None);
     }
 
-    /// Cursor should skip empty Vecs without returning `None`.
+    /// Cursor should skip empty vectors in the jagged array without returning `None`.
     #[test]
     fn cursor_skips_empty() {
         let haystack = "aaa---111---ccc";
-        let pattern_set = p_set(&[("0", "aaa"), ("1", "bbb"), ("2", "ccc")]);
+        let (pattern_set, ids) = p_set(&[("aaa", "0"), ("bbb", "1"), ("ccc", "2")]);
 
         let hs_matches = vec![
             hs_matches(&[(0, 3)]),
@@ -300,31 +307,9 @@ mod tests {
         let (_, mut patterns) = pattern_set.into_parts();
         let mut cursor = MatchCursor::new(hs_matches.iter(), patterns.iter_mut(), haystack.as_bytes());
 
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("0".into()));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("0", &ids)));
         // Even though "1" was empty, the iterator should skip it and not return `None`.
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("2".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), None);
-    }
-
-    /// The Cursor returns the user-provided pattern name instead of an internal [`PatternId`]
-    #[test]
-    fn pattern_matches_have_correct_id() {
-        let haystack = "aaa---bbb---ccc";
-        let pattern_set = p_set(&[("z-name", "aaa"), ("x-name", "bbb"), ("y-name", "ccc")]);
-
-        let hs_matches = vec![
-            hs_matches(&[(0, 3)]),
-            hs_matches(&[(1, 9)]),
-            hs_matches(&[(2, 15)]),
-        ];
-
-        let (_, mut patterns) = pattern_set.into_parts();
-        let mut cursor = MatchCursor::new(hs_matches.iter(), patterns.iter_mut(), haystack.as_bytes());
-
-        // The cursor should iterate by internal (numeric) pattern id, not the user-provided string.
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("z-name".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("x-name".into()));
-        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some("y-name".into()));
+        assert_eq!(cursor.next().map(|pm| pm.pattern_id), Some(as_pat_id("2", &ids)));
         assert_eq!(cursor.next().map(|pm| pm.pattern_id), None);
     }
 
@@ -333,7 +318,7 @@ mod tests {
     fn regex_capture_groups_lookup() {
         let haystack = "----abc--def---ghi---";
         let pattern = vectorscan::Pattern::new("-+(?<foo>abc)-+(?<bar>def)-+(?<baz>ghi)").try_build().unwrap();
-        let pattern_set = PatternSet::new().pattern(("name-a".into(), pattern)).try_compile().unwrap();
+        let (pattern_set, _) = PatternSet::new().pattern(pattern, None).try_compile().unwrap();
 
         let mut hyperscan = Hyperscan::new("hs-1".into(), pattern_set);
         let mut cursor = hyperscan.scan_data(haystack.as_bytes()).unwrap();
@@ -354,7 +339,7 @@ mod tests {
     fn regex_one_capture() {
         let haystack = "----abcabc----";
         let pattern = vectorscan::Pattern::new("(?:abc)+").try_build().unwrap();
-        let pattern_set = PatternSet::new().pattern(("name-a".into(), pattern)).try_compile().unwrap();
+        let (pattern_set, _) = PatternSet::new().pattern(pattern, None).try_compile().unwrap();
 
         let mut hyperscan = Hyperscan::new("hs-1".into(), pattern_set);
         let mut cursor = hyperscan.scan_data(haystack.as_bytes()).unwrap();
@@ -370,7 +355,7 @@ mod tests {
     fn literal_one_capture() {
         let haystack = "----abcabc----";
         let pattern = vectorscan::Pattern::new("abc").literal(true).try_build().unwrap();
-        let pattern_set = PatternSet::new().pattern(("name-a".into(), pattern)).try_compile().unwrap();
+        let (pattern_set, _) = PatternSet::new().pattern(pattern, None).try_compile().unwrap();
 
         let mut hyperscan = Hyperscan::new("hs-1".into(), pattern_set);
         let mut cursor = hyperscan.scan_data(haystack.as_bytes()).unwrap();

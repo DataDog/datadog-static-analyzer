@@ -254,8 +254,8 @@ mod tests {
             .literal(is_literal)
             .try_build()
             .unwrap();
-        let pattern_set = PatternSet::new()
-            .pattern(("name-1".into(), pattern))
+        let (pattern_set, _) = PatternSet::new()
+            .pattern(pattern, None)
             .try_compile()
             .unwrap();
         let mut scratch = Scratch::try_new_for(pattern_set.database()).unwrap();

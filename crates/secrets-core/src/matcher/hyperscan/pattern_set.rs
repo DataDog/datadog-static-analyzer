@@ -2,12 +2,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::matcher::hyperscan::pattern::{InnerRegex, Pattern, PatternKind, PatternWidth};
+use crate::matcher::hyperscan::Pattern;
+use crate::matcher::PatternId;
 use std::collections::HashMap;
 use std::sync::Arc;
+use vectorscan::compiler::pattern::Expression;
 use vectorscan::database::BlockDatabase;
 use vectorscan::error::Error;
-use vectorscan::scan::PatternId;
 
 /// A set of [`NamedPattern`]s, where each pattern has a unique string id.
 ///
@@ -28,13 +29,13 @@ impl PatternSet {
         PatternSetBuilder::new()
     }
 
-    /// Returns a reference to a [`NamedPattern`] with the given id.
-    pub fn get(&self, id: PatternId) -> Option<&NamedPattern> {
+    /// Returns a reference to a [`NamedPattern`] with the given Hyperscan id.
+    pub fn get(&self, id: vectorscan::scan::PatternId) -> Option<&NamedPattern> {
         self.patterns.get(id.0 as usize)
     }
 
-    /// Returns a mutable reference to a [`NamedPattern`] with the given id.
-    pub fn get_mut(&mut self, id: PatternId) -> Option<&mut NamedPattern> {
+    /// Returns a mutable reference to a [`NamedPattern`] with the given Hyperscan id.
+    pub fn get_mut(&mut self, id: vectorscan::scan::PatternId) -> Option<&mut NamedPattern> {
         self.patterns.get_mut(id.0 as usize)
     }
 
@@ -69,64 +70,102 @@ pub(crate) enum PatternSetError {
 
 /// A [`Pattern`] with a human-friendly string id.
 #[derive(Debug, Clone)]
-pub struct NamedPattern(Arc<str>, Pattern);
+pub struct NamedPattern {
+    id: PatternId,
+    pattern: Pattern,
+}
 
 impl NamedPattern {
-    pub fn new(name: Arc<str>, pattern: Pattern) -> Self {
-        Self(name, pattern)
+    pub fn new(id: PatternId, pattern: Pattern) -> Self {
+        Self { id, pattern }
     }
 
-    pub fn to_name_arc(&self) -> Arc<str> {
-        Arc::clone(&self.0)
+    pub fn id_arc(&self) -> PatternId {
+        self.id.clone()
     }
 
-    pub fn name(&self) -> &str {
-        &self.0
+    pub fn id(&self) -> &str {
+        &self.id.0
     }
 
     pub fn inner(&self) -> &Pattern {
-        &self.1
+        &self.pattern
     }
 
     pub fn inner_mut(&mut self) -> &mut Pattern {
-        &mut self.1
+        &mut self.pattern
     }
 }
 
+/// A caller-provided id that allows the caller to associate the [`NamedPattern`] created with an arbitrary id.
+pub(crate) type PatternSetReferenceId = Arc<str>;
+pub(crate) type ReferenceIdMapping = HashMap<PatternSetReferenceId, Vec<PatternId>>;
+
 #[derive(Debug, Default, Clone)]
-pub(crate) struct PatternSetBuilder(Vec<(Arc<str>, vectorscan::Pattern)>);
+pub(crate) struct PatternSetBuilder {
+    /// Mapping from caller-provided reference ID to the generated [`NamedPattern`]s.
+    mapping: ReferenceIdMapping,
+    patterns: Vec<(PatternId, vectorscan::Pattern)>,
+    regex_count: usize,
+    literal_count: usize,
+}
 
 impl PatternSetBuilder {
     /// Creates a new builder for a [`PatternSet`].
     pub fn new() -> Self {
-        Self(Vec::new())
+        Self {
+            mapping: HashMap::new(),
+            patterns: Vec::new(),
+            regex_count: 0,
+            literal_count: 0,
+        }
     }
 
-    /// Adds a [`Pattern`] to the set.
-    pub fn pattern(mut self, pat: (Arc<str>, vectorscan::Pattern)) -> Self {
-        let next_id = self.0.len() as u32;
-        let pat = (pat.0, pat.1.clone_with_id(next_id));
-        self.0.push(pat);
+    /// Adds a [`vectorscan::Pattern`] to the set.
+    ///
+    /// If `reference_id` is provided, upon compilation, it will be linked with the generated [`NamedPattern`].
+    // NOTE: The idea here is that we may want to perform under-the-hood optimizations that the caller
+    // does not need to know about (for example, de-duplicating patterns, and thus mapping several
+    // reference ids to the same pattern)
+    pub fn pattern(
+        mut self,
+        pattern: vectorscan::Pattern,
+        reference_id: Option<PatternSetReferenceId>,
+    ) -> Self {
+        let next_hs_id = self.patterns.len() as u32;
+        // Currently, the `NamedPattern` name is just a string-equivalent of a one-based
+        // numeric index, though this is arbitrary and could be really anything unique.
+        let pattern_id = match pattern.expression() {
+            Expression::Literal(_) => {
+                self.literal_count += 1;
+                format!("literal-{}", self.literal_count)
+            }
+            Expression::Regex(_) => {
+                self.regex_count += 1;
+                format!("regex-{}", self.regex_count)
+            }
+        };
+        let pattern_id = Arc::<str>::from(pattern_id);
+        let pattern_id = PatternId(pattern_id);
+
+        if let Some(reference_id) = reference_id {
+            self.mapping
+                .entry(reference_id)
+                .or_default()
+                .push(pattern_id.clone());
+        }
+
+        let pattern = (pattern_id, pattern.clone_with_id(next_hs_id));
+        self.patterns.push(pattern);
         self
     }
 
     /// Attempts to compile all the patterns, returning an [`PatternSet`] if successful
-    pub fn try_compile(self) -> Result<PatternSet, PatternSetError> {
-        // Because of how patterns are added to the builder, they are guaranteed to have
-        // unique, n+1 numeric id.
-        //
-        // However, because the name is provided by the user, we need to ensure each is unique.
-        let mut hs_patterns = HashMap::with_capacity(self.0.len());
-        for ((name, pattern)) in self.0.iter() {
-            if let Some(existing) = hs_patterns.insert(Arc::clone(name), pattern) {
-                return Err(PatternSetError::DuplicateNames(
-                    name.to_string(),
-                    [existing.clone(), pattern.clone()],
-                ));
-            }
-        }
-
-        let database = BlockDatabase::try_new(self.0.iter().map(|(_, pat)| pat))?;
+    pub fn try_compile(self) -> Result<(PatternSet, ReferenceIdMapping), PatternSetError> {
+        // Because of how patterns are added to the builder, they are guaranteed to have a unique
+        // n+1 hyperscan id.
+        let database = BlockDatabase::try_new(self.patterns.iter().map(|(_, pat)| pat))?;
+        let database = Arc::new(database);
         // Hyperscan supports libpcre(2) syntax, even though it has different semantics.
         // https://intel.github.io/hyperscan/dev-reference/compilation.html#semantics
         //
@@ -134,23 +173,22 @@ impl PatternSetBuilder {
         // contain valid pcre2 syntax, so we augment the Pattern with a backing regex to provide
         // captures and true start-of-match detection.
         let patterns: Result<Vec<NamedPattern>, PatternSetError> = self
-            .0
+            .patterns
             .into_iter()
-            .map(|(name, hs_pattern)| {
+            .map(|(id, hs_pattern)| {
                 // NOTE: An error here should never occur (see above regarding successful Hyperscan compilation)
                 let pattern: Pattern = hs_pattern.try_into().map_err(PatternSetError::Regex)?;
-                Ok(NamedPattern(name, pattern))
+                Ok(NamedPattern { id, pattern })
             })
             .collect();
         let patterns = patterns?;
+        let pattern_set = PatternSet { database, patterns };
 
-        Ok(PatternSet {
-            database: Arc::new(database),
-            patterns,
-        })
+        Ok((pattern_set, self.mapping))
     }
 }
 
+#[rustfmt::skip]
 #[cfg(test)]
 mod tests {
     use super::{PatternSet, PatternSetBuilder, PatternSetError};
@@ -159,7 +197,6 @@ mod tests {
 
     /// The [`PatternSetBuilder`] should assign [`vectorscan::scan::PatternId`] ids from 0 to n, regardless
     /// of whether the incoming pattern had an id already assigned.
-    #[rustfmt::skip]
     #[test]
     fn builder_incrementing_hs_pattern_ids() {
         // Patterns without default ids (0)
@@ -179,48 +216,57 @@ mod tests {
         let pat9 = HsPattern::new("pqr?").id(456).try_build().unwrap();
 
         for (pat_a, pat_b, pat_c) in [(pat1, pat2, pat3), (pat4, pat5, pat6), (pat7, pat8, pat9)] {
-            let set = PatternSet::new().pattern(("a1".into(), pat_a)).pattern(("b2".into(), pat_b)).pattern(("c3".into(), pat_c));
+            let set = PatternSet::new().pattern(pat_a, None).pattern(pat_b, None).pattern(pat_c, None);
             assert_eq!(
-                set.try_compile().unwrap().patterns.iter().map(|np| np.inner().hs().id()).collect::<Vec<_>>(),
+                set.try_compile().unwrap().0.patterns.iter().map(|np| np.inner().hs().id()).collect::<Vec<_>>(),
                 vec![0, 1, 2]
             );
         }
     }
 
-    /// The PatternSet should fail to compile if there are duplicate names.
-    #[test]
-    fn builder_unique_names() {
-        let pat1 = HsPattern::new("abc?").try_build().unwrap();
-        let pat2 = HsPattern::new("def?").try_build().unwrap();
-        let pat3 = HsPattern::new("ghi?").try_build().unwrap();
-        let dup_name = "name-2";
-        let set = PatternSet::new()
-            .pattern(("name-1".into(), pat1))
-            .pattern((dup_name.into(), pat2))
-            .pattern((dup_name.into(), pat3));
-        let duplicate_name = dup_name.to_string();
-        assert!(set
-            .try_compile()
-            .is_err_and(|err| matches!(err, PatternSetError::DuplicateNames(duplicate_name, _))));
-
-        let pat1 = HsPattern::new("abc?").try_build().unwrap();
-        let pat2 = HsPattern::new("def?").try_build().unwrap();
-        let set = PatternSet::new()
-            .pattern(("name-1".into(), pat1))
-            .pattern(("name-2".into(), pat2));
-        assert!(set.try_compile().is_ok_and(|es| es.len() == 2));
-    }
-
     /// The PatternSet doesn't require expressions to be unique.
     #[test]
     fn allow_duplicate_expressions() {
-        // As long as the names are different, patterns don't have to be unique
         let expression = "abc?";
         let pat1 = HsPattern::new(expression).try_build().unwrap();
         let pat2 = HsPattern::new(expression).try_build().unwrap();
+        let set = PatternSet::new().pattern(pat1, None).pattern(pat2, None);
+        assert!(set.try_compile().is_ok_and(|set| set.0.len() == 2));
+    }
+
+    /// The builder can map multiple patterns to the same caller-provided id.
+    #[test]
+    fn caller_id_duplicates() {
+        let pat1 = HsPattern::new("abc?").try_build().unwrap();
+        let pat2 = HsPattern::new("def?").try_build().unwrap();
+        let pat3 = HsPattern::new("ghi?").try_build().unwrap();
+
+        let unique_name = Arc::<str>::from("name-1");
+        let dup_name = Arc::<str>::from("name-2");
         let set = PatternSet::new()
-            .pattern(("name-1".into(), pat1))
-            .pattern(("name-2".into(), pat2));
-        assert!(set.try_compile().is_ok_and(|es| es.len() == 2));
+            .pattern(pat1, Some(dup_name.clone()))
+            .pattern(pat2, Some(unique_name.clone()))
+            .pattern(pat3, Some(dup_name.clone()));
+        let (_, mapping) = set.try_compile().unwrap();
+
+        assert_eq!(mapping.get(&dup_name), Some(&vec!["regex-1".into(), "regex-3".into()]));
+        assert_eq!(mapping.get(&unique_name), Some(&vec!["regex-2".into()]));
+    }
+
+    /// The caller doesn't need to provide a reference id
+    #[test]
+    fn caller_id_none() {
+        let pat1 = HsPattern::new("abc?").try_build().unwrap();
+        let pat2 = HsPattern::new("def?").try_build().unwrap();
+        let pat3 = HsPattern::new("ghi?").try_build().unwrap();
+
+        let set = PatternSet::new()
+            .pattern(pat1, None)
+            .pattern(pat2, None)
+            .pattern(pat3, None);
+        let (set, mapping) = set.try_compile().unwrap();
+
+        assert_eq!(set.len(), 3);
+        assert_eq!(mapping.len(), 0);
     }
 }

@@ -82,10 +82,29 @@ pub enum MatcherError {
     },
 }
 
+/// A unique id that identifies a pattern associated with a [`Matcher`]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[repr(transparent)]
+pub struct PatternId(pub Arc<str>);
+
+impl PatternId {
+    /// Returns a shared reference to the underlying str.
+    #[inline]
+    pub fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
+
+impl<T: AsRef<str>> From<T> for PatternId {
+    fn from(value: T) -> Self {
+        Self(Arc::from(value.as_ref()))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PatternMatch<'b> {
     /// The internal id of the pattern that generated this `PatternMatch`.
-    pattern_id: Arc<str>,
+    pattern_id: PatternId,
     /// The original data that was scanned, which spans [0..n]
     full_data: &'b [u8],
     /// The captures of this match.
@@ -95,6 +114,12 @@ pub struct PatternMatch<'b> {
 impl<'b> PatternMatch<'b> {
     /// Returns the id of the pattern that generated this `PatternMatch`.
     pub fn pattern_id(&self) -> &str {
+        &self.pattern_id.0
+    }
+
+impl<'b> PatternMatch<'b> {
+    /// Returns the id of the pattern that generated this `PatternMatch`.
+    pub fn pattern_id(&self) -> &PatternId {
         &self.pattern_id
     }
 
