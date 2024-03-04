@@ -1,10 +1,13 @@
 use anyhow::{anyhow, Context, Result};
+use kernel::model::analysis::ArgumentProvider;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
 use crate::constants;
 use crate::model;
+use crate::model::config_file::{ArgumentValues, ConfigFile};
 
 fn parse_config_file(config_contents: &str) -> Result<model::config_file::ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
@@ -47,6 +50,62 @@ pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigF
     }
 
     Ok(Some(parse_config_file(&contents)?))
+}
+
+pub struct ConfigFileArgumentProvider<'a> {
+    config: &'a ConfigFile,
+}
+
+impl<'a> ArgumentProvider for ConfigFileArgumentProvider<'a> {
+    fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
+        let (ruleset, short_name) = split_rule_name(rulename);
+        match self
+            .config
+            .rulesets
+            .get(ruleset)
+            .and_then(|rs| rs.rules.get(short_name))
+        {
+            None => HashMap::new(),
+            Some(cfg) => filter_arguments(&cfg.arguments, filename),
+        }
+    }
+}
+
+fn filter_arguments(
+    arguments: &HashMap<String, ArgumentValues>,
+    filename: &str,
+) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for (arg_name, arg_values) in arguments {
+        let mut value = arg_values.default_value.as_ref();
+        let mut path = Path::new(filename);
+        loop {
+            let str = path.display().to_string();
+            if let Some(subtree_value) = arg_values.by_subtree.get(&str) {
+                value = Some(subtree_value);
+                break;
+            }
+            match path.parent() {
+                None => break,
+                Some(parent) => path = parent,
+            }
+        }
+        if let Some(value) = value {
+            out.insert(arg_name.clone(), value.clone());
+        }
+    }
+    out
+}
+
+fn split_rule_name(name: &str) -> (&str, &str) {
+    match name.split_once('/') {
+        None => ("", name),
+        Some((ruleset, short_name)) => (ruleset, short_name),
+    }
+}
+
+pub fn get_argument_provider(config: &ConfigFile) -> ConfigFileArgumentProvider {
+    ConfigFileArgumentProvider { config }
 }
 
 #[cfg(test)]
@@ -216,6 +275,7 @@ rulesets:
                                 only: Some(vec!["py/**".to_string()]),
                                 ignore: vec!["py/insecure/**".to_string()],
                             },
+                            arguments: Default::default(),
                         },
                     )]),
                 },

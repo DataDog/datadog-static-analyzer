@@ -366,6 +366,7 @@ mod tests {
     use std::env;
     use std::path::Path;
 
+    use kernel::model::analysis::NoArgumentProvider;
     use tempfile::{tempdir, TempDir};
 
     use kernel::model::common::OutputFormat::Sarif;
@@ -468,6 +469,7 @@ mod tests {
             num_cpus: 2, // of cpus to use for parallelism
             rules: vec![],
             path_restrictions: PathRestrictions::default(),
+            argument_provider: &NoArgumentProvider {},
             max_file_size_kb: 1,
             use_staging: false,
         };

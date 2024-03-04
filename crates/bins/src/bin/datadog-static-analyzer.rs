@@ -1,4 +1,4 @@
-use cli::config_file::read_config_file;
+use cli::config_file::{get_argument_provider, read_config_file};
 use cli::datadog_utils::{
     get_all_default_rulesets, get_diff_aware_information, get_rules_from_rulesets,
 };
@@ -11,7 +11,9 @@ use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::analysis::{AnalysisOptions, NoArgumentProvider, ERROR_RULE_TIMEOUT};
+use kernel::model::analysis::{
+    AnalysisOptions, ArgumentProvider, NoArgumentProvider, ERROR_RULE_TIMEOUT,
+};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 
@@ -245,10 +247,11 @@ fn main() -> Result<()> {
         read_config_file(directory_to_analyze.as_str()).unwrap();
     let mut rules: Vec<Rule> = Vec::new();
     let mut path_restrictions = PathRestrictions::default();
+    let mut argument_provider: Box<dyn ArgumentProvider + Sync> = Box::new(NoArgumentProvider {});
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
-    if let Some(conf) = configuration_file {
+    if let Some(conf) = &configuration_file {
         use_configuration_file = true;
         ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
         if rules_file.is_some() {
@@ -260,10 +263,11 @@ fn main() -> Result<()> {
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
         rules.extend(rules_from_api.context("error when reading rules from API")?);
         path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
+        argument_provider = Box::new(get_argument_provider(conf));
 
         // copy the only and ignore paths from the configuration file
-        path_config.ignore.extend(conf.paths.ignore);
-        path_config.only = conf.paths.only;
+        path_config.ignore.extend(conf.paths.ignore.clone());
+        path_config.only = conf.paths.only.clone();
 
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB)
@@ -335,6 +339,7 @@ fn main() -> Result<()> {
         num_cpus,
         rules,
         path_restrictions,
+        argument_provider: argument_provider.as_ref(),
         output_file,
         max_file_size_kb,
         use_staging,
@@ -516,7 +521,7 @@ fn main() -> Result<()> {
                         selected_rules,
                         relative_path,
                         &file_content,
-                        &NoArgumentProvider {},
+                        configuration.argument_provider,
                         &analysis_options,
                     )
                 } else {

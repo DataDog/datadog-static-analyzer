@@ -1,10 +1,67 @@
-use crate::model::config_file::{RuleConfig, RulesetConfig};
+use crate::model::config_file::{ArgumentValues, RuleConfig, RulesetConfig};
 use serde;
 use serde::de::{Error, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
+
+impl<'de> Deserialize<'de> for ArgumentValues {
+    fn deserialize<D>(deserializer: D) -> Result<ArgumentValues, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ArgumentValuesVisitor {}
+        impl<'de> Visitor<'de> for ArgumentValuesVisitor {
+            type Value = ArgumentValues;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a string or map from subtree to string")
+            }
+
+            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                self.visit_string(v.to_string())
+            }
+
+            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
+                Ok(ArgumentValues {
+                    default_value: Some(v),
+                    by_subtree: HashMap::new(),
+                })
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut default_value = None;
+                let mut by_subtree = HashMap::new();
+                while let Some((key, value)) = map.next_entry::<String, String>()? {
+                    if key == "/" {
+                        if default_value.is_none() {
+                            default_value = Some(value);
+                        } else {
+                            return Err(Error::custom(format!("repeated key: {}", key)));
+                        }
+                    } else if by_subtree.insert(key.to_string(), value).is_some() {
+                        return Err(Error::custom(format!("repeated key: {}", key)));
+                    }
+                }
+                Ok(ArgumentValues {
+                    default_value,
+                    by_subtree,
+                })
+            }
+        }
+        deserializer.deserialize_any(ArgumentValuesVisitor {})
+    }
+}
 
 /// Special deserializer for a `RulesetConfig` map.
 ///
