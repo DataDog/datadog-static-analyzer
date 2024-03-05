@@ -5,6 +5,7 @@ pub mod datadog_utils;
 pub mod file_utils;
 pub mod model;
 pub mod path_restrictions;
+pub mod path_trie;
 pub mod rule_utils;
 pub mod sarif;
 pub mod violations_table;

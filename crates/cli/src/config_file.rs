@@ -6,10 +6,10 @@ use std::io::Read;
 use std::path::Path;
 
 use crate::constants;
-use crate::model;
-use crate::model::config_file::{ArgumentValues, ConfigFile};
+use crate::model::config_file::ConfigFile;
+use crate::path_trie::PathTrie;
 
-fn parse_config_file(config_contents: &str) -> Result<model::config_file::ConfigFile> {
+fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
 }
 
@@ -17,7 +17,7 @@ fn parse_config_file(config_contents: &str) -> Result<model::config_file::Config
 // If it fails, we try to read static-analysis.datadog.yaml
 // If the file does not exist, we return a Ok(None).
 // If there is an error reading the file, we return a failure
-pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigFile>> {
+pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
     let yml_file_path = Path::new(path).join(format!(
         "{}.yml",
         constants::DATADOG_CONFIG_FILE_WITHOUT_PREFIX
@@ -52,60 +52,51 @@ pub fn read_config_file(path: &str) -> Result<Option<model::config_file::ConfigF
     Ok(Some(parse_config_file(&contents)?))
 }
 
-pub struct ConfigFileArgumentProvider<'a> {
-    config: &'a ConfigFile,
+type Argument = (String, String);
+
+type ArgumentsByPrefix = PathTrie<Vec<Argument>>;
+
+pub struct TrieArgumentProvider {
+    by_rule: HashMap<String, ArgumentsByPrefix>,
 }
 
-impl<'a> ArgumentProvider for ConfigFileArgumentProvider<'a> {
+impl ArgumentProvider for TrieArgumentProvider {
     fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
-        let (ruleset, short_name) = split_rule_name(rulename);
-        match self
-            .config
-            .rulesets
-            .get(ruleset)
-            .and_then(|rs| rs.rules.get(short_name))
-        {
-            None => HashMap::new(),
-            Some(cfg) => filter_arguments(&cfg.arguments, filename),
-        }
-    }
-}
-
-fn filter_arguments(
-    arguments: &HashMap<String, ArgumentValues>,
-    filename: &str,
-) -> HashMap<String, String> {
-    let mut out = HashMap::new();
-    for (arg_name, arg_values) in arguments {
-        let mut value = arg_values.default_value.as_ref();
-        let mut path = Path::new(filename);
-        loop {
-            let str = path.display().to_string();
-            if let Some(subtree_value) = arg_values.by_subtree.get(&str) {
-                value = Some(subtree_value);
-                break;
-            }
-            match path.parent() {
-                None => break,
-                Some(parent) => path = parent,
+        let mut out = HashMap::new();
+        if let Some(by_prefix) = self.by_rule.get(rulename) {
+            for (_, args) in by_prefix.find_by_prefix(filename) {
+                out.extend(args.clone());
             }
         }
-        if let Some(value) = value {
-            out.insert(arg_name.clone(), value.clone());
+        out
+    }
+}
+
+pub fn get_argument_provider(config: &ConfigFile) -> TrieArgumentProvider {
+    let mut by_rule = HashMap::new();
+    for (ruleset_name, ruleset_cfg) in &config.rulesets {
+        for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
+            let mut by_prefix = HashMap::new();
+            for (arg_name, arg_values) in &rule_cfg.arguments {
+                for (prefix, value) in &arg_values.by_subtree {
+                    by_prefix
+                        .entry(prefix)
+                        .or_insert(vec![])
+                        .push((arg_name.clone(), value.clone()));
+                }
+            }
+            if !by_prefix.is_empty() {
+                let mut by_prefix_trie = PathTrie::new();
+                for (k, v) in by_prefix {
+                    by_prefix_trie.insert(k, v);
+                }
+                let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
+                by_rule.insert(rule_name, by_prefix_trie);
+            }
         }
     }
-    out
-}
 
-fn split_rule_name(name: &str) -> (&str, &str) {
-    match name.split_once('/') {
-        None => ("", name),
-        Some((ruleset, short_name)) => (ruleset, short_name),
-    }
-}
-
-pub fn get_argument_provider(config: &ConfigFile) -> ConfigFileArgumentProvider {
-    ConfigFileArgumentProvider { config }
+    TrieArgumentProvider { by_rule }
 }
 
 #[cfg(test)]

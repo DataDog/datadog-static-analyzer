@@ -20,31 +20,52 @@ impl<'de> Deserialize<'de> for ArgumentValues {
             }
 
             // Cast pretty much every primitive type to a string.
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E> where E: Error {
+            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 self.visit_string(v.to_string())
             }
 
-            fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E> where E: Error {
+            fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 self.visit_string(v.to_string())
             }
 
-            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E> where E: Error {
+            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 self.visit_string(v.to_string())
             }
 
-            fn visit_i128<E>(self, v: i128) -> Result<Self::Value, E> where E: Error {
+            fn visit_i128<E>(self, v: i128) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 self.visit_string(v.to_string())
             }
 
-            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E> where E: Error {
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 self.visit_string(v.to_string())
             }
 
-            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E> where E: Error {
+            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 self.visit_string(v.to_string())
             }
 
-            fn visit_unit<E>(self) -> Result<Self::Value, E> where E: Error {
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: Error,
+            {
                 self.visit_string("".to_string())
             }
 
@@ -60,8 +81,7 @@ impl<'de> Deserialize<'de> for ArgumentValues {
                 E: Error,
             {
                 Ok(ArgumentValues {
-                    default_value: Some(v),
-                    by_subtree: HashMap::new(),
+                    by_subtree: HashMap::from([("".to_string(), v)]),
                 })
             }
 
@@ -69,23 +89,13 @@ impl<'de> Deserialize<'de> for ArgumentValues {
             where
                 A: MapAccess<'de>,
             {
-                let mut default_value = None;
                 let mut by_subtree = HashMap::new();
                 while let Some((key, value)) = map.next_entry::<String, String>()? {
-                    if key == "/" {
-                        if default_value.is_none() {
-                            default_value = Some(value);
-                        } else {
-                            return Err(Error::custom(format!("repeated key: {}", key)));
-                        }
-                    } else if by_subtree.insert(key.to_string(), value).is_some() {
+                    if by_subtree.insert(key.to_string(), value).is_some() {
                         return Err(Error::custom(format!("repeated key: {}", key)));
                     }
                 }
-                Ok(ArgumentValues {
-                    default_value,
-                    by_subtree,
-                })
+                Ok(ArgumentValues { by_subtree })
             }
         }
         deserializer.deserialize_any(ArgumentValuesVisitor {})

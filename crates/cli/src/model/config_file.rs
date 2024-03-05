@@ -18,7 +18,6 @@ pub struct PathConfig {
 
 #[derive(Serialize, Debug, PartialEq, Default)]
 pub struct ArgumentValues {
-    pub default_value: Option<String>,
     pub by_subtree: HashMap<String, String>,
 }
 
