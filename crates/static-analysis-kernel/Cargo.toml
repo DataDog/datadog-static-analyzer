@@ -15,6 +15,7 @@ sha2 = { workspace = true }
 
 # other
 deno_core = "0.196.0"
+glob-match = "0.2.1"
 lazy_static = "1.4.0"
 serde_yaml = "0.9.21"
 serde_v8 = "0.107.0"

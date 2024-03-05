@@ -1,6 +1,7 @@
-use crate::file_utils::is_allowed_by_path_config;
-use kernel::model::config_file::{PathConfig, RulesetConfig};
+use crate::model::config_file::{PathConfig, RulesetConfig};
+use glob_match::glob_match;
 use std::collections::HashMap;
+use std::path::Path;
 
 /// An object that provides operations to filter rules by the path of the file to check.
 #[derive(Default, Clone)]
@@ -59,10 +60,35 @@ fn split_rule_name(name: &str) -> (&str, &str) {
     }
 }
 
+fn matches_pattern(pattern: &str, path: &str) -> bool {
+    if glob_match(pattern, path) {
+        return true;
+    }
+    return Path::new(path).starts_with(Path::new(pattern));
+}
+
+pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
+    if paths
+        .ignore
+        .iter()
+        .filter(|p| !p.is_empty())
+        .any(|pattern| matches_pattern(pattern, file_name))
+    {
+        return false;
+    }
+    match &paths.only {
+        None => true,
+        Some(only) => only
+            .iter()
+            .filter(|p| !p.is_empty())
+            .any(|pattern| matches_pattern(pattern, file_name)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::model::config_file::{PathConfig, RuleConfig, RulesetConfig};
     use crate::path_restrictions::PathRestrictions;
-    use kernel::model::config_file::{PathConfig, RuleConfig, RulesetConfig};
     use std::collections::HashMap;
 
     // By default, everything is included.
