@@ -1,3 +1,4 @@
+schema-version: v1
 rulesets:
   - lorem_ipsum:
     ignore:

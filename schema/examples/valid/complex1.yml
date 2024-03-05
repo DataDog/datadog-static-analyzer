@@ -1,3 +1,4 @@
+schema-version: v1
 rulesets:
   - python-best-practices
   - go-best-practices:
