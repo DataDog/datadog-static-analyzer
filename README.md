@@ -33,6 +33,7 @@ All the rules can be found on the [Datadog documentation](https://docs.datadoghq
 Example of YAML file
 
 ```yaml
+schema-version: v1
 rulesets:
   - python-code-style
   - python-best-practices
@@ -141,6 +142,7 @@ at the root directory of the repository. This is a YAML file with the following 
 Example of configuration:
 
 ```yaml
+schema-version: v1
 rulesets:
   - python-code-style
   - python-best-practices

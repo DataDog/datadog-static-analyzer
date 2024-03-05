@@ -1,5 +1,6 @@
 # Additional fields not handled by the schema are accepted.
 # (Additional field names do NOT have to start with x-. This is done for tests only.)
+schema-version: v1
 rulesets:
   - java-best-practices:
     x-ruleset-field: abc
