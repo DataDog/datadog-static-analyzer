@@ -8,6 +8,7 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
+use crate::analysis::file_context::FileContext;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +38,7 @@ pub fn execute_rule(
     match_nodes: Vec<MatchNode>,
     filename: String,
     analysis_options: AnalysisOptions,
+    file_context: &FileContext,
 ) -> RuleResult {
     let rule_name_copy = rule.name.clone();
     let filename_copy = filename.clone();
@@ -83,6 +85,7 @@ pub fn execute_rule(
                 &match_nodes,
                 filename,
                 &analysis_options,
+                file_context,
             );
 
             // send the result back
@@ -191,17 +194,25 @@ pub fn execute_rule_internal(
     match_nodes: &[MatchNode],
     filename: String,
     analysis_options: &AnalysisOptions,
+    file_context: &FileContext,
 ) -> RuleResult {
     let nodes_json: String = serde_json::to_string(match_nodes).unwrap();
 
-    // format the JavaScript code that will be executed
+    let file_context_string = file_context.to_json_string();
+
+    // format the JavaScript code that will be executed. Note that we are merging the existing
+    // node context with the file-context we calculated for each file.
     let js_code = format!(
         r#"
 const filename = "{}";
+const file_context = {};
 
 {}
 
-{}.forEach(n => visit(n, filename, n.context.code));
+{}.forEach(n => {{
+    n.context = {{...n.context, ...file_context}};
+    visit(n, filename, n.context.code);
+}});
 
 const res = {{
     violations: stellaAllErrors,
@@ -210,7 +221,7 @@ const res = {{
 
 res
 "#,
-        filename, rule.code, nodes_json
+        filename, file_context_string, rule.code, nodes_json
     );
 
     // We cannot have strings that are  too long. Otherwise, the underlying
@@ -328,6 +339,7 @@ res
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::file_context::get_empty_file_context;
     use crate::analysis::tree_sitter::{get_query, get_query_nodes, get_tree};
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
@@ -384,6 +396,7 @@ mod tests {
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_none());
@@ -444,6 +457,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_none());
@@ -506,6 +520,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_none());
@@ -605,6 +620,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
 
         // execute for string
@@ -621,6 +637,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -636,6 +653,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -651,6 +669,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -666,6 +685,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -731,6 +751,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         println!("error: {:?}", rule_execution);
@@ -790,6 +811,7 @@ def foo(arg1):
                 use_debug: true,
                 log_output: true,
             },
+            &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_some());
