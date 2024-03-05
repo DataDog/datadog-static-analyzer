@@ -178,15 +178,6 @@ mod tests {
     use crate::scan::{HsMatch, ScanStatus};
     use std::ops::ControlFlow;
 
-    /// Helper to make equality tests less verbose
-    fn as_hs_match(id: u32, start: usize, end: usize) -> HsMatch {
-        HsMatch {
-            id: id.into(),
-            start_idx: start,
-            end_idx: end,
-        }
-    }
-
     #[test]
     fn test_scan_control_flow() {
         let haystack = "abc----------abc---------ac----";
@@ -258,6 +249,7 @@ mod tests {
                 ControlFlow::Continue(())
             }),
         );
+        assert!(matches!(scan_res, Ok(ScanStatus::Completed)));
         assert_eq!(matches_cb.len(), 4);
 
         let matches_scan_collect = db.scan_collect(&mut scratch, haystack.as_bytes()).unwrap();
