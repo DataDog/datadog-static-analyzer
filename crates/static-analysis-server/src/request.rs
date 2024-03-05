@@ -166,6 +166,7 @@ mod tests {
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            configuration_base64: None,
             options: None,
             rules: vec![
                 ServerRule{
@@ -198,6 +199,7 @@ mod tests {
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            configuration_base64: None,
             options: None,
             rules: vec![
                 ServerRule{
@@ -232,6 +234,7 @@ mod tests {
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKI()--2#$#$Bhc3M=".to_string(),
+            configuration_base64: None,
             options: None,
             rules: vec![
                 ServerRule{
@@ -266,6 +269,7 @@ mod tests {
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            configuration_base64: None,
             options: None,
             rules: vec![
                 ServerRule{
@@ -300,6 +304,7 @@ mod tests {
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            configuration_base64: None,
             options: None,
             rules: vec![
                 ServerRule{
