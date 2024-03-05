@@ -1,10 +1,9 @@
+use serde;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
-use crate::model::serialization::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
-
-use serde;
-use serde::{Deserialize, Serialize};
+use crate::config_file::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
 
 // Lists of directories and glob patterns to include/exclude from the analysis.
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]

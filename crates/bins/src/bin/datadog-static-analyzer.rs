@@ -6,7 +6,6 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::model::config_file::{ConfigFile, PathConfig};
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
@@ -25,6 +24,7 @@ use cli::sarif::sarif_utils::generate_sarif_report;
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
+use kernel::model::config_file::{ConfigFile, PathConfig};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;

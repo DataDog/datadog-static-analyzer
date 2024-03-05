@@ -1,5 +1,5 @@
 use crate::file_utils::is_allowed_by_path_config;
-use crate::model::config_file::{PathConfig, RulesetConfig};
+use kernel::model::config_file::{PathConfig, RulesetConfig};
 use std::collections::HashMap;
 
 /// An object that provides operations to filter rules by the path of the file to check.
@@ -61,8 +61,8 @@ fn split_rule_name(name: &str) -> (&str, &str) {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::config_file::{PathConfig, RuleConfig, RulesetConfig};
     use crate::path_restrictions::PathRestrictions;
+    use kernel::model::config_file::{PathConfig, RuleConfig, RulesetConfig};
     use std::collections::HashMap;
 
     // By default, everything is included.

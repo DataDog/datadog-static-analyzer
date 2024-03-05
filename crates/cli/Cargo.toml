@@ -21,7 +21,6 @@ glob-match = "0.2.1"
 percent-encoding = "2.3.1"
 prettytable-rs = "0.10.0"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
-serde_yaml = "0.9.21"
 valico = "4.0.0"
 walkdir = "2.3.3"
 
