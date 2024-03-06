@@ -1,4 +1,4 @@
-use cli::config_file::{get_argument_provider, read_config_file};
+use cli::config_file::read_config_file;
 use cli::datadog_utils::{
     get_all_default_rulesets, get_diff_aware_information, get_rules_from_rulesets,
 };
@@ -6,7 +6,6 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::model::config_file::{ConfigFile, PathConfig};
 use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
@@ -22,11 +21,13 @@ use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
-use cli::path_restrictions::PathRestrictions;
 use cli::sarif::sarif_utils::generate_sarif_report;
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
+use kernel::config_file::get_argument_provider;
+use kernel::model::config_file::{ConfigFile, PathConfig};
+use kernel::path_restrictions::PathRestrictions;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;
@@ -297,14 +298,17 @@ fn main() -> Result<()> {
     }
 
     // add ignore path from the options
-    path_config.ignore.extend(ignore_paths_from_options);
+    path_config
+        .ignore
+        .extend(ignore_paths_from_options.iter().map(|p| p.clone().into()));
 
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
-        let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str());
+        let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str())
+            .expect("error when reading gitignore file");
         path_config
             .ignore
-            .extend(paths_from_gitignore.expect("error when reading gitignore file"));
+            .extend(paths_from_gitignore.iter().map(|p| p.clone().into()));
     }
 
     let languages = get_languages_for_rules(&rules);

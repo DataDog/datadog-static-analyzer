@@ -33,6 +33,7 @@ All the rules can be found on the [Datadog documentation](https://docs.datadoghq
 Example of YAML file
 
 ```yaml
+schema-version: v1
 rulesets:
   - python-code-style
   - python-best-practices
@@ -141,6 +142,7 @@ at the root directory of the repository. This is a YAML file with the following 
 Example of configuration:
 
 ```yaml
+schema-version: v1
 rulesets:
   - python-code-style
   - python-best-practices
@@ -150,6 +152,22 @@ ignore:
 ignore-gitignore: false
 max-file-size-kb: 100
 ```
+
+## Configuration file schema
+
+There is a JSON Schema definition for the `static-analysis.datadog.yml` in the `schema` subdirectory.
+
+You can use it to check the syntax of your configuration file:
+
+1. Install https://www.npmjs.com/package/pajv (`npm install -g pajv`)
+2. Execute `pajv validate -s schema/schema.json -d path/to/your/static-analysis.datadog.yml`
+
+There are some examples of valid and invalid configuration files in the [`schema/examples/valid`](schema/examples/valid)
+and [`schema/examples/invalid`](schema/examples/invalid) subdirectories, respectively. If you make changes to the JSON
+Schema, you can test them against our examples:
+
+1. Install https://www.npmjs.com/package/pajv (`npm install -g pajv`)
+2. Execute `make -C schema`
 
 ## Other Tools
 

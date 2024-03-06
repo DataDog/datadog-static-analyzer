@@ -1,0 +1,3 @@
+rulesets: [python-style]
+# 'only' must be a list.
+only: foo

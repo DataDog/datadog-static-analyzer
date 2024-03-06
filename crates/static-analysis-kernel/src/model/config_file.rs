@@ -1,19 +1,30 @@
-use std::collections::HashMap;
-use std::fmt;
-
-use crate::model::serialization::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
-
+use globset::{GlobBuilder, GlobMatcher};
 use serde;
 use serde::{Deserialize, Serialize};
+use std::borrow::Borrow;
+use std::collections::HashMap;
+use std::fmt;
+use std::path::{Path, PathBuf};
+
+use crate::config_file::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
+
+// A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
+// while the 'prefix' field contains a path prefix.
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(from = "String", into = "String")]
+pub struct PathPattern {
+    pub glob: Option<GlobMatcher>,
+    pub prefix: PathBuf,
+}
 
 // Lists of directories and glob patterns to include/exclude from the analysis.
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]
 pub struct PathConfig {
     // Analyze only these directories and patterns.
-    pub only: Option<Vec<String>>,
+    pub only: Option<Vec<PathPattern>>,
     // Do not analyze any of these directories and patterns.
     #[serde(default)]
-    pub ignore: Vec<String>,
+    pub ignore: Vec<PathPattern>,
 }
 
 #[derive(Serialize, Debug, PartialEq, Default)]
@@ -70,7 +81,7 @@ struct RawConfigFile {
     paths: PathConfig,
     // For backwards compatibility. Its content will be added to paths.ignore.
     #[serde(rename = "ignore-paths")]
-    ignore_paths: Option<Vec<String>>,
+    ignore_paths: Option<Vec<PathPattern>>,
     // Ignore all the paths in the .gitignore file.
     #[serde(rename = "ignore-gitignore")]
     ignore_gitignore: Option<bool>,
@@ -99,5 +110,48 @@ impl From<RawConfigFile> for ConfigFile {
 impl fmt::Display for ConfigFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl PathPattern {
+    pub fn matches(&self, path: &str) -> bool {
+        self.glob
+            .as_ref()
+            .map(|g| g.is_match(path))
+            .unwrap_or(false)
+            || Path::new(path).starts_with(&self.prefix)
+    }
+}
+
+impl From<String> for PathPattern {
+    fn from(value: String) -> Self {
+        PathPattern {
+            glob: GlobBuilder::new(&value)
+                .literal_separator(true)
+                .empty_alternates(true)
+                .backslash_escape(true)
+                .build()
+                .map(|g| g.compile_matcher())
+                .ok(),
+            prefix: PathBuf::from(value),
+        }
+    }
+}
+
+impl Borrow<str> for PathPattern {
+    fn borrow(&self) -> &str {
+        self.prefix.to_str().unwrap_or("")
+    }
+}
+
+impl From<PathPattern> for String {
+    fn from(value: PathPattern) -> Self {
+        value.prefix.display().to_string()
+    }
+}
+
+impl PartialEq for PathPattern {
+    fn eq(&self, other: &Self) -> bool {
+        self.prefix.eq(&other.prefix)
     }
 }

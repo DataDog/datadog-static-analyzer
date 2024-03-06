@@ -1,0 +1,8 @@
+rulesets:
+  - java-best-practices:
+    rules:
+      avoid-printstacktrace:
+        # 'rulesets/rules/<rule>/ignore' is a list.
+        only: foo
+      loose-coupling:
+      one-declaration-per-line:

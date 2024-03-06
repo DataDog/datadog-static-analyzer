@@ -1,0 +1,106 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "type": "object",
+  "properties": {
+    "schema-version": {
+      "type": "string",
+      "default": "v1",
+      "enum": ["v1"]
+    },
+    "rulesets": {
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "$ref": "#/definitions/ruleset"
+          },
+          {
+            "$ref": "#/definitions/emptyRuleset"
+          },
+          {
+            "type": "string",
+            "minLength": 1
+          }
+        ]
+      },
+      "minItems": 1
+    },
+    "ignore": {
+      "$ref": "#/definitions/pathList"
+    },
+    "only": {
+      "$ref": "#/definitions/pathList"
+    },
+    "ignore-gitignore": {
+      "type": "boolean"
+    },
+    "max-file-size-kb": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "rulesets"
+  ],
+  "definitions": {
+    "rule": {
+      "type": "object",
+      "properties": {
+        "ignore": {
+          "$ref": "#/definitions/pathList"
+        },
+        "only": {
+          "$ref": "#/definitions/pathList"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "types": [
+              "string",
+              {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "emptyRuleset": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "null"
+      },
+      "minProperties": 1,
+      "maxProperties": 1
+    },
+    "ruleset": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/rule "
+          }
+        },
+        "ignore": {
+          "$ref": "#/definitions/pathList"
+        },
+        "only": {
+          "$ref": "#/definitions/pathList"
+        }
+      },
+      "minProperties": 2
+    },
+    "pathList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}
+
+
