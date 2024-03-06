@@ -153,11 +153,15 @@ pub struct PointLocator<'d> {
 pub type LineNumber = usize;
 
 impl<'d> PointLocator<'d> {
+    /// Creates a new `PointLocator`.
+    ///
+    /// This is a cheap struct to create: there are no initial allocations, and all computation
+    /// is performed lazily.
     pub fn new(data: &'d [u8]) -> PointLocator<'d> {
         Self {
             data,
             scanned_up_to: Cell::new(0),
-            line_offsets: RefCell::new(vec![0]),
+            line_offsets: RefCell::new(vec![]),
         }
     }
 
@@ -346,6 +350,13 @@ impl<'d> PointLocator<'d> {
 
     /// Caches the line information up to the given (inclusive) offset.
     fn cache_up_to(&self, offset: usize) {
+        if self.scanned_up_to.get() == 0 {
+            // Lazily initialize the vec
+            let mut vec = self.line_offsets.borrow_mut();
+            if vec.len() == 0 {
+                vec.push(0);
+            }
+        }
         if offset <= self.scanned_up_to.get() {
             return;
         }
