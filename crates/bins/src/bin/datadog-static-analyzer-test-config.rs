@@ -1,11 +1,11 @@
+use anyhow::Result;
+use getopts::Options;
+use kernel::config_file::parse_config_file;
+use kernel::model::config_file::{ConfigFile, PathConfig, RuleConfig, RulesetConfig};
 use std::env;
 use std::fs::File;
 use std::io::Read;
 use std::process::exit;
-use getopts::Options;
-use anyhow::Result;
-use kernel::config_file::parse_config_file;
-use kernel::model::config_file::{ConfigFile, PathConfig, RuleConfig, RulesetConfig};
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -43,13 +43,40 @@ fn print_paths(indent: usize, paths: &PathConfig) {
     }
 }
 
-fn main() -> Result<()> {
+fn read_config_file(file_name: &str) -> Result<ConfigFile> {
+    let mut file = File::open(file_name)?;
+    let mut cfg_file = String::new();
+    file.read_to_string(&mut cfg_file)?;
+    parse_config_file(&cfg_file)
+}
+
+fn main() {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let mut opts = Options::new();
 
-    opts.optopt("c", "config", "configuration file to test", "path/to/static-analysis.datadog.yml");
-    opts.optflag("v", "verbose", "display information about the configuration file");
+    opts.optopt(
+        "c",
+        "config",
+        "configuration file to test",
+        "path/to/static-analysis.datadog.yml",
+    );
+    opts.optopt(
+        "e",
+        "expected",
+        "expected result of parsing the configuration file",
+        "valid/invalid",
+    );
+    opts.optflag(
+        "v",
+        "verbose",
+        "display information about the configuration file",
+    );
+    opts.optflag(
+        "q",
+        "quiet",
+        "do not show error messages when there are parse failures",
+    );
     opts.optflag("h", "help", "print this help");
 
     let matches = match opts.parse(&args[1..]) {
@@ -70,15 +97,42 @@ fn main() -> Result<()> {
         exit(1);
     }
 
+    let expected_valid = matches.opt_str("e").map(|e| {
+        if e == "valid" || e == "success" || e == "pass" {
+            true
+        } else if e == "invalid" || e == "failure" || e == "fail" {
+            false
+        } else {
+            eprintln!("invalid value for the expected result: {}", e);
+            print_usage(&program, opts);
+            exit(1);
+        }
+    });
+
     let file_name = matches.opt_str("c").unwrap();
-    let mut file = File::open(&file_name)?;
-    let mut cfg_file= String::new();
-    file.read_to_string(&mut cfg_file)?;
-    let cfg = parse_config_file(&cfg_file)?;
+    let result = read_config_file(&file_name);
 
     if matches.opt_present("v") {
-        print_cfg(&file_name, &cfg);
+        if let Ok(cfg) = &result {
+            print_cfg(&file_name, cfg);
+        }
     }
 
-    Ok(())
+    match (result, expected_valid) {
+        (Ok(_), Some(true)) | (Err(_), Some(false)) | (Ok(_), None) => {
+            exit(0);
+        }
+        (Ok(_), Some(false)) => {
+            eprintln!("file {} was unexpectedly valid", file_name);
+            exit(1);
+        }
+        (Err(err), Some(true)) => {
+            eprintln!("file {} was unexpectedly invalid: {}", file_name, err);
+            exit(1);
+        }
+        (Err(err), None) => {
+            eprintln!("error parsing the configuration file: {}", err);
+            exit(1);
+        }
+    }
 }
