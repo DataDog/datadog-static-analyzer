@@ -198,7 +198,7 @@ pub fn execute_rule_internal(
 ) -> RuleResult {
     let nodes_json: String = serde_json::to_string(match_nodes).unwrap();
 
-    let file_context_string = file_context.to_json_string();
+    let file_context_string = serde_json::to_string(file_context).unwrap_or("{}".to_string());
 
     // format the JavaScript code that will be executed. Note that we are merging the existing
     // node context with the file-context we calculated for each file.
