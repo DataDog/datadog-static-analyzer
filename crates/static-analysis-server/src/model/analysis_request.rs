@@ -43,5 +43,7 @@ pub struct AnalysisRequest {
     #[serde(rename = "code")]
     pub code_base64: String,
     pub rules: Vec<ServerRule>,
+    #[serde(rename = "configuration")]
+    pub configuration_base64: Option<String>,
     pub options: Option<AnalysisRequestOptions>,
 }

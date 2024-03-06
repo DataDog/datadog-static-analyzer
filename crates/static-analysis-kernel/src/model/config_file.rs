@@ -1,13 +1,12 @@
 use globset::{GlobBuilder, GlobMatcher};
+use serde;
+use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use crate::model::serialization::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
-
-use serde;
-use serde::{Deserialize, Serialize};
+use crate::config_file::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
@@ -104,6 +103,16 @@ impl From<RawConfigFile> for ConfigFile {
 impl fmt::Display for ConfigFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl PathPattern {
+    pub fn matches(&self, path: &str) -> bool {
+        self.glob
+            .as_ref()
+            .map(|g| g.is_match(path))
+            .unwrap_or(false)
+            || Path::new(path).starts_with(&self.prefix)
     }
 }
 
