@@ -46,17 +46,11 @@ impl CliConfiguration {
         // println!("rules string: {}", rules_string.join("|"));
         let full_config_string = format!(
             "{}:{}:{}:{}::{}:{}",
+            self.path_config.ignore.join(","),
             self.path_config
-                .ignore
-                .iter()
-                .map(|p| p.clone().into())
-                .collect::<Vec<String>>()
-                .join(","),
-            self.path_config.only.as_ref().map_or("".to_string(), |v| v
-                .iter()
-                .map(|p| p.clone().into())
-                .collect::<Vec<String>>()
-                .join(",")),
+                .only
+                .as_ref()
+                .map_or("".to_string(), |v| v.join(",")),
             self.ignore_gitignore,
             rules_string.join(","),
             self.max_file_size_kb,

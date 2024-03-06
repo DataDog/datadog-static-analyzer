@@ -55,20 +55,10 @@ fn print_configuration(configuration: &CliConfiguration) {
     let ignore_paths_str = if configuration.path_config.ignore.is_empty() {
         "no ignore path".to_string()
     } else {
-        configuration
-            .path_config
-            .ignore
-            .iter()
-            .map(|p| p.clone().into())
-            .collect::<Vec<String>>()
-            .join(",")
+        configuration.path_config.ignore.join(",")
     };
     let only_paths_str = match &configuration.path_config.only {
-        Some(x) => x
-            .iter()
-            .map(|p| p.clone().into())
-            .collect::<Vec<String>>()
-            .join(","),
+        Some(x) => x.join(","),
         None => "all paths".to_string(),
     };
 

@@ -1,4 +1,5 @@
 use globset::{GlobBuilder, GlobMatcher};
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -8,6 +9,8 @@ use crate::model::serialization::{deserialize_ruleconfigs, deserialize_rulesetco
 use serde;
 use serde::{Deserialize, Serialize};
 
+// A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
+// while the 'prefix' field contains a path prefix.
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
 #[serde(from = "String", into = "String")]
 pub struct PathPattern {
@@ -72,7 +75,7 @@ struct RawConfigFile {
     paths: PathConfig,
     // For backwards compatibility. Its content will be added to paths.ignore.
     #[serde(rename = "ignore-paths")]
-    ignore_paths: Option<Vec<String>>,
+    ignore_paths: Option<Vec<PathPattern>>,
     // Ignore all the paths in the .gitignore file.
     #[serde(rename = "ignore-gitignore")]
     ignore_gitignore: Option<bool>,
@@ -88,7 +91,7 @@ impl From<RawConfigFile> for ConfigFile {
             paths: {
                 let mut paths = value.paths;
                 if let Some(ignore) = value.ignore_paths {
-                    paths.ignore.extend(ignore.iter().map(|p| p.clone().into()));
+                    paths.ignore.extend(ignore);
                 }
                 paths
             },
@@ -116,6 +119,12 @@ impl From<String> for PathPattern {
                 .ok(),
             prefix: PathBuf::from(value),
         }
+    }
+}
+
+impl Borrow<str> for PathPattern {
+    fn borrow(&self) -> &str {
+        self.prefix.to_str().unwrap_or("")
     }
 }
 
