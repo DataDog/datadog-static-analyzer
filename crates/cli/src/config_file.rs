@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use kernel::model::analysis::ArgumentProvider;
+use sequence_trie::SequenceTrie;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -7,7 +8,6 @@ use std::path::Path;
 
 use crate::constants;
 use crate::model::config_file::ConfigFile;
-use crate::path_trie::PathTrie;
 
 fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
@@ -54,8 +54,7 @@ pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
 
 type Argument = (String, String);
 
-type ArgumentsByPrefix = PathTrie<Vec<Argument>>;
-
+type ArgumentsByPrefix = SequenceTrie<String, Vec<Argument>>;
 pub struct TrieArgumentProvider {
     by_rule: HashMap<String, ArgumentsByPrefix>,
 }
@@ -64,7 +63,11 @@ impl ArgumentProvider for TrieArgumentProvider {
     fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
         let mut out = HashMap::new();
         if let Some(by_prefix) = self.by_rule.get(rulename) {
-            for (_, args) in by_prefix.find_by_prefix(filename) {
+            for args in by_prefix
+                .prefix_iter(filename.split('/').filter(|c| !c.is_empty()))
+                .filter_map(|x| x.value())
+            {
+                // Longer prefixes appear last, so they'll override arguments from shorter prefixes.
                 out.extend(args.clone());
             }
         }
@@ -86,9 +89,9 @@ pub fn get_argument_provider(config: &ConfigFile) -> TrieArgumentProvider {
                 }
             }
             if !by_prefix.is_empty() {
-                let mut by_prefix_trie = PathTrie::new();
+                let mut by_prefix_trie = SequenceTrie::new();
                 for (k, v) in by_prefix {
-                    by_prefix_trie.insert(k, v);
+                    by_prefix_trie.insert(k.split('/').filter(|c| !c.is_empty()), v);
                 }
                 let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
                 by_rule.insert(rule_name, by_prefix_trie);
