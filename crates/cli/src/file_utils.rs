@@ -11,7 +11,7 @@ use kernel::model::common::Language;
 use kernel::model::violation::Violation;
 
 use crate::model::cli_configuration::CliConfiguration;
-use crate::model::config_file::{PathConfig, PathPattern};
+use crate::model::config_file::PathConfig;
 use crate::model::datadog_api::DiffAwareData;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
@@ -153,28 +153,17 @@ pub fn get_files(
     Ok(files_to_return)
 }
 
-fn matches_pattern(pattern: &PathPattern, path: &str) -> bool {
-    pattern
-        .glob
-        .as_ref()
-        .map(|g| g.is_match(path))
-        .unwrap_or(false)
-        || Path::new(path).starts_with(&pattern.prefix)
-}
-
 pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
     if paths
         .ignore
         .iter()
-        .any(|pattern| matches_pattern(pattern, file_name))
+        .any(|pattern| pattern.matches(file_name))
     {
         return false;
     }
     match &paths.only {
         None => true,
-        Some(only) => only
-            .iter()
-            .any(|pattern| matches_pattern(pattern, file_name)),
+        Some(only) => only.iter().any(|pattern| pattern.matches(file_name)),
     }
 }
 
