@@ -1,4 +1,4 @@
-use crate::analysis::file_context::get_file_context;
+use crate::analysis::file_context::common::get_file_context;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
@@ -104,7 +104,7 @@ where
             vec![]
         },
         |tree| {
-            let file_context = get_file_context(&tree, &code.to_string());
+            let file_context = get_file_context(&tree, language, &code.to_string());
             rules
                 .into_iter()
                 .map(|rule| {

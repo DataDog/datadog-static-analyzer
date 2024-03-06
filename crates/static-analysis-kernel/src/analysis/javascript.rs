@@ -8,7 +8,7 @@ use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
 
-use crate::analysis::file_context::FileContext;
+use crate::analysis::file_context::common::FileContext;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
@@ -339,7 +339,7 @@ res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::file_context::get_empty_file_context;
+    use crate::analysis::file_context::common::get_empty_file_context;
     use crate::analysis::tree_sitter::{get_query, get_query_nodes, get_tree};
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
