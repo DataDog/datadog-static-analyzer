@@ -194,6 +194,7 @@ mod tests {
         common::Language,
         rule::{RuleCategory, RuleSeverity, RuleType},
     };
+    use kernel::utils::encode_base64_string;
 
     use super::*;
 
@@ -419,8 +420,9 @@ mod tests {
         assert_eq!(4, response.rule_responses.len());
 
         // rs_one excludes 'path/to'
-        request.configuration_base64 =
-            Some("cnVsZXNldHM6CiAgcnNfb25lOgogICAgaWdub3JlOiBbcGF0aC90b10K".to_string());
+        request.configuration_base64 = Some(encode_base64_string(
+            "rulesets: { rs_one: { ignore: [path/to] } }".to_string(),
+        ));
         let response = process_analysis_request(request.clone());
         assert_eq!(1, response.rule_responses.len());
 
@@ -431,8 +433,9 @@ mod tests {
         assert_eq!(4, response.rule_responses.len());
 
         // rs_one only allows 'path/to'
-        request.configuration_base64 =
-            Some("cnVsZXNldHM6CiAgcnNfb25lOgogICAgb25seTogW3BhdGgvdG9dCg==".to_string());
+        request.configuration_base64 = Some(encode_base64_string(
+            "rulesets: { rs_one: { only: [path/to] } }".to_string(),
+        ));
         let response = process_analysis_request(request.clone());
         assert_eq!(4, response.rule_responses.len());
 
@@ -443,7 +446,9 @@ mod tests {
         assert_eq!(1, response.rule_responses.len());
 
         // rs_one/rule_a excludes 'path/to'
-        request.configuration_base64 = Some("cnVsZXNldHM6CiAgcnNfb25lOgogICAgcnVsZXM6CiAgICAgIHJ1bGVfYToKICAgICAgICBpZ25vcmU6IFtwYXRoL3RvXQo=".to_string());
+        request.configuration_base64 = Some(encode_base64_string(
+            "rulesets: { rs_one: { rules: { rule_a: { ignore: [path/to] } } } }".to_string(),
+        ));
         let response = process_analysis_request(request.clone());
         assert_eq!(3, response.rule_responses.len());
 
@@ -454,7 +459,9 @@ mod tests {
         assert_eq!(4, response.rule_responses.len());
 
         // rs_one/rule_a only allows 'path/to'
-        request.configuration_base64 = Some("cnVsZXNldHM6CiAgcnNfb25lOgogICAgcnVsZXM6CiAgICAgIHJ1bGVfYToKICAgICAgICBvbmx5OiBbcGF0aC90b10K".to_string());
+        request.configuration_base64 = Some(encode_base64_string(
+            "rulesets: { rs_one: { rules: { rule_a: { only: [path/to] } } } }".to_string(),
+        ));
         let response = process_analysis_request(request.clone());
         assert_eq!(4, response.rule_responses.len());
 
@@ -498,7 +505,7 @@ mod tests {
         );
 
         // invalid configuration
-        request.configuration_base64 = Some("ZVVZ".to_string());
+        request.configuration_base64 = Some(encode_base64_string("zzzzzap!".to_string()));
         let response = process_analysis_request(request);
         assert_eq!(
             &ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string(),
