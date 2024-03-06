@@ -4,7 +4,6 @@ use std::fs::read_to_string;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use glob_match::glob_match;
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
@@ -12,7 +11,7 @@ use kernel::model::common::Language;
 use kernel::model::violation::Violation;
 
 use crate::model::cli_configuration::CliConfiguration;
-use crate::model::config_file::PathConfig;
+use crate::model::config_file::{PathConfig, PathPattern};
 use crate::model::datadog_api::DiffAwareData;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
@@ -154,18 +153,19 @@ pub fn get_files(
     Ok(files_to_return)
 }
 
-fn matches_pattern(pattern: &str, path: &str) -> bool {
-    if glob_match(pattern, path) {
-        return true;
-    }
-    return Path::new(path).starts_with(Path::new(pattern));
+fn matches_pattern(pattern: &PathPattern, path: &str) -> bool {
+    pattern
+        .glob
+        .as_ref()
+        .map(|g| g.is_match(path))
+        .unwrap_or(false)
+        || Path::new(path).starts_with(&pattern.prefix)
 }
 
 pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
     if paths
         .ignore
         .iter()
-        .filter(|p| !p.is_empty())
         .any(|pattern| matches_pattern(pattern, file_name))
     {
         return false;
@@ -174,7 +174,6 @@ pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
         None => true,
         Some(only) => only
             .iter()
-            .filter(|p| !p.is_empty())
             .any(|pattern| matches_pattern(pattern, file_name)),
     }
 }
@@ -594,7 +593,7 @@ mod tests {
 
         // now, we add one glob pattern to ignore
         let path_config = PathConfig {
-            ignore: vec!["src/**/main.rs".to_string()],
+            ignore: vec!["src/**/main.rs".to_string().into()],
             only: None,
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
@@ -612,7 +611,7 @@ mod tests {
 
         // now, we add one path prefix to ignore
         let path_config = PathConfig {
-            ignore: vec!["src/a".to_string()],
+            ignore: vec!["src/a".to_string().into()],
             only: None,
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
@@ -622,7 +621,7 @@ mod tests {
         // now we add one glob pattern to require
         let path_config = PathConfig {
             ignore: vec![],
-            only: Some(vec!["**/other.rs".to_string()]),
+            only: Some(vec!["**/other.rs".to_string().into()]),
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
         assert_contains_files!(&base_path, files, ["src/a/other.rs", "test/a/other.rs"]);
@@ -631,7 +630,7 @@ mod tests {
         // now we add one glob path prefix to require
         let path_config = PathConfig {
             ignore: vec![],
-            only: Some(vec!["src/a".to_string()]),
+            only: Some(vec!["src/a".to_string().into()]),
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
         assert_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);

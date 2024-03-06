@@ -293,14 +293,17 @@ fn main() -> Result<()> {
     }
 
     // add ignore path from the options
-    path_config.ignore.extend(ignore_paths_from_options);
+    path_config
+        .ignore
+        .extend(ignore_paths_from_options.iter().map(|p| p.clone().into()));
 
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
-        let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str());
+        let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str())
+            .expect("error when reading gitignore file");
         path_config
             .ignore
-            .extend(paths_from_gitignore.expect("error when reading gitignore file"));
+            .extend(paths_from_gitignore.iter().map(|p| p.clone().into()));
     }
 
     let languages = get_languages_for_rules(&rules);
