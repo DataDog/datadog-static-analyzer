@@ -4,7 +4,7 @@ use anyhow::Result;
 use std::collections::HashMap;
 use tree_sitter::QueryCursor;
 
-fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
+pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
         fn tree_sitter_c_sharp() -> tree_sitter::Language;
         fn tree_sitter_dockerfile() -> tree_sitter::Language;

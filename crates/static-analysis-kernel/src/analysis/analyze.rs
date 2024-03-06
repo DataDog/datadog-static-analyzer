@@ -1,3 +1,4 @@
+use crate::analysis::file_context::common::get_file_context;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
@@ -103,6 +104,7 @@ where
             vec![]
         },
         |tree| {
+            let file_context = get_file_context(&tree, language, &code.to_string());
             rules
                 .into_iter()
                 .map(|rule| {
@@ -135,6 +137,7 @@ where
                             nodes,
                             filename.to_string(),
                             analysis_option.clone(),
+                            &file_context,
                         );
 
                         // filter violations that have been ignored
@@ -535,6 +538,65 @@ def foo(arg1):
                 .get(0)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn test_go_file_context() {
+        let code = r#"
+import (
+    "math/rand"
+    crand1 "crypto/rand"
+    crand2 "crypto/rand"
+)
+
+func main () {
+
+}
+        "#;
+
+        let query = r#"(function_declaration) @func"#;
+
+        let rule_code = r#"
+function visit(node, filename, code) {
+    const n = node.captures["func"];
+    console.log(node.context.packages);
+    if(node.context.packages.includes("math/rand")) {
+        const error = buildError(n.start.line, n.start.col, n.end.line, n.end.col, "invalid name", "CRITICAL", "security");
+        addError(error);
+    }
+}
+        "#;
+
+        let rule = RuleInternal {
+            name: "myrule".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Go,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(query, &Language::Go).unwrap(),
+            variables: HashMap::new(),
+        };
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+        };
+        let results = analyze(
+            &Language::Go,
+            &vec![rule],
+            "myfile.go",
+            code,
+            &analysis_options,
+        );
+
+        assert_eq!(1, results.len());
+        let result = results.get(0).unwrap();
+        let output = result.output.clone().unwrap();
+        assert_eq!(result.violations.len(), 1);
+        assert!(output.contains("\"math/rand\""));
+        assert!(output.contains("\"crypto/rand\""));
     }
 
     #[test]
