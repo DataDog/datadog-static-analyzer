@@ -1,4 +1,3 @@
-use crate::file_utils::is_allowed_by_path_config;
 use crate::model::config_file::{PathConfig, RulesetConfig};
 use std::collections::HashMap;
 
@@ -56,6 +55,20 @@ fn split_rule_name(name: &str) -> (&str, &str) {
     match name.split_once('/') {
         None => ("", name),
         Some((ruleset, short_name)) => (ruleset, short_name),
+    }
+}
+
+pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
+    if paths
+        .ignore
+        .iter()
+        .any(|pattern| pattern.matches(file_name))
+    {
+        return false;
+    }
+    match &paths.only {
+        None => true,
+        Some(only) => only.iter().any(|pattern| pattern.matches(file_name)),
     }
 }
 

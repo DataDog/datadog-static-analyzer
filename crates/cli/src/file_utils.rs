@@ -8,10 +8,11 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use kernel::model::common::Language;
+use kernel::model::config_file::PathConfig;
 use kernel::model::violation::Violation;
+use kernel::path_restrictions::is_allowed_by_path_config;
 
 use crate::model::cli_configuration::CliConfiguration;
-use crate::model::config_file::PathConfig;
 use crate::model::datadog_api::DiffAwareData;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
@@ -151,20 +152,6 @@ pub fn get_files(
         }
     }
     Ok(files_to_return)
-}
-
-pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
-    if paths
-        .ignore
-        .iter()
-        .any(|pattern| pattern.matches(file_name))
-    {
-        return false;
-    }
-    match &paths.only {
-        None => true,
-        Some(only) => only.iter().any(|pattern| pattern.matches(file_name)),
-    }
 }
 
 /// try to find if one of the subdirectory used to scan a repository is going outside the
@@ -359,8 +346,7 @@ mod tests {
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::common::Position;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
-
-    use crate::path_restrictions::PathRestrictions;
+    use kernel::path_restrictions::PathRestrictions;
 
     use super::*;
 

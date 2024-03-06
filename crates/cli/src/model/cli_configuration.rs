@@ -1,11 +1,11 @@
-use crate::model::config_file::PathConfig;
 use crate::model::datadog_api::DiffAwareRequestArguments;
-use crate::path_restrictions::PathRestrictions;
 
 use anyhow::anyhow;
 use git2::Repository;
 use kernel::model::common::OutputFormat;
+use kernel::model::config_file::PathConfig;
 use kernel::model::rule::Rule;
+use kernel::path_restrictions::PathRestrictions;
 use sha2::{Digest, Sha256};
 
 /// represents the CLI configuration
