@@ -99,8 +99,14 @@ rulesets:
                     "go-best-practices".to_string(),
                     RulesetConfig {
                         paths: PathConfig {
-                            only: Some(vec!["one/two".to_string(), "foo/**/*.go".to_string()]),
-                            ignore: vec!["tres/cuatro".to_string(), "bar/**/*.go".to_string()],
+                            only: Some(vec![
+                                "one/two".to_string().into(),
+                                "foo/**/*.go".to_string().into(),
+                            ]),
+                            ignore: vec![
+                                "tres/cuatro".to_string().into(),
+                                "bar/**/*.go".to_string().into(),
+                            ],
                         },
                         rules: HashMap::new(),
                     },
@@ -144,7 +150,7 @@ rulesets:
                     "go-best-practices".to_string(),
                     RulesetConfig {
                         paths: PathConfig {
-                            only: Some(vec!["foo".to_string()]),
+                            only: Some(vec!["foo".to_string().into()]),
                             ignore: vec![],
                         },
                         ..Default::default()
@@ -155,7 +161,7 @@ rulesets:
                     RulesetConfig {
                         paths: PathConfig {
                             only: None,
-                            ignore: vec!["bar".to_string()],
+                            ignore: vec!["bar".to_string().into()],
                         },
                         ..Default::default()
                     },
@@ -213,8 +219,8 @@ rulesets:
                         "no-eval".to_string(),
                         RuleConfig {
                             paths: PathConfig {
-                                only: Some(vec!["py/**".to_string()]),
-                                ignore: vec!["py/insecure/**".to_string()],
+                                only: Some(vec!["py/**".to_string().into()]),
+                                ignore: vec!["py/insecure/**".to_string().into()],
                             },
                         },
                     )]),
@@ -294,11 +300,11 @@ max-file-size-kb: 512
         let expected = ConfigFile {
             rulesets: HashMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
-                only: Some(vec!["py/**/foo/*.py".to_string()]),
+                only: Some(vec!["py/**/foo/*.py".to_string().into()]),
                 ignore: vec![
-                    "py/testing/*.py".to_string(),
-                    "**/test/**".to_string(),
-                    "path1".to_string(),
+                    "py/testing/*.py".to_string().into(),
+                    "**/test/**".to_string().into(),
+                    "path1".to_string().into(),
                 ],
             },
             ignore_gitignore: Some(false),

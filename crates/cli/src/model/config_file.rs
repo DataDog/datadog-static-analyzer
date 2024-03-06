@@ -1,19 +1,28 @@
+use globset::{GlobBuilder, GlobMatcher};
 use std::collections::HashMap;
 use std::fmt;
+use std::path::PathBuf;
 
 use crate::model::serialization::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
 
 use serde;
 use serde::{Deserialize, Serialize};
 
+#[derive(Deserialize, Serialize, Debug, Default, Clone)]
+#[serde(from = "String", into = "String")]
+pub struct PathPattern {
+    pub glob: Option<GlobMatcher>,
+    pub prefix: PathBuf,
+}
+
 // Lists of directories and glob patterns to include/exclude from the analysis.
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]
 pub struct PathConfig {
     // Analyze only these directories and patterns.
-    pub only: Option<Vec<String>>,
+    pub only: Option<Vec<PathPattern>>,
     // Do not analyze any of these directories and patterns.
     #[serde(default)]
-    pub ignore: Vec<String>,
+    pub ignore: Vec<PathPattern>,
 }
 
 // Configuration for a single rule.
@@ -79,7 +88,7 @@ impl From<RawConfigFile> for ConfigFile {
             paths: {
                 let mut paths = value.paths;
                 if let Some(ignore) = value.ignore_paths {
-                    paths.ignore.extend(ignore);
+                    paths.ignore.extend(ignore.iter().map(|p| p.clone().into()));
                 }
                 paths
             },
@@ -92,5 +101,32 @@ impl From<RawConfigFile> for ConfigFile {
 impl fmt::Display for ConfigFile {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl From<String> for PathPattern {
+    fn from(value: String) -> Self {
+        PathPattern {
+            glob: GlobBuilder::new(&value)
+                .literal_separator(true)
+                .empty_alternates(true)
+                .backslash_escape(true)
+                .build()
+                .map(|g| g.compile_matcher())
+                .ok(),
+            prefix: PathBuf::from(value),
+        }
+    }
+}
+
+impl From<PathPattern> for String {
+    fn from(value: PathPattern) -> Self {
+        value.prefix.display().to_string()
+    }
+}
+
+impl PartialEq for PathPattern {
+    fn eq(&self, other: &Self) -> bool {
+        self.prefix.eq(&other.prefix)
     }
 }

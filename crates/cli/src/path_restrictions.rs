@@ -82,7 +82,7 @@ mod tests {
                 "ignores-test".to_string(),
                 RulesetConfig {
                     paths: PathConfig {
-                        ignore: vec!["test/**".to_string()],
+                        ignore: vec!["test/**".to_string().into()],
                         only: None,
                     },
                     rules: HashMap::new(),
@@ -93,7 +93,7 @@ mod tests {
                 RulesetConfig {
                     paths: PathConfig {
                         ignore: vec![],
-                        only: Some(vec!["*/code/**".to_string()]),
+                        only: Some(vec!["*/code/**".to_string().into()]),
                     },
                     rules: HashMap::new(),
                 },
@@ -102,8 +102,8 @@ mod tests {
                 "test-but-not-code".to_string(),
                 RulesetConfig {
                     paths: PathConfig {
-                        ignore: vec!["*/code/**".to_string()],
-                        only: Some(vec!["test/**".to_string()]),
+                        ignore: vec!["*/code/**".to_string().into()],
+                        only: Some(vec!["test/**".to_string().into()]),
                     },
                     rules: HashMap::new(),
                 },
@@ -136,7 +136,7 @@ mod tests {
                         "ignores-test".to_string(),
                         RuleConfig {
                             paths: PathConfig {
-                                ignore: vec!["test/**".to_string()],
+                                ignore: vec!["test/**".to_string().into()],
                                 only: None,
                             },
                         },
@@ -146,7 +146,7 @@ mod tests {
                         RuleConfig {
                             paths: PathConfig {
                                 ignore: vec![],
-                                only: Some(vec!["*/code/**".to_string()]),
+                                only: Some(vec!["*/code/**".to_string().into()]),
                             },
                         },
                     ),
@@ -154,8 +154,8 @@ mod tests {
                         "test-but-not-code".to_string(),
                         RuleConfig {
                             paths: PathConfig {
-                                ignore: vec!["*/code/**".to_string()],
-                                only: Some(vec!["test/**".to_string()]),
+                                ignore: vec!["*/code/**".to_string().into()],
+                                only: Some(vec!["test/**".to_string().into()]),
                             },
                         },
                     ),
@@ -186,14 +186,14 @@ mod tests {
             "only-test".to_string(),
             RulesetConfig {
                 paths: PathConfig {
-                    only: Some(vec!["test/**".to_string()]),
+                    only: Some(vec!["test/**".to_string().into()]),
                     ignore: vec![],
                 },
                 rules: HashMap::from([(
                     "ignores-code".to_string(),
                     RuleConfig {
                         paths: PathConfig {
-                            ignore: vec!["*/code/**".to_string()],
+                            ignore: vec!["*/code/**".to_string().into()],
                             only: None,
                         },
                     },
@@ -223,7 +223,7 @@ mod tests {
                 "only-test-starstar-foo-glob".to_string(),
                 RulesetConfig {
                     paths: PathConfig {
-                        only: Some(vec!["test/**/foo.go".to_string()]),
+                        only: Some(vec!["test/**/foo.go".to_string().into()]),
                         ignore: vec![],
                     },
                     ..Default::default()
@@ -234,7 +234,7 @@ mod tests {
                 RulesetConfig {
                     paths: PathConfig {
                         only: None,
-                        ignore: vec!["uno/code".to_string()],
+                        ignore: vec!["uno/code".to_string().into()],
                     },
                     ..Default::default()
                 },
