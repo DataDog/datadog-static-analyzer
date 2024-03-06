@@ -595,6 +595,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.go",
             code,
+            &NoArgumentProvider{},
             &analysis_options,
         );
 
