@@ -36,23 +36,13 @@ pub fn get_file_context_go(tree: &Tree, code: &String) -> FileContextGo {
             let end = capture.node.byte_range().end;
 
             if capture.index == 0 {
-                let str = code
-                    .chars()
-                    .skip(start)
-                    .take(end - start)
-                    .collect::<String>();
-                package_alias = Some(str.to_string());
+                package_alias = Some(code.get(start..end).unwrap().to_string());
             }
 
             // The package name includes the quotes. We do not want to capture the quotes, we only want
             // to capture the package name. For this reason, we need to play with -1/+1 with the index.
             if capture.index == 1 {
-                let str = code
-                    .chars()
-                    .skip(start + 1)
-                    .take(end - start - 2)
-                    .collect::<String>();
-                package_name = Some(str.to_string());
+                package_name = Some(code.get(start + 1..end - 1).unwrap().to_string());
             }
         }
 
