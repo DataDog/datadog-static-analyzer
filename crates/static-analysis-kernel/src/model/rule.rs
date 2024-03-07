@@ -61,6 +61,20 @@ pub enum RuleSeverity {
     None,
 }
 
+impl TryFrom<&str> for RuleSeverity {
+    type Error = &'static str;
+
+    fn try_from(s: &str) -> Result<Self, &'static str> {
+        match s.to_lowercase().as_str() {
+            "error" => Ok(RuleSeverity::Error),
+            "warning" => Ok(RuleSeverity::Warning),
+            "notice" => Ok(RuleSeverity::Notice),
+            "none" => Ok(RuleSeverity::None),
+            _ => Err("unknown severity"),
+        }
+    }
+}
+
 impl fmt::Display for RuleSeverity {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {

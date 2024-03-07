@@ -26,7 +26,6 @@ use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
 use kernel::model::config_file::{ConfigFile, PathConfig};
-use kernel::model::rule::RuleSeverity::{Error, Notice, Warning};
 use kernel::path_restrictions::PathRestrictions;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -131,25 +130,11 @@ fn main() -> Result<()> {
         "print-violations",
         "print a list with all the violations that were found",
     );
-    opts.optflag(
-        "",
-        "fail-on-any-violation-error",
-        "exit a non-zero return code if there is one violation with the error severity",
-    );
-    opts.optflag(
-        "",
-        "fail-on-any-violation-warning",
-        "exit a non-zero return code if there is one violation with the warning severity",
-    );
-    opts.optflag(
-        "",
-        "fail-on-any-violation-notice",
-        "exit a non-zero return code if there is one violation with the notice severity",
-    );
-    opts.optflag(
+    opts.optopt(
         "",
         "fail-on-any-violation",
         "exit a non-zero return code if there is one violation",
+        "error,warning,notice,none",
     );
     opts.optopt(
         "c",
@@ -217,10 +202,16 @@ fn main() -> Result<()> {
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
     let print_violations = matches.opt_present("print-violations");
-    let fail_any_violation_all = matches.opt_present("fail-on-any-violation");
-    let fail_any_violation_notice = matches.opt_present("fail-on-any-violation-notice");
-    let fail_any_violation_warning = matches.opt_present("fail-on-any-violation-warning");
-    let fail_any_violation_error = matches.opt_present("fail-on-any-violation-error");
+    // if --fail-on-any-violation is specified, get the list of severities to exit with a non-zero code
+    let fail_any_violation_severities = match matches.opt_str("fail-on-any-violation") {
+        Some(f) => f
+            .split(',')
+            .map(|s| RuleSeverity::try_from(s).expect("cannot map severity"))
+            .collect(),
+        None => {
+            vec![]
+        }
+    };
 
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {
@@ -657,30 +648,9 @@ fn main() -> Result<()> {
         .context("error when writing results")?;
 
     // if there is any violation at all and --fail-on-any-violation is passed, we exit 1
-    if fail_any_violation_all
-        && count_violations_by_severities(
-            &all_rule_results,
-            &[Warning, Error, Notice, RuleSeverity::None],
-        ) > 0
+    if !fail_any_violation_severities.is_empty()
+        && count_violations_by_severities(&all_rule_results, &fail_any_violation_severities) > 0
     {
-        exit(1);
-    }
-
-    // if there is a violation with a severity notice and --fail-on-any-violation-notice is passed, exit 1
-    if fail_any_violation_notice && count_violations_by_severities(&all_rule_results, &[Notice]) > 0
-    {
-        exit(1);
-    }
-
-    // if there is a violation with a severity warning and --fail-on-any-violation-notice is passed, exit 1
-    if fail_any_violation_warning
-        && count_violations_by_severities(&all_rule_results, &[Warning]) > 0
-    {
-        exit(1);
-    }
-
-    // if there is a violation with a severity error and --fail-on-any-violation-notice is passed, exit 1
-    if fail_any_violation_error && count_violations_by_severities(&all_rule_results, &[Error]) > 0 {
         exit(1);
     }
 

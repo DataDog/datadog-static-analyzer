@@ -50,7 +50,7 @@ if [ "$RES" -lt "18" ]; then
 fi
 
 # Test that --fail-on-any-violation returns a non-zero return code
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x --fail-on-any-violation
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x --fail-on-any-violation=none,notice,warning,error
 
 if [ $? -eq 0 ]; then
   echo "static analyzer reports 0 when it should not"
