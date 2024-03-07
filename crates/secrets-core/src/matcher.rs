@@ -5,7 +5,6 @@
 use crate::capture::{Capture, Captures};
 use crate::matcher::hyperscan::Hyperscan;
 use std::cmp::Ordering;
-use std::sync::Arc;
 
 pub mod hyperscan;
 
@@ -29,7 +28,7 @@ pub enum MatcherKind {
 
 impl Matcher {
     /// A human-friendly string id identifying the Matcher.
-    pub fn id(&self) -> &MatcherId {
+    pub fn id(&self) -> MatcherId {
         match self {
             Matcher::Hyperscan(hs) => hs.id(),
         }
@@ -56,21 +55,13 @@ impl Matcher {
 }
 
 /// A unique id that identifies a [`Matcher`].
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
-pub struct MatcherId(pub Arc<str>);
+pub struct MatcherId(pub u32);
 
-impl MatcherId {
-    /// Returns a shared reference to the underlying str.
-    #[inline]
-    pub fn as_ref(&self) -> &str {
-        self.0.as_ref()
-    }
-}
-
-impl<T: AsRef<str>> From<T> for MatcherId {
-    fn from(value: T) -> Self {
-        Self(Arc::from(value.as_ref()))
+impl From<usize> for MatcherId {
+    fn from(value: usize) -> Self {
+        Self(value as u32)
     }
 }
 
@@ -84,21 +75,16 @@ pub enum MatcherError {
 }
 
 /// A unique id that identifies a pattern associated with a [`Matcher`].
-#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq, Hash)]
-#[repr(transparent)]
-pub struct PatternId(pub Arc<str>);
+#[derive(Debug, Copy, Clone, Default, Ord, PartialOrd, Eq, PartialEq, Hash)]
+pub struct PatternId(pub u32, MatcherId);
 
 impl PatternId {
-    /// Returns a shared reference to the underlying str.
-    #[inline]
-    pub fn as_ref(&self) -> &str {
-        self.0.as_ref()
+    pub fn new(pattern_id: usize, matcher_id: MatcherId) -> Self {
+        Self(pattern_id as u32, matcher_id)
     }
-}
 
-impl<T: AsRef<str>> From<T> for PatternId {
-    fn from(value: T) -> Self {
-        Self(Arc::from(value.as_ref()))
+    pub fn matcher_id(&self) -> MatcherId {
+        self.1
     }
 }
 
@@ -126,9 +112,9 @@ impl PartialOrd for PatternMatch<'_> {
 }
 
 impl<'b> PatternMatch<'b> {
-    /// Returns the id of the pattern that generated this `PatternMatch`.
-    pub fn pattern_id(&self) -> &PatternId {
-        &self.pattern_id
+    /// Returns the id of the pattern that generated this match.
+    pub fn pattern_id(&self) -> PatternId {
+        self.pattern_id
     }
 
     /// Returns the entire data that was the source of this `PatternMatch`.
