@@ -595,7 +595,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.go",
             code,
-            &NoArgumentProvider{},
+            &NoArgumentProvider {},
             &analysis_options,
         );
 
@@ -713,5 +713,92 @@ line20("foo")
                 .get(1)
                 .unwrap()
         );
+    }
+
+    type Arguments = HashMap<String, String>;
+    type ArgumentsByRule = HashMap<String, Arguments>;
+    struct TestArgumentProvider {
+        by_filename: HashMap<String, ArgumentsByRule>,
+    }
+    impl ArgumentProvider for TestArgumentProvider {
+        fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
+            self.by_filename
+                .get(filename)
+                .and_then(|bf| bf.get(rulename))
+                .map(|a| a.clone())
+                .unwrap_or(HashMap::new())
+        }
+    }
+
+    #[test]
+    fn test_argument_values() {
+        let rule_code = r#"
+function visit(node, filename, code) {
+    const functionName = node.captures["name"];
+    const argumentValue = node.context.arguments['my-argument'];
+    if (argumentValue !== undefined) {
+        const error = buildError(
+            functionName.start.line, functionName.start.col,
+            functionName.end.line, functionName.end.col,
+            `argument = ${argumentValue}`);
+        addError(error);
+    }
+}
+        "#;
+
+        let rule1 = RuleInternal {
+            name: "rule1".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            variables: HashMap::new(),
+        };
+        let rule2 = RuleInternal {
+            name: "rule2".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            variables: HashMap::new(),
+        };
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+        };
+        let argument_provider = TestArgumentProvider {
+            by_filename: HashMap::from([(
+                "myfile.py".to_string(),
+                HashMap::from([(
+                    "rule1".to_string(),
+                    HashMap::from([
+                        ("my-argument".to_string(), "101".to_string()),
+                        ("another-arg".to_string(), "321".to_string()),
+                    ]),
+                )]),
+            )]),
+        };
+        let results = analyze(
+            &Language::Python,
+            &vec![rule1, rule2],
+            "myfile.py",
+            PYTHON_CODE,
+            &argument_provider,
+            &analysis_options,
+        );
+
+        assert_eq!(2, results.len());
+        let result1 = results.get(0).unwrap();
+        let result2 = results.get(1).unwrap();
+        assert_eq!(result1.violations.len(), 1);
+        assert!(result1.violations[0].message.contains("argument = 101"));
+        assert_eq!(result2.violations.len(), 0);
     }
 }

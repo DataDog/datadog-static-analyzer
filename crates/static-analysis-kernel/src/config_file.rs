@@ -351,7 +351,8 @@ impl<'de> Deserialize<'de> for ArgumentValues {
             {
                 let mut by_subtree = HashMap::new();
                 while let Some((key, value)) = map.next_entry::<String, String>()? {
-                    if by_subtree.insert(key.to_string(), value).is_some() {
+                    let prefix = if key == "/" || key == "**" { "" } else { &key };
+                    if by_subtree.insert(prefix.to_string(), value).is_some() {
                         return Err(Error::custom(format!("repeated key: {}", key)));
                     }
                 }
@@ -592,6 +593,97 @@ rulesets:
 
         let res = parse_config_file(data);
         assert!(res.is_err());
+    }
+
+    // Argument values
+    #[test]
+    fn test_parse_argument_values() {
+        let data = r#"
+rulesets:
+  - python-security:
+    rules:
+      no-eval:
+        arguments:
+          arg1: 100
+          arg2:
+            /: 200
+            uno: 201
+            uno/dos: 202
+            tres: 203
+      yes-eval:
+        arguments:
+          arg3: 300
+          arg4:
+            cuatro: 400
+        "#;
+
+        let expected = ConfigFile {
+            rulesets: HashMap::from([(
+                "python-security".to_string(),
+                RulesetConfig {
+                    paths: PathConfig::default(),
+                    rules: HashMap::from([
+                        (
+                            "no-eval".to_string(),
+                            RuleConfig {
+                                paths: PathConfig::default(),
+                                arguments: HashMap::from([
+                                    (
+                                        "arg1".to_string(),
+                                        ArgumentValues {
+                                            by_subtree: HashMap::from([(
+                                                "".to_string(),
+                                                "100".to_string(),
+                                            )]),
+                                        },
+                                    ),
+                                    (
+                                        "arg2".to_string(),
+                                        ArgumentValues {
+                                            by_subtree: HashMap::from([
+                                                ("".to_string(), "200".to_string()),
+                                                ("uno".to_string(), "201".to_string()),
+                                                ("uno/dos".to_string(), "202".to_string()),
+                                                ("tres".to_string(), "203".to_string()),
+                                            ]),
+                                        },
+                                    ),
+                                ]),
+                            },
+                        ),
+                        (
+                            "yes-eval".to_string(),
+                            RuleConfig {
+                                paths: PathConfig::default(),
+                                arguments: HashMap::from([
+                                    (
+                                        "arg3".to_string(),
+                                        ArgumentValues {
+                                            by_subtree: HashMap::from([(
+                                                "".to_string(),
+                                                "300".to_string(),
+                                            )]),
+                                        },
+                                    ),
+                                    (
+                                        "arg4".to_string(),
+                                        ArgumentValues {
+                                            by_subtree: HashMap::from([(
+                                                "cuatro".to_string(),
+                                                "400".to_string(),
+                                            )]),
+                                        },
+                                    ),
+                                ]),
+                            },
+                        ),
+                    ]),
+                },
+            )]),
+            ..ConfigFile::default()
+        };
+        let res = parse_config_file(data);
+        assert_eq!(expected, res.unwrap());
     }
 
     // test with everything
