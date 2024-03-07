@@ -208,7 +208,10 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
                     None => {
                         return Err(Error::missing_field("name"));
                     }
-                    Some((k, _)) => NamedRulesetConfig { name: k, cfg: RulesetConfig::default() },
+                    Some((k, _)) => NamedRulesetConfig {
+                        name: k,
+                        cfg: RulesetConfig::default(),
+                    },
                 };
                 // Populate the object field by field.
                 while let Some(x) = map.next_key::<String>()? {
@@ -378,7 +381,9 @@ impl<'de> Deserialize<'de> for ArgumentValues {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::config_file::{ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig};
+    use crate::model::config_file::{
+        ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig,
+    };
     use std::collections::HashMap;
 
     // `rulesets` parsed as a list of ruleset names

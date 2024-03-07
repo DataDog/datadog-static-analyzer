@@ -76,7 +76,11 @@ pub struct ConfigFile {
 #[derive(Deserialize)]
 struct RawConfigFile {
     // Version this configuration file complies with.
-    #[serde(default, rename="schema-version", deserialize_with = "deserialize_schema_version")]
+    #[serde(
+        default,
+        rename = "schema-version",
+        deserialize_with = "deserialize_schema_version"
+    )]
     _schema_version: String,
     // Configurations for the rulesets.
     #[serde(deserialize_with = "deserialize_rulesetconfigs")]
