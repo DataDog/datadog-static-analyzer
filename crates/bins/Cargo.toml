@@ -10,6 +10,9 @@ name = "datadog-static-analyzer"
 name = "datadog-static-analyzer-test-ruleset"
 
 [[bin]]
+name = "datadog-static-analyzer-test-config"
+
+[[bin]]
 name = "datadog-export-rulesets"
 
 [[bin]]
