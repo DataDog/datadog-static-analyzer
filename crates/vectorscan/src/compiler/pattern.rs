@@ -406,6 +406,17 @@ impl Pattern {
         PatternBuilder::new(expression)
     }
 
+    /// Creates a clone of the [`Pattern`] with the specified id.
+    pub fn clone_with_id(&self, new_id: u32) -> Self {
+        Self {
+            expression: self.expression.clone(),
+            flags: self.flags,
+            extensions: self.extensions,
+            id: new_id,
+            info: self.info,
+        }
+    }
+
     /// An internal function for constructing the Pattern
     fn try_new(
         expression: Expression,
@@ -485,20 +496,20 @@ mod tests {
     #[test]
     fn test_literal() {
         let regex_pattern = Pattern::new("^a$").id(1).literal(false).build();
-        let mut regex_db = BlockDatabase::try_new([&regex_pattern]).unwrap();
+        let regex_db = BlockDatabase::try_new([&regex_pattern]).unwrap();
         let literal_pattern = Pattern::new("^a$").id(2).literal(true).build();
-        let mut literal_db = BlockDatabase::try_new([&literal_pattern]).unwrap();
-        let scratch = Scratch::try_new_for(&regex_db).unwrap();
+        let literal_db = BlockDatabase::try_new([&literal_pattern]).unwrap();
+        let mut scratch = Scratch::try_new_for(&regex_db).unwrap();
 
         // Helper closure to reduce test verbosity
-        let find = |db: &mut BlockDatabase, str: &str| -> Option<HsMatch> {
-            db.find(&scratch, str.as_bytes()).unwrap()
+        let mut find = |db: &BlockDatabase, str: &str| -> Option<HsMatch> {
+            db.find(&mut scratch, str.as_bytes()).unwrap()
         };
 
-        assert_eq!(find(&mut regex_db, "^a$"), None);
-        assert_eq!(find(&mut literal_db, "^a$"), Some(HsMatch::new(2, 0, 3)));
+        assert_eq!(find(&regex_db, "^a$"), None);
+        assert_eq!(find(&literal_db, "^a$"), Some(HsMatch::new(2, 0, 3)));
 
-        assert_eq!(find(&mut regex_db, "a"), Some(HsMatch::new(1, 0, 1)));
-        assert_eq!(find(&mut literal_db, "a"), None);
+        assert_eq!(find(&regex_db, "a"), Some(HsMatch::new(1, 0, 1)));
+        assert_eq!(find(&literal_db, "a"), None);
     }
 }

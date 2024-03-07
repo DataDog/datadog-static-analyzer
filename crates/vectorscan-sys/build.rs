@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use std::env;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 /// Git repository information about a dependency to compile with CMake.
@@ -67,7 +67,7 @@ fn main() {
 
     for dependency in dependencies {
         if !dependency.source_path.exists() {
-            assert!(fetch_dependency(&dependency));
+            assert!(fetch_dependency(dependency));
         }
     }
 
@@ -110,6 +110,7 @@ fn main() {
     #[cfg(feature = "generate-bindings")]
     {
         use bindgen::callbacks::{IntKind, ItemInfo, ParseCallbacks};
+        use std::path::Path;
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         println!("cargo:rerun-if-changed={}/hs.h", manifest_dir.display());
 

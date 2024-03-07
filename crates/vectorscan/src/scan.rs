@@ -11,13 +11,19 @@ use std::ops::{ControlFlow, Range};
 use vectorscan_sys::hs;
 
 /// The pattern id that Hyperscan sends to a [`hs::hs_scan`] callback when it finds a match.
-#[derive(Debug, Default, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Default, Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct PatternId(pub u32);
 
 impl From<u32> for PatternId {
     fn from(value: u32) -> Self {
         Self(value)
+    }
+}
+
+impl From<PatternId> for u32 {
+    fn from(value: PatternId) -> Self {
+        value.0
     }
 }
 
@@ -32,7 +38,7 @@ pub struct HsMatch {
 }
 
 impl HsMatch {
-    pub(crate) fn new(id: u32, start_idx: usize, end_idx: usize) -> Self {
+    pub fn new(id: u32, start_idx: usize, end_idx: usize) -> Self {
         Self {
             id: PatternId(id),
             start_idx,
@@ -67,8 +73,8 @@ impl BlockDatabase {
     /// Synchronously scans a slice of bytes, calling the provided callback for every match for
     /// any pattern in the database.
     pub fn scan<T, U>(
-        &mut self,
-        scratch: &Scratch,
+        &self,
+        scratch: &mut Scratch,
         bytes: T,
         callback: Box<U>,
     ) -> Result<ScanStatus, Error>
@@ -76,7 +82,7 @@ impl BlockDatabase {
         T: AsRef<[u8]>,
         U: FnMut(HsMatch) -> ControlFlow<()>,
     {
-        // NOTE: scan is a mutable borrow to prevent the callback from re-calling into the database
+        // NOTE: `scratch` is a mutable borrow to prevent the callback from re-calling into the database
         // to initiate another scan, which will lead to an error.
         // See: https://intel.github.io/hyperscan/dev-reference/api_files.html#c.HS_SCRATCH_IN_USE
         let raw_cb = Box::into_raw(callback);
@@ -107,7 +113,7 @@ impl BlockDatabase {
     }
 
     /// Searches an input for the first occurrence of any pattern in the Database.
-    pub fn find<T>(&mut self, scratch: &Scratch, bytes: T) -> Result<Option<HsMatch>, Error>
+    pub fn find<T>(&self, scratch: &mut Scratch, bytes: T) -> Result<Option<HsMatch>, Error>
     where
         T: AsRef<[u8]>,
     {
@@ -124,7 +130,7 @@ impl BlockDatabase {
     }
 
     /// Synchronously scans a slice of bytes until completion and returns a Vec of the matches.
-    pub fn scan_collect<T>(&mut self, scratch: &Scratch, bytes: T) -> Result<Vec<HsMatch>, Error>
+    pub fn scan_collect<T>(&self, scratch: &mut Scratch, bytes: T) -> Result<Vec<HsMatch>, Error>
     where
         T: AsRef<[u8]>,
     {
@@ -172,25 +178,16 @@ mod tests {
     use crate::scan::{HsMatch, ScanStatus};
     use std::ops::ControlFlow;
 
-    /// Helper to make equality tests less verbose
-    fn as_hs_match(id: u32, start: usize, end: usize) -> HsMatch {
-        HsMatch {
-            id: id.into(),
-            start_idx: start,
-            end_idx: end,
-        }
-    }
-
     #[test]
     fn test_scan_control_flow() {
         let haystack = "abc----------abc---------ac----";
         let expr1 = Pattern::new("ab?c").id(1234).build();
-        let mut db = BlockDatabase::try_new([&expr1]).unwrap();
-        let scratch = Scratch::try_new_for(&db).unwrap();
+        let db = BlockDatabase::try_new([&expr1]).unwrap();
+        let mut scratch = Scratch::try_new_for(&db).unwrap();
 
         let mut results: Vec<HsMatch> = vec![];
         let scan_res = db.scan(
-            &scratch,
+            &mut scratch,
             haystack.as_bytes(),
             Box::new(|hs_match| {
                 results.push(hs_match);
@@ -211,7 +208,7 @@ mod tests {
         let mut results: Vec<HsMatch> = vec![];
         // Scan again, but this time terminate after the first match
         let scan_res = db.scan(
-            &scratch,
+            &mut scratch,
             haystack.as_bytes(),
             Box::new(|hs_match| {
                 results.push(hs_match);
@@ -226,13 +223,13 @@ mod tests {
     #[test]
     fn test_find() {
         let pattern = Pattern::new("abc").id(1234).build();
-        let mut db = BlockDatabase::try_new([&pattern]).unwrap();
-        let scratch = Scratch::try_new_for(&db).unwrap();
+        let db = BlockDatabase::try_new([&pattern]).unwrap();
+        let mut scratch = Scratch::try_new_for(&db).unwrap();
 
-        let find_result = db.find(&scratch, "---abc---abc").unwrap();
+        let find_result = db.find(&mut scratch, "---abc---abc").unwrap();
         assert_eq!(find_result, Some(HsMatch::new(1234, 0, 6)));
 
-        let find_result = db.find(&scratch, "------------").unwrap();
+        let find_result = db.find(&mut scratch, "------------").unwrap();
         assert_eq!(find_result, None);
     }
 
@@ -240,21 +237,22 @@ mod tests {
     fn test_scan_collect() {
         let haystack = "abc-----abc--abc-------abc";
         let pattern = Pattern::new("abc").id(1234).build();
-        let mut db = BlockDatabase::try_new([&pattern]).unwrap();
-        let scratch = Scratch::try_new_for(&db).unwrap();
+        let db = BlockDatabase::try_new([&pattern]).unwrap();
+        let mut scratch = Scratch::try_new_for(&db).unwrap();
 
         let mut matches_cb: Vec<HsMatch> = vec![];
         let scan_res = db.scan(
-            &scratch,
+            &mut scratch,
             haystack.as_bytes(),
             Box::new(|hs_match| {
                 matches_cb.push(hs_match);
                 ControlFlow::Continue(())
             }),
         );
+        assert!(matches!(scan_res, Ok(ScanStatus::Completed)));
         assert_eq!(matches_cb.len(), 4);
 
-        let matches_scan_collect = db.scan_collect(&scratch, haystack.as_bytes()).unwrap();
+        let matches_scan_collect = db.scan_collect(&mut scratch, haystack.as_bytes()).unwrap();
         assert_eq!(matches_cb, matches_scan_collect);
     }
 
@@ -263,10 +261,10 @@ mod tests {
         let haystack = "---abc---ac----ab-----bc----cba-";
         let expr1 = Pattern::new("ab?c").id(1).build();
         let expr2 = Pattern::new("a?b").id(2).build();
-        let mut db = BlockDatabase::try_new([&expr1, &expr2]).unwrap();
-        let scratch = Scratch::try_new_for(&db).unwrap();
+        let db = BlockDatabase::try_new([&expr1, &expr2]).unwrap();
+        let mut scratch = Scratch::try_new_for(&db).unwrap();
 
-        let matches = db.scan_collect(&scratch, haystack.as_bytes()).unwrap();
+        let matches = db.scan_collect(&mut scratch, haystack.as_bytes()).unwrap();
         assert_eq!(
             matches,
             Vec::from([
@@ -286,10 +284,10 @@ mod tests {
         let haystack = "AAAA---ZZZ----AAA";
         let expr1 = Pattern::new("AAA").id(1).build();
         let expr2 = Pattern::new("ZZZ").id(1).build();
-        let mut db = BlockDatabase::try_new([&expr1, &expr2]).unwrap();
-        let scratch = Scratch::try_new_for(&db).unwrap();
+        let db = BlockDatabase::try_new([&expr1, &expr2]).unwrap();
+        let mut scratch = Scratch::try_new_for(&db).unwrap();
 
-        let matches = db.scan_collect(&scratch, haystack.as_bytes()).unwrap();
+        let matches = db.scan_collect(&mut scratch, haystack.as_bytes()).unwrap();
         assert_eq!(
             matches,
             Vec::from([
