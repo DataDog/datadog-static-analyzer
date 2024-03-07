@@ -194,6 +194,13 @@ impl<'b> Iterator for MatchCursor<'_, 'b> {
             }
         }
     }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.current_mappers_iter
+            .as_ref()
+            .map(|md| md.iter.size_hint())
+            .unwrap_or_default()
+    }
 }
 
 impl<'a, 'b> MatchCursor<'a, 'b> {
