@@ -1,31 +1,39 @@
+use csv::Writer;
 use kernel::model::rule::RuleResult;
 
 pub fn generate_csv_results(rule_results: &Vec<RuleResult>) -> String {
-    let mut result = String::new();
-    result.push_str(
-        "filename,rule,category,severity,message,start_line,start_col,end_line,end_col\n",
-    );
+    let mut wtr = Writer::from_writer(vec![]);
+    wtr.write_record([
+        "filename",
+        "rule",
+        "category",
+        "severity",
+        "message",
+        "start_line",
+        "start_col",
+        "end_line",
+        "end_col",
+    ])
+    .expect("csv serialization without issue");
+
     for r in rule_results {
         for v in &r.violations {
-            result.push_str(
-                format!(
-                    "{},{},{},{},{},{},{},{},{}\n",
-                    r.filename,
-                    r.rule_name,
-                    v.category,
-                    v.severity,
-                    v.message,
-                    v.start.line,
-                    v.start.col,
-                    v.end.line,
-                    v.end.col
-                )
-                .as_str(),
-            );
+            wtr.write_record(&[
+                r.filename.to_string(),
+                r.rule_name.to_string(),
+                v.category.to_string(),
+                v.severity.to_string(),
+                v.message.to_string(),
+                v.start.line.to_string(),
+                v.start.col.to_string(),
+                v.end.line.to_string(),
+                v.end.col.to_string(),
+            ])
+            .expect("csv serialization without issue for violation");
         }
     }
 
-    result
+    String::from_utf8(wtr.into_inner().expect("generate CSV file")).expect("generate CSV file")
 }
 
 #[cfg(test)]

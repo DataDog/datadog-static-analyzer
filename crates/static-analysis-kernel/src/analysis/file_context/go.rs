@@ -77,7 +77,6 @@ pub fn get_file_context_go(tree: &Tree, code: &String) -> FileContextGo {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::analysis::file_context::common::{get_file_context, FileContext};
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
