@@ -40,7 +40,7 @@ impl Hyperscan {
         data: &'b [u8],
     ) -> Result<MatchCursor<'a, 'b>, MatcherError> {
         // Scan the `data`, saving the results scratch. Because of Hyperscan's match semantics, we
-        // transform the list of `HsMatch` into a list of `RuleMatch` by "collecting" all the match
+        // transform the list of `HsMatch` into a list of `PatternMatch` by "collecting" all the match
         // results directly from Hyperscan into a Vec and then post-process them. This solution
         // was chosen for its simplicity, but comes with the downside that we have no control
         // over telling Hyperscan to halt the scan of some data at a `RuleMatch` boundary.

@@ -66,7 +66,7 @@ impl Display for VariableKind {
     }
 }
 
-/// A unique id that identifies a pattern associated with a [`Rule`].
+/// A unique id that identifies a [`Rule`].
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct RuleId(pub Arc<str>);
