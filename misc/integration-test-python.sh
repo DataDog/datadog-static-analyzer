@@ -27,7 +27,6 @@ if [ "$RES" -lt "18" ]; then
 fi
 
 # Test with the static-analysis.datadog.yml file
-
 echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
@@ -47,6 +46,14 @@ echo "Found $RES errors on second run"
 
 if [ "$RES" -lt "18" ]; then
   echo "not enough errors found"
+  exit 1
+fi
+
+# Test that --fail-on-any-violation returns a non-zero return code
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x --fail-on-any-violation
+
+if [ $? -eq 0 ]; then
+  echo "static analyzer reports 0 when it should not"
   exit 1
 fi
 

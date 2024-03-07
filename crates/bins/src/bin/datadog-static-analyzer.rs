@@ -6,13 +6,15 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
+use cli::rule_utils::{
+    count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
+};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
-use kernel::model::rule::{Rule, RuleInternal, RuleResult};
+use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 
 use anyhow::{Context, Result};
 use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
@@ -24,6 +26,7 @@ use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
 use kernel::model::config_file::{ConfigFile, PathConfig};
+use kernel::model::rule::RuleSeverity::{Error, Notice, Warning};
 use kernel::path_restrictions::PathRestrictions;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -128,6 +131,26 @@ fn main() -> Result<()> {
         "print-violations",
         "print a list with all the violations that were found",
     );
+    opts.optflag(
+        "",
+        "fail-on-any-violation-error",
+        "exit a non-zero return code if there is one violation with the error severity",
+    );
+    opts.optflag(
+        "",
+        "fail-on-any-violation-warning",
+        "exit a non-zero return code if there is one violation with the warning severity",
+    );
+    opts.optflag(
+        "",
+        "fail-on-any-violation-notice",
+        "exit a non-zero return code if there is one violation with the notice severity",
+    );
+    opts.optflag(
+        "",
+        "fail-on-any-violation",
+        "exit a non-zero return code if there is one violation",
+    );
     opts.optopt(
         "c",
         "cpus",
@@ -173,12 +196,12 @@ fn main() -> Result<()> {
 
     if matches.opt_present("v") {
         println!("Version: {}, revision: {}", CARGO_VERSION, VERSION);
-        exit(1);
+        exit(0);
     }
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
-        exit(1);
+        exit(0);
     }
 
     let diff_aware_requested = matches.opt_present("w");
@@ -194,6 +217,10 @@ fn main() -> Result<()> {
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
     let print_violations = matches.opt_present("print-violations");
+    let fail_any_violation_all = matches.opt_present("fail-on-any-violation");
+    let fail_any_violation_notice = matches.opt_present("fail-on-any-violation-notice");
+    let fail_any_violation_warning = matches.opt_present("fail-on-any-violation-warning");
+    let fail_any_violation_error = matches.opt_present("fail-on-any-violation-error");
 
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {
@@ -628,6 +655,35 @@ fn main() -> Result<()> {
     let mut file = fs::File::create(configuration.output_file).context("cannot create file")?;
     file.write_all(value.as_bytes())
         .context("error when writing results")?;
+
+    // if there is any violation at all and --fail-on-any-violation is passed, we exit 1
+    if fail_any_violation_all
+        && count_violations_by_severities(
+            &all_rule_results,
+            &[Warning, Error, Notice, RuleSeverity::None],
+        ) > 0
+    {
+        exit(1);
+    }
+
+    // if there is a violation with a severity notice and --fail-on-any-violation-notice is passed, exit 1
+    if fail_any_violation_notice && count_violations_by_severities(&all_rule_results, &[Notice]) > 0
+    {
+        exit(1);
+    }
+
+    // if there is a violation with a severity warning and --fail-on-any-violation-notice is passed, exit 1
+    if fail_any_violation_warning
+        && count_violations_by_severities(&all_rule_results, &[Warning]) > 0
+    {
+        exit(1);
+    }
+
+    // if there is a violation with a severity error and --fail-on-any-violation-notice is passed, exit 1
+    if fail_any_violation_error && count_violations_by_severities(&all_rule_results, &[Error]) > 0 {
+        exit(1);
+    }
+
     Ok(())
 }
 
