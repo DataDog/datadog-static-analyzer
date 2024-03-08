@@ -6,7 +6,7 @@ use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use crate::model::violation::violation_to_server;
 use kernel::analysis::analyze::analyze;
-use kernel::config_file::parse_config_file;
+use kernel::config_file::{parse_config_file, ArgumentProvider};
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::PathRestrictions;
@@ -16,8 +16,8 @@ use kernel::utils::decode_base64_string;
 pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     tracing::debug!("Processing analysis request");
 
-    // Decode the configuration and extract the path restrictions, if present.
-    let path_restrictions = match request.configuration_base64.map(decode_base64_string) {
+    // Decode the configuration, if present.
+    let configuration = match request.configuration_base64.map(decode_base64_string) {
         Some(Err(_)) => {
             tracing::info!("Validation error: configuration is not a base64 string");
             return AnalysisResponse {
@@ -33,10 +33,21 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                     errors: vec![ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string()],
                 };
             }
-            Ok(cfg_file) => Some(PathRestrictions::from_ruleset_configs(&cfg_file.rulesets)),
+            Ok(cfg_file) => Some(cfg_file),
         },
         None => None,
     };
+
+    // Extract the path restrictions from the configuration file.
+    let path_restrictions = configuration
+        .as_ref()
+        .map(|cfg_file| PathRestrictions::from_ruleset_configs(&cfg_file.rulesets));
+
+    // Build an argument provider from the configuration file.
+    let mut argument_provider = ArgumentProvider::new();
+    if let Some(cfg_file) = &configuration {
+        argument_provider = ArgumentProvider::from(cfg_file);
+    }
 
     let rules_with_invalid_language: Vec<ServerRule> = request
         .rules
@@ -154,6 +165,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         &rules,
         &request.filename,
         code_decoded_attempt.unwrap().as_str(),
+        &argument_provider,
         &AnalysisOptions {
             use_debug: false,
             log_output: request
@@ -511,5 +523,56 @@ mod tests {
             &ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string(),
             response.errors.get(0).unwrap()
         );
+    }
+
+    #[test]
+    fn test_request_with_arguments() {
+        let request = AnalysisRequest {
+            filename: "mypath/myfile.py".to_string(),
+            language: Language::Python,
+            file_encoding: "utf-8".to_string(),
+            code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            configuration_base64: Some(encode_base64_string(r#"
+rulesets:
+  - myrs:
+    rules:
+      myrule:
+        arguments:
+          arg1:
+            /: 100
+            mypath: 101
+            mypath/otherpath: 102
+            "#.to_string())),
+            options: None,
+            rules: vec![
+                ServerRule{
+                    name: "myrs/myrule".to_string(),
+                    short_description_base64: None,
+                    description_base64: None,
+                    category: Some(RuleCategory::BestPractices),
+                    severity: Some(RuleSeverity::Warning),
+                    language: Language::Python,
+                    rule_type: RuleType::TreeSitterQuery,
+                    entity_checked: None,
+                    code_base64: encode_base64_string(r#"
+function visit(node, filename, code) {
+    const arg = node.context.arguments['arg1'];
+    addError(buildError(1, 1, 1, 2, `argument = ${arg}`));
+}
+                    "#.to_string()),
+                    checksum: Some("984ba37fbfdfa4245ed7922efd224365ec216e540647989ac5e8559624ba9be4".to_string()),
+                    pattern: None,
+                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
+                    variables: None,
+                }
+            ]
+        };
+        let response = process_analysis_request(request);
+        assert!(response.errors.is_empty());
+        assert_eq!(1, response.rule_responses.len());
+        assert_eq!(1, response.rule_responses[0].violations.len());
+        assert!(response.rule_responses[0].violations[0]
+            .message
+            .contains("argument = 101"));
     }
 }

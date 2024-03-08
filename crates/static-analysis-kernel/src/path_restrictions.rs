@@ -152,6 +152,7 @@ mod tests {
                                 ignore: vec!["test/**".to_string().into()],
                                 only: None,
                             },
+                            arguments: Default::default(),
                         },
                     ),
                     (
@@ -161,6 +162,7 @@ mod tests {
                                 ignore: vec![],
                                 only: Some(vec!["*/code/**".to_string().into()]),
                             },
+                            arguments: Default::default(),
                         },
                     ),
                     (
@@ -170,6 +172,7 @@ mod tests {
                                 ignore: vec!["*/code/**".to_string().into()],
                                 only: Some(vec!["test/**".to_string().into()]),
                             },
+                            arguments: Default::default(),
                         },
                     ),
                 ]),
@@ -209,6 +212,7 @@ mod tests {
                             ignore: vec!["*/code/**".to_string().into()],
                             only: None,
                         },
+                        arguments: Default::default(),
                     },
                 )]),
             },

@@ -22,6 +22,7 @@ rocket,https://github.com/SergioBenitez/Rocket,Apache-2.0,Copyright 2016 Sergio 
 rust-bindgen,https://github.com/rust-lang/rust-bindgen,BSD-3-Clause,Copyright (c) 2013 Jyun-Yan You
 tree-sitter,https://github.com/tree-sitter/tree-sitter,MIT,2014 Max Brunsfeld
 sarif-rs,https://github.com/psastras/sarif-rs,MIT,Copyright (c) 2021 Paul Sastrasinh
+sequence_trie,https://docs.rs/sequence_trie/,MIT,Copyright (c) 2016 Michael Sproul and contributors.
 serde,https://github.com/serde-rs/serde,Apache-2.0,2015 David Tolnay and Serde contributors
 serde_json,https://github.com/serde-rs/json,Apache-2.0,2015 David Tolnay and Serde contributors
 serde_yaml,https://github.com/dtolnay/serde-yaml,Apache-2.0,2016 David Tolnay

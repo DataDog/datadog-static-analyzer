@@ -52,7 +52,7 @@ pub struct AnalysisContext {
 pub struct MatchNodeContext {
     pub code: Option<String>,
     pub filename: String,
-    pub variables: HashMap<String, String>,
+    pub arguments: HashMap<String, String>,
 }
 
 // The node used to capture data in tree-sitter

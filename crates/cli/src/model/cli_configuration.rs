@@ -2,6 +2,7 @@ use crate::model::datadog_api::DiffAwareRequestArguments;
 
 use anyhow::anyhow;
 use git2::Repository;
+use kernel::config_file::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
 use kernel::model::rule::Rule;
@@ -23,6 +24,7 @@ pub struct CliConfiguration {
     pub num_cpus: usize, // of cpus to use for parallelism
     pub rules: Vec<Rule>,
     pub path_restrictions: PathRestrictions,
+    pub argument_provider: ArgumentProvider,
     pub max_file_size_kb: u64,
     pub use_staging: bool,
 }
@@ -137,6 +139,7 @@ mod tests {
                 tests: vec![],
             }],
             path_restrictions: PathRestrictions::default(),
+            argument_provider: ArgumentProvider::new(),
             max_file_size_kb: 1,
             use_staging: false,
         };

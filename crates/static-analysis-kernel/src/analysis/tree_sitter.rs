@@ -69,7 +69,7 @@ pub fn get_query_nodes(
     query: &tree_sitter::Query,
     filename: &str,
     code: &str,
-    variables: &HashMap<String, String>,
+    arguments: &HashMap<String, String>,
 ) -> Vec<MatchNode> {
     let mut query_cursor = QueryCursor::new();
     let mut match_nodes: Vec<MatchNode> = vec![];
@@ -102,7 +102,7 @@ pub fn get_query_nodes(
                 context: MatchNodeContext {
                     code: Some(code.to_string()),
                     filename: filename.to_string(),
-                    variables: variables.clone(),
+                    arguments: arguments.clone(),
                 },
             });
         }

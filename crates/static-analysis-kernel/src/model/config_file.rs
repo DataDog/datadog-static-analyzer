@@ -27,12 +27,19 @@ pub struct PathConfig {
     pub ignore: Vec<PathPattern>,
 }
 
+#[derive(Serialize, Debug, PartialEq, Default)]
+pub struct ArgumentValues {
+    pub by_subtree: HashMap<String, String>,
+}
+
 // Configuration for a single rule.
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default)]
 pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     #[serde(flatten)]
     pub paths: PathConfig,
+    #[serde(default)]
+    pub arguments: HashMap<String, ArgumentValues>,
 }
 
 // Configuration for a ruleset.

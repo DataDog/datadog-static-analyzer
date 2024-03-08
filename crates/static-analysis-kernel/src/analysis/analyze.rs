@@ -1,6 +1,7 @@
 use crate::analysis::file_context::common::get_file_context;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
+use crate::config_file::ArgumentProvider;
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
@@ -88,6 +89,7 @@ pub fn analyze<I>(
     rules: I,
     filename: &str,
     code: &str,
+    argument_provider: &ArgumentProvider,
     analysis_option: &AnalysisOptions,
 ) -> Vec<RuleResult>
 where
@@ -118,7 +120,7 @@ where
                         &rule.tree_sitter_query,
                         filename,
                         code,
-                        &HashMap::new(),
+                        &argument_provider.get_arguments(filename, &rule.name),
                     );
 
                     if nodes.is_empty() {
@@ -214,6 +216,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.py",
             PYTHON_CODE,
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -290,6 +293,7 @@ function visit(node, filename, code) {
             &vec![rule1, rule2],
             "myfile.py",
             PYTHON_CODE,
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(2, results.len());
@@ -390,6 +394,7 @@ for(var i = 0; i <= 10; i--){}
             &vec![rule1],
             "myfile.js",
             js_code,
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -444,6 +449,7 @@ def foo():
             &vec![rule1],
             "myfile.py",
             python_code,
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -498,6 +504,7 @@ def foo(arg1):
             &vec![rule],
             "myfile.py",
             c,
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -588,6 +595,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.go",
             code,
+            &ArgumentProvider::new(),
             &analysis_options,
         );
 
@@ -705,5 +713,69 @@ line20("foo")
                 .get(1)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn test_argument_values() {
+        let rule_code = r#"
+function visit(node, filename, code) {
+    const functionName = node.captures["name"];
+    const argumentValue = node.context.arguments['my-argument'];
+    if (argumentValue !== undefined) {
+        const error = buildError(
+            functionName.start.line, functionName.start.col,
+            functionName.end.line, functionName.end.col,
+            `argument = ${argumentValue}`);
+        addError(error);
+    }
+}
+        "#;
+
+        let rule1 = RuleInternal {
+            name: "rule1".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            variables: HashMap::new(),
+        };
+        let rule2 = RuleInternal {
+            name: "rule2".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            variables: HashMap::new(),
+        };
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+        };
+        let mut argument_provider = ArgumentProvider::new();
+        argument_provider.add_argument("rule1", "myfile.py", "my-argument", "101");
+        argument_provider.add_argument("rule1", "myfile.py", "another-arg", "101");
+
+        let results = analyze(
+            &Language::Python,
+            &vec![rule1, rule2],
+            "myfile.py",
+            PYTHON_CODE,
+            &argument_provider,
+            &analysis_options,
+        );
+
+        assert_eq!(2, results.len());
+        let result1 = results.get(0).unwrap();
+        let result2 = results.get(1).unwrap();
+        assert_eq!(result1.violations.len(), 1);
+        assert!(result1.violations[0].message.contains("argument = 101"));
+        assert_eq!(result2.violations.len(), 0);
     }
 }
