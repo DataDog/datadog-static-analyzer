@@ -10,9 +10,7 @@ use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::analysis::{
-    AnalysisOptions, ArgumentProvider, NoArgumentProvider, ERROR_RULE_TIMEOUT,
-};
+use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 
@@ -25,7 +23,7 @@ use cli::sarif::sarif_utils::generate_sarif_report;
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
-use kernel::config_file::get_argument_provider;
+use kernel::config_file::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::path_restrictions::PathRestrictions;
 use rayon::prelude::*;
@@ -248,7 +246,7 @@ fn main() -> Result<()> {
         read_config_file(directory_to_analyze.as_str()).unwrap();
     let mut rules: Vec<Rule> = Vec::new();
     let mut path_restrictions = PathRestrictions::default();
-    let mut argument_provider: Box<dyn ArgumentProvider + Sync> = Box::new(NoArgumentProvider {});
+    let mut argument_provider = ArgumentProvider::new();
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
@@ -264,7 +262,7 @@ fn main() -> Result<()> {
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
         rules.extend(rules_from_api.context("error when reading rules from API")?);
         path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
-        argument_provider = Box::new(get_argument_provider(conf));
+        argument_provider = ArgumentProvider::from(conf);
 
         // copy the only and ignore paths from the configuration file
         path_config.ignore.extend(conf.paths.ignore.clone());
@@ -343,7 +341,7 @@ fn main() -> Result<()> {
         num_cpus,
         rules,
         path_restrictions,
-        argument_provider: argument_provider.as_ref(),
+        argument_provider,
         output_file,
         max_file_size_kb,
         use_staging,
@@ -525,7 +523,7 @@ fn main() -> Result<()> {
                         selected_rules,
                         relative_path,
                         &file_content,
-                        configuration.argument_provider,
+                        &configuration.argument_provider,
                         &analysis_options,
                     )
                 } else {

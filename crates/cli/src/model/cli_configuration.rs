@@ -2,7 +2,7 @@ use crate::model::datadog_api::DiffAwareRequestArguments;
 
 use anyhow::anyhow;
 use git2::Repository;
-use kernel::model::analysis::ArgumentProvider;
+use kernel::config_file::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
 use kernel::model::rule::Rule;
@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 
 /// represents the CLI configuration
 #[derive(Clone)]
-pub struct CliConfiguration<'a> {
+pub struct CliConfiguration {
     pub use_debug: bool,
     pub use_configuration_file: bool,
     pub ignore_gitignore: bool,
@@ -24,12 +24,12 @@ pub struct CliConfiguration<'a> {
     pub num_cpus: usize, // of cpus to use for parallelism
     pub rules: Vec<Rule>,
     pub path_restrictions: PathRestrictions,
-    pub argument_provider: &'a (dyn ArgumentProvider + Sync),
+    pub argument_provider: ArgumentProvider,
     pub max_file_size_kb: u64,
     pub use_staging: bool,
 }
 
-impl<'a> CliConfiguration<'a> {
+impl CliConfiguration {
     /// Generate a digest to include in SARIF files to indicate what configuration and rules were used
     /// to run the analysis. To compute the digest, we take the attributes that are important to
     /// run and replicate the analysis such as the ignored paths and rules.
@@ -103,7 +103,6 @@ impl<'a> CliConfiguration<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kernel::model::analysis::NoArgumentProvider;
     use kernel::model::common::Language;
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
@@ -140,7 +139,7 @@ mod tests {
                 tests: vec![],
             }],
             path_restrictions: PathRestrictions::default(),
-            argument_provider: &NoArgumentProvider {},
+            argument_provider: ArgumentProvider::new(),
             max_file_size_kb: 1,
             use_staging: false,
         };

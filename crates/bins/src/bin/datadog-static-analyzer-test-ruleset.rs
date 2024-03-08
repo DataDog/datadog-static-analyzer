@@ -1,10 +1,11 @@
 use cli::datadog_utils::get_ruleset;
 use kernel::analysis::analyze::analyze;
-use kernel::model::analysis::{AnalysisOptions, NoArgumentProvider};
+use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::Rule;
 
 use anyhow::{Error, Result};
 use getopts::Options;
+use kernel::config_file::ArgumentProvider;
 use kernel::model::rule_test::RuleTest;
 use kernel::utils::decode_base64_string;
 use std::env;
@@ -28,7 +29,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
         &rules,
         test.filename.as_str(),
         code.as_str(),
-        &NoArgumentProvider {},
+        &ArgumentProvider::new(),
         &analysis_options,
     );
 

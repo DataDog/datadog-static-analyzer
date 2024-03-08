@@ -6,8 +6,8 @@ use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use crate::model::violation::violation_to_server;
 use kernel::analysis::analyze::analyze;
-use kernel::config_file::{get_argument_provider, parse_config_file};
-use kernel::model::analysis::{AnalysisOptions, ArgumentProvider, NoArgumentProvider};
+use kernel::config_file::{parse_config_file, ArgumentProvider};
+use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::PathRestrictions;
 use kernel::utils::decode_base64_string;
@@ -44,9 +44,9 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .map(|cfg_file| PathRestrictions::from_ruleset_configs(&cfg_file.rulesets));
 
     // Build an argument provider from the configuration file.
-    let mut argument_provider: Box<dyn ArgumentProvider> = Box::new(NoArgumentProvider {});
+    let mut argument_provider = ArgumentProvider::new();
     if let Some(cfg_file) = &configuration {
-        argument_provider = Box::new(get_argument_provider(cfg_file));
+        argument_provider = ArgumentProvider::from(cfg_file);
     }
 
     let rules_with_invalid_language: Vec<ServerRule> = request
@@ -165,7 +165,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         &rules,
         &request.filename,
         code_decoded_attempt.unwrap().as_str(),
-        argument_provider.as_ref(),
+        &argument_provider,
         &AnalysisOptions {
             use_debug: false,
             log_output: request

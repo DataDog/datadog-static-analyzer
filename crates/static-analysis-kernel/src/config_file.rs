@@ -1,4 +1,3 @@
-use crate::model::analysis::ArgumentProvider;
 use anyhow::Result;
 use sequence_trie::SequenceTrie;
 use serde::de::{Error, MapAccess, SeqAccess, Visitor};
@@ -16,12 +15,57 @@ pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
 type Argument = (String, String);
 
 type ArgumentsByPrefix = SequenceTrie<String, Vec<Argument>>;
-pub struct TrieArgumentProvider {
+
+#[derive(Clone)]
+// Used to extract rule arguments in the analyzer.
+pub struct ArgumentProvider {
     by_rule: HashMap<String, ArgumentsByPrefix>,
 }
 
-impl ArgumentProvider for TrieArgumentProvider {
-    fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
+impl ArgumentProvider {
+    pub fn new() -> ArgumentProvider {
+        ArgumentProvider {
+            by_rule: HashMap::new(),
+        }
+    }
+
+    pub fn from(config: &ConfigFile) -> Self {
+        let mut provider = ArgumentProvider::new();
+        for (ruleset_name, ruleset_cfg) in &config.rulesets {
+            for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
+                for (arg_name, arg_values) in &rule_cfg.arguments {
+                    let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
+                    for (prefix, value) in &arg_values.by_subtree {
+                        provider.add_argument(&rule_name, prefix, arg_name, value);
+                    }
+                }
+            }
+        }
+        provider
+    }
+
+    pub fn add_argument(&mut self, rule_name: &str, path: &str, argument: &str, value: &str) {
+        let prefix: Vec<String> = path
+            .split('/')
+            .filter(|c| !c.is_empty())
+            .map(|c| c.to_string())
+            .collect();
+        let trie = self.by_rule.entry(rule_name.to_string()).or_default();
+        match trie.get_mut(prefix.iter()) {
+            None => {
+                trie.insert(
+                    prefix.iter(),
+                    vec![(argument.to_string(), value.to_string())],
+                );
+            }
+            Some(v) => {
+                v.push((argument.to_string(), value.to_string()));
+            }
+        };
+    }
+
+    /// Returns the arguments that apply to the given file and the given rule.
+    pub fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
         let mut out = HashMap::new();
         if let Some(by_prefix) = self.by_rule.get(rulename) {
             for args in by_prefix
@@ -36,31 +80,10 @@ impl ArgumentProvider for TrieArgumentProvider {
     }
 }
 
-pub fn get_argument_provider(config: &ConfigFile) -> TrieArgumentProvider {
-    let mut by_rule = HashMap::new();
-    for (ruleset_name, ruleset_cfg) in &config.rulesets {
-        for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
-            let mut by_prefix = HashMap::new();
-            for (arg_name, arg_values) in &rule_cfg.arguments {
-                for (prefix, value) in &arg_values.by_subtree {
-                    by_prefix
-                        .entry(prefix)
-                        .or_insert(vec![])
-                        .push((arg_name.clone(), value.clone()));
-                }
-            }
-            if !by_prefix.is_empty() {
-                let mut by_prefix_trie = SequenceTrie::new();
-                for (k, v) in by_prefix {
-                    by_prefix_trie.insert(k.split('/').filter(|c| !c.is_empty()), v);
-                }
-                let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
-                by_rule.insert(rule_name, by_prefix_trie);
-            }
-        }
+impl Default for ArgumentProvider {
+    fn default() -> Self {
+        ArgumentProvider::new()
     }
-
-    TrieArgumentProvider { by_rule }
 }
 
 /// Special deserializer for a `RulesetConfig` map.
