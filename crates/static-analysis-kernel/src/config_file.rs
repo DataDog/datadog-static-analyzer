@@ -12,6 +12,8 @@ pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
 }
 
+const SCHEMA_VERSION: &str = "v1";
+
 pub fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
@@ -21,14 +23,14 @@ where
         type Value = String;
 
         fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-            formatter.write_str("a \"v1\" string")
+            formatter.write_fmt(format_args!("a \"{}\" string", SCHEMA_VERSION))
         }
 
         fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
         where
             E: Error,
         {
-            if v != "v1" {
+            if v != SCHEMA_VERSION {
                 Err(Error::invalid_value(Unexpected::Str(v), &self))
             } else {
                 Ok(v.to_string())
@@ -36,6 +38,10 @@ where
         }
     }
     deserializer.deserialize_string(SchemaVersionVisitor {})
+}
+
+pub fn get_default_schema_version() -> String {
+    SCHEMA_VERSION.to_string()
 }
 
 type Argument = (String, String);
@@ -418,6 +424,7 @@ rulesets:
   - go-best-practices
     "#;
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 ("go-best-practices".to_string(), RulesetConfig::default()),
@@ -468,6 +475,7 @@ rulesets:
     "#;
 
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([
                 ("c-best-practices".to_string(), RulesetConfig::default()),
                 ("rust-best-practices".to_string(), RulesetConfig::default()),
@@ -556,6 +564,7 @@ rulesets:
           - "py/insecure/**"
     "#;
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -649,6 +658,7 @@ rulesets:
         "#;
 
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -735,6 +745,7 @@ max-file-size-kb: 512
     "#;
 
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
                 only: Some(vec!["py/**/foo/*.py".to_string().into()]),

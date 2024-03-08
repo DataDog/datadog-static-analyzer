@@ -1,7 +1,11 @@
 use anyhow::Result;
 use getopts::Options;
+use itertools::Itertools;
 use kernel::config_file::parse_config_file;
-use kernel::model::config_file::{ConfigFile, PathConfig, RuleConfig, RulesetConfig};
+use kernel::model::config_file::{
+    ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig,
+};
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::Read;
@@ -14,6 +18,7 @@ fn print_usage(program: &str, opts: Options) {
 
 fn print_cfg(file_name: &str, cfg: &ConfigFile) {
     println!("Configuration file {} parsed correctly.", file_name);
+    println!("Schema version: {}", cfg.schema_version);
     for (rs_name, rs_cfg) in &cfg.rulesets {
         print_ruleset(rs_name, rs_cfg);
     }
@@ -21,7 +26,7 @@ fn print_cfg(file_name: &str, cfg: &ConfigFile) {
 
 fn print_ruleset(name: &str, cfg: &RulesetConfig) {
     println!("Ruleset: {}", name);
-    print_paths(1, &cfg.paths);
+    print_paths("  ", &cfg.paths);
     for (rule_name, rule_cfg) in &cfg.rules {
         print_rule(rule_name, rule_cfg);
     }
@@ -29,16 +34,37 @@ fn print_ruleset(name: &str, cfg: &RulesetConfig) {
 
 fn print_rule(name: &str, cfg: &RuleConfig) {
     println!("  Rule: {}", name);
-    print_paths(2, &cfg.paths);
+    print_paths("    ", &cfg.paths);
+    print_arguments("    ", &cfg.arguments);
 }
 
-fn print_paths(indent: usize, paths: &PathConfig) {
+fn print_paths(indent: &str, paths: &PathConfig) {
     if !paths.ignore.is_empty() {
-        println!("{}ignore: {}", "  ".repeat(indent), paths.ignore.join(" "));
+        println!("{}Ignore: {}", indent, paths.ignore.join(" "));
     }
     if let Some(only) = &paths.only {
         if !only.is_empty() {
-            println!("{}only: {}", "  ".repeat(indent), only.join(" "));
+            println!("{}Only: {}", indent, only.join(" "));
+        }
+    }
+}
+
+fn print_arguments(indent: &str, arguments: &HashMap<String, ArgumentValues>) {
+    if arguments.is_empty() {
+        return;
+    }
+    println!("{}Arguments:", indent);
+    for arg in arguments.keys().sorted() {
+        println!("{}  {}:", indent, arg);
+        let by_subtree = &arguments.get(arg).unwrap().by_subtree;
+        for prefix in by_subtree.keys().sorted() {
+            let path = if prefix.is_empty() { "/" } else { prefix };
+            println!(
+                "{}    {}: {}",
+                indent,
+                path,
+                by_subtree.get(prefix).unwrap()
+            )
         }
     }
 }
