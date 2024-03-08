@@ -120,7 +120,7 @@ xattr -dr com.apple.quarantine datadog-static-analyzer
  - `-p` or `--ignore-path`: path (pattern/glob) to ignore; accepts multiple
  - `-x` or `--performance-statistics`: show performance statistics for the analyzer
  - `-g` or `--add-git-info`: add Git-related information (sha, etc) into the SARIF report when using -f sarif
-
+ - `--fail-on-any-violation`: make the program exit a non-zero exit code if there is at least one violation of a given severity.
 
 ## Configuration
 
