@@ -6,13 +6,15 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::rule_utils::{get_languages_for_rules, get_rulesets_from_file};
+use cli::rule_utils::{
+    count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
+};
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
 use kernel::model::common::OutputFormat;
-use kernel::model::rule::{Rule, RuleInternal, RuleResult};
+use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 
 use anyhow::{Context, Result};
 use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
@@ -130,6 +132,12 @@ fn main() -> Result<()> {
         "print a list with all the violations that were found",
     );
     opts.optopt(
+        "",
+        "fail-on-any-violation",
+        "exit a non-zero return code if there is one violation",
+        "error,warning,notice,none",
+    );
+    opts.optopt(
         "c",
         "cpus",
         format!("allow N CPUs at once; if unspecified, defaults to the number of logical cores on the platform or {}, whichever is less", DEFAULT_MAX_CPUS).as_str(),
@@ -174,12 +182,12 @@ fn main() -> Result<()> {
 
     if matches.opt_present("v") {
         println!("Version: {}, revision: {}", CARGO_VERSION, VERSION);
-        exit(1);
+        exit(0);
     }
 
     if matches.opt_present("h") {
         print_usage(&program, opts);
-        exit(1);
+        exit(0);
     }
 
     let diff_aware_requested = matches.opt_present("w");
@@ -195,6 +203,16 @@ fn main() -> Result<()> {
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
     let print_violations = matches.opt_present("print-violations");
+    // if --fail-on-any-violation is specified, get the list of severities to exit with a non-zero code
+    let fail_any_violation_severities = match matches.opt_str("fail-on-any-violation") {
+        Some(f) => f
+            .split(',')
+            .map(|s| RuleSeverity::try_from(s).expect("cannot map severity"))
+            .collect(),
+        None => {
+            vec![]
+        }
+    };
 
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {
@@ -633,6 +651,14 @@ fn main() -> Result<()> {
     let mut file = fs::File::create(configuration.output_file).context("cannot create file")?;
     file.write_all(value.as_bytes())
         .context("error when writing results")?;
+
+    // if there is any violation at all and --fail-on-any-violation is passed, we exit 1
+    if !fail_any_violation_severities.is_empty()
+        && count_violations_by_severities(&all_rule_results, &fail_any_violation_severities) > 0
+    {
+        exit(1);
+    }
+
     Ok(())
 }
 

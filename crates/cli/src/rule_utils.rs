@@ -1,6 +1,6 @@
 use anyhow::Result;
 use kernel::model::common::Language;
-use kernel::model::rule::Rule;
+use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
 use kernel::model::ruleset::RuleSet;
 use std::collections::HashSet;
 use std::{fs::File, io::BufReader};
@@ -20,14 +20,87 @@ pub fn get_languages_for_rules(rules: &[Rule]) -> Vec<Language> {
     Vec::from_iter(languages_set.iter().cloned())
 }
 
+pub fn count_violations_by_severities(
+    rule_results: &[RuleResult],
+    severities: &[RuleSeverity],
+) -> usize {
+    rule_results
+        .iter()
+        .map(|result| {
+            result
+                .violations
+                .iter()
+                .filter(|violation| severities.contains(&violation.severity))
+                .count()
+        })
+        .sum()
+}
+
 #[cfg(test)]
 mod tests {
+    use kernel::model::common::Position;
+    use kernel::model::violation::Violation;
     use kernel::model::{
         common::Language,
         rule::{RuleCategory, RuleSeverity, RuleType},
     };
 
     use super::*;
+
+    #[test]
+    fn test_count_violations_by_severities() {
+        let rr = RuleResult {
+            rule_name: "myrule".to_string(),
+            filename: "file.py".to_string(),
+            violations: vec![
+                Violation {
+                    start: Position { line: 10, col: 12 },
+                    end: Position { line: 12, col: 10 },
+                    message: "message".to_string(),
+                    severity: RuleSeverity::Error,
+                    category: RuleCategory::Performance,
+                    fixes: vec![],
+                },
+                Violation {
+                    start: Position { line: 10, col: 12 },
+                    end: Position { line: 12, col: 10 },
+                    message: "message".to_string(),
+                    severity: RuleSeverity::Notice,
+                    category: RuleCategory::Performance,
+                    fixes: vec![],
+                },
+                Violation {
+                    start: Position { line: 10, col: 12 },
+                    end: Position { line: 12, col: 10 },
+                    message: "message".to_string(),
+                    severity: RuleSeverity::Notice,
+                    category: RuleCategory::Performance,
+                    fixes: vec![],
+                },
+            ],
+            errors: vec![],
+            execution_error: None,
+            output: None,
+            execution_time_ms: 0,
+        };
+
+        let rule_results = [rr];
+        assert_eq!(
+            count_violations_by_severities(&rule_results, &[RuleSeverity::Error]),
+            1
+        );
+        assert_eq!(
+            count_violations_by_severities(&rule_results, &[RuleSeverity::Notice]),
+            2
+        );
+        assert_eq!(
+            count_violations_by_severities(
+                &rule_results,
+                &[RuleSeverity::Notice, RuleSeverity::Error]
+            ),
+            3
+        );
+    }
 
     // make sure we correctly get rulesets from a string
     #[test]

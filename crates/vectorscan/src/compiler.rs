@@ -7,4 +7,4 @@ pub use error::CompileError;
 mod mode;
 pub use mode::Mode;
 pub mod pattern;
-pub use pattern::Pattern;
+pub use pattern::{Pattern, PatternBuilder};
