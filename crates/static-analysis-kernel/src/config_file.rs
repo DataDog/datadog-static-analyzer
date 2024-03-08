@@ -753,4 +753,115 @@ max-file-size-kb: 512
         let res = parse_config_file(data);
         assert!(res.is_err());
     }
+
+    #[test]
+    fn test_argument_provider_returns_arg_for_default_prefix() {
+        let mut argument_provider = ArgumentProvider::new();
+        argument_provider.add_argument("rule", "/", "arg", "value");
+
+        let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
+        assert_eq!(argument_provider.get_arguments("a", "rule"), expected);
+        assert_eq!(argument_provider.get_arguments("b/c", "rule"), expected);
+    }
+
+    #[test]
+    fn test_argument_provider_returns_arg_for_path_prefix() {
+        let mut argument_provider = ArgumentProvider::new();
+        argument_provider.add_argument("rule", "a/b/c", "arg", "value");
+
+        let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
+        assert!(argument_provider.get_arguments("a", "rule").is_empty());
+        assert!(argument_provider.get_arguments("a/b", "rule").is_empty());
+        assert_eq!(argument_provider.get_arguments("a/b/c", "rule"), expected);
+        assert_eq!(argument_provider.get_arguments("a/b/c/d", "rule"), expected);
+    }
+
+    #[test]
+    fn test_argument_provider_returns_arg_for_longest_path_prefix() {
+        let mut argument_provider = ArgumentProvider::new();
+        argument_provider.add_argument("rule", "a/b", "arg", "first");
+        argument_provider.add_argument("rule", "a/b/c", "arg", "second");
+
+        let expected_first = HashMap::from([("arg".to_string(), "first".to_string())]);
+        let expected_second = HashMap::from([("arg".to_string(), "second".to_string())]);
+        assert!(argument_provider.get_arguments("a", "rule").is_empty());
+        assert_eq!(
+            argument_provider.get_arguments("a/b", "rule"),
+            expected_first
+        );
+        assert_eq!(
+            argument_provider.get_arguments("a/b/c", "rule"),
+            expected_second
+        );
+        assert_eq!(
+            argument_provider.get_arguments("a/b/c/d", "rule"),
+            expected_second
+        );
+    }
+
+    #[test]
+    fn test_argument_provider_returns_multiple_args_in_path() {
+        let mut argument_provider = ArgumentProvider::new();
+        argument_provider.add_argument("rule", "a", "arg1", "first_1");
+        argument_provider.add_argument("rule", "a", "arg2", "first_2");
+        argument_provider.add_argument("rule", "a/b", "arg3", "first_3");
+        argument_provider.add_argument("rule", "a/b/c", "arg1", "second_1");
+
+        assert_eq!(
+            argument_provider.get_arguments("a", "rule"),
+            HashMap::from([
+                ("arg1".to_string(), "first_1".to_string()),
+                ("arg2".to_string(), "first_2".to_string())
+            ])
+        );
+        assert_eq!(
+            argument_provider.get_arguments("a/b", "rule"),
+            HashMap::from([
+                ("arg1".to_string(), "first_1".to_string()),
+                ("arg2".to_string(), "first_2".to_string()),
+                ("arg3".to_string(), "first_3".to_string())
+            ])
+        );
+        assert_eq!(
+            argument_provider.get_arguments("a/b/c", "rule"),
+            HashMap::from([
+                ("arg1".to_string(), "second_1".to_string()),
+                ("arg2".to_string(), "first_2".to_string()),
+                ("arg3".to_string(), "first_3".to_string())
+            ])
+        );
+    }
+
+    #[test]
+    fn test_argument_provider_is_independent_from_insertion_order() {
+        let mut argument_provider = ArgumentProvider::new();
+        argument_provider.add_argument("rule", "a/b/c", "arg1", "second_1");
+        argument_provider.add_argument("rule", "a", "arg2", "first_2");
+        argument_provider.add_argument("rule", "a/b", "arg3", "first_3");
+        argument_provider.add_argument("rule", "a", "arg1", "first_1");
+
+        assert_eq!(
+            argument_provider.get_arguments("a", "rule"),
+            HashMap::from([
+                ("arg1".to_string(), "first_1".to_string()),
+                ("arg2".to_string(), "first_2".to_string())
+            ])
+        );
+        assert_eq!(
+            argument_provider.get_arguments("a/b", "rule"),
+            HashMap::from([
+                ("arg1".to_string(), "first_1".to_string()),
+                ("arg2".to_string(), "first_2".to_string()),
+                ("arg3".to_string(), "first_3".to_string())
+            ])
+        );
+        assert_eq!(
+            argument_provider.get_arguments("a/b/c", "rule"),
+            HashMap::from([
+                ("arg1".to_string(), "second_1".to_string()),
+                ("arg2".to_string(), "first_2".to_string()),
+                ("arg3".to_string(), "first_3".to_string())
+            ])
+        );
+    }
 }
