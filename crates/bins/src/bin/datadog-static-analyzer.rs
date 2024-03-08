@@ -250,7 +250,7 @@ fn main() -> Result<()> {
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
-    if let Some(conf) = &configuration_file {
+    if let Some(conf) = configuration_file {
         use_configuration_file = true;
         ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
         if rules_file.is_some() {
@@ -262,11 +262,11 @@ fn main() -> Result<()> {
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
         rules.extend(rules_from_api.context("error when reading rules from API")?);
         path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
-        argument_provider = ArgumentProvider::from(conf);
+        argument_provider = ArgumentProvider::from(&conf);
 
         // copy the only and ignore paths from the configuration file
-        path_config.ignore.extend(conf.paths.ignore.clone());
-        path_config.only = conf.paths.only.clone();
+        path_config.ignore.extend(conf.paths.ignore);
+        path_config.only = conf.paths.only;
 
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB)
