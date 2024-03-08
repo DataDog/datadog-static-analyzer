@@ -1,7 +1,8 @@
 use crate::analysis::file_context::common::get_file_context;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
-use crate::model::analysis::{AnalysisOptions, ArgumentProvider, LinesToIgnore};
+use crate::config_file::ArgumentProvider;
+use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
@@ -88,7 +89,7 @@ pub fn analyze<I>(
     rules: I,
     filename: &str,
     code: &str,
-    argument_provider: &dyn ArgumentProvider,
+    argument_provider: &ArgumentProvider,
     analysis_option: &AnalysisOptions,
 ) -> Vec<RuleResult>
 where
@@ -157,7 +158,6 @@ where
 mod tests {
     use super::*;
     use crate::analysis::tree_sitter::get_query;
-    use crate::model::analysis::NoArgumentProvider;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use std::collections::HashMap;
@@ -216,7 +216,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.py",
             PYTHON_CODE,
-            &NoArgumentProvider {},
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -293,7 +293,7 @@ function visit(node, filename, code) {
             &vec![rule1, rule2],
             "myfile.py",
             PYTHON_CODE,
-            &NoArgumentProvider {},
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(2, results.len());
@@ -394,7 +394,7 @@ for(var i = 0; i <= 10; i--){}
             &vec![rule1],
             "myfile.js",
             js_code,
-            &NoArgumentProvider {},
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -449,7 +449,7 @@ def foo():
             &vec![rule1],
             "myfile.py",
             python_code,
-            &NoArgumentProvider {},
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -504,7 +504,7 @@ def foo(arg1):
             &vec![rule],
             "myfile.py",
             c,
-            &NoArgumentProvider {},
+            &ArgumentProvider::new(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -595,7 +595,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.go",
             code,
-            &NoArgumentProvider {},
+            &ArgumentProvider::new(),
             &analysis_options,
         );
 
@@ -715,21 +715,6 @@ line20("foo")
         );
     }
 
-    type Arguments = HashMap<String, String>;
-    type ArgumentsByRule = HashMap<String, Arguments>;
-    struct TestArgumentProvider {
-        by_filename: HashMap<String, ArgumentsByRule>,
-    }
-    impl ArgumentProvider for TestArgumentProvider {
-        fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
-            self.by_filename
-                .get(filename)
-                .and_then(|bf| bf.get(rulename))
-                .map(|a| a.clone())
-                .unwrap_or(HashMap::new())
-        }
-    }
-
     #[test]
     fn test_argument_values() {
         let rule_code = r#"
@@ -773,18 +758,10 @@ function visit(node, filename, code) {
             log_output: true,
             use_debug: false,
         };
-        let argument_provider = TestArgumentProvider {
-            by_filename: HashMap::from([(
-                "myfile.py".to_string(),
-                HashMap::from([(
-                    "rule1".to_string(),
-                    HashMap::from([
-                        ("my-argument".to_string(), "101".to_string()),
-                        ("another-arg".to_string(), "321".to_string()),
-                    ]),
-                )]),
-            )]),
-        };
+        let mut argument_provider = ArgumentProvider::new();
+        argument_provider.add_argument("rule1", "myfile.py", "my-argument", "101");
+        argument_provider.add_argument("rule1", "myfile.py", "another-arg", "101");
+
         let results = analyze(
             &Language::Python,
             &vec![rule1, rule2],
