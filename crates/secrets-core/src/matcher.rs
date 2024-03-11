@@ -5,6 +5,7 @@
 use crate::capture::{Capture, Captures};
 use crate::matcher::hyperscan::Hyperscan;
 use std::cmp::Ordering;
+use std::fmt::{Debug, Formatter};
 
 pub mod hyperscan;
 
@@ -88,7 +89,7 @@ impl PatternId {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PatternMatch<'b> {
     /// The internal id of the pattern that generated this `PatternMatch`.
     pattern_id: PatternId,
@@ -96,6 +97,16 @@ pub struct PatternMatch<'b> {
     full_data: &'b [u8],
     /// The captures of this match.
     captures: Captures<'b>,
+}
+
+impl Debug for PatternMatch<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PatternMatch")
+            .field("pattern_id", &self.pattern_id)
+            .field("full_data", &self.full_data.as_ptr_range())
+            .field("captures", &self.captures)
+            .finish()
+    }
 }
 
 impl PartialOrd for PatternMatch<'_> {

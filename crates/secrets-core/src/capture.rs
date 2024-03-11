@@ -5,6 +5,7 @@
 use crate::common::ByteSpan;
 use bstr::{BStr, ByteSlice};
 use std::borrow::Cow;
+use std::fmt::{Debug, Formatter};
 use std::iter::{Enumerate, FusedIterator};
 use std::slice::Iter;
 use std::sync::Arc;
@@ -186,12 +187,21 @@ impl<'b> CaptureSlots<'b> {
 }
 
 /// A byte slice representing a capture, as well as the parent that it was sliced from.
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+#[derive(Copy, Clone, Eq, PartialEq)]
 pub struct Capture<'b> {
     /// The parent slice, which is a superset of the `captured`
     parent: &'b [u8],
     /// The (subset) slice of bytes that was captured.
     captured: &'b [u8],
+}
+
+impl Debug for Capture<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Capture")
+            .field("captured", &BStr::new(self.captured))
+            .field("parent", &self.parent.as_ptr_range())
+            .finish()
+    }
 }
 
 impl<'b> Capture<'b> {
