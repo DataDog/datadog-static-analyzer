@@ -12,5 +12,6 @@ mod common;
 mod location;
 mod matcher;
 mod rule;
+mod rule_evaluator;
 mod validator;
 pub use validator::Validator;
