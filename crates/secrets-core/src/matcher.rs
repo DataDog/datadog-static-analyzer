@@ -131,4 +131,12 @@ impl<'b> PatternMatch<'b> {
     pub fn entire(&self) -> Capture<'b> {
         self.captures.entire()
     }
+
+    /// Deconstructs the [`PatternMatch`] into:
+    /// * [`pattern_id`](PatternMatch::pattern_id)
+    /// * [`full_data`](PatternMatch::full_data)
+    /// * [`captures`](PatternMatch::captures)
+    pub fn into_parts(self) -> (PatternId, &'b [u8], Captures<'b>) {
+        (self.pattern_id, self.full_data, self.captures)
+    }
 }
