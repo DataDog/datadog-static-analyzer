@@ -433,9 +433,15 @@ mod tests {
 
         // rs_one excludes 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
-            "rulesets: { rs_one: { ignore: [path/to] } }".to_string(),
+            r#"
+rulesets:
+  - rs_one:
+    ignore: [path/to]
+        "#
+            .to_string(),
         ));
         let response = process_analysis_request(request.clone());
+        eprintln!("{:?}", response);
         assert_eq!(1, response.rule_responses.len());
 
         let response = process_analysis_request(AnalysisRequest {
@@ -446,7 +452,12 @@ mod tests {
 
         // rs_one only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
-            "rulesets: { rs_one: { only: [path/to] } }".to_string(),
+            r#"
+rulesets:
+  - rs_one:
+    only: [path/to]
+        "#
+            .to_string(),
         ));
         let response = process_analysis_request(request.clone());
         assert_eq!(4, response.rule_responses.len());
@@ -459,7 +470,14 @@ mod tests {
 
         // rs_one/rule_a excludes 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
-            "rulesets: { rs_one: { rules: { rule_a: { ignore: [path/to] } } } }".to_string(),
+            r#"
+rulesets:
+  - rs_one:
+    rules:
+      rule_a:
+        ignore: [path/to]
+        "#
+            .to_string(),
         ));
         let response = process_analysis_request(request.clone());
         assert_eq!(3, response.rule_responses.len());
@@ -472,7 +490,14 @@ mod tests {
 
         // rs_one/rule_a only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
-            "rulesets: { rs_one: { rules: { rule_a: { only: [path/to] } } } }".to_string(),
+            r#"
+rulesets:
+  - rs_one:
+    rules:
+      rule_a:
+        only: [path/to]
+        "#
+            .to_string(),
         ));
         let response = process_analysis_request(request.clone());
         assert_eq!(4, response.rule_responses.len());

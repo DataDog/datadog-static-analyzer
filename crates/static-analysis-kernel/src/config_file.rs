@@ -1,6 +1,6 @@
 use anyhow::Result;
 use sequence_trie::SequenceTrie;
-use serde::de::{Error, MapAccess, SeqAccess, Visitor};
+use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer};
 use std::collections::HashMap;
 use std::fmt;
@@ -10,6 +10,38 @@ use crate::model::config_file::{ArgumentValues, ConfigFile, RuleConfig, RulesetC
 
 pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
+}
+
+const SCHEMA_VERSION: &str = "v1";
+
+pub fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    struct SchemaVersionVisitor {}
+    impl<'de> Visitor<'de> for SchemaVersionVisitor {
+        type Value = String;
+
+        fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+            formatter.write_fmt(format_args!("a \"{}\" string", SCHEMA_VERSION))
+        }
+
+        fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            if v != SCHEMA_VERSION {
+                Err(Error::invalid_value(Unexpected::Str(v), &self))
+            } else {
+                Ok(v.to_string())
+            }
+        }
+    }
+    deserializer.deserialize_string(SchemaVersionVisitor {})
+}
+
+pub fn get_default_schema_version() -> String {
+    SCHEMA_VERSION.to_string()
 }
 
 type Argument = (String, String);
@@ -103,7 +135,7 @@ where
         type Value = HashMap<String, RulesetConfig>;
 
         fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-            formatter.write_str("a list of strings or map from string to ruleset configuration")
+            formatter.write_str("a list of ruleset configurations")
         }
 
         /// Deserializes a list of strings.
@@ -117,19 +149,8 @@ where
                     return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
                 }
             }
-            Ok(out)
-        }
-
-        /// Deserializes a map of string to `RulesetConfig`.
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: MapAccess<'de>,
-        {
-            let mut out = HashMap::new();
-            while let Some((k, v)) = map.next_entry::<String, RulesetConfig>()? {
-                if out.insert(k.clone(), v).is_some() {
-                    return Err(Error::custom(format!("found duplicate ruleset: {}", k)));
-                }
+            if out.is_empty() {
+                return Err(Error::custom("no rulesets were specified"));
             }
             Ok(out)
         }
@@ -212,13 +233,16 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
             where
                 A: MapAccess<'de>,
             {
-                let mut out = match map.next_entry::<String, RulesetConfig>()? {
+                let mut out = match map.next_entry::<String, ()>()? {
                     None => {
                         return Err(Error::missing_field("name"));
                     }
-                    Some((k, v)) => NamedRulesetConfig { name: k, cfg: v },
+                    Some((k, _)) => NamedRulesetConfig {
+                        name: k,
+                        cfg: RulesetConfig::default(),
+                    },
                 };
-                // If the user forgot to indent, we populate the object field by field.
+                // Populate the object field by field.
                 while let Some(x) = map.next_key::<String>()? {
                     match x.as_str() {
                         "only" => {
@@ -242,11 +266,8 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
                                 out.cfg.rules = map.next_value()?;
                             }
                         }
-                        "" => {
-                            // Ignore empty keys
-                        }
-                        otherwise => {
-                            return Err(Error::custom(format!("unknown field: {}", otherwise)));
+                        _ => {
+                            // Ignore empty and other fields
                         }
                     }
                 }
@@ -389,8 +410,55 @@ impl<'de> Deserialize<'de> for ArgumentValues {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::config_file::{ConfigFile, PathConfig, RuleConfig, RulesetConfig};
+    use crate::model::config_file::{
+        ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig,
+    };
     use std::collections::HashMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    // Location of the configuration file examples that accompany the schema.
+    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/examples";
+
+    // Returns pairs of (path, content) of the example files in the given subdirectory.
+    fn get_example_configs(suffix: &str) -> impl Iterator<Item = (PathBuf, String)> {
+        let dir_path = Path::new(CFG_FILE_EXAMPLES_DIR).join(suffix);
+        let entries = fs::read_dir(dir_path).expect("could not read the examples directory");
+        entries
+            .map(|e| e.expect("could not find an example entry").path())
+            .filter(|path| path.is_file())
+            .map(|path| {
+                let cfg = fs::read_to_string(&path).expect("could not open example");
+                (path, cfg)
+            })
+    }
+
+    // 'Valid' examples are indeed valid according to this parser.
+    #[test]
+    fn test_valid_examples_can_be_parsed() {
+        for (path, cfg) in get_example_configs("valid") {
+            let result = parse_config_file(&cfg);
+            assert!(
+                result.is_ok(),
+                "expected a valid configuration in {}: {}",
+                path.display(),
+                result.err().unwrap()
+            );
+        }
+    }
+
+    // 'Invalid' examples are indeed invalid according to this parser.
+    #[test]
+    fn test_invalid_examples_cannot_be_parsed() {
+        for (path, cfg) in get_example_configs("invalid") {
+            let result = parse_config_file(&cfg);
+            assert!(
+                result.is_err(),
+                "expected an invalid configuration in {}",
+                path.display()
+            );
+        }
+    }
 
     // `rulesets` parsed as a list of ruleset names
     #[test]
@@ -401,6 +469,7 @@ rulesets:
   - go-best-practices
     "#;
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 ("go-best-practices".to_string(), RulesetConfig::default()),
@@ -414,7 +483,7 @@ rulesets:
 
     // `rulesets` parsed as a map from rule name to config.
     #[test]
-    fn test_parse_rulesets_as_map() {
+    fn test_cannot_parse_rulesets_as_map() {
         let data = r#"
 rulesets:
   python-security:
@@ -429,38 +498,9 @@ rulesets:
     rules:
       random-iv:
     "#;
-        let expected = ConfigFile {
-            rulesets: HashMap::from([
-                ("python-security".to_string(), RulesetConfig::default()),
-                (
-                    "go-best-practices".to_string(),
-                    RulesetConfig {
-                        paths: PathConfig {
-                            only: Some(vec![
-                                "one/two".to_string().into(),
-                                "foo/**/*.go".to_string().into(),
-                            ]),
-                            ignore: vec![
-                                "tres/cuatro".to_string().into(),
-                                "bar/**/*.go".to_string().into(),
-                            ],
-                        },
-                        rules: HashMap::new(),
-                    },
-                ),
-                (
-                    "java-security".to_string(),
-                    RulesetConfig {
-                        paths: PathConfig::default(),
-                        rules: HashMap::from([("random-iv".to_string(), RuleConfig::default())]),
-                    },
-                ),
-            ]),
-            ..ConfigFile::default()
-        };
 
         let res = parse_config_file(data);
-        assert_eq!(expected, res.unwrap());
+        assert!(res.is_err());
     }
 
     // Parse improperly formatted YAML where the rulesets are lists of maps
@@ -475,11 +515,12 @@ rulesets:
     only:
       - "foo"
   - python-best-practices:
-      ignore:
-        - "bar"
+    ignore:
+      - "bar"
     "#;
 
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([
                 ("c-best-practices".to_string(), RulesetConfig::default()),
                 ("rust-best-practices".to_string(), RulesetConfig::default()),
@@ -511,6 +552,26 @@ rulesets:
         assert_eq!(expected, res.unwrap());
     }
 
+    // Parse improperly formatted YAML where the rulesets are lists of maps
+    // or mixed lists of strings and maps.
+    #[test]
+    fn test_cannot_parse_rulesets_with_bad_indentation() {
+        let data = r#"
+rulesets:
+  - c-best-practices
+  - rust-best-practices:
+  - go-best-practices:
+      only:
+        - "foo"
+  - python-best-practices:
+      ignore:
+        - "bar"
+    "#;
+
+        let res = parse_config_file(data);
+        assert!(res.is_err());
+    }
+
     // Cannot have repeated ruleset configurations.
     #[test]
     fn test_cannot_parse_rulesets_with_repeated_names() {
@@ -539,7 +600,7 @@ rulesets:
     fn test_parse_rules() {
         let data = r#"
 rulesets:
-  python-security:
+  - python-security:
     rules:
       no-eval:
         only:
@@ -548,6 +609,7 @@ rulesets:
           - "py/insecure/**"
     "#;
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -641,6 +703,7 @@ rulesets:
         "#;
 
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -727,6 +790,7 @@ max-file-size-kb: 512
     "#;
 
         let expected = ConfigFile {
+            schema_version: "v1".to_string(),
             rulesets: HashMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
                 only: Some(vec!["py/**/foo/*.py".to_string().into()]),

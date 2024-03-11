@@ -6,7 +6,10 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use crate::config_file::{deserialize_ruleconfigs, deserialize_rulesetconfigs};
+use crate::config_file::{
+    deserialize_ruleconfigs, deserialize_rulesetconfigs, deserialize_schema_version,
+    get_default_schema_version,
+};
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
@@ -57,6 +60,8 @@ pub struct RulesetConfig {
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default)]
 #[serde(from = "RawConfigFile")]
 pub struct ConfigFile {
+    #[serde(rename = "schema-version")]
+    pub schema_version: String,
     // Configurations for the rulesets.
     pub rulesets: HashMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
@@ -73,6 +78,13 @@ pub struct ConfigFile {
 // The raw configuration file format with legacy fields and other quirks.
 #[derive(Deserialize)]
 struct RawConfigFile {
+    // Version this configuration file complies with.
+    #[serde(
+        rename = "schema-version",
+        default = "get_default_schema_version",
+        deserialize_with = "deserialize_schema_version"
+    )]
+    schema_version: String,
     // Configurations for the rulesets.
     #[serde(deserialize_with = "deserialize_rulesetconfigs")]
     rulesets: HashMap<String, RulesetConfig>,
@@ -93,6 +105,7 @@ struct RawConfigFile {
 impl From<RawConfigFile> for ConfigFile {
     fn from(value: RawConfigFile) -> Self {
         ConfigFile {
+            schema_version: value.schema_version,
             rulesets: value.rulesets,
             paths: {
                 let mut paths = value.paths;

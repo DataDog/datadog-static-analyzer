@@ -1,7 +1,7 @@
 on: push
 name: Check that the JSON schema for the configuration file matches the examples
 jobs:
-  integration_tests:
+  test_json_schema:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v1

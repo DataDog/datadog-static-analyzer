@@ -28,7 +28,7 @@ fi
 
 cat << EOT > "${REPO_DIR}/static-analysis.datadog.yml"
 rulesets:
-  typescript-node-security:
+  - typescript-node-security:
     ignore:
       - "test/*/verifySpec.ts"
     rules:
