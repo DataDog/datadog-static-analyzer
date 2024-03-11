@@ -414,6 +414,51 @@ mod tests {
         ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig,
     };
     use std::collections::HashMap;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    // Location of the configuration file examples that accompany the schema.
+    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/examples";
+
+    // Returns pairs of (path, content) of the example files in the given subdirectory.
+    fn get_example_configs(suffix: &str) -> impl Iterator<Item = (PathBuf, String)> {
+        let dir_path = Path::new(CFG_FILE_EXAMPLES_DIR).join(suffix);
+        let entries = fs::read_dir(dir_path).expect("could not read the examples directory");
+        entries
+            .map(|e| e.expect("could not find an example entry").path())
+            .filter(|path| path.is_file())
+            .map(|path| {
+                let cfg = fs::read_to_string(&path).expect("could not open example");
+                (path, cfg)
+            })
+    }
+
+    // 'Valid' examples are indeed valid according to this parser.
+    #[test]
+    fn test_valid_examples_can_be_parsed() {
+        for (path, cfg) in get_example_configs("valid") {
+            let result = parse_config_file(&cfg);
+            assert!(
+                result.is_ok(),
+                "expected a valid configuration in {}: {}",
+                path.display(),
+                result.err().unwrap()
+            );
+        }
+    }
+
+    // 'Invalid' examples are indeed invalid according to this parser.
+    #[test]
+    fn test_invalid_examples_cannot_be_parsed() {
+        for (path, cfg) in get_example_configs("invalid") {
+            let result = parse_config_file(&cfg);
+            assert!(
+                result.is_err(),
+                "expected an invalid configuration in {}",
+                path.display()
+            );
+        }
+    }
 
     // `rulesets` parsed as a list of ruleset names
     #[test]

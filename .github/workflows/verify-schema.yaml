@@ -9,16 +9,3 @@ jobs:
         uses: actions/setup-node@v1
       - run: npm install -g pajv
       - run: make -C schema
-  test_static_analyzer_configuration_parser:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
-      - name: Run the test-config tool against the examples
-        run: ./misc/test-configuration-file-examples.sh
