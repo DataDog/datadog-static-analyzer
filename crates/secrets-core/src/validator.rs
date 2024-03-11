@@ -4,6 +4,7 @@
 
 use crate::rule::RuleMatch;
 use std::fmt::Debug;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[cfg(feature = "validator-http")]
@@ -44,8 +45,10 @@ impl<T: AsRef<str>> From<T> for ValidatorId {
 }
 
 #[derive(Debug, Clone)]
-#[repr(transparent)]
-pub struct Candidate(RuleMatch);
+pub struct Candidate {
+    pub source: PathBuf,
+    pub rule_match: RuleMatch,
+}
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum SecretCategory {
