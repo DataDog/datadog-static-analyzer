@@ -3,10 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 mod hs_matcher;
-pub use hs_matcher::{Hyperscan, MatchCursor};
+pub use hs_matcher::Hyperscan;
 mod pattern;
 pub use pattern::Pattern;
-mod pattern_set;
+pub mod pattern_set;
 pub(crate) use pattern_set::PatternSet;
 mod scratch;
 mod transform;

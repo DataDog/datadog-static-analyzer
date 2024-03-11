@@ -9,7 +9,7 @@ use std::num::NonZeroU32;
 
 /// A one-based point representing a line and column in a string.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct Point {
+pub struct Point {
     pub line: NonZeroU32,
     pub col: NonZeroU32,
 }
@@ -50,7 +50,7 @@ impl Default for Point {
 
 /// A span of [`Point`]s representing a range of lines and columns in a text.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct PointSpan {
+pub struct PointSpan {
     start: Point,
     end: Point,
 }
@@ -163,6 +163,11 @@ impl<'d> PointLocator<'d> {
             scanned_up_to: Cell::new(0),
             line_offsets: RefCell::new(vec![]),
         }
+    }
+
+    /// Returns the `data` this `PointLocator` is initialized for.
+    pub fn data(&self) -> &'d [u8] {
+        self.data
     }
 
     /// Returns a [`PointSpan`] for the underlying data, given a [`ByteSpan`].
