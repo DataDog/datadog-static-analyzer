@@ -15,6 +15,8 @@ use vectorscan_sys::hs;
 #[repr(transparent)]
 pub struct Scratch(NonNull<hs::hs_scratch>);
 
+unsafe impl Send for Scratch {}
+
 impl Scratch {
     /// Allocate a new scratch space for use by a [BlockDatabase]. Hyperscan internally uses this function
     /// to do validity checks on the database.
