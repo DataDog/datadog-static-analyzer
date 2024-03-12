@@ -57,7 +57,7 @@ impl Engine {
         let rules = self
             .rules
             .iter()
-            .map(|rule| Rc::new(rule.clone()))
+            .map(|rule| Arc::new(rule.clone()))
             .collect::<Vec<_>>();
         let matchers = self.matchers.clone();
         Worker::new(matchers, rules)
