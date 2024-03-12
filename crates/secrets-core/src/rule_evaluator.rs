@@ -10,11 +10,11 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::iter::FusedIterator;
-use std::rc::Rc;
+use std::sync::Arc;
 
 pub struct RuleEvaluator {
     /// A mapping from an id to its [`Rule`].
-    rules: HashMap<RuleId, Rc<Rule>>,
+    rules: HashMap<RuleId, Arc<Rule>>,
     /// A mapping from an id to its [`Matcher`].
     // NOTE/TODO: this is a RefCell until [`Matcher`] can be refactored to use interior mutability.
     matchers: RefCell<HashMap<MatcherId, Matcher>>,
@@ -24,11 +24,11 @@ pub struct RuleEvaluator {
 }
 
 impl RuleEvaluator {
-    pub fn new(matchers: impl Into<Vec<Matcher>>, rules: impl AsRef<[Rc<Rule>]>) -> RuleEvaluator {
+    pub fn new(matchers: impl Into<Vec<Matcher>>, rules: impl AsRef<[Arc<Rule>]>) -> RuleEvaluator {
         let rules = rules
             .as_ref()
             .iter()
-            .map(|rule| (rule.id().clone(), Rc::clone(rule)))
+            .map(|rule| (rule.id().clone(), Arc::clone(rule)))
             .collect::<HashMap<_, _>>();
         let matchers = matchers
             .into()
@@ -152,13 +152,13 @@ impl<'d> MatchesCache<'d> {
 
 #[derive(Debug, Clone)]
 struct EvalItem<'d> {
-    expr: Rc<Expression>,
+    expr: Arc<Expression>,
     full_data: &'d [u8],
     data_slice: &'d [u8],
 }
 
 impl<'d> EvalItem<'d> {
-    pub fn new(expr: Rc<Expression>, full_data: &'d [u8], data_slice: &'d [u8]) -> EvalItem<'d> {
+    pub fn new(expr: Arc<Expression>, full_data: &'d [u8], data_slice: &'d [u8]) -> EvalItem<'d> {
         Self {
             expr,
             full_data,
@@ -166,9 +166,9 @@ impl<'d> EvalItem<'d> {
         }
     }
 
-    pub fn from_parent(expr_rc: &Rc<Expression>, from: &Self) -> EvalItem<'d> {
+    pub fn from_parent(expr_rc: &Arc<Expression>, from: &Self) -> EvalItem<'d> {
         Self {
-            expr: Rc::clone(expr_rc),
+            expr: Arc::clone(expr_rc),
             full_data: from.full_data,
             data_slice: from.data_slice,
         }
@@ -363,7 +363,7 @@ impl<'d> ScanIter<'_, 'd> {
     ///
     /// # Panics
     /// Panics if a rule with `rule_id` is not present.
-    fn get_expression(&self, idx: usize) -> Option<&Rc<Expression>> {
+    fn get_expression(&self, idx: usize) -> Option<&Arc<Expression>> {
         self.evaluator
             .rules
             .get(&self.rule_id)
@@ -394,7 +394,7 @@ impl<'d> Iterator for ScanIter<'_, 'd> {
 
             // Then, for each candidate, iterate through the rule's steps.
             while let Some(expr) = self.get_expression(self.step_index) {
-                let eval_item = EvalItem::new(Rc::clone(expr), self.data, self.next_data_slice);
+                let eval_item = EvalItem::new(Arc::clone(expr), self.data, self.next_data_slice);
 
                 let evaluated = match self.s.eval(eval_item, 0) {
                     Ok(val) => val,
@@ -549,30 +549,30 @@ mod tests {
 
     /// Crawls a [`Source`] tree and reconstructs an equivalent [`Expression`] tree. Each patter
     /// passed in is compiled into a [`Hyperscan`] matcher.
-    fn build_tree(source: &Source, psb: &mut PatternSetBuilder) -> Rc<Expression> {
+    fn build_tree(source: &Source, psb: &mut PatternSetBuilder) -> Arc<Expression> {
         match source {
             Source::Prior(expr) => {
                 let p_id = psb.add_pattern(vectorscan::Pattern::new(*expr).try_build().unwrap());
-                Rc::new(Expression::IsMatch {
+                Arc::new(Expression::IsMatch {
                     source: MatchSource::Prior,
                     pattern_id: p_id,
                 })
             }
             Source::Capture(name, expr) => {
                 let p_id = psb.add_pattern(vectorscan::Pattern::new(*expr).try_build().unwrap());
-                Rc::new(Expression::IsMatch {
+                Arc::new(Expression::IsMatch {
                     source: MatchSource::Capture(name.to_string()),
                     pattern_id: p_id,
                 })
             }
             Source::And(lhs, rhs) => {
-                Rc::new(Expression::And(build_tree(lhs, psb), build_tree(rhs, psb)))
+                Arc::new(Expression::And(build_tree(lhs, psb), build_tree(rhs, psb)))
             }
             Source::Or(lhs, rhs) => {
-                Rc::new(Expression::Or(build_tree(lhs, psb), build_tree(rhs, psb)))
+                Arc::new(Expression::Or(build_tree(lhs, psb), build_tree(rhs, psb)))
             }
             Source::Not(expr) => {
-                Rc::new(Expression::Not(build_tree(expr, psb)))
+                Arc::new(Expression::Not(build_tree(expr, psb)))
             }
         }
     }
@@ -589,9 +589,9 @@ mod tests {
                 let expressions = rule
                     .1
                     .iter()
-                    .map(|pattern| Rc::try_unwrap(build_tree(pattern, &mut psb)).unwrap())
+                    .map(|pattern| Arc::try_unwrap(build_tree(pattern, &mut psb)).unwrap())
                     .collect::<Vec<_>>();
-                Rc::new(Rule::new(rule.0.clone(), vec![], expressions, vec![]))
+                Arc::new(Rule::new(rule.0.clone(), vec![], expressions, vec![]))
             })
             .collect::<Vec<_>>();
 
