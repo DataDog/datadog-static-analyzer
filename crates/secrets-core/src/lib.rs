@@ -7,10 +7,17 @@
 #![allow(unused_imports)]
 #![allow(dead_code)]
 
-mod capture;
-mod common;
-mod location;
-mod matcher;
-mod rule;
-mod validator;
+pub mod capture;
+pub mod common;
+pub mod engine;
+pub mod location;
+pub mod matcher;
+pub mod rule;
+pub mod rule_evaluator;
+pub mod validator;
 pub use validator::Validator;
+
+// TODO: Remove re-export once a `Hyperscan` builder is implemented
+pub use vectorscan;
+
+mod worker;

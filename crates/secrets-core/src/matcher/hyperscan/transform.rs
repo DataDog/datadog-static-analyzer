@@ -234,7 +234,7 @@ impl<'s> Iterator for MatchIter<'_, 's> {
 mod tests {
     use crate::capture::{Capture, CaptureSlots};
     use crate::common::ByteSpan;
-    use crate::matcher::hyperscan::pattern_set::NamedPattern;
+    use crate::matcher::hyperscan::pattern_set::PatternWithId;
     use crate::matcher::hyperscan::PatternSet;
     use vectorscan::{HsMatch, Scratch};
 
@@ -249,13 +249,13 @@ mod tests {
         CaptureSlots::new(slots)
     }
 
-    fn scan(expression: &str, haystack: &str, is_literal: bool) -> (Vec<HsMatch>, NamedPattern) {
+    fn scan(expression: &str, haystack: &str, is_literal: bool) -> (Vec<HsMatch>, PatternWithId) {
         let pattern = vectorscan::compiler::Pattern::new(expression)
             .literal(is_literal)
             .try_build()
             .unwrap();
-        let (pattern_set, _) = PatternSet::new()
-            .pattern(pattern, None)
+        let pattern_set = PatternSet::new(0.into())
+            .pattern(pattern)
             .try_compile()
             .unwrap();
         let mut scratch = Scratch::try_new_for(pattern_set.database()).unwrap();
