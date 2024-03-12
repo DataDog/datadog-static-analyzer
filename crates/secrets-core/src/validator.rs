@@ -30,17 +30,21 @@ pub enum ValidatorError {
 #[repr(transparent)]
 pub struct ValidatorId(pub Arc<str>);
 
-impl ValidatorId {
-    /// Returns a shared reference to the underlying str.
-    #[inline]
-    pub fn as_ref(&self) -> &str {
-        self.0.as_ref()
+impl From<&str> for ValidatorId {
+    fn from(value: &str) -> Self {
+        Self(Arc::from(value))
     }
 }
 
-impl<T: AsRef<str>> From<T> for ValidatorId {
-    fn from(value: T) -> Self {
-        Self(Arc::from(value.as_ref()))
+impl From<String> for ValidatorId {
+    fn from(value: String) -> Self {
+        Self(Arc::from(value.as_str()))
+    }
+}
+
+impl AsRef<str> for ValidatorId {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 

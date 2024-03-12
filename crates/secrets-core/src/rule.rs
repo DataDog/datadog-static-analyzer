@@ -40,17 +40,21 @@ pub enum MatchSource {
 #[repr(transparent)]
 pub struct RuleId(pub Arc<str>);
 
-impl RuleId {
-    /// Returns a shared reference to the underlying `str`.
-    #[inline]
-    pub fn as_ref(&self) -> &str {
-        self.0.as_ref()
+impl From<&str> for RuleId {
+    fn from(value: &str) -> Self {
+        Self(Arc::from(value))
     }
 }
 
-impl<T: AsRef<str>> From<T> for RuleId {
-    fn from(value: T) -> Self {
-        Self(Arc::from(value.as_ref()))
+impl From<String> for RuleId {
+    fn from(value: String) -> Self {
+        Self(Arc::from(value.as_str()))
+    }
+}
+
+impl AsRef<str> for RuleId {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
