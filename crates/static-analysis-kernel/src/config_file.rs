@@ -430,7 +430,7 @@ impl<'de> Deserialize<'de> for ArgumentValues {
 mod tests {
     use super::*;
     use crate::model::config_file::{
-        ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig,
+        ArgumentValues, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::collections::HashMap;
     use std::fs;
@@ -946,5 +946,110 @@ max-file-size-kb: 512
                 ("arg3".to_string(), "first_3".to_string())
             ])
         );
+    }
+
+    #[test]
+    fn test_serialize_rulesetconfigs_empty() {
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets: HashMap::new(),
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert_eq!(
+            serialized.trim(),
+            r#"schema-version: v1
+rulesets: []"#
+        );
+    }
+
+    #[test]
+    fn test_serialize_rulesetconfigs_single_empty() {
+        let mut rulesets = HashMap::new();
+        rulesets.insert("java-1".to_string(), RulesetConfig::default());
+
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        assert_eq!(
+            serialized.trim(),
+            r#"schema-version: v1
+rulesets:
+- java-1"#
+        );
+    }
+
+    #[test]
+    fn test_serialize_rulesetconfigs_multiple() {
+        let mut rulesets = HashMap::new();
+        rulesets.insert("java-1".to_string(), RulesetConfig::default());
+
+        let mut rules = HashMap::new();
+        rules.insert(
+            "rule-number-1".into(),
+            RuleConfig {
+                paths: PathConfig {
+                    ignore: vec![PathPattern {
+                        glob: None,
+                        prefix: "ignore/to/win".into(),
+                    }],
+                    only: None,
+                },
+                ..Default::default()
+            },
+        );
+
+        rulesets.insert(
+            "java-security".to_string(),
+            RulesetConfig {
+                // Fill in with test data...
+                rules,
+                paths: PathConfig {
+                    ignore: vec![],
+                    only: Some(vec![PathPattern {
+                        glob: None,
+                        prefix: "my-path/to/heaven".into(),
+                    }]),
+                },
+            },
+        );
+
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = serialized.trim();
+        let expected = r#"schema-version: v1
+rulesets:
+- java-1
+- java-security:
+    only:
+    - my-path/to/heaven
+    rules:
+      rule-number-1:
+        ignore:
+        - ignore/to/win"#;
+
+        let expected2 = r#"schema-version: v1
+rulesets:
+- java-security:
+    only:
+    - my-path/to/heaven
+    rules:
+      rule-number-1:
+        ignore:
+        - ignore/to/win
+- java-1"#;
+
+        // NOTE: as the order cannot be guaranteed, if any of the expected is ok, we're fine.
+        assert!(serialized == expected || serialized == expected2);
     }
 }
