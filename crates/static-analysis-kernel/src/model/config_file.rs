@@ -11,6 +11,10 @@ use crate::config_file::{
     get_default_schema_version,
 };
 
+fn is_default<T: Default + PartialEq>(val: &T) -> bool {
+    *val == T::default()
+}
+
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
 #[derive(Deserialize, Serialize, Debug, Default, Clone)]
@@ -24,9 +28,10 @@ pub struct PathPattern {
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]
 pub struct PathConfig {
     // Analyze only these directories and patterns.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub only: Option<Vec<PathPattern>>,
     // Do not analyze any of these directories and patterns.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub ignore: Vec<PathPattern>,
 }
 
@@ -52,7 +57,11 @@ pub struct RulesetConfig {
     #[serde(flatten)]
     pub paths: PathConfig,
     // Rule-specific configurations.
-    #[serde(default, deserialize_with = "deserialize_ruleconfigs")]
+    #[serde(
+        default,
+        deserialize_with = "deserialize_ruleconfigs",
+        skip_serializing_if = "is_default"
+    )]
     pub rules: HashMap<String, RuleConfig>,
 }
 
@@ -68,10 +77,10 @@ pub struct ConfigFile {
     #[serde(flatten)]
     pub paths: PathConfig,
     // Ignore all the paths in the .gitignore file.
-    #[serde(rename = "ignore-gitignore")]
+    #[serde(rename = "ignore-gitignore", skip_serializing_if = "Option::is_none")]
     pub ignore_gitignore: Option<bool>,
     // Analyze only files up to this size.
-    #[serde(rename = "max-file-size-kb")]
+    #[serde(rename = "max-file-size-kb", skip_serializing_if = "Option::is_none")]
     pub max_file_size_kb: Option<u64>,
 }
 
