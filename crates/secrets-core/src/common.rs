@@ -38,6 +38,7 @@ impl ByteSpan {
     }
 
     /// Returns the length represented by the ByteSpan
+    #[allow(clippy::len_without_is_empty)]
     #[inline]
     pub fn len(&self) -> usize {
         debug_assert!(self.end_index >= self.start_index);
