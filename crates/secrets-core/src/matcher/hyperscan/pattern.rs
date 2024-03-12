@@ -57,13 +57,13 @@ impl Pattern {
 
 /// A thin layer over the min and max width from a [`vectorscan::Pattern`]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub(crate) enum PatternWidth {
+pub enum PatternWidth {
     Fixed(usize),
     Variable { min: usize, max: Option<usize> },
 }
 
 #[derive(Debug, Clone)]
-pub(crate) enum PatternKind {
+pub enum PatternKind {
     Regex(InnerRegex),
     Literal,
 }
@@ -87,7 +87,7 @@ impl PatternKind {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct InnerRegex {
+pub struct InnerRegex {
     regex: Regex,
     /// A mutable scratch space to write regex scan captures into.
     scratch: pcre2::bytes::CaptureLocations,
