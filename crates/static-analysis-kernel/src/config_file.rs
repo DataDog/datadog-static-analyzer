@@ -164,9 +164,14 @@ pub fn serialize_rulesetconfigs<S: Serializer>(
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     let mut seq = serializer.serialize_seq(Some(rulesets.len()))?;
-    for (key, value) in rulesets {
-        let mut map = HashMap::new();
 
+    // we want to always serialize the rulesets in the same order
+    let mut keys = rulesets.keys().collect::<Vec<_>>();
+    keys.sort();
+
+    for key in keys {
+        let value = rulesets.get(key).unwrap();
+        let mut map = HashMap::new();
         if !value.rules.is_empty() || value.paths.only.is_some() || !value.paths.ignore.is_empty() {
             map.insert(key, value);
             seq.serialize_element(&map)?;
@@ -1038,18 +1043,6 @@ rulesets:
         ignore:
         - ignore/to/win"#;
 
-        let expected2 = r#"schema-version: v1
-rulesets:
-- java-security:
-    only:
-    - my-path/to/heaven
-    rules:
-      rule-number-1:
-        ignore:
-        - ignore/to/win
-- java-1"#;
-
-        // NOTE: as the order cannot be guaranteed, if any of the expected is ok, we're fine.
-        assert!(serialized == expected || serialized == expected2);
+        assert_eq!(serialized, expected);
     }
 }
