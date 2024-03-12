@@ -1,7 +1,8 @@
 use anyhow::Result;
 use sequence_trie::SequenceTrie;
 use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::ser::SerializeSeq;
+use serde::{Deserialize, Deserializer, Serializer};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
@@ -156,6 +157,24 @@ where
         }
     }
     deserializer.deserialize_any(RulesetConfigsVisitor {})
+}
+
+pub fn serialize_rulesetconfigs<S: Serializer>(
+    rulesets: &HashMap<String, RulesetConfig>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut seq = serializer.serialize_seq(Some(rulesets.len()))?;
+    for (key, value) in rulesets {
+        let mut map = HashMap::new();
+
+        if !value.rules.is_empty() || value.paths.only.is_some() || !value.paths.ignore.is_empty() {
+            map.insert(key, value);
+            seq.serialize_element(&map)?;
+        } else {
+            seq.serialize_element(key)?;
+        }
+    }
+    seq.end()
 }
 
 /// Holder for ruleset configurations specified in lists.

@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config_file::{
     deserialize_ruleconfigs, deserialize_rulesetconfigs, deserialize_schema_version,
-    get_default_schema_version,
+    get_default_schema_version, serialize_rulesetconfigs,
 };
 
 fn is_default<T: Default + PartialEq>(val: &T) -> bool {
@@ -46,7 +46,7 @@ pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     #[serde(flatten)]
     pub paths: PathConfig,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_default")]
     pub arguments: HashMap<String, ArgumentValues>,
 }
 
@@ -72,6 +72,7 @@ pub struct ConfigFile {
     #[serde(rename = "schema-version")]
     pub schema_version: String,
     // Configurations for the rulesets.
+    #[serde(serialize_with = "serialize_rulesetconfigs")]
     pub rulesets: HashMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]
