@@ -203,7 +203,7 @@ struct ScannerState<'d> {
     scan_cache: HashMap<CacheKey, MatchesCache<'d>>,
 }
 
-pub(crate) struct Scanner<'a, 'd> {
+pub struct Scanner<'a, 'd> {
     state: RefCell<ScannerState<'d>>,
     evaluator: &'a RuleEvaluator,
     data: &'d [u8],
@@ -347,7 +347,7 @@ impl<'a, 'd> Scanner<'a, 'd> {
     }
 }
 
-pub(crate) struct ScanIter<'a, 'd> {
+pub struct ScanIter<'a, 'd> {
     data: &'d [u8],
     pub rule_id: RuleId,
     evaluator: &'a RuleEvaluator,
@@ -504,7 +504,7 @@ impl CacheKey {
 
 /// An [`EvalMatch`] represents a slice that has matched every predicate in a given rule.
 #[derive(Clone)]
-pub(crate) struct EvalMatch<'d> {
+pub struct EvalMatch<'d> {
     pub matched: Capture<'d>,
     /// Because a rule evaluation might have multiple top-level matches that create
     /// captures, but we only surface the first top-level match as `matched`, we need
