@@ -192,20 +192,20 @@ pub fn serialize_rulesetconfigs<S: Serializer>(
     for key in keys {
         let value = rulesets.get(key).unwrap();
         if !value.rules.is_empty() || value.paths.only.is_some() || !value.paths.ignore.is_empty() {
-            // we must ensure that this is the first being serialized, so we'll use a BTreeMap
-            let mut map = std::collections::BTreeMap::new();
+            // we must ensure that this is the first being serialized, so we'll use a IndexMap crate
+            let mut map = indexmap::IndexMap::new();
             map.insert(key.as_str(), CompatMapValue::Null);
             // manually adding elements
-            if !value.rules.is_empty() {
-                map.insert("rules", CompatMapValue::Rules(&value.rules));
+            if !value.paths.ignore.is_empty() {
+                map.insert("ignore", CompatMapValue::Ignore(&value.paths.ignore));
             }
 
             if value.paths.only.is_some() {
                 map.insert("only", CompatMapValue::Only(&value.paths.only));
             }
 
-            if !value.paths.ignore.is_empty() {
-                map.insert("ignore", CompatMapValue::Ignore(&value.paths.ignore));
+            if !value.rules.is_empty() {
+                map.insert("rules", CompatMapValue::Rules(&value.rules));
             }
 
             seq.serialize_element(&map)?;
@@ -1024,6 +1024,28 @@ rulesets:
     }
 
     #[test]
+    fn test_rulesetconfigs_map() {
+        let mut map = indexmap::IndexMap::new();
+        map.insert("rule-security", "value2");
+        map.insert("rules", "value3");
+        map.insert("only", "value1");
+
+        let s = serde_yaml::to_string(&map).unwrap();
+        assert_eq!(s, "rule-security: value2\nrules: value3\nonly: value1\n");
+    }
+
+    #[test]
+    fn test_rulesetconfigs_map2() {
+        let mut map = std::collections::BTreeMap::new();
+        map.insert("rule-security", "value2");
+        map.insert("rules", "value3");
+        map.insert("only", "value1");
+
+        let s = serde_yaml::to_string(&map).unwrap();
+        assert_ne!(s, "rule-security: value2\nrules: value3\nonly: value1\n");
+    }
+
+    #[test]
     fn test_serialize_rulesetconfigs_multiple() {
         let mut rulesets = HashMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
@@ -1071,6 +1093,66 @@ schema-version: v1
 rulesets:
 - java-1
 - java-security: null
+  only:
+  - my-path/to/heaven
+  rules:
+    rule-number-1:
+      ignore:
+      - ignore/to/win
+      "#
+        .trim();
+
+        assert_eq!(serialized, expected);
+    }
+
+    #[test]
+    fn test_serialize_rulesetconfigs_multiple_order_is_not_affected() {
+        let mut rulesets = HashMap::new();
+        rulesets.insert("java-1".to_string(), RulesetConfig::default());
+
+        let mut rules = HashMap::new();
+        rules.insert(
+            "rule-number-1".into(),
+            RuleConfig {
+                paths: PathConfig {
+                    ignore: vec![PathPattern {
+                        glob: None,
+                        prefix: "ignore/to/win".into(),
+                    }],
+                    only: None,
+                },
+                ..Default::default()
+            },
+        );
+
+        rulesets.insert(
+            "rule-security".to_string(),
+            RulesetConfig {
+                // Fill in with test data...
+                rules,
+                paths: PathConfig {
+                    ignore: vec![],
+                    only: Some(vec![PathPattern {
+                        glob: None,
+                        prefix: "my-path/to/heaven".into(),
+                    }]),
+                },
+            },
+        );
+
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = serialized.trim();
+        let expected = r#"
+schema-version: v1
+rulesets:
+- java-1
+- rule-security: null
   only:
   - my-path/to/heaven
   rules:
