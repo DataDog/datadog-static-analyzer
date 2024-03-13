@@ -5,6 +5,10 @@ default-members = [
     "crates/cli",
     "crates/static-analysis-kernel",
     "crates/static-analysis-server",
+    "crates/vectorscan-sys",
+    "crates/vectorscan",
+    "crates/secrets-core",
+    "crates/secrets",
 ]
 resolver = "2"
 
