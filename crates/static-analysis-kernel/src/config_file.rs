@@ -1,4 +1,5 @@
 use anyhow::Result;
+use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
 use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
 use serde::ser::SerializeSeq;
@@ -129,13 +130,13 @@ impl Default for ArgumentProvider {
 /// Duplicate rulesets are rejected.
 pub fn deserialize_rulesetconfigs<'de, D>(
     deserializer: D,
-) -> Result<HashMap<String, RulesetConfig>, D::Error>
+) -> Result<IndexMap<String, RulesetConfig>, D::Error>
 where
     D: Deserializer<'de>,
 {
     struct RulesetConfigsVisitor {}
     impl<'de> Visitor<'de> for RulesetConfigsVisitor {
-        type Value = HashMap<String, RulesetConfig>;
+        type Value = IndexMap<String, RulesetConfig>;
 
         fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
             formatter.write_str("a list of ruleset configurations")
@@ -146,7 +147,7 @@ where
         where
             A: SeqAccess<'de>,
         {
-            let mut out = HashMap::new();
+            let mut out = IndexMap::new();
             while let Some(nrc) = seq.next_element::<NamedRulesetConfig>()? {
                 if out.insert(nrc.name.clone(), nrc.cfg).is_some() {
                     return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
@@ -163,7 +164,7 @@ where
 
 pub enum CompatMapValue<'a> {
     Null,
-    Rules(&'a HashMap<String, RuleConfig>),
+    Rules(&'a IndexMap<String, RuleConfig>),
     Only(&'a Option<Vec<PathPattern>>),
     Ignore(&'a Vec<PathPattern>),
 }
@@ -180,7 +181,7 @@ impl<'a> Serialize for CompatMapValue<'a> {
 }
 
 pub fn serialize_rulesetconfigs<S: Serializer>(
-    rulesets: &HashMap<String, RulesetConfig>,
+    rulesets: &IndexMap<String, RulesetConfig>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     let mut seq = serializer.serialize_seq(Some(rulesets.len()))?;
@@ -193,7 +194,7 @@ pub fn serialize_rulesetconfigs<S: Serializer>(
         let value = rulesets.get(key).unwrap();
         if !value.rules.is_empty() || value.paths.only.is_some() || !value.paths.ignore.is_empty() {
             // we must ensure that this is the first being serialized, so we'll use a IndexMap crate
-            let mut map = indexmap::IndexMap::new();
+            let mut map = IndexMap::new();
             map.insert(key.as_str(), CompatMapValue::Null);
             // manually adding elements
             if !value.paths.ignore.is_empty() {
@@ -339,13 +340,13 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
 /// Deserializer for a `RuleConfig` map which rejects duplicate rules.
 pub fn deserialize_ruleconfigs<'de, D>(
     deserializer: D,
-) -> Result<HashMap<String, RuleConfig>, D::Error>
+) -> Result<IndexMap<String, RuleConfig>, D::Error>
 where
     D: Deserializer<'de>,
 {
     struct RuleConfigVisitor {}
     impl<'de> Visitor<'de> for RuleConfigVisitor {
-        type Value = HashMap<String, RuleConfig>;
+        type Value = IndexMap<String, RuleConfig>;
 
         fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
             formatter.write_str("an optional map from string to rule configuration")
@@ -356,7 +357,7 @@ where
         where
             A: MapAccess<'de>,
         {
-            let mut out = HashMap::new();
+            let mut out = IndexMap::new();
             while let Some((k, v)) = map.next_entry::<String, RuleConfig>()? {
                 if out.insert(k.clone(), v).is_some() {
                     return Err(Error::custom(format!("found duplicate rule: {}", k)));
@@ -528,7 +529,7 @@ rulesets:
     "#;
         let expected = ConfigFile {
             schema_version: "v1".to_string(),
-            rulesets: HashMap::from([
+            rulesets: IndexMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 ("go-best-practices".to_string(), RulesetConfig::default()),
             ]),
@@ -579,7 +580,7 @@ rulesets:
 
         let expected = ConfigFile {
             schema_version: "v1".to_string(),
-            rulesets: HashMap::from([
+            rulesets: IndexMap::from([
                 ("c-best-practices".to_string(), RulesetConfig::default()),
                 ("rust-best-practices".to_string(), RulesetConfig::default()),
                 (
@@ -668,11 +669,11 @@ rulesets:
     "#;
         let expected = ConfigFile {
             schema_version: "v1".to_string(),
-            rulesets: HashMap::from([(
+            rulesets: IndexMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
                     paths: PathConfig::default(),
-                    rules: HashMap::from([(
+                    rules: IndexMap::from([(
                         "no-eval".to_string(),
                         RuleConfig {
                             paths: PathConfig {
@@ -762,11 +763,11 @@ rulesets:
 
         let expected = ConfigFile {
             schema_version: "v1".to_string(),
-            rulesets: HashMap::from([(
+            rulesets: IndexMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
                     paths: PathConfig::default(),
-                    rules: HashMap::from([
+                    rules: IndexMap::from([
                         (
                             "no-eval".to_string(),
                             RuleConfig {
@@ -849,7 +850,7 @@ max-file-size-kb: 512
 
         let expected = ConfigFile {
             schema_version: "v1".to_string(),
-            rulesets: HashMap::from([("python-security".to_string(), RulesetConfig::default())]),
+            rulesets: IndexMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
                 only: Some(vec!["py/**/foo/*.py".to_string().into()]),
                 ignore: vec![
@@ -991,7 +992,7 @@ max-file-size-kb: 512
     fn test_serialize_rulesetconfigs_empty() {
         let config = ConfigFile {
             schema_version: "v1".to_string(),
-            rulesets: HashMap::new(),
+            rulesets: IndexMap::new(),
             ..Default::default()
         };
 
@@ -1005,7 +1006,7 @@ rulesets: []"#
 
     #[test]
     fn test_serialize_rulesetconfigs_single_empty() {
-        let mut rulesets = HashMap::new();
+        let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
         let config = ConfigFile {
@@ -1025,7 +1026,7 @@ rulesets:
 
     #[test]
     fn test_rulesetconfigs_map() {
-        let mut map = indexmap::IndexMap::new();
+        let mut map = IndexMap::new();
         map.insert("rule-security", "value2");
         map.insert("rules", "value3");
         map.insert("only", "value1");
@@ -1047,10 +1048,10 @@ rulesets:
 
     #[test]
     fn test_serialize_rulesetconfigs_multiple() {
-        let mut rulesets = HashMap::new();
+        let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
-        let mut rules = HashMap::new();
+        let mut rules = IndexMap::new();
         rules.insert(
             "rule-number-1".into(),
             RuleConfig {
@@ -1107,10 +1108,10 @@ rulesets:
 
     #[test]
     fn test_serialize_rulesetconfigs_multiple_order_is_not_affected() {
-        let mut rulesets = HashMap::new();
+        let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
-        let mut rules = HashMap::new();
+        let mut rules = IndexMap::new();
         rules.insert(
             "rule-number-1".into(),
             RuleConfig {

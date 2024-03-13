@@ -1,4 +1,5 @@
 use globset::{GlobBuilder, GlobMatcher};
+use indexmap::IndexMap;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
@@ -10,10 +11,6 @@ use crate::config_file::{
     deserialize_ruleconfigs, deserialize_rulesetconfigs, deserialize_schema_version,
     get_default_schema_version, serialize_rulesetconfigs,
 };
-
-fn is_default<T: Default + PartialEq>(val: &T) -> bool {
-    *val == T::default()
-}
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
@@ -31,7 +28,7 @@ pub struct PathConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub only: Option<Vec<PathPattern>>,
     // Do not analyze any of these directories and patterns.
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignore: Vec<PathPattern>,
 }
 
@@ -46,7 +43,7 @@ pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     #[serde(flatten)]
     pub paths: PathConfig,
-    #[serde(default, skip_serializing_if = "is_default")]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub arguments: HashMap<String, ArgumentValues>,
 }
 
@@ -60,9 +57,9 @@ pub struct RulesetConfig {
     #[serde(
         default,
         deserialize_with = "deserialize_ruleconfigs",
-        skip_serializing_if = "is_default"
+        skip_serializing_if = "IndexMap::is_empty"
     )]
-    pub rules: HashMap<String, RuleConfig>,
+    pub rules: IndexMap<String, RuleConfig>,
 }
 
 // The parsed configuration file without any legacy fields.
@@ -73,7 +70,7 @@ pub struct ConfigFile {
     pub schema_version: String,
     // Configurations for the rulesets.
     #[serde(serialize_with = "serialize_rulesetconfigs")]
-    pub rulesets: HashMap<String, RulesetConfig>,
+    pub rulesets: IndexMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]
     pub paths: PathConfig,
@@ -97,7 +94,7 @@ struct RawConfigFile {
     schema_version: String,
     // Configurations for the rulesets.
     #[serde(deserialize_with = "deserialize_rulesetconfigs")]
-    rulesets: HashMap<String, RulesetConfig>,
+    rulesets: IndexMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]
     paths: PathConfig,
