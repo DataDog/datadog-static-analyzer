@@ -25,6 +25,10 @@ features = [
   "run-cargo-fmt",
 ]
 
+[features]
+default = []
+secrets = ["dep:secrets"]
+
 [dependencies]
 # local
 cli = { path = "../cli" }
@@ -43,6 +47,8 @@ indicatif = "0.17.6"
 rayon = "1.7.0"
 rocket = { version = "=0.5.0", features = ["json"] }
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
+# Temporary integration test
+secrets = { path = "../secrets", optional = true, default-features = false }
 
 
 
