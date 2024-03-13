@@ -1025,28 +1025,6 @@ rulesets:
     }
 
     #[test]
-    fn test_rulesetconfigs_map() {
-        let mut map = IndexMap::new();
-        map.insert("rule-security", "value2");
-        map.insert("rules", "value3");
-        map.insert("only", "value1");
-
-        let s = serde_yaml::to_string(&map).unwrap();
-        assert_eq!(s, "rule-security: value2\nrules: value3\nonly: value1\n");
-    }
-
-    #[test]
-    fn test_rulesetconfigs_map2() {
-        let mut map = std::collections::BTreeMap::new();
-        map.insert("rule-security", "value2");
-        map.insert("rules", "value3");
-        map.insert("only", "value1");
-
-        let s = serde_yaml::to_string(&map).unwrap();
-        assert_ne!(s, "rule-security: value2\nrules: value3\nonly: value1\n");
-    }
-
-    #[test]
     fn test_serialize_rulesetconfigs_multiple() {
         let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
