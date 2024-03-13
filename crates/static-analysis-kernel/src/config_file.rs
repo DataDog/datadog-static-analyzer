@@ -1,13 +1,16 @@
 use anyhow::Result;
 use sequence_trie::SequenceTrie;
 use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
+use serde::ser::SerializeMap;
 use serde::ser::SerializeSeq;
-use serde::{Deserialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
 use std::fmt::Formatter;
 
-use crate::model::config_file::{ArgumentValues, ConfigFile, RuleConfig, RulesetConfig};
+use crate::model::config_file::{
+    ArgumentValues, ConfigFile, PathPattern, RuleConfig, RulesetConfig,
+};
 
 pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
@@ -159,6 +162,24 @@ where
     deserializer.deserialize_any(RulesetConfigsVisitor {})
 }
 
+pub enum CompatMapValue<'a> {
+    Null,
+    Rules(&'a HashMap<String, RuleConfig>),
+    Only(&'a Option<Vec<PathPattern>>),
+    Ignore(&'a Vec<PathPattern>),
+}
+
+impl<'a> Serialize for CompatMapValue<'a> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Null => serializer.serialize_none(),
+            Self::Rules(rules) => rules.serialize(serializer),
+            Self::Only(only) => only.serialize(serializer),
+            Self::Ignore(ignore) => ignore.serialize(serializer),
+        }
+    }
+}
+
 pub fn serialize_rulesetconfigs<S: Serializer>(
     rulesets: &HashMap<String, RulesetConfig>,
     serializer: S,
@@ -171,9 +192,23 @@ pub fn serialize_rulesetconfigs<S: Serializer>(
 
     for key in keys {
         let value = rulesets.get(key).unwrap();
-        let mut map = HashMap::new();
         if !value.rules.is_empty() || value.paths.only.is_some() || !value.paths.ignore.is_empty() {
-            map.insert(key, value);
+            // we must ensure that this is the first being serialized, so we'll use a BTreeMap
+            let mut map = std::collections::BTreeMap::new();
+            map.insert(key.as_str(), CompatMapValue::Null);
+            // manually adding elements
+            if !value.rules.is_empty() {
+                map.insert("rules", CompatMapValue::Rules(&value.rules));
+            }
+
+            if value.paths.only.is_some() {
+                map.insert("only", CompatMapValue::Only(&value.paths.only));
+            }
+
+            if !value.paths.ignore.is_empty() {
+                map.insert("ignore", CompatMapValue::Ignore(&value.paths.ignore));
+            }
+
             seq.serialize_element(&map)?;
         } else {
             seq.serialize_element(key)?;
@@ -1032,16 +1067,19 @@ rulesets:
 
         let serialized = serde_yaml::to_string(&config).unwrap();
         let serialized = serialized.trim();
-        let expected = r#"schema-version: v1
+        let expected = r#"
+schema-version: v1
 rulesets:
 - java-1
-- java-security:
-    only:
-    - my-path/to/heaven
-    rules:
-      rule-number-1:
-        ignore:
-        - ignore/to/win"#;
+- java-security: null
+  only:
+  - my-path/to/heaven
+  rules:
+    rule-number-1:
+      ignore:
+      - ignore/to/win
+      "#
+        .trim();
 
         assert_eq!(serialized, expected);
     }
