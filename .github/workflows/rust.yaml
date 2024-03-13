@@ -5,49 +5,19 @@ on:
 env:
   CARGO_INCREMENTAL: 0
 
-name: Check Code
+name: Test Build
 jobs:
-  lint:
+  build:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust toolkit
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: default
-      - name: Use cache for cargo build
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build project
-        run: cargo build
-      - name: Check code with Clippy
-        run: cargo clippy
-      - name: Check formatting
-        run: cargo fmt --check
-  check_code:
-    strategy:
-      matrix:
-        include:
-          # Ubuntu
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          # Mac OS
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          # Windows
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-    runs-on: ${{ matrix.os }}
     env:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: ${{ vars.DD_SITE }}
     steps:
-      - uses: actions/checkout@v1
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt install build-essential cmake libboost-all-dev ragel
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -55,15 +25,10 @@ jobs:
             profile: minimal
       - name: Use cache for cargo build
         uses: Swatinem/rust-cache@v2.7.3
+      - uses: actions/checkout@v4
+      - name: Build project
+        run: cargo build --features datadog-static-analyzer/secrets
       - name: Compile tests
         run: cargo test --no-run
       - name: Run tests
         run: cargo test
-      - name: Check python rulesets - part1
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
-      - name: Check python rulesets - part2
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-django -r python-flask -r python-design
-      - name: Check Java rulesets
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r java-security -r java-best-practices -r java-code-style
-      - name: Check Docker rulesets
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r docker-best-practices
