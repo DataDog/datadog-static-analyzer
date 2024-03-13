@@ -1,7 +1,6 @@
 use anyhow::Result;
 use sequence_trie::SequenceTrie;
 use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
-use serde::ser::SerializeMap;
 use serde::ser::SerializeSeq;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
