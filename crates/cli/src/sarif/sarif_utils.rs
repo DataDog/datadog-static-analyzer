@@ -24,10 +24,10 @@ use kernel::model::{
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::datadog_api::DiffAwareData;
 
-trait IntoSarif {
+trait ToSarif {
     type SarifType;
 
-    fn into_sarif(self) -> Self::SarifType;
+    fn to_sarif(&self) -> Self::SarifType;
 }
 
 // Options to use when to generate the SARIF reports.
@@ -43,10 +43,10 @@ pub struct SarifGenerationOptions {
     pub repository_directory: String,
 }
 
-impl IntoSarif for &Rule {
+impl ToSarif for Rule {
     type SarifType = sarif::ReportingDescriptor;
 
-    fn into_sarif(self) -> Self::SarifType {
+    fn to_sarif(&self) -> Self::SarifType {
         let mut builder = sarif::ReportingDescriptorBuilder::default();
         builder.id(&self.name);
 
@@ -89,10 +89,10 @@ impl IntoSarif for &Rule {
 }
 
 // TODO: Error handling
-impl IntoSarif for &Edit {
+impl ToSarif for Edit {
     type SarifType = sarif::Replacement;
 
-    fn into_sarif(self) -> Self::SarifType {
+    fn to_sarif(&self) -> Self::SarifType {
         match self.edit_type {
             EditType::Add => sarif::ReplacementBuilder::default()
                 .deleted_region(
@@ -202,7 +202,7 @@ fn generate_tool_section(rules: &[Rule], options: &SarifGenerationOptions) -> Re
         .rules(
             rules
                 .iter()
-                .map(|e| e.into_sarif())
+                .map(|e| e.to_sarif())
                 .collect::<Vec<ReportingDescriptor>>(),
         )
         .properties(PropertyBagBuilder::default().tags(tags).build().unwrap())
@@ -341,7 +341,7 @@ fn generate_results(
                     .iter()
                     .map(|fix| {
                         let replacements: Vec<Replacement> =
-                            fix.edits.iter().map(IntoSarif::into_sarif).collect();
+                            fix.edits.iter().map(ToSarif::to_sarif).collect();
 
                         let changes = ArtifactChangeBuilder::default()
                             .artifact_location(
