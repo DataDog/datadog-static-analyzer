@@ -186,14 +186,9 @@ pub fn serialize_rulesetconfigs<S: Serializer>(
 ) -> Result<S::Ok, S::Error> {
     let mut seq = serializer.serialize_seq(Some(rulesets.len()))?;
 
-    // we want to always serialize the rulesets in the same order
-    let mut keys = rulesets.keys().collect::<Vec<_>>();
-    keys.sort();
-
-    for key in keys {
-        let value = rulesets.get(key).unwrap();
+    for (key, value) in rulesets {
         if !value.rules.is_empty() || value.paths.only.is_some() || !value.paths.ignore.is_empty() {
-            // we must ensure that this is the first being serialized, so we'll use a IndexMap crate
+            // we must ensure that this is the first being serialized, so we'll use an IndexMap
             let mut map = IndexMap::new();
             map.insert(key.as_str(), CompatMapValue::Null);
             // manually adding elements
