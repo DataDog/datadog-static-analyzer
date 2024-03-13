@@ -39,9 +39,9 @@ jobs:
         with:
             toolchain: stable
             profile: minimal
+      - uses: actions/checkout@v4
       - name: Use cache for cargo build
         uses: Swatinem/rust-cache@v2.7.3
-      - uses: actions/checkout@v4
       - name: Build project
         run: cargo build --features datadog-static-analyzer/secrets
       - name: Compile tests
