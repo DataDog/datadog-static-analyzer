@@ -12,6 +12,7 @@ bindgen = { version = "0.69.4", optional = true }
 cmake = "0.1.50"
 
 [features]
+default = ["chimera"]
 chimera = []
 generate-bindings = ["bindgen"]
 
