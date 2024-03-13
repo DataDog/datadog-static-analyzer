@@ -24,6 +24,7 @@ use kernel::model::{
 
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::datadog_api::DiffAwareData;
+use crate::secrets::{DetectedSecret, SecretRule};
 
 trait ToSarif {
     type SarifType;
@@ -34,30 +35,35 @@ trait ToSarif {
 #[derive(Debug, Clone)]
 pub enum SarifRule {
     StaticAnalysis(Rule),
+    Secret(SecretRule),
 }
 
 impl SarifRule {
     fn name(&self) -> &str {
         match self {
             SarifRule::StaticAnalysis(r) => r.name.as_str(),
+            SarifRule::Secret(r) => r.rule_id.as_str(),
         }
     }
 
     fn category(&self) -> RuleCategory {
         match self {
             SarifRule::StaticAnalysis(r) => r.category,
+            SarifRule::Secret(_) => RuleCategory::Security,
         }
     }
 
     fn cwe(&self) -> Option<&str> {
         match self {
             SarifRule::StaticAnalysis(r) => r.cwe.as_deref(),
+            SarifRule::Secret(_) => None,
         }
     }
 
     fn severity(&self) -> RuleSeverity {
         match self {
             SarifRule::StaticAnalysis(r) => r.severity,
+            SarifRule::Secret(_) => RuleSeverity::Notice,
         }
     }
 }
@@ -68,6 +74,7 @@ impl ToSarif for SarifRule {
     fn to_sarif(&self) -> Self::SarifType {
         match self {
             SarifRule::StaticAnalysis(r) => r.to_sarif(),
+            SarifRule::Secret(r) => r.to_sarif(),
         }
     }
 }
@@ -78,27 +85,37 @@ impl From<Rule> for SarifRule {
     }
 }
 
+impl From<SecretRule> for SarifRule {
+    fn from(value: SecretRule) -> Self {
+        Self::Secret(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SarifRuleResult {
     StaticAnalysis(RuleResult),
+    Secret(DetectedSecret),
 }
 
 impl SarifRuleResult {
     fn violations(&self) -> &[Violation] {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.violations.as_slice(),
+            SarifRuleResult::Secret(r) => std::slice::from_ref(&r.violation),
         }
     }
 
     fn file_path(&self) -> &str {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.filename.as_str(),
+            SarifRuleResult::Secret(r) => r.file_path.as_str(),
         }
     }
 
     fn rule_name(&self) -> &str {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
+            SarifRuleResult::Secret(r) => r.rule_id.as_str(),
         }
     }
 }
@@ -106,6 +123,12 @@ impl SarifRuleResult {
 impl From<RuleResult> for SarifRuleResult {
     fn from(value: RuleResult) -> Self {
         Self::StaticAnalysis(value)
+    }
+}
+
+impl From<DetectedSecret> for SarifRuleResult {
+    fn from(value: DetectedSecret) -> Self {
+        Self::Secret(value)
     }
 }
 
@@ -253,6 +276,36 @@ impl ToSarif for Edit {
     }
 }
 
+impl ToSarif for SecretRule {
+    type SarifType = sarif::ReportingDescriptor;
+
+    fn to_sarif(&self) -> Self::SarifType {
+        let mut builder = sarif::ReportingDescriptorBuilder::default();
+
+        let short_description = sarif::MultiformatMessageStringBuilder::default()
+            .text(&self.short_description)
+            .build()
+            .unwrap();
+        let description = sarif::MultiformatMessageStringBuilder::default()
+            .text(&self.description)
+            .build()
+            .unwrap();
+        let properties = PropertyBagBuilder::default()
+            .tags(vec!["DATADOG_RULE_TYPE:SECRET".to_string()])
+            .build()
+            .unwrap();
+
+        builder
+            .id(&self.rule_id)
+            .short_description(short_description)
+            .full_description(description)
+            .properties(properties)
+            // .help_uri(todo!())
+            .build()
+            .unwrap()
+    }
+}
+
 // Generate the tool section that reports all the rules being run
 fn generate_tool_section(rules: &[SarifRule], options: &SarifGenerationOptions) -> Result<Tool> {
     let mut tags = vec![];
@@ -392,6 +445,13 @@ fn generate_results(
                 if let Some(cwe) = rule.cwe() {
                     tags.push(format!("CWE:{}", cwe));
                 }
+            }
+
+            if let SarifRuleResult::Secret(detected) = rule_result {
+                tags.push(format!(
+                    "DATADOG_VALIDATION_STATUS:{}",
+                    detected.status.to_string().to_uppercase()
+                ));
             }
 
             let options = options_orig.clone();
