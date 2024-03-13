@@ -84,13 +84,13 @@ Download the latest release for your system and architecture from the [release p
 To get the static analyzer via shell:
 
 ```shell
-curl -L -O http://www.github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-<target>.zip
+curl -L -O https://www.github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-<target>.zip
 ```
 
 Example to get the x86_64 binary for Linux:
 
 ```shell
-curl -L -O http://www.github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip
+curl -L -O https://www.github.com/DataDog/datadog-static-analyzer/releases/latest/download/datadog-static-analyzer-x86_64-unknown-linux-gnu.zip
 ```
 
 ## Usage
