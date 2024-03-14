@@ -30,9 +30,10 @@ jobs:
       - name: Install Windows build dependencies
         if: runner.os == 'windows'
         run: |
-          choco install -y make tar wget
+          choco install -y make wget 7zip
           wget "https://www.colm.net/files/ragel/ragel-6.10.tar.gz"
-          tar xzvf ragel-6.10.tar.gz && cd ragel-6.10 && ./configure && make && make install
+          7z x ragel-6.10.tar.gz -so | 7z x -si -ttar 
+          cd ragel-6.10 && ./configure && make && make install
           choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
           choco install -y python3 boost-msvc-14.1
         shell: bash
