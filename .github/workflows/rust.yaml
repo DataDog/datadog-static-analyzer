@@ -27,17 +27,21 @@ jobs:
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         run: brew install boost cmake ragel
+      - name: windows - setup cmake
+        if: runner.os == 'windows'
+        uses: lukka/get-cmake@latest
+      - name: windows - setup vcpkg
+        if: runner.os == 'windows'
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: '${{ runner.workspace }}/vcpkg/'
+      - name: windows - install ragel
+        if: runner.os == 'windows'
+        run: '${{ runner.workspace }}/vcpkg/vcpkg install ragel:x64-windows'
       - name: Install Windows build dependencies
         if: runner.os == 'windows'
         run: |
-          choco install -y make wget 7zip
-          wget "https://www.colm.net/files/ragel/ragel-6.10.tar.gz"
-          7z x ragel-6.10.tar.gz -so | 7z x -si -ttar 
-          cd ragel-6.10 && ./configure && make && make install
-          ragel -V
-          choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
           choco install -y python3 boost-msvc-14.1
-        shell: bash
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
