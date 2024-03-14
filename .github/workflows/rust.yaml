@@ -32,7 +32,7 @@ jobs:
         if: runner.os == 'windows'
         uses: actions/cache@v4
         with:
-          path: C:\vcpkg
+          path: C:\vcpkg\installed\x64-windows\tools\ragel.exe
           key: windows-msvc-ragel
       - name: 'windows: install ragel'
         if: runner.os == 'windows' && steps.windows-cache-ragel.outputs.cache-hit != 'true'
@@ -40,7 +40,6 @@ jobs:
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
           vcpkg install ragel:x64-windows
-          rm -r ./vcpkg/.git
       - name: 'windows: install boost'
         id: windows-install-boost
         if: runner.os == 'windows'
