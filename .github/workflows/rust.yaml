@@ -34,6 +34,7 @@ jobs:
           wget "https://www.colm.net/files/ragel/ragel-6.10.tar.gz"
           7z x ragel-6.10.tar.gz -so | 7z x -si -ttar 
           cd ragel-6.10 && ./configure && make && make install
+          ragel -V
           choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
           choco install -y python3 boost-msvc-14.1
         shell: bash
