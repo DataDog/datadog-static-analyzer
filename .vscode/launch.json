@@ -7,7 +7,7 @@
     {
       "type": "lldb",
       "request": "launch",
-      "name": "Debug executable 'datadog-static-analyzer-server'",
+      "name": "Debug 'datadog-static-analyzer-server'",
       "cargo": {
         "args": [
           "build",
@@ -21,6 +21,25 @@
       },
       "args": ["-p", "9090", "-e"],
       "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug Tests in Kernel",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=static-analysis-kernel"
+        ],
+        "filter": {
+          "name": "static-analysis-kernel",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}/crates/static-analysis-kernel"
     }
   ]
 }

@@ -1,3 +1,5 @@
+use indexmap::IndexMap;
+
 use crate::model::config_file::{PathConfig, RulesetConfig};
 use std::collections::HashMap;
 
@@ -18,7 +20,7 @@ struct RestrictionsForRuleset {
 
 impl PathRestrictions {
     /// Builds a `PathRestrictions` from a map of ruleset configurations.
-    pub fn from_ruleset_configs(rulesets: &HashMap<String, RulesetConfig>) -> PathRestrictions {
+    pub fn from_ruleset_configs(rulesets: &IndexMap<String, RulesetConfig>) -> PathRestrictions {
         let mut out = PathRestrictions::default();
         for (name, ruleset_config) in rulesets {
             let mut restriction = RestrictionsForRuleset {
@@ -76,12 +78,12 @@ pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
 mod tests {
     use crate::model::config_file::{PathConfig, RuleConfig, RulesetConfig};
     use crate::path_restrictions::PathRestrictions;
-    use std::collections::HashMap;
 
     // By default, everything is included.
     #[test]
     fn empty_restrictions() {
-        let config = HashMap::from([("defined-ruleset".to_string(), RulesetConfig::default())]);
+        let config =
+            indexmap::IndexMap::from([("defined-ruleset".to_string(), RulesetConfig::default())]);
         let restrictions = PathRestrictions::from_ruleset_configs(&config);
         assert!(&restrictions.rule_applies("defined-ruleset/any-rule", "src/main.go"));
         assert!(restrictions.rule_applies("other-ruleset/any-rule", "src/main.go"));
@@ -90,7 +92,7 @@ mod tests {
     // Can include and exclude rulesets.
     #[test]
     fn ruleset_restrictions() {
-        let config = HashMap::from([
+        let config = indexmap::IndexMap::from([
             (
                 "ignores-test".to_string(),
                 RulesetConfig {
@@ -98,7 +100,7 @@ mod tests {
                         ignore: vec!["test/**".to_string().into()],
                         only: None,
                     },
-                    rules: HashMap::new(),
+                    rules: indexmap::IndexMap::new(),
                 },
             ),
             (
@@ -108,7 +110,7 @@ mod tests {
                         ignore: vec![],
                         only: Some(vec!["*/code/**".to_string().into()]),
                     },
-                    rules: HashMap::new(),
+                    rules: indexmap::IndexMap::new(),
                 },
             ),
             (
@@ -118,7 +120,7 @@ mod tests {
                         ignore: vec!["*/code/**".to_string().into()],
                         only: Some(vec!["test/**".to_string().into()]),
                     },
-                    rules: HashMap::new(),
+                    rules: indexmap::IndexMap::new(),
                 },
             ),
         ]);
@@ -140,11 +142,11 @@ mod tests {
     // Can include and exclude individual rules.
     #[test]
     fn rule_restrictions() {
-        let config = HashMap::from([(
+        let config = indexmap::IndexMap::from([(
             "a-ruleset".to_string(),
             RulesetConfig {
                 paths: PathConfig::default(),
-                rules: HashMap::from([
+                rules: indexmap::IndexMap::from([
                     (
                         "ignores-test".to_string(),
                         RuleConfig {
@@ -198,14 +200,14 @@ mod tests {
     // Can combine inclusion and exclusions for rules and rulesets.
     #[test]
     fn ruleset_and_rule_restrictions() {
-        let config = HashMap::from([(
+        let config = indexmap::IndexMap::from([(
             "only-test".to_string(),
             RulesetConfig {
                 paths: PathConfig {
                     only: Some(vec!["test/**".to_string().into()]),
                     ignore: vec![],
                 },
-                rules: HashMap::from([(
+                rules: indexmap::IndexMap::from([(
                     "ignores-code".to_string(),
                     RuleConfig {
                         paths: PathConfig {
@@ -235,7 +237,7 @@ mod tests {
     // Can do prefix and glob pattern matching.
     #[test]
     fn prefix_and_glob_matching() {
-        let config = HashMap::from([
+        let config = indexmap::IndexMap::from([
             (
                 "only-test-starstar-foo-glob".to_string(),
                 RulesetConfig {
