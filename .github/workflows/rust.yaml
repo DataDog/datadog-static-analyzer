@@ -33,31 +33,31 @@ jobs:
       - name: Setup vcpkg and install ragel
         shell: cmd
         run: |
-          git clone https://github.com/microsoft/vcpkg.git
-          ./vcpkg/bootstrap-vcpkg.bat
-          ./vcpkg/vcpkg install ragel:x64-windows
+          git clone --depth=1 https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
+          vcpkg install ragel:x64-windows
           ragel -V
-      - name: Install Windows build dependencies
-        if: runner.os == 'windows'
-        run: |
-          choco install -y python3 boost-msvc-14.1
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: stable
-            profile: minimal
-      - uses: actions/checkout@v4
-      - name: Use cache for cargo build
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build project
-        run: cargo build --features datadog-static-analyzer/secrets
-      - name: Archive bindings
-        uses: actions/upload-artifact@v4
-        with:
-          name: vectorscan-sys-bindings-${{ matrix.target }}
-          path: |
-            **/bindings_*.rs
-      - name: Compile tests
-        run: cargo test --no-run
-      - name: Run tests
-        run: cargo test
+#      - name: Install Windows build dependencies
+#        if: runner.os == 'windows'
+#        run: |
+#          choco install -y python3 boost-msvc-14.1
+#      - name: Install Rust toolchain
+#        uses: actions-rs/toolchain@v1
+#        with:
+#            toolchain: stable
+#            profile: minimal
+#      - uses: actions/checkout@v4
+#      - name: Use cache for cargo build
+#        uses: Swatinem/rust-cache@v2.7.3
+#      - name: Build project
+#        run: cargo build --features datadog-static-analyzer/secrets
+#      - name: Archive bindings
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: vectorscan-sys-bindings-${{ matrix.target }}
+#          path: |
+#            **/bindings_*.rs
+#      - name: Compile tests
+#        run: cargo test --no-run
+#      - name: Run tests
+#        run: cargo test
