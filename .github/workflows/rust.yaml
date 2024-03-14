@@ -27,40 +27,28 @@ jobs:
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         run: brew install boost cmake ragel
-      - name: 'windows: setup cmake'
+      - name: 'windows: install vcpkg'
         if: runner.os == 'windows'
-        uses: lukka/get-cmake@latest
-      - name: 'windows: cache ragel'
-        id: windows-cache-ragel
-        if: runner.os == 'windows'
-        uses: actions/cache@v4
-        with:
-          path: C:\vcpkg\installed\x64-windows\tools\ragel.exe
-          key: windows-msvc-ragel
-      - name: 'windows: install ragel'
-        if: runner.os == 'windows' && steps.windows-cache-ragel.outputs.cache-hit != 'true'
         run: |
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
-          vcpkg install ragel:x64-windows
-          $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
-          ragel -v
-      - name: 'windows: cache boost'
-        id: windows-cache-boost
+      - name: 'windows: cache deps'
+        id: windows-cache-deps
         if: runner.os == 'windows'
         uses: actions/cache@v4
         with:
-          path: C:\ProgramData\chocolatey\lib\boost-msvc-14.3
-          key: windows-msvc-boost
-      - name: 'windows: install boost'
-        if: runner.os == 'windows' && steps.windows-cache-boost.outputs.cache-hit != 'true'
+          path: C:\vcpkg\installed\x64-windows
+          key: windows-msvc-deps
+      - name: 'windows: install deps'
+        if: runner.os == 'windows'
         run: |
-          choco install -y boost-msvc-14.3 --version 1.78.0
-      - name: 'windows: set env'
-        if: runner.os == 'windows' && steps.windows-cache-boost.outputs.cache-hit == 'true'
-        run: |
-          "BOOST_ROOT=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "BOOST_LIBRARYDIR=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0\stage\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+          vcpkg install ragel:x64-windows
+          $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
+          ragel -v
+          vcpkg install boost:x64-windows
+      - name: 'windows: setup cmake'
+        if: runner.os == 'windows'
+        uses: lukka/get-cmake@latest
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
