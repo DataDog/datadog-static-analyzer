@@ -42,7 +42,6 @@ jobs:
         if: runner.os == 'windows'
         run: |
           choco install -y boost-msvc-14.2 --version 1.74.0
-          choco install -y python2 --version 2.7.18
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
