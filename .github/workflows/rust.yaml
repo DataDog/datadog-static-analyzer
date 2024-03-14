@@ -54,7 +54,7 @@ jobs:
         run: |
           $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
           ragel -v
-          "BOOST_ROOT=`"${{steps.windows-install-boost.outputs.BOOST_ROOT}}"`" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: 'windows: setup cmake'
         if: runner.os == 'windows'
         uses: lukka/get-cmake@latest
@@ -68,8 +68,6 @@ jobs:
         uses: Swatinem/rust-cache@v2.7.3
       - name: Build project
         run: cargo build --features datadog-static-analyzer/secrets
-        env:
-          BOOST_ROOT: ${{ steps.windows-install-boost.outputs.BOOST_ROOT }}
       - name: Archive bindings
         uses: actions/upload-artifact@v4
         with:
