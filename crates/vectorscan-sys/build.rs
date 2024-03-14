@@ -78,11 +78,10 @@ fn main() {
         "rm",
         &[
             "-f",
-            hs_dependency
+            &hs_dependency
                 .source_path
                 .join("tools/CMakeLists.txt")
-                .to_str()
-                .unwrap()
+                .to_string_lossy()
         ]
     ));
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
