@@ -45,22 +45,22 @@ jobs:
           vcpkg install ragel:x64-windows
           $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
           ragel -v
-#      - name: 'windows: cache boost'
-#        id: windows-cache-boost
-#        if: runner.os == 'windows'
-#        uses: actions/cache@v4
-#        with:
-#          path: C:\ProgramData\chocolatey\lib\boost-msvc-14.3
-#          key: windows-msvc-boost
-      - name: 'windows: install boost'
+      - name: 'windows: cache boost'
+        id: windows-cache-boost
         if: runner.os == 'windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\ProgramData\chocolatey\lib\boost-msvc-14.3
+          key: windows-msvc-boost
+      - name: 'windows: install boost'
+        if: runner.os == 'windows' && steps.windows-cache-boost.outputs.cache-hit != 'true'
         run: |
           choco install -y boost-msvc-14.3 --version 1.78.0
-#      - name: 'windows: set env'
-#        if: runner.os == 'windows' && steps.windows-cache-boost.outputs.cache-hit == 'true'
-#        run: |
-#          "BOOST_ROOT=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0" | Out-File -FilePath $env:GITHUB_ENV -Append
-#          "BOOST_LIBRARYDIR=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0\stage\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: 'windows: set env'
+        if: runner.os == 'windows' && steps.windows-cache-boost.outputs.cache-hit == 'true'
+        run: |
+          "BOOST_ROOT=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BOOST_LIBRARYDIR=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0\stage\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
