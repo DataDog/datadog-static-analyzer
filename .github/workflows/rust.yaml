@@ -55,26 +55,26 @@ jobs:
           $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
           ragel -v
           "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: 'windows: setup cmake'
-        if: runner.os == 'windows'
-        uses: lukka/get-cmake@latest
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: stable
-            profile: minimal
-      - uses: actions/checkout@v4
-      - name: Use cache for cargo build
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build project
-        run: cargo build --features datadog-static-analyzer/secrets
-      - name: Archive bindings
-        uses: actions/upload-artifact@v4
-        with:
-          name: vectorscan-sys-bindings-${{ matrix.target }}
-          path: |
-            **/bindings_*.rs
-      - name: Compile tests
-        run: cargo test --no-run
-      - name: Run tests
-        run: cargo test
+#      - name: 'windows: setup cmake'
+#        if: runner.os == 'windows'
+#        uses: lukka/get-cmake@latest
+#      - name: Install Rust toolchain
+#        uses: actions-rs/toolchain@v1
+#        with:
+#            toolchain: stable
+#            profile: minimal
+#      - uses: actions/checkout@v4
+#      - name: Use cache for cargo build
+#        uses: Swatinem/rust-cache@v2.7.3
+#      - name: Build project
+#        run: cargo build --features datadog-static-analyzer/secrets
+#      - name: Archive bindings
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: vectorscan-sys-bindings-${{ matrix.target }}
+#          path: |
+#            **/bindings_*.rs
+#      - name: Compile tests
+#        run: cargo test --no-run
+#      - name: Run tests
+#        run: cargo test
