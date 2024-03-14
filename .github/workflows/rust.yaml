@@ -41,7 +41,7 @@ jobs:
       - name: Install Windows build dependencies
         if: runner.os == 'windows'
         run: |
-          choco install -y boost-msvc-14.2 --version 1.74.0
+          choco install -y boost-msvc-14.2 --version 1.74.0 --params="/SkipInstallers"
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
