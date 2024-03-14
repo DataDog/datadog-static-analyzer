@@ -30,14 +30,12 @@ jobs:
       - name: Install Windows build dependencies
         if: runner.os == 'windows'
         run: |
-          choco install -y make tar
-          Invoke-WebRequest -Uri "https://www.colm.net/files/ragel/ragel-6.10.tar.gz" -OutFile "ragel-6.10.tar.gz"
-          if ((Get-FileHash -Algorithm SHA256 -Path ragel-6.10.tar.gz).Hash -ne "5f156edb65d20b856d638dd9ee2dfb43285914d9aa2b6ec779dac0270cd56c3f") {
-            exit 1
-          }
+          choco install -y make tar wget
+          wget "https://www.colm.net/files/ragel/ragel-6.10.tar.gz"
           tar xzvf ragel-6.10.tar.gz && cd ragel-6.10 && ./configure && make && make install
           choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
           choco install -y python3 boost-msvc-14.1
+        shell: bash
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
