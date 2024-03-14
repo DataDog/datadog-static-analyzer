@@ -11,15 +11,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          # Mac OS
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
     runs-on: ${{ matrix.os }}
     env:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
@@ -34,6 +27,11 @@ jobs:
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         run: brew install boost cmake ragel
+      - name: Install Windows build dependencies
+        if: runner.os == "windows"
+        run: |
+          choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+          choco install -y python3 boost ragel
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:

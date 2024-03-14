@@ -49,11 +49,19 @@ impl Dependency {
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    let hs_dependency = Dependency::new(
-        "vectorscan-5.4.11",
-        "https://github.com/VectorCamp/vectorscan",
-        "d29730e1cb9daaa66bda63426cdce83505d2c809",
-    );
+    let hs_dependency = if cfg!(target_os = "windows") {
+        Dependency::new(
+            "hyperscan-5.4.2",
+            "https://github.com/intel/hyperscan",
+            "bc3b191ab56055e8560c7cdc161c289c4d76e3d2",
+        )
+    } else {
+        Dependency::new(
+            "vectorscan-5.4.11",
+            "https://github.com/VectorCamp/vectorscan",
+            "d29730e1cb9daaa66bda63426cdce83505d2c809",
+        )
+    };
     let pcre_dependency = Dependency::new(
         "pcre-8.45",
         "https://github.com/luvit/pcre",
@@ -84,18 +92,26 @@ fn main() {
                 .to_string_lossy()
         ]
     ));
-    match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
-        "windows" => todo!("Vectorscan cannot yet be compiled for os `windows`"),
-        "macos" => println!("cargo:rustc-link-lib=c++"),
-        "linux" => println!("cargo:rustc-link-lib=stdc++"),
-        _ => println!("cargo:rustc-link-lib=stdc++"),
-    }
 
     let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
     hs_cmake
         // Override Vectorscan's default build configuration.
         .define("BUILD_EXAMPLES", "OFF")
         .define("BUILD_BENCHMARKS", "OFF");
+
+    match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
+        "windows" => {
+            let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
+            match target_env.as_str() {
+                "msvc" => println!("cargo:rustc-link-lib=libcmt"),
+                other => unimplemented!("unsupported windows env: `{other}`"),
+            }
+            hs_cmake.generator("Visual Studio 15 2017");
+        }
+        "macos" => println!("cargo:rustc-link-lib=c++"),
+        "linux" => println!("cargo:rustc-link-lib=stdc++"),
+        _ => println!("cargo:rustc-link-lib=stdc++"),
+    }
 
     #[cfg(feature = "chimera")]
     {
