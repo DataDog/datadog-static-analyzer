@@ -47,7 +47,7 @@ jobs:
       - name: Archive bindings
         uses: actions/upload-artifact@v4
         with:
-          name: vectorscan-sys-bindings-${{ matrix.os }}-${{ matrix.version }}
+          name: vectorscan-sys-bindings-${{ matrix.target }}
           path: |
             **/bindings_*.rs
       - name: Compile tests
