@@ -58,10 +58,9 @@ jobs:
           choco install -y boost-msvc-14.3 --version 1.78.0
       - name: 'windows: set env'
         if: runner.os == 'windows' && steps.windows-cache-boost.outputs.cache-hit == 'true'
-        shell: bash
         run: |
-          echo "BOOST_ROOT=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0" >> "$GITHUB_ENV"
-          echo "BOOST_LIBRARYDIR=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0\stage\lib" >> "$GITHUB_ENV"
+          "BOOST_ROOT=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BOOST_LIBRARYDIR=C:\ProgramData\chocolatey\lib\boost-msvc-14.3\boost_1_78_0\stage\lib" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
