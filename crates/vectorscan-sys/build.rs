@@ -106,7 +106,6 @@ fn main() {
                 "msvc" => println!("cargo:rustc-link-lib=libcmt"),
                 other => unimplemented!("unsupported windows env: `{other}`"),
             }
-            hs_cmake.generator("Visual Studio 16 2019");
         }
         "macos" => println!("cargo:rustc-link-lib=c++"),
         "linux" => println!("cargo:rustc-link-lib=stdc++"),
