@@ -52,7 +52,7 @@ jobs:
       - name: 'windows: configure env'
         if: runner.os == 'windows'
         run: |
-          $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
+          Add-Content $env:GITHUB_PATH "C:\vcpkg\installed\x64-windows\tools"
           ragel -v
           "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
 #      - name: 'windows: setup cmake'
