@@ -78,7 +78,14 @@ fn main() {
     #[cfg(not(feature = "hs_tools"))]
     assert!(run(
         "rm",
-        &[hs_dependency.source_path.join("tools/CMakeLists.txt")]
+        &[
+            "-f",
+            hs_dependency
+                .source_path
+                .join("tools/CMakeLists.txt")
+                .to_str()
+                .unwrap()
+        ]
     ));
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
         "windows" => todo!("Vectorscan cannot yet be compiled for os `windows`"),
