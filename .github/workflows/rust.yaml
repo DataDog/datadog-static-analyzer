@@ -45,7 +45,14 @@ jobs:
           vcpkg install ragel:x64-windows
           $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
           ragel -v
-          vcpkg install boost:x64-windows
+      - name: 'windows: install boost'
+        if: runner.os == 'windows'
+        uses: MarkusJx/install-boost@v2.4.5
+        with:
+          toolset: msvc
+          arch: x86
+          platform_version: 2022
+          boost_version: 1.78.0
       - name: 'windows: setup cmake'
         if: runner.os == 'windows'
         uses: lukka/get-cmake@latest
