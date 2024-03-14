@@ -30,15 +30,13 @@ jobs:
       - name: windows - setup cmake
         if: runner.os == 'windows'
         uses: lukka/get-cmake@latest
-      - name: windows - setup vcpkg
-        if: runner.os == 'windows'
-        uses: lukka/run-vcpkg@v11
-        with:
-          setupOnly: true
-          vcpkgDirectory: '${{ runner.workspace }}/vcpkg/'
-      - name: windows - install ragel
-        if: runner.os == 'windows'
-        run: '${{ runner.workspace }}/vcpkg/vcpkg install ragel:x64-windows'
+      - name: Setup vcpkg and install ragel
+        shell: cmd
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.bat
+          ./vcpkg/vcpkg install ragel:x64-windows
+          ragel -V
       - name: Install Windows build dependencies
         if: runner.os == 'windows'
         run: |
