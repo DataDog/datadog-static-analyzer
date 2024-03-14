@@ -45,10 +45,17 @@ jobs:
           vcpkg install ragel:x64-windows
           $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
           ragel -v
-      - name: Install Windows build dependencies
+      - name: 'windows: cache boost'
+        id: windows-cache-boost
         if: runner.os == 'windows'
+        uses: actions/cache@v4
+        with:
+          path: C:\ProgramData\chocolatey\lib\boost-msvc-14.3
+          key: windows-msvc-boost
+      - name: 'windows: install boost'
+        if: runner.os == 'windows' && steps.windows-cache-boost.outputs.cache-hit != 'true'
         run: |
-          choco install -y boost-msvc-14.3 --version 1.84.0 --params="/SkipInstallers"
+          choco install -y boost-msvc-14.3 --version 1.84.0
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
