@@ -67,9 +67,7 @@ fn main() {
     };
 
     for dependency in dependencies {
-        if !dependency.source_path.exists() {
-            assert!(fetch_dependency(dependency));
-        }
+        assert!(fetch_dependency(dependency));
     }
 
     // A bit of a hacky workaround:
@@ -222,7 +220,8 @@ fn main() {
 fn fetch_dependency(dep: &Dependency) -> bool {
     let base_dir = env::current_dir().unwrap();
 
-    run("mkdir", &["-p", &dep.source_path.to_string_lossy()])
+    run("rm", &["-rf", &dep.source_path.to_string_lossy()])
+        && run("mkdir", &["-p", &dep.source_path.to_string_lossy()])
         && env::set_current_dir(&dep.source_path).is_ok()
         && run("git", &["init", "-q"])
         && run("git", &["remote", "add", "origin", &dep.url])
