@@ -93,12 +93,6 @@ fn main() {
         ]
     ));
 
-    let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
-    hs_cmake
-        // Override Vectorscan's default build configuration.
-        .define("BUILD_EXAMPLES", "OFF")
-        .define("BUILD_BENCHMARKS", "OFF");
-
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
         "windows" => {
             let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
@@ -112,20 +106,26 @@ fn main() {
         _ => println!("cargo:rustc-link-lib=stdc++"),
     }
 
+    let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
+    hs_cmake
+        // Override Vectorscan's default build configuration.
+        .define("BUILD_EXAMPLES", "OFF")
+        .define("BUILD_BENCHMARKS", "OFF");
+
     #[cfg(feature = "chimera")]
     {
         // Turn on the Chimera build flag, and point it to the extracted pcre folder.
         hs_cmake
             .define("PCRE_SOURCE", &pcre_dependency.source_path)
-            .define("BUILD_CHIMERA", "ON")
+            .define("BUILD_CHIMERA", "ON");
+
+        // GCC/Clang only
+        #[cfg(not(target_os = "windows"))]
+        hs_cmake
+            .cflag("-Wno-unknown-warning-option")
+            .cxxflag("-Wno-unknown-warning-option")
             // Clang 15 workaround for `ch_compile.cpp`
             .cxxflag("-Wno-unqualified-std-cast-call");
-        #[cfg(not(target_os = "windows"))]
-        {
-            hs_cmake
-                .cflag("-Wno-unknown-warning-option")
-                .cxxflag("-Wno-unknown-warning-option");
-        }
     }
 
     let built_dir = hs_cmake.build().to_path_buf();
