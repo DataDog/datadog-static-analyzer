@@ -24,6 +24,9 @@ jobs:
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         run: brew install boost cmake ragel
+      - name: 'windows: setup cmake'
+        if: runner.os == 'windows'
+        uses: lukka/get-cmake@latest
       - name: 'windows: cache ragel'
         id: windows-cache-ragel
         if: runner.os == 'windows'
@@ -52,9 +55,6 @@ jobs:
         run: |
           "C:\vcpkg\installed\x64-windows\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
           "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-      - name: 'windows: setup cmake'
-        if: runner.os == 'windows'
-        uses: lukka/get-cmake@latest
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
