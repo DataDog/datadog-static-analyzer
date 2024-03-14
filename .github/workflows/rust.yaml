@@ -2,9 +2,6 @@ on:
   push:
   pull_request:
 
-env:
-  CARGO_INCREMENTAL: 0
-
 name: Test Build
 jobs:
   build:
