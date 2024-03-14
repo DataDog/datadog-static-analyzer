@@ -35,6 +35,8 @@ jobs:
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
           vcpkg install ragel:x64-windows
+          $ragel_path = Get-ChildItem -Path "C:\vcpkg" -Filter ragel.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DirectoryName
+          echo $ragel_path
           $env:Path += ";C:\vcpkg\installed\x64-windows\tools\ragel"
           ragel -V
 #      - name: Install Windows build dependencies
