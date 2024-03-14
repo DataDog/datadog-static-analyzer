@@ -78,20 +78,12 @@ fn main() {
         assert!(fetch_dependency(dependency));
     }
 
-    // A bit of a hacky workaround:
+    // A bit of a hacky workaround for the lack of a CMake option:
     // The `tools` folder is only compiled if the CMakeLists.txt file is detected:
     // https://github.com/VectorCamp/vectorscan/blob/d29730e1cb9daaa66bda63426cdce83505d2c809/CMakeLists.txt#L1199-L1200
+    #[rustfmt::skip]
     #[cfg(not(feature = "hs_tools"))]
-    assert!(run(
-        "rm",
-        &[
-            "-f",
-            &hs_dependency
-                .source_path
-                .join("tools/CMakeLists.txt")
-                .to_string_lossy()
-        ]
-    ));
+    assert!(run("rm", &["-f", &hs_dependency.source_path.join("tools/CMakeLists.txt").to_string_lossy()]));
 
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
         "windows" => {
