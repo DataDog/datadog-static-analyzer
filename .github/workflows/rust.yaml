@@ -35,6 +35,7 @@ jobs:
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
           vcpkg install ragel:x64-windows
+          $env:Path += ";C:\vcpkg\installed\x64-windows\tools\ragel"
           ragel -V
 #      - name: Install Windows build dependencies
 #        if: runner.os == 'windows'
