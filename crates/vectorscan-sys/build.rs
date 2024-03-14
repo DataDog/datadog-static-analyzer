@@ -118,10 +118,14 @@ fn main() {
         hs_cmake
             .define("PCRE_SOURCE", &pcre_dependency.source_path)
             .define("BUILD_CHIMERA", "ON")
-            .cflag("-Wno-unknown-warning-option")
-            .cxxflag("-Wno-unknown-warning-option")
             // Clang 15 workaround for `ch_compile.cpp`
             .cxxflag("-Wno-unqualified-std-cast-call");
+        #[cfg(not(target_os = "windows"))]
+        {
+            hs_cmake
+                .cflag("-Wno-unknown-warning-option")
+                .cxxflag("-Wno-unknown-warning-option");
+        }
     }
 
     let built_dir = hs_cmake.build().to_path_buf();
