@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use std::env;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -59,7 +60,7 @@ fn main() {
         "5c78f7d5d7f41bdd4be4867ef3a1030af3e973e3",
     );
 
-    let dependencies = if cfg!(feature = "chimera") {
+    let dependencies = if cfg!(any(feature = "chimera", feature = "hs_tools")) {
         vec![&hs_dependency, &pcre_dependency]
     } else {
         vec![&hs_dependency]
@@ -71,6 +72,14 @@ fn main() {
         }
     }
 
+    // A bit of a hacky workaround:
+    // The `tools` folder is only compiled if the CMakeLists.txt file is detected:
+    // https://github.com/VectorCamp/vectorscan/blob/d29730e1cb9daaa66bda63426cdce83505d2c809/CMakeLists.txt#L1199-L1200
+    #[cfg(not(feature = "hs_tools"))]
+    assert!(run(
+        "rm",
+        &[hs_dependency.source_path.join("tools/CMakeLists.txt")]
+    ));
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
         "windows" => todo!("Vectorscan cannot yet be compiled for os `windows`"),
         "macos" => println!("cargo:rustc-link-lib=c++"),
@@ -204,12 +213,6 @@ fn main() {
 
 /// A helper function to shallow fetch a Git repository.
 fn fetch_dependency(dep: &Dependency) -> bool {
-    fn run(command: &str, args: &[&str]) -> bool {
-        Command::new(command)
-            .args(args)
-            .status()
-            .is_ok_and(|exit_status| exit_status.success())
-    }
     let base_dir = env::current_dir().unwrap();
 
     run("mkdir", &["-p", &dep.source_path.to_string_lossy()])
@@ -223,4 +226,12 @@ fn fetch_dependency(dep: &Dependency) -> bool {
         && run("git", &["checkout", "-q", "FETCH_HEAD"])
         && run("rm", &["-rf", ".git"])
         && env::set_current_dir(base_dir).is_ok()
+}
+
+/// Builds and executes a [`Command`] with the given arguments.
+fn run<T: AsRef<OsStr>>(command: &str, args: &[T]) -> bool {
+    Command::new(command)
+        .args(args)
+        .status()
+        .is_ok_and(|exit_status| exit_status.success())
 }

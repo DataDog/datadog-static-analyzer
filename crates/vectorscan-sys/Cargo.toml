@@ -14,6 +14,7 @@ cmake = "0.1.50"
 [features]
 default = ["chimera", "generate-bindings"]
 chimera = []
+hs_tools = []
 generate-bindings = ["bindgen"]
 
 [lib]
