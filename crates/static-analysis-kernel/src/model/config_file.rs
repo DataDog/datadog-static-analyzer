@@ -1,4 +1,5 @@
 use globset::{GlobBuilder, GlobMatcher};
+use indexmap::IndexMap;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
@@ -8,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config_file::{
     deserialize_ruleconfigs, deserialize_rulesetconfigs, deserialize_schema_version,
-    get_default_schema_version,
+    get_default_schema_version, serialize_rulesetconfigs,
 };
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
@@ -24,9 +25,10 @@ pub struct PathPattern {
 #[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]
 pub struct PathConfig {
     // Analyze only these directories and patterns.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub only: Option<Vec<PathPattern>>,
     // Do not analyze any of these directories and patterns.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub ignore: Vec<PathPattern>,
 }
 
@@ -41,7 +43,7 @@ pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     #[serde(flatten)]
     pub paths: PathConfig,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub arguments: HashMap<String, ArgumentValues>,
 }
 
@@ -52,8 +54,12 @@ pub struct RulesetConfig {
     #[serde(flatten)]
     pub paths: PathConfig,
     // Rule-specific configurations.
-    #[serde(default, deserialize_with = "deserialize_ruleconfigs")]
-    pub rules: HashMap<String, RuleConfig>,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_ruleconfigs",
+        skip_serializing_if = "IndexMap::is_empty"
+    )]
+    pub rules: IndexMap<String, RuleConfig>,
 }
 
 // The parsed configuration file without any legacy fields.
@@ -63,15 +69,16 @@ pub struct ConfigFile {
     #[serde(rename = "schema-version")]
     pub schema_version: String,
     // Configurations for the rulesets.
-    pub rulesets: HashMap<String, RulesetConfig>,
+    #[serde(serialize_with = "serialize_rulesetconfigs")]
+    pub rulesets: IndexMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]
     pub paths: PathConfig,
     // Ignore all the paths in the .gitignore file.
-    #[serde(rename = "ignore-gitignore")]
+    #[serde(rename = "ignore-gitignore", skip_serializing_if = "Option::is_none")]
     pub ignore_gitignore: Option<bool>,
     // Analyze only files up to this size.
-    #[serde(rename = "max-file-size-kb")]
+    #[serde(rename = "max-file-size-kb", skip_serializing_if = "Option::is_none")]
     pub max_file_size_kb: Option<u64>,
 }
 
@@ -87,7 +94,7 @@ struct RawConfigFile {
     schema_version: String,
     // Configurations for the rulesets.
     #[serde(deserialize_with = "deserialize_rulesetconfigs")]
-    rulesets: HashMap<String, RulesetConfig>,
+    rulesets: IndexMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]
     paths: PathConfig,

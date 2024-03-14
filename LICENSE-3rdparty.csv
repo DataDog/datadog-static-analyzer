@@ -9,6 +9,7 @@ deno-core,https://github.com/denoland/deno,MIT,Copyright 2018-2023 the Deno auth
 git2,https://crates.io/crates/git2,MIT,Copyright (c) 2014 Alex Crichton
 globset,https://crates.io/crates/globset,MIT,Copyright (c) 2015 Andrew Gallant
 governor,https://github.com/boinkor-net/governor,MIT,Copyright (c) 2023 Andreas Fuchs
+indexmap,https://github.com/indexmap-rs/indexmap,MIT and Apache-2.0,Copyright (c) 2016-2017 bluss
 indicatif,https://crates.io/crates/indicatif,MIT,Copyright (c) 2017 Armin Ronacher <armin.ronacher@active-4.com>
 itertools,https://github.com/rust-itertools/itertools,MIT,Copyright 2015 itertools Developers
 lazy_static,https://crates.io/crates/lazy_static,MIT,Copyright 2016 lazy-static.rs Developers
