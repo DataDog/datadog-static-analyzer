@@ -111,7 +111,7 @@ fn main() {
             .define("PCRE_SOURCE", &pcre_dependency.source_path)
             .define("BUILD_CHIMERA", "ON");
 
-        // GCC/Clang only
+        // GCC/Clang flags
         #[cfg(not(target_os = "windows"))]
         hs_cmake
             .cflag("-Wno-unknown-warning-option")
