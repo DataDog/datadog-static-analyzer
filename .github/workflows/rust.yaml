@@ -27,21 +27,18 @@ jobs:
       - name: Install macOS build dependencies
         if: runner.os == 'macOS'
         run: brew install boost cmake ragel
-      - name: 'windows: install vcpkg'
-        if: runner.os == 'windows'
-        run: |
-          git clone --depth=1 https://github.com/microsoft/vcpkg.git
-          ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
       - name: 'windows: cache ragel'
         id: windows-cache-ragel
         if: runner.os == 'windows'
         uses: actions/cache@v4
         with:
-          path: C:\vcpkg\installed\x64-windows\tools\ragel.exe
+          path: C:\vcpkg
           key: windows-msvc-ragel
       - name: 'windows: install ragel'
-        if: runner.os == 'windows'
+        if: runner.os == 'windows' && steps.windows-cache-ragel.outputs.cache-hit != 'true'
         run: |
+          git clone --depth=1 https://github.com/microsoft/vcpkg.git
+          ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
           vcpkg install ragel:x64-windows
       - name: 'windows: install boost'
         id: windows-install-boost
@@ -51,11 +48,13 @@ jobs:
           toolset: msvc
           platform_version: 2022
           boost_version: 1.78.0
+          boost_install_dir: ${{ runner.workspace }}
       - name: 'windows: configure env'
         if: runner.os == 'windows'
         run: |
           $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
           ragel -v
+          "BOOST_ROOT=`"${{steps.windows-install-boost.outputs.BOOST_ROOT}}"`" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: 'windows: setup cmake'
         if: runner.os == 'windows'
         uses: lukka/get-cmake@latest
