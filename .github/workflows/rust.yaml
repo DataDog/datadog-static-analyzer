@@ -31,7 +31,14 @@ jobs:
         if: runner.os == 'windows'
         run: |
           choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-          choco install -y python3 boost ragel
+          choco install -y python3 boost-msvc-14.1 make tar
+          choco install -y make
+          wget http://www.colm.net/files/ragel/ragel-6.10.tar.gz
+          tar xzvf ragel-6.10.tar.gz && rm ragel-6.10.tar.gz
+          cd ragel-6.10
+          ./configure
+          make
+          make install
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
