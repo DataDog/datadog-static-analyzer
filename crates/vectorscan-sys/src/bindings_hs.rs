@@ -59,7 +59,7 @@ pub const HS_MODE_SOM_HORIZON_MEDIUM: u32 = 33554432;
 pub const HS_MODE_SOM_HORIZON_SMALL: u32 = 67108864;
 pub const HS_OFFSET_PAST_HORIZON: i32 = -1;
 extern "C" {
-    pub fn free(arg1: *mut ::core::ffi::c_void);
+    pub fn free(__ptr: *mut ::core::ffi::c_void);
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
