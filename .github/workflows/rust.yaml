@@ -34,6 +34,7 @@ jobs:
         if: runner.os == 'windows'
         uses: lukka/run-vcpkg@v11
         with:
+          setupOnly: true
           vcpkgDirectory: '${{ runner.workspace }}/vcpkg/'
       - name: windows - install ragel
         if: runner.os == 'windows'
