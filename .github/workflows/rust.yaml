@@ -28,7 +28,7 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install boost cmake ragel
       - name: Install Windows build dependencies
-        if: runner.os == "windows"
+        if: runner.os == 'windows'
         run: |
           choco install -y cmake --installargs 'ADD_CMAKE_TO_PATH=System'
           choco install -y python3 boost ragel
