@@ -53,7 +53,6 @@ jobs:
         if: runner.os == 'windows'
         run: |
           "C:\vcpkg\installed\x64-windows\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
-          ragel -v
           "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
