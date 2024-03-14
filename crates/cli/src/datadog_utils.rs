@@ -26,6 +26,7 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "JAVASCRIPT",
     "KOTLIN",
     "PYTHON",
+    "RUBY",
     "TYPESCRIPT",
 ];
 

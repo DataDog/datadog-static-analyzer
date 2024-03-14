@@ -474,6 +474,7 @@ fn main() -> Result<()> {
         );
     }
 
+    let mut number_of_rules_used = 0;
     // Finally run the analysis
     for language in &languages {
         let files_for_language = filter_files_for_language(&files_to_analyze, language);
@@ -500,6 +501,8 @@ fn main() -> Result<()> {
                     .context("cannot convert to rule internal")
             })
             .collect::<Result<Vec<_>>>()?;
+
+        number_of_rules_used += rules_for_language.len();
 
         println!(
             "Analyzing {} {:?} files using {} rules",
@@ -575,7 +578,7 @@ fn main() -> Result<()> {
         "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
         nb_violations,
         total_files_analyzed,
-        configuration.rules.len(),
+        number_of_rules_used,
         end_timestamp - start_timestamp
     );
 
