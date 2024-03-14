@@ -32,27 +32,30 @@ jobs:
         run: |
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
-      - name: 'windows: cache deps'
-        id: windows-cache-deps
+      - name: 'windows: cache ragel'
+        id: windows-cache-ragel
         if: runner.os == 'windows'
         uses: actions/cache@v4
         with:
-          path: C:\vcpkg\installed\x64-windows
-          key: windows-msvc-deps
-      - name: 'windows: install deps'
+          path: C:\vcpkg\installed\x64-windows\tools\ragel.exe
+          key: windows-msvc-ragel
+      - name: 'windows: install ragel'
         if: runner.os == 'windows'
         run: |
           vcpkg install ragel:x64-windows
-          $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
-          ragel -v
       - name: 'windows: install boost'
         if: runner.os == 'windows'
         uses: MarkusJx/install-boost@v2.4.5
         with:
           toolset: msvc
-          arch: x86
           platform_version: 2022
           boost_version: 1.78.0
+      - name: 'windows: configure env'
+        if: runner.os == 'windows'
+        run: |
+          $env:Path += ";C:\vcpkg\installed\x64-windows\tools"
+          ragel -v
+          "BOOST_ROOT=$(steps.install-boost.outputs.BOOST_ROOT)" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: 'windows: setup cmake'
         if: runner.os == 'windows'
         uses: lukka/get-cmake@latest
