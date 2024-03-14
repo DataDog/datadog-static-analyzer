@@ -31,7 +31,6 @@ jobs:
         if: runner.os == 'windows'
         uses: lukka/get-cmake@latest
       - name: Setup vcpkg and install ragel
-        shell: cmd
         run: |
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
