@@ -65,7 +65,7 @@ jobs:
       - name: Use cache for cargo build
         uses: Swatinem/rust-cache@v2.7.3
       - name: Build project
-        run: cargo build --features datadog-static-analyzer/secrets
+        run: cargo build
       - name: Archive bindings
         uses: actions/upload-artifact@v4
         with:
