@@ -31,21 +31,24 @@ impl Dependency {
     }
 }
 
-/// At a high level, this build script builds [Vectorscan](https://github.com/VectorCamp/vectorscan), a fork
-/// of [Hyperscan](https://github.com/intel/hyperscan), a high-performance multiple regex matching library.
+/// At a high level, this build script provides the `hs` library, a high-performance multiple regex matching library.
 ///
-/// The freshly-built `hs` library is then announced to rustc's linker for use in the compilation process.
+/// On Linux and macOS, this builds [Vectorscan](https://github.com/VectorCamp/vectorscan), a fork of Hyperscan.
+/// On Windows x86_64, this builds [Hyperscan](https://github.com/intel/hyperscan).
+///
+/// NOTE: Building Hyperscan is a temporary compatibility strategy until Vectorscan supports Windows.
+/// See: https://github.com/VectorCamp/vectorscan/issues/207
+///
+/// By default, the Hyperscan tools (fuzz, hsbench, hscheck, hscollider, hsdump) binaries are not built,
+/// but can be with feature `hs_tools`.
 ///
 /// This script can also build [Chimera](https://intel.github.io/hyperscan/dev-reference/chimera.html), which
 /// is an officially-supported regex engine that functions as a hybrid between Hyperscan and PCRE,
 /// with full support for PCRE syntax. While disabled by default, Chimera can be activated with feature `chimera`.
 ///
 /// Lastly, `bindgen` is used to automatically create low-level bindings between Hyperscan's C ABI and Rust.
-/// These bindings are pre-generated at `src/bindings_hs.rs` and `src/bindings_ch.rs` for convenience (so
-/// that library consumers don't need to install multiple dependencies just to generate the required bindings).
-///
-/// However, if compiled with the `generate-bindings` feature, this crate will freshly generate bindings
-/// and save them to its `OUT_DIR`.
+/// These bindings are pre-generated in the `src` folder for convenience. However, library consumers can
+/// freshly generate bindings with the `generate-bindings` feature.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
