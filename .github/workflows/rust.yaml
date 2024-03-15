@@ -4,60 +4,43 @@ on:
 
 name: Check Code
 jobs:
-  lint:
-    runs-on: ubuntu-latest
+  check_code:
+    strategy:
+      matrix:
+        config:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, gha_alias: 'Linux x64 - ' }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, gha_alias: 'Linux aarch64 - ' }
+          - { os: macos-latest, target: x86_64-apple-darwin, gha_alias: 'macOS x64 - ' }
+          - { os: macos-latest, target: aarch64-apple-darwin, gha_alias: 'macOS aarch64 - ' }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, gha_alias: 'Windows x64 - ' }
+        cargo_cmd:
+          - { cmd_name: build, args: '', gha_alias: "Build - Profile 'debug'" }
+          - { cmd_name: test, args: '', gha_alias: "Test" }
+        include:
+          - config: { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, gha_alias: '' }
+            cargo_cmd: { cmd_name: clippy, args: '', gha_alias: "Clippy" }
+          - config: { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, gha_alias: '' }
+            cargo_cmd: { cmd_name: fmt, args: '--check', gha_alias: "Rustfmt" }
+    name: ${{ matrix.config.gha_alias }}${{ matrix.cargo_cmd.gha_alias }}
+    runs-on: ${{ matrix.config.os }}
+    env:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: ${{ vars.DD_SITE }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolkit
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
           profile: default
       - name: Use cache for cargo build
         uses: Swatinem/rust-cache@v2.7.3
-      - name: Build project
-        run: cargo build
-      - name: Check code with Clippy
-        run: cargo clippy
-      - name: Check formatting
-        run: cargo fmt --check
-  check_code:
-    strategy:
-      matrix:
-        include:
-          # Ubuntu
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-          # Mac OS
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-apple-darwin
-            os: macos-latest
-          # Windows
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-    runs-on: ${{ matrix.os }}
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+      - name: Run cargo ${{ matrix.cargo_cmd.cmd_name }} ${{ matrix.cargo_cmd.args }}
+        uses: actions-rs/cargo@v1
         with:
-            toolchain: stable
-            profile: minimal
-      - name: Use cache for cargo build
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Build project
-        run: cargo build
-      - name: Compile tests
-        run: cargo test --no-run
-      - name: Run tests
-        run: cargo test
+          command: ${{ matrix.cargo_cmd.cmd_name }}
+          args: ${{ matrix.cargo_cmd.args }}
       - name: Check python rulesets - part1
         run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
       - name: Check python rulesets - part2
