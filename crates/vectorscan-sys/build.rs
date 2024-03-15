@@ -71,7 +71,9 @@ fn main() {
         "5c78f7d5d7f41bdd4be4867ef3a1030af3e973e3",
     );
 
-    let dependencies = if cfg!(any(feature = "chimera", feature = "hs_tools")) {
+    let needs_pcre = cfg!(any(feature = "chimera", feature = "hs_tools"));
+
+    let dependencies = if needs_pcre {
         vec![&hs_dependency, &pcre_dependency]
     } else {
         vec![&hs_dependency]
@@ -88,12 +90,28 @@ fn main() {
     #[cfg(not(feature = "hs_tools"))]
     assert!(run("rm", &["-f", &hs_dependency.source_path.join("tools/CMakeLists.txt").to_string_lossy()]));
 
+    let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
+    hs_cmake
+        // Override Vectorscan's default build configuration.
+        .define("BUILD_EXAMPLES", "OFF")
+        .define("BUILD_BENCHMARKS", "OFF");
+    if needs_pcre {
+        hs_cmake.define("PCRE_SOURCE", &pcre_dependency.source_path);
+    }
+
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
         "windows" => {
-            let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
-            match target_env.as_str() {
-                "msvc" => println!("cargo:rustc-link-lib=libcmt"),
-                other => unimplemented!("unsupported windows env: `{other}`"),
+            let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap().as_str();
+            let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap().as_str();
+            match (target_env, target_arch) {
+                ("msvc", "x86_64") => {
+                    println!("cargo:rustc-link-lib=libcmt");
+                    // cmake-rs seems to strip the `/EHsc` flag that CMake uses by default
+                    // See: https://github.com/rust-lang/cmake-rs/issues/198
+                    hs_cmake.cflag("/EHsc").cxxflag("/EHsc");
+                }
+                (env, "x86_64") => unimplemented!("unsupported windows env: `{}`", env),
+                (env, arch) => panic!("unsupported windows configuration: `{}` `{}`", env, arch),
             }
         }
         "macos" => println!("cargo:rustc-link-lib=c++"),
@@ -101,25 +119,11 @@ fn main() {
         _ => println!("cargo:rustc-link-lib=stdc++"),
     }
 
-    let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
-    hs_cmake
-        // Override Vectorscan's default build configuration.
-        .define("BUILD_EXAMPLES", "OFF")
-        .define("BUILD_BENCHMARKS", "OFF");
-
-    if cfg!(target_env = "msvc") {
-        hs_cmake.cflag("/EHsc").cxxflag("/EHsc");
-    }
-
     #[cfg(feature = "chimera")]
     {
-        // Turn on the Chimera build flag, and point it to the extracted pcre folder.
-        hs_cmake
-            .define("PCRE_SOURCE", &pcre_dependency.source_path)
-            .define("BUILD_CHIMERA", "ON");
-
+        hs_cmake.define("BUILD_CHIMERA", "ON");
         // GCC/Clang flags
-        #[cfg(not(target_os = "windows"))]
+        #[cfg(not(target_env = "msvc"))]
         hs_cmake
             .cflag("-Wno-unknown-warning-option")
             .cxxflag("-Wno-unknown-warning-option")
