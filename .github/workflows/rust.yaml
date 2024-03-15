@@ -56,6 +56,10 @@ jobs:
         run: |
           "C:\vcpkg\installed\x64-windows\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
           "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ZLIB_LIBRARY=C:\vcpkg\installed\x64-windows-static\lib\zlib.lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "ZLIB_INCLUDE_DIR=C:\vcpkg\installed\x64-windows-static\include" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BZIP2_LIBRARIES=C:\vcpkg\installed\x64-windows-static\lib\libbz2.lib" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "BZIP2_INCLUDE_DIR=C:\vcpkg\installed\x64-windows-static\include" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
