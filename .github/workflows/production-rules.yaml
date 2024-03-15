@@ -23,9 +23,12 @@ jobs:
             default: true
       - name: Use cache for cargo build
         uses: Swatinem/rust-cache@v2.7.3
+        with:
+          save-if: false
       - name: Test all production rules
         run: |
-          cargo build -r && \
+          cargo build -r --bin datadog-static-analyzer && \
+          cargo build -r --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
           for ruleset in \
             python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
