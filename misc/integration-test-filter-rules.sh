@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo build -r
+cargo build -r --bin datadog-static-analyzer
 
 echo "Checking juice shop"
 REPO_DIR="$(mktemp -d)"
