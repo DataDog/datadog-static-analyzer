@@ -319,7 +319,7 @@ fn main() -> Result<()> {
         .extend(ignore_paths_from_options.iter().map(|p| p.clone().into()));
 
     // ignore all directories that are in gitignore
-    if !ignore_gitignore {
+    if ignore_gitignore {
         let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str())
             .expect("error when reading gitignore file");
         path_config
