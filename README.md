@@ -3,7 +3,7 @@
 > [!TIP]
 > Datadog supports open source projects. Learn more on [Datadog for Open Source Projects](https://www.datadoghq.com/partner/open-source/).
 
-datadog-static-analyzer is the static analyzer engine for Datadog [static analysis](https://www.datadoghq.com/static-analysis/).
+datadog-static-analyzer is the static analyzer engine for Datadog [static analysis](https://www.datadoghq.com/code-analysis/).
 
 ## How to use Datadog Static Analysis Tool
 
@@ -28,7 +28,7 @@ You can choose the rules to use to scan your repository by creating a `static-an
 First, make sure you follow the [documentation](https://docs.datadoghq.com/code_analysis/static_analysis)
 and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
 
-All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules). Your `static-analysis.datadog.yml` must contains all the rulesets available from the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules)
+All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules). Your `static-analysis.datadog.yml` may only contain rulesets available from the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules)
 
 Example of YAML file
 
@@ -49,7 +49,7 @@ You can use it in your CI/CD pipeline using our integration:
 - [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
 - [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
 
-If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/continuous_integration/static_analysis/?tab=other).
+If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/code_analysis/static_analysis/setup).
 
 
 ### IntelliJ JetBrains products
@@ -73,7 +73,7 @@ Create a `static-analysis.datadog.yml` file, download the extension and you can 
 When you onboard on the Datadog product, you can select the ruleset you want/need. If you are not using Datadog directly, 
 there is the list of common used rulesets available in the Datadog static analysis product per language.
 
-The complete list is available in [our documentation](https://docs.datadoghq.com/continuous_integration/static_analysis).
+The complete list is available in [our documentation](https://docs.datadoghq.com/code_analysis/static_analysis/setup/).
 
 The list of rulesets is available in [RULESETS.md](RULESETS.md).
 
@@ -101,7 +101,7 @@ datadog-static-analyzer -i <directory> -o <output-file>
 
 For the tool to work, you must have a `<directory>/static-analysis.datadog.yml` file that defines the configuration of the analyzer. This file will indicate the rules you will use for your project.
 
-You can get more information about the configuration on [Datadog documentation](https://docs.datadoghq.com/continuous_integration/static_analysis).
+You can get more information about the configuration on [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis/setup/).
 
 ### Mac OS X users
 
@@ -133,24 +133,89 @@ Set the following variables to configure an analysis:
 The static analyzer can be configured using a `static-analysis.datadog.yml` file
 at the root directory of the repository. This is a YAML file with the following entries:
 
- - `rulesets`: the rulesets to use (see [Datadog Documentation](https://docs.datadoghq.com/continuous_integration/static_analysis/rules) for a full list)
- - `ignore`: list of paths (glob) to ignore
- - `ignore-gitignore`: a boolean to indicate if files in `.gitignore` should be ignored (default: `false`)
- - `max-file-size-kb`: all files above this size are ignored (default: 200KB)
+- `rulesets`: (required) a list with all the rulesets to use for this repository (see [Datadog Documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules) for a full list). The elements of this list must be strings or maps containing a configuration for a ruleset (described below.)
+- `ignore`: (optional) a list of path prefixes and glob patterns to ignore. A file that matches any of its entries will not be analyzed.
+- `only`: (optional) a list of path prefixes and glob patterns to analyze. If `only` is specified, only files that match one of its entries will be analyzed.
+- `ignore-gitignore`: (optional) if true, the entries found in the `.gitignore` file will be added to the `ignore` list.
+- `max-file-size-kb`: (optional) files larger than this size, in kilobytes, will be ignored. The default value is 200 kB.
+- `schema-version`: (optional) the version of the schema that this configuration file follows. If specified, it must be `v1`.
 
+The entries of the `rulesets` list must be strings that contain the name of a ruleset to enable, or a map that contains the configuration for a ruleset. This map contains the following fields:
 
-Example of configuration:
+- the first field (required) gives the ruleset name as its key, with an empty value.
+- `ignore`: (optional) a list of path prefixes and glob patterns to ignore _for this ruleset_. Rules in this ruleset will not be evaluated for any files that match any of the entries in the `ignore` list.
+- `only`: (optional) a list of path prefixes and glob patterns to analyze _for this ruleset_. If `only` is specified, rules in this ruleset will only be evaluated for files that match one of the entries.
+- `rules`: (optional) a map of rule configurations. Rules not specified in this map will still be evaluated, but with their default configuration.
+
+The map in the `rules` field uses the rule's name as its key, and the values are maps with the following fields:
+
+- `ignore` (optional) a list of path prefixes and glob patterns to ignore _for this rule_. This rule will not be evaluated for any files that match any of the entries in the `ignore` list.
+- `only`: (optional) a list of path prefixes and glob patterns to analyze _for this rule_. If `only` is specified, this rule will only be evaluated for files that match one of the entries.
+
+An annotated example of a configuration file:
+
+```yaml
+# This is a "v1" configuration file.
+schema-version: v1
+# The list of rulesets to enable for this repository.
+rulesets:
+  # Enable the `python-code-style ruleset` with the default configuration.
+  - python-code-style
+  # Enable the `python-best-practices` ruleset with a custom configuration.
+  - python-best-practices:
+    # Do not apply any of the rules in this ruleset to files that match `src/**/*.generated.py`.
+    ignore:
+      - src/**/*.generated.py
+    rules:
+      # Special configuration for the `python-best-practices/no-generic-exception` rule.
+      no-generic-exception:
+        # Only apply this rule to files under the `src/new-code` subtree.
+        only:
+          - src/new-code
+  # Enable the `python-inclusive` ruleset with the default configuration.
+  - python-inclusive
+# Analyze only files in the `src` and `imported` subtrees.
+only:
+  - src
+  - imported
+# Do not analyze any files in the `src/tests` subtree.
+ignore:
+  - src/tests
+# Do not add the content of the `.gitignore` file to the `ignore` list.
+ignore-gitignore: false
+# Do not analyze files larger than 100 kB.
+max-file-size-kb: 100
+```
+
+Another example that shows every option being used:
 
 ```yaml
 schema-version: v1
 rulesets:
   - python-code-style
-  - python-best-practices
-  - python-inclusive
+  - python-best-practices:
+    ignore:
+      - src/generated
+      - src/**/*_test.py
+    only:
+      - src
+      - imported/**/new/**
+    rules:
+      no-generic-exception:
+        ignore:
+          - src/new-code
+          - src/new/*.gen.py
+        only:
+          - src/new
+          - src/**/new-code/**
 ignore:
-  - tests
-ignore-gitignore: false
-max-file-size-kb: 100
+  - dist
+  - lib/**/*.py
+only:
+  - src
+  - imported/**/*.py
+ignore-gitignore: true
+max-file-size-kb: 256
 ```
 
 ## Configuration file schema
@@ -186,4 +251,4 @@ for all details about testing and coding guidelines.
 
 ## More information
 
- - [Datadog Static Analysis](https://docs.datadoghq.com/continuous_integration/static_analysis)
+ - [Datadog Static Analysis](https://docs.datadoghq.com/code_analysis/static_analysis)
