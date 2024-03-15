@@ -5,10 +5,10 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
 pub mod hs {
-    include!("bindings_hs.rs");
+    include!("vectorscan_bindings_hs.rs");
 }
 
 #[cfg(feature = "chimera")]
 pub mod ch {
-    include!("bindings_ch.rs");
+    include!("vectorscan_bindings_ch.rs");
 }
