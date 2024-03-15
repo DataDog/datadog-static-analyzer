@@ -121,6 +121,7 @@ xattr -dr com.apple.quarantine datadog-static-analyzer
  - `-x` or `--performance-statistics`: show performance statistics for the analyzer
  - `-g` or `--add-git-info`: add Git-related information (sha, etc) into the SARIF report when using -f sarif
  - `--fail-on-any-violation`: make the program exit a non-zero exit code if there is at least one violation of a given severity.
+ - `-w` or `--diff-aware`: enable diff-aware scanning (see dedicated notes below)
 
 ## Configuration
 
@@ -233,6 +234,33 @@ Schema, you can test them against our examples:
 
 1. Install https://www.npmjs.com/package/pajv (`npm install -g pajv`)
 2. Execute `make -C schema`
+
+## Diff-Aware Scanning
+
+Diff-aware scanning is a feature of the static-analyzer to only scan the files that have been
+recently changed. Diff-aware scans use previous results and add only the violations from the
+changed files.
+
+In order to use diff-aware scanning, you must be a Datadog customer.
+
+To use diff-aware scanning:
+
+ 1. Set up the `DD_SITE` environment variable according to the Datadog datacenter you are using (https://docs.datadoghq.com/getting_started/site/)
+ 2. Set up the `DD_APP_KEY` and `DD_API_KEY` with your Datadog application and API keys
+ 3. Run the static analyzer with option `--diff-aware`
+
+When using diff-aware, the static analyzer will connect to Datadog and attempt a previous analysis to use. If any problem occurs
+and diff-aware cannot be used, the analyzer will output an error like the one below.
+
+You can use the option `--debug true` to troubleshoot further if needed.
+
+```shell
+$ datadog-static-analyzer --directory /path/to/code --output output.sarif --format sarif --diff-aware
+
+...
+diff aware not enabled (error when receiving diff-aware data from Datadog with config hash 16163d87d4a1922ab89ec891159446d1ce0fb47f9c1469448bb331b72d19f55c, sha 5509900dc490cedbe2bb64afaf43478e24ad144b), proceeding with full scan.
+...
+```
 
 ## Other Tools
 

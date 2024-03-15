@@ -54,7 +54,7 @@ pub fn get_datadog_variable_value(variable: &str) -> anyhow::Result<String> {
             return Ok(var_value);
         }
     }
-    Err(anyhow!("cannot find variable value"))
+    Err(anyhow!("cannot find variable DD_{}", variable))
 }
 
 // if we put the first argument to true staging, override the value and use staging.
