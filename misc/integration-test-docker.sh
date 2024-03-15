@@ -1,12 +1,12 @@
 #!/bin/bash
 
-cargo build -r
+cargo build -r --bin datadog-static-analyzer
 
 ## A Python repository
 echo "Checking docker repository"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
-git clone https://github.com/juli1/dd-sa-dockerfile.git "${REPO_DIR}"
+git clone --depth=1 https://github.com/juli1/dd-sa-dockerfile.git "${REPO_DIR}"
 
 echo "Try without the static-analysis.datadog.yml file"
 rm -f "${REPO_DIR}/static-analysis.datadog.yml"

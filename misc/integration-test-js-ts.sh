@@ -1,11 +1,11 @@
 #!/bin/bash
 
-cargo build -r
+cargo build -r --bin datadog-static-analyzer
 
 echo "Checking juice shop"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
-git clone https://github.com/juice-shop/juice-shop.git "${REPO_DIR}"
+git clone --depth=1 https://github.com/juice-shop/juice-shop.git "${REPO_DIR}"
 echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - javascript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - typescript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
