@@ -52,6 +52,8 @@ jobs:
             profile: minimal
       - name: Use cache for cargo build
         uses: Swatinem/rust-cache@v2.7.3
+      - name: Build project
+        run: cargo build
       - name: Compile tests
         run: cargo test --no-run
       - name: Run tests
