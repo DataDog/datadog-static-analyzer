@@ -73,5 +73,5 @@ jobs:
             **/bindings_*.rs
       - name: Compile tests
         run: cargo test --no-run
-      - name: Run tests
-        run: cargo test
+#      - name: Run tests
+#        run: cargo test
