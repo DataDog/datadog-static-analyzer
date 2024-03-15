@@ -65,7 +65,6 @@ fn main() {
             "d29730e1cb9daaa66bda63426cdce83505d2c809",
         )
     };
-    println!("cargo:warning=using `{}`", hs_dependency.url);
     let pcre_dependency = Dependency::new(
         "pcre-8.45",
         "https://github.com/luvit/pcre",
