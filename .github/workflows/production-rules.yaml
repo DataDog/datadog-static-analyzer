@@ -21,6 +21,8 @@ jobs:
             components: clippy
             override: true
             default: true
+      - name: Use cache for cargo build
+        uses: Swatinem/rust-cache@v2.7.3
       - name: Test all production rules
         run: |
           cargo build -r && \

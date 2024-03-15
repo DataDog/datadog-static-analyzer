@@ -21,6 +21,8 @@ jobs:
             components: clippy
             override: true
             default: true
+      - name: Use cache for cargo build
+        uses: Swatinem/rust-cache@v2.7.3
       - name: Run Integration Test for Git
         run: ./misc/integration-test-git.sh
   integration_test_python:

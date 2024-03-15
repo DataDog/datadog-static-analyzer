@@ -4,6 +4,23 @@ on:
 
 name: Check Code
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust toolkit
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: default
+      - name: Use cache for cargo build
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Build project
+        run: cargo build
+      - name: Check code with Clippy
+        run: cargo clippy
+      - name: Check formatting
+        run: cargo fmt --check
   check_code:
     strategy:
       matrix:
@@ -28,17 +45,17 @@ jobs:
       DD_SITE: ${{ vars.DD_SITE }}
     steps:
       - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
             toolchain: stable
-            components: clippy
-            override: true
-            default: true
-      - name: Check code with Clippy
-        run: cargo clippy
-      - name: Check formatting
-        run: cargo fmt --check
+            profile: minimal
+      - name: Use cache for cargo build
+        uses: Swatinem/rust-cache@v2.7.3
+      - name: Build project
+        run: cargo build
+      - name: Compile tests
+        run: cargo test --no-run
       - name: Run tests
         run: cargo test
       - name: Check python rulesets - part1
