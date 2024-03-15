@@ -136,7 +136,7 @@ at the root directory of the repository. This is a YAML file with the following 
 - `rulesets`: (required) a list with all the rulesets to use for this repository (see [Datadog Documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules) for a full list). The elements of this list must be strings or maps containing a configuration for a ruleset (described below.)
 - `ignore`: (optional) a list of path prefixes and glob patterns to ignore. A file that matches any of its entries will not be analyzed.
 - `only`: (optional) a list of path prefixes and glob patterns to analyze. If `only` is specified, only files that match one of its entries will be analyzed.
-- `ignore-gitignore`: (optional) if true, the entries found in the `.gitignore` file will be added to the `ignore` list.
+- `ignore-gitignore`: (optional) by default, any entries found in the `.gitignore` file are added to the `ignore` list. If the `ignore-gitignore` option is true, the `.gitignore` file is not read.
 - `max-file-size-kb`: (optional) files larger than this size, in kilobytes, will be ignored. The default value is 200 kB.
 - `schema-version`: (optional) the version of the schema that this configuration file follows. If specified, it must be `v1`.
 
@@ -182,7 +182,7 @@ only:
 ignore:
   - src/tests
 # Do not add the content of the `.gitignore` file to the `ignore` list.
-ignore-gitignore: false
+ignore-gitignore: true
 # Do not analyze files larger than 100 kB.
 max-file-size-kb: 100
 ```
