@@ -40,26 +40,21 @@ jobs:
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
           vcpkg install ragel:x64-windows
-          vcpkg install zlib:x64-windows-static
-          vcpkg install bzip2:x64-windows-static
-      - name: 'windows: install boost'
-        id: windows-install-boost
-        if: runner.os == 'windows'
-        uses: MarkusJx/install-boost@v2.4.5
-        with:
-          toolset: msvc
-          platform_version: 2022
-          boost_version: 1.78.0
-          boost_install_dir: ${{ runner.workspace }}
+          vcpkg install hyperscan
+#      - name: 'windows: install boost'
+#        id: windows-install-boost
+#        if: runner.os == 'windows'
+#        uses: MarkusJx/install-boost@v2.4.5
+#        with:
+#          toolset: msvc
+#          platform_version: 2022
+#          boost_version: 1.78.0
+#          boost_install_dir: ${{ runner.workspace }}
       - name: 'windows: configure env'
         if: runner.os == 'windows'
         run: |
           "C:\vcpkg\installed\x64-windows\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
-          "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "ZLIB_LIBRARY=C:\vcpkg\installed\x64-windows-static\lib\zlib.lib" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "ZLIB_INCLUDE_DIR=C:\vcpkg\installed\x64-windows-static\include" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "BZIP2_LIBRARIES=C:\vcpkg\installed\x64-windows-static\lib\libbz2.lib" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "BZIP2_INCLUDE_DIR=C:\vcpkg\installed\x64-windows-static\include" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -69,7 +64,7 @@ jobs:
       - name: Use cache for cargo build
         uses: Swatinem/rust-cache@v2.7.3
       - name: Build project
-        run: cargo build --release --package vectorscan-sys
+        run: cargo build --package vectorscan-sys
       - name: Archive bindings
         uses: actions/upload-artifact@v4
         with:
