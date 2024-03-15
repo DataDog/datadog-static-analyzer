@@ -121,7 +121,7 @@ fn main() {
 
     #[cfg(feature = "generate-bindings")]
     {
-        use bindgen::callbacks::{IntKind, ItemInfo, ParseCallbacks};
+        use bindgen::callbacks::{IntKind, ParseCallbacks};
         use std::path::Path;
         let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR")).to_path_buf();
         println!("cargo:rerun-if-changed={}/hs.h", manifest_dir.display());
@@ -136,14 +136,6 @@ fn main() {
         impl<const N: usize> ParseCallbacks for ForceInts<N> {
             fn int_macro(&self, name: &str, _value: i64) -> Option<IntKind> {
                 self.0.contains(&name).then_some(self.1)
-            }
-        }
-        /// A [`ParseCallbacks`] to rename a bindgen-generated name.
-        #[derive(Debug)]
-        struct ForceRename(&'static str, &'static str);
-        impl ParseCallbacks for ForceRename {
-            fn generated_name_override(&self, item_info: ItemInfo<'_>) -> Option<String> {
-                (item_info.name == self.0).then(|| self.1.to_string())
             }
         }
 
@@ -164,12 +156,11 @@ fn main() {
             .allowlist_type("^hs_.+")
             .allowlist_function("^hs_.+")
             .allowlist_var("^HS_.+")
-            // Expose `free` from the libc linked by Hyperscan. We use this instead of pulling in
-            // the `libc` crate to ensure that we aren't mixing and matching malloc/free between linked C libraries
+            // Delegate to the `free` implementation Hyperscan uses.
             // See: https://github.com/VectorCamp/vectorscan/blob/d29730e1cb9daaa66bda63426cdce83505d2c809/src/alloc.c#L39
             // Note: we rename it here for more clarity in the bindings.
-            .parse_callbacks(Box::new(ForceRename("free", "libc_free")))
-            .allowlist_function("^libc_free$")
+            .allowlist_function("^free$")
+            .raw_line("pub use free as hs_misc_free;")
             .must_use_type("hs_error_t")
             // An EXT_FLAG is an ULL, but bindgen chooses u32
             .parse_callbacks(Box::new(ForceInts(
@@ -203,12 +194,11 @@ fn main() {
                 .allowlist_type("^ch_.+")
                 .allowlist_function("^ch_.+")
                 .allowlist_var("^CH_.+")
-                // Expose `free` from the libc linked by Hyperscan. We use this instead of pulling in
-                // the `libc` crate to ensure that we aren't mixing and matching malloc/free between linked C libraries
+                // Delegate to the `free` implementation Hyperscan uses.
                 // See: https://github.com/VectorCamp/vectorscan/blob/d29730e1cb9daaa66bda63426cdce83505d2c809/chimera/ch_alloc.c#L40
                 // Note: we rename it here for more clarity in the bindings.
-                .parse_callbacks(Box::new(ForceRename("free", "libc_free")))
-                .allowlist_function("^libc_free$")
+                .allowlist_function("^free$")
+                .raw_line("pub use free as ch_misc_free;")
                 .must_use_type("ch_error_t")
                 // bindgen defaults to 0_u32, but error codes are i32
                 .parse_callbacks(Box::new(ForceInts(["CH_SUCCESS"], IntKind::I32)))
