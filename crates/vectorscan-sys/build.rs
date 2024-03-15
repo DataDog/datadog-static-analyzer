@@ -104,6 +104,10 @@ fn main() {
         .define("BUILD_EXAMPLES", "OFF")
         .define("BUILD_BENCHMARKS", "OFF");
 
+    if cfg!(target_env = "msvc") {
+        hs_cmake.cflag("/EHsc").cxxflag("/EHsc");
+    }
+
     #[cfg(feature = "chimera")]
     {
         // Turn on the Chimera build flag, and point it to the extracted pcre folder.

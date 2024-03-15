@@ -40,7 +40,6 @@ jobs:
           git clone --depth=1 https://github.com/microsoft/vcpkg.git
           ./vcpkg/bootstrap-vcpkg.bat -disableMetrics
           vcpkg install ragel:x64-windows
-          vcpkg install hyperscan
       - name: 'windows: install boost'
         id: windows-install-boost
         if: runner.os == 'windows'
