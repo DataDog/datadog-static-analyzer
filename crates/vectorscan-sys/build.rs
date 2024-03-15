@@ -52,7 +52,7 @@ impl Dependency {
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    let hs_dependency = if cfg!(target_os = "windows") {
+    let hs_dependency = if cfg!(target_family = "windows") {
         Dependency::new(
             "hyperscan-5.4.2",
             "https://github.com/intel/hyperscan",
@@ -65,6 +65,7 @@ fn main() {
             "d29730e1cb9daaa66bda63426cdce83505d2c809",
         )
     };
+    println!("cargo:warning=using `{}`", hs_dependency.url);
     let pcre_dependency = Dependency::new(
         "pcre-8.45",
         "https://github.com/luvit/pcre",
