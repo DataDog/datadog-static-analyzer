@@ -246,7 +246,7 @@ In order to use diff-aware scanning, you must be a Datadog customer.
 To use diff-aware scanning:
 
  1. Set up the `DD_SITE` environment variable according to the Datadog datacenter you are using (https://docs.datadoghq.com/getting_started/site/)
- 2. Set up the `DD_APP_KEY` and `DD_API_KEY` with your Datadog application and API keys
+ 2. Set up the `DD_APP_KEY` and `DD_API_KEY` environment variables with your Datadog application and API keys
  3. Run the static analyzer with option `--diff-aware`
 
 When using diff-aware, the static analyzer will connect to Datadog and attempt a previous analysis to use. If any problem occurs
