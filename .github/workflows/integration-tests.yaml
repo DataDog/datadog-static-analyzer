@@ -28,9 +28,10 @@ jobs:
         with:
           toolchain: stable
           profile: default
-      - name: Use cache for cargo build
-        uses: Swatinem/rust-cache@v2.7.3
+      - uses: ./.github/actions/setup-build-env
+      - uses: ./.github/actions/rust-cache
         with:
+          cargo-target: x86_64-unknown-linux-gnu
           save-if: false
       - name: Execute script
         run: ${{ matrix.scripts.file }}

@@ -34,8 +34,10 @@ jobs:
         with:
           toolchain: stable
           profile: default
-      - name: Use cache for cargo build
-        uses: Swatinem/rust-cache@v2.7.3
+      - uses: ./.github/actions/setup-build-env
+      - uses: ./.github/actions/rust-cache
+        with:
+          cargo-target: ${{ matrix.config.target }}
       - name: Run cargo ${{ matrix.cargo_cmd.cmd_name }} ${{ matrix.cargo_cmd.args }}
         uses: actions-rs/cargo@v1
         with:

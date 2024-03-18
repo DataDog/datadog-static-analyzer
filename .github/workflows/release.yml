@@ -36,6 +36,7 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
+      - uses: ./.github/workflows/setup-build-environment.yaml
       - uses: actions/checkout@v3
       - name: Install Stable + Rustfmt + Clippy
         uses: actions-rs/toolchain@v1
