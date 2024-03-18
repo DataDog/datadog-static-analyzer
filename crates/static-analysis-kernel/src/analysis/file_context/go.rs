@@ -101,6 +101,17 @@ import (
         };
 
         assert_eq!((&(file_context_go).packages).len(), 3);
+        assert!(
+            (&(file_context_go)
+                .packages
+                .contains(&"math/rand".to_string()))
+        );
+        assert!((&(file_context_go).packages.contains(&"fmt".to_string())));
+        assert!(
+            (&(file_context_go)
+                .packages
+                .contains(&"crypto/rand".to_string()))
+        );
         assert_eq!((&(file_context_go).packages_aliased).len(), 5);
         assert_eq!(
             (file_context_go).packages_aliased.get("crand1").unwrap(),
@@ -113,6 +124,10 @@ import (
         assert_eq!(
             (file_context_go).packages_aliased.get("foo").unwrap(),
             "fmt"
+        );
+        assert_eq!(
+            (file_context_go).packages_aliased.get("rand").unwrap(),
+            "math/rand"
         );
     }
 }
