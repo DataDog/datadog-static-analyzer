@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use std::env;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -35,6 +36,9 @@ impl Dependency {
 ///
 /// The freshly-built `hs` library is then announced to rustc's linker for use in the compilation process.
 ///
+/// By default, the Hyperscan tools (fuzz, hsbench, hscheck, hscollider, hsdump) binaries are not built,
+/// but can be with feature `hs_tools`.
+///
 /// This script can also build [Chimera](https://intel.github.io/hyperscan/dev-reference/chimera.html), which
 /// is an officially-supported regex engine that functions as a hybrid between Hyperscan and PCRE,
 /// with full support for PCRE syntax. While disabled by default, Chimera can be activated with feature `chimera`.
@@ -59,16 +63,32 @@ fn main() {
         "5c78f7d5d7f41bdd4be4867ef3a1030af3e973e3",
     );
 
-    let dependencies = if cfg!(feature = "chimera") {
+    let needs_pcre = cfg!(any(feature = "chimera", feature = "hs_tools"));
+
+    let dependencies = if needs_pcre {
         vec![&hs_dependency, &pcre_dependency]
     } else {
         vec![&hs_dependency]
     };
 
     for dependency in dependencies {
-        if !dependency.source_path.exists() {
-            assert!(fetch_dependency(dependency));
-        }
+        assert!(fetch_dependency(dependency));
+    }
+
+    // A bit of a hacky workaround for the lack of a CMake option:
+    // The `tools` folder is only compiled if the CMakeLists.txt file is detected:
+    // https://github.com/VectorCamp/vectorscan/blob/d29730e1cb9daaa66bda63426cdce83505d2c809/CMakeLists.txt#L1199-L1200
+    #[rustfmt::skip]
+    #[cfg(not(feature = "hs_tools"))]
+    assert!(run("rm", &["-f", &hs_dependency.source_path.join("tools/CMakeLists.txt").to_string_lossy()]));
+
+    let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
+    hs_cmake
+        // Override Vectorscan's default build configuration.
+        .define("BUILD_EXAMPLES", "OFF")
+        .define("BUILD_BENCHMARKS", "OFF");
+    if needs_pcre {
+        hs_cmake.define("PCRE_SOURCE", &pcre_dependency.source_path);
     }
 
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
@@ -78,17 +98,9 @@ fn main() {
         _ => println!("cargo:rustc-link-lib=stdc++"),
     }
 
-    let mut hs_cmake = cmake::Config::new(hs_dependency.source_path);
-    hs_cmake
-        // Override Vectorscan's default build configuration.
-        .define("BUILD_EXAMPLES", "OFF")
-        .define("BUILD_BENCHMARKS", "OFF");
-
     #[cfg(feature = "chimera")]
     {
-        // Turn on the Chimera build flag, and point it to the extracted pcre folder.
         hs_cmake
-            .define("PCRE_SOURCE", &pcre_dependency.source_path)
             .define("BUILD_CHIMERA", "ON")
             .cflag("-Wno-unknown-warning-option")
             .cxxflag("-Wno-unknown-warning-option")
@@ -214,15 +226,10 @@ fn main() {
 
 /// A helper function to shallow fetch a Git repository.
 fn fetch_dependency(dep: &Dependency) -> bool {
-    fn run(command: &str, args: &[&str]) -> bool {
-        Command::new(command)
-            .args(args)
-            .status()
-            .is_ok_and(|exit_status| exit_status.success())
-    }
     let base_dir = env::current_dir().unwrap();
 
-    run("mkdir", &["-p", &dep.source_path.to_string_lossy()])
+    run("rm", &["-rf", &dep.source_path.to_string_lossy()])
+        && run("mkdir", &["-p", &dep.source_path.to_string_lossy()])
         && env::set_current_dir(&dep.source_path).is_ok()
         && run("git", &["init", "-q"])
         && run("git", &["remote", "add", "origin", &dep.url])
@@ -233,4 +240,12 @@ fn fetch_dependency(dep: &Dependency) -> bool {
         && run("git", &["checkout", "-q", "FETCH_HEAD"])
         && run("rm", &["-rf", ".git"])
         && env::set_current_dir(base_dir).is_ok()
+}
+
+/// Builds and executes a [`Command`] with the given arguments.
+fn run<T: AsRef<OsStr>>(command: &str, args: &[T]) -> bool {
+    Command::new(command)
+        .args(args)
+        .status()
+        .is_ok_and(|exit_status| exit_status.success())
 }
