@@ -20,7 +20,7 @@ lazy_static = "1.4.0"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
 serde_v8 = "0.107.0"
-tree-sitter = "0.21.0"
+tree-sitter = "0.22.2"
 indexmap = { version = "2.2", features = ["serde"] }
 
 [build-dependencies]
