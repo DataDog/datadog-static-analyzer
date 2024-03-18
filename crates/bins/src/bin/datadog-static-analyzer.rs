@@ -21,7 +21,7 @@ use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
-use cli::sarif::sarif_utils::generate_sarif_report;
+use cli::sarif::sarif_utils::{generate_sarif_report, SarifRule, SarifRuleResult};
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
@@ -641,22 +641,32 @@ fn main() -> Result<()> {
         OutputFormat::Json => {
             serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
         }
-        OutputFormat::Sarif => match generate_sarif_report(
-            &configuration.rules,
-            &all_rule_results,
-            &directory_to_analyze,
-            add_git_info,
-            configuration.use_debug,
-            configuration.generate_diff_aware_digest(),
-            diff_aware_parameters,
-        ) {
-            Ok(report) => {
-                serde_json::to_string(&report).expect("error when getting the SARIF report")
+        OutputFormat::Sarif => {
+            let rules: Vec<SarifRule> = configuration
+                .rules
+                .iter()
+                .cloned()
+                .map(|r| r.into())
+                .collect();
+            let results: Vec<SarifRuleResult> =
+                all_rule_results.iter().cloned().map(|r| r.into()).collect();
+            match generate_sarif_report(
+                &rules,
+                &results,
+                &directory_to_analyze,
+                add_git_info,
+                configuration.use_debug,
+                configuration.generate_diff_aware_digest(),
+                diff_aware_parameters,
+            ) {
+                Ok(report) => {
+                    serde_json::to_string(&report).expect("error when getting the SARIF report")
+                }
+                Err(_) => {
+                    panic!("Error when generating the sarif report");
+                }
             }
-            Err(_) => {
-                panic!("Error when generating the sarif report");
-            }
-        },
+        }
     };
 
     // write the reports
