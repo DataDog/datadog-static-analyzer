@@ -31,10 +31,13 @@ impl Dependency {
     }
 }
 
-/// At a high level, this build script builds [Vectorscan](https://github.com/VectorCamp/vectorscan), a fork
-/// of [Hyperscan](https://github.com/intel/hyperscan), a high-performance multiple regex matching library.
+/// This build script provides the `hs` library, a high-performance multiple regex matching library.
 ///
-/// The freshly-built `hs` library is then announced to rustc's linker for use in the compilation process.
+/// On Linux and macOS, this builds [Vectorscan](https://github.com/VectorCamp/vectorscan), a fork of Hyperscan.
+/// On Windows x86_64, this builds [Hyperscan](https://github.com/intel/hyperscan).
+///
+/// NOTE: Building Hyperscan is a temporary compatibility strategy until Vectorscan supports Windows.
+/// See: https://github.com/VectorCamp/vectorscan/issues/207
 ///
 /// By default, the Hyperscan tools (fuzz, hsbench, hscheck, hscollider, hsdump) binaries are not built,
 /// but can be with feature `hs_tools`.
@@ -44,19 +47,24 @@ impl Dependency {
 /// with full support for PCRE syntax. While disabled by default, Chimera can be activated with feature `chimera`.
 ///
 /// Lastly, `bindgen` is used to automatically create low-level bindings between Hyperscan's C ABI and Rust.
-/// These bindings are pre-generated at `src/bindings_hs.rs` and `src/bindings_ch.rs` for convenience (so
-/// that library consumers don't need to install multiple dependencies just to generate the required bindings).
-///
-/// However, if compiled with the `generate-bindings` feature, this crate will freshly generate bindings
-/// and save them to its `OUT_DIR`.
+/// These bindings are pre-generated in the `src` folder for convenience. However, library consumers can
+/// freshly generate bindings with the `generate-bindings` feature.
 fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
-    let hs_dependency = Dependency::new(
-        "vectorscan-5.4.11",
-        "https://github.com/VectorCamp/vectorscan",
-        "d29730e1cb9daaa66bda63426cdce83505d2c809",
-    );
+    let hs_dependency = if cfg!(target_family = "windows") {
+        Dependency::new(
+            "hyperscan-5.4.2",
+            "https://github.com/intel/hyperscan",
+            "bc3b191ab56055e8560c7cdc161c289c4d76e3d2",
+        )
+    } else {
+        Dependency::new(
+            "vectorscan-5.4.11",
+            "https://github.com/VectorCamp/vectorscan",
+            "d29730e1cb9daaa66bda63426cdce83505d2c809",
+        )
+    };
     let pcre_dependency = Dependency::new(
         "pcre-8.45",
         "https://github.com/luvit/pcre",
@@ -92,7 +100,19 @@ fn main() {
     }
 
     match env::var("CARGO_CFG_TARGET_OS").unwrap().as_str() {
-        "windows" => todo!("Vectorscan cannot yet be compiled for os `windows`"),
+        "windows" => {
+            let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap();
+            let target_arch = env::var("CARGO_CFG_TARGET_ARCH").unwrap();
+            match (target_env.as_str(), target_arch.as_str()) {
+                ("msvc", "x86_64") => {
+                    // cmake-rs seems to strip the `/EHsc` flag that CMake uses by default
+                    // See: https://github.com/rust-lang/cmake-rs/issues/198
+                    hs_cmake.cflag("/EHsc").cxxflag("/EHsc");
+                }
+                (env, "x86_64") => unimplemented!("unsupported windows env: `{}`", env),
+                (env, arch) => panic!("unsupported windows configuration: `{}` `{}`", env, arch),
+            }
+        }
         "macos" => println!("cargo:rustc-link-lib=c++"),
         "linux" => println!("cargo:rustc-link-lib=stdc++"),
         _ => println!("cargo:rustc-link-lib=stdc++"),
@@ -100,8 +120,10 @@ fn main() {
 
     #[cfg(feature = "chimera")]
     {
+        hs_cmake.define("BUILD_CHIMERA", "ON");
+
+        #[cfg(not(target_env = "msvc"))]
         hs_cmake
-            .define("BUILD_CHIMERA", "ON")
             .cflag("-Wno-unknown-warning-option")
             .cxxflag("-Wno-unknown-warning-option")
             // Clang 15 workaround for `ch_compile.cpp`
@@ -177,7 +199,11 @@ fn main() {
             .parse_callbacks(Box::new(ForceInts(["HS_SUCCESS"], IntKind::I32)))
             // HS_VERSION_STRING makes bindgen output non-deterministic because it includes the current calendar date
             .blocklist_item("HS_VERSION_STRING");
-        let dest_file = out_dir.join("bindings_hs.rs");
+        let dest_file = if cfg!(target_family = "windows") {
+            out_dir.join("hyperscan_bindings_hs.rs")
+        } else {
+            out_dir.join("vectorscan_bindings_hs.rs")
+        };
         hs_builder
             .generate()
             .unwrap()
@@ -203,7 +229,11 @@ fn main() {
                 // bindgen defaults to 0_u32, but error codes are i32
                 .parse_callbacks(Box::new(ForceInts(["CH_SUCCESS"], IntKind::I32)))
                 .clang_arg("-D__BUILD_CHIMERA__");
-            let dest_file = out_dir.join("bindings_ch.rs");
+            let dest_file = if cfg!(target_family = "windows") {
+                out_dir.join("hyperscan_bindings_ch.rs")
+            } else {
+                out_dir.join("vectorscan_bindings_ch.rs")
+            };
             ch_builder
                 .generate()
                 .unwrap()
