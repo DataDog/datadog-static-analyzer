@@ -38,7 +38,7 @@ rulesets:
   - python-code-style
   - python-best-practices
   - python-inclusive
-ignore-paths:
+ignore:
   - tests
 ```
 
