@@ -14,7 +14,7 @@ runs:
     - name: Use cache for cargo build
       uses: Swatinem/rust-cache@v2.7.3
       with:
-        shared-key: ${{ inputs.cargo-target }}-${{ hashFiles('**/crates/*') }}
+        shared-key: ${{ inputs.cargo-target }}
         save-if: ${{ inputs.save-if }}
     - name: Cache vectorscan-sys build
       uses: actions/cache@v4
