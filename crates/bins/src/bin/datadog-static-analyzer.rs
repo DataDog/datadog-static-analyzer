@@ -261,7 +261,16 @@ fn main() -> Result<()> {
     }
 
     let configuration_file: Option<ConfigFile> =
-        read_config_file(directory_to_analyze.as_str()).unwrap();
+        match read_config_file(directory_to_analyze.as_str()) {
+            Ok(cfg) => cfg,
+            Err(err) => {
+                eprintln!(
+                    "Error reading configuration file from {}:\n  {}",
+                    directory_to_analyze, err
+                );
+                exit(1)
+            }
+        };
     let mut rules: Vec<Rule> = Vec::new();
     let mut path_restrictions = PathRestrictions::default();
     let mut argument_provider = ArgumentProvider::new();
