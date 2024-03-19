@@ -25,7 +25,7 @@ jobs:
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu
-          save-if: false
+          cargo-cache-key: release
       - name: Test all production rules
         run: |
           cargo build -r --bin datadog-static-analyzer && \
