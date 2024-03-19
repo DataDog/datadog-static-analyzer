@@ -24,6 +24,7 @@ use kernel::model::{
 
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::datadog_api::DiffAwareData;
+use crate::secrets::{DetectedSecret, SecretRule};
 
 trait IntoSarif {
     type SarifType;
@@ -34,30 +35,35 @@ trait IntoSarif {
 #[derive(Debug, Clone)]
 pub enum SarifRule {
     StaticAnalysis(Rule),
+    Secret(SecretRule),
 }
 
 impl SarifRule {
     fn name(&self) -> &str {
         match self {
             SarifRule::StaticAnalysis(r) => r.name.as_str(),
+            SarifRule::Secret(r) => r.rule_id.as_str(),
         }
     }
 
     fn category(&self) -> RuleCategory {
         match self {
             SarifRule::StaticAnalysis(r) => r.category,
+            SarifRule::Secret(_) => RuleCategory::Security,
         }
     }
 
     fn cwe(&self) -> Option<&str> {
         match self {
             SarifRule::StaticAnalysis(r) => r.cwe.as_deref(),
+            SarifRule::Secret(_) => None,
         }
     }
 
     fn severity(&self) -> RuleSeverity {
         match self {
             SarifRule::StaticAnalysis(r) => r.severity,
+            SarifRule::Secret(_) => RuleSeverity::Notice,
         }
     }
 
@@ -72,6 +78,7 @@ impl IntoSarif for &SarifRule {
     fn into_sarif(self) -> Self::SarifType {
         match self {
             SarifRule::StaticAnalysis(r) => r.into_sarif(),
+            SarifRule::Secret(r) => r.into_sarif(),
         }
     }
 }
@@ -82,27 +89,37 @@ impl From<Rule> for SarifRule {
     }
 }
 
+impl From<SecretRule> for SarifRule {
+    fn from(value: SecretRule) -> Self {
+        Self::Secret(value)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum SarifRuleResult {
     StaticAnalysis(RuleResult),
+    Secret(DetectedSecret),
 }
 
 impl SarifRuleResult {
     fn violations(&self) -> &[Violation] {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.violations.as_slice(),
+            SarifRuleResult::Secret(r) => std::slice::from_ref(&r.violation),
         }
     }
 
     fn file_path(&self) -> &str {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.filename.as_str(),
+            SarifRuleResult::Secret(r) => r.file_path.as_str(),
         }
     }
 
     fn rule_name(&self) -> &str {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
+            SarifRuleResult::Secret(r) => r.rule_id.as_str(),
         }
     }
 }
@@ -115,6 +132,18 @@ impl TryFrom<RuleResult> for SarifRuleResult {
             Err(format!("path `{}` must be relative", &value.filename))
         } else {
             Ok(Self::StaticAnalysis(value))
+        }
+    }
+}
+
+impl TryFrom<DetectedSecret> for SarifRuleResult {
+    type Error = String;
+
+    fn try_from(value: DetectedSecret) -> std::result::Result<Self, Self::Error> {
+        if Path::new(&value.file_path).is_absolute() {
+            Err(format!("path `{}` must be relative", &value.file_path))
+        } else {
+            Ok(Self::Secret(value))
         }
     }
 }
@@ -262,6 +291,36 @@ impl IntoSarif for &Edit {
     }
 }
 
+impl IntoSarif for &SecretRule {
+    type SarifType = sarif::ReportingDescriptor;
+
+    fn into_sarif(self) -> Self::SarifType {
+        let mut builder = sarif::ReportingDescriptorBuilder::default();
+
+        let short_description = sarif::MultiformatMessageStringBuilder::default()
+            .text(&self.short_description)
+            .build()
+            .unwrap();
+        let description = sarif::MultiformatMessageStringBuilder::default()
+            .text(&self.description)
+            .build()
+            .unwrap();
+        let properties = PropertyBagBuilder::default()
+            .tags(vec![SarifRule::rule_type_tag("SECRET")])
+            .build()
+            .unwrap();
+
+        builder
+            .id(&self.rule_id)
+            .short_description(short_description)
+            .full_description(description)
+            .properties(properties)
+            // .help_uri(todo!())
+            .build()
+            .unwrap()
+    }
+}
+
 // Generate the tool section that reports all the rules being run
 fn generate_tool_section(rules: &[SarifRule], options: &SarifGenerationOptions) -> Result<Tool> {
     let mut tags = vec![];
@@ -401,6 +460,13 @@ fn generate_results(
                 if let Some(cwe) = rule.cwe() {
                     tags.push(format!("CWE:{}", cwe));
                 }
+            }
+
+            if let SarifRuleResult::Secret(detected) = rule_result {
+                tags.push(format!(
+                    "DATADOG_VALIDATION_STATUS:{}",
+                    detected.status.to_string().to_uppercase()
+                ));
             }
 
             let options = options_orig.clone();
@@ -563,8 +629,9 @@ mod tests {
     use serde_json::{from_str, Value};
     use valico::json_schema;
 
+    use crate::secrets::ValidationStatus;
     use kernel::model::{
-        common::{Language, PositionBuilder},
+        common::{Language, Position, PositionBuilder},
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
@@ -649,6 +716,43 @@ mod tests {
         assert_json_eq!(
             sarif_report_to_string,
             serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["DATADOG_RULE_TYPE:STATIC_ANALYSIS","CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+        );
+
+        // validate the schema
+        assert!(validate_data(&sarif_report_to_string));
+    }
+
+    #[test]
+    fn test_generate_sarif_report_secret_happy_path() {
+        let rule = SecretRule::new(
+            "datadog-app-key",
+            "Long description about detecting a Datadog secret...",
+            "Short description",
+        );
+        let detected = DetectedSecret::new(
+            "datadog-app-key",
+            "folder/file.txt",
+            ValidationStatus::Unvalidated,
+            Position { line: 1, col: 24 },
+            Position { line: 1, col: 64 },
+            "detected-secret-that-is-stored-as-a-hash",
+        );
+
+        let sarif_report = generate_sarif_report(
+            &[rule.into()],
+            &[detected.try_into().unwrap()],
+            &"repo".to_string(),
+            false,
+            false,
+            "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+            None,
+        )
+        .expect("sarif report should be able to be generated");
+
+        let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
+        assert_json_eq!(
+            sarif_report_to_string,
+            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"note","locations":[{"physicalLocation":{"artifactLocation":{"uri":"folder/file.txt"},"region":{"endColumn":64,"endLine":1,"startColumn":24,"startLine":1}}}],"message":{"text":"Unvalidated potential secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_VALIDATION_STATUS:UNVALIDATED"]},"ruleId":"datadog-app-key","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"Long description about detecting a Datadog secret..."},"id":"datadog-app-key","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"Short description"}}]}}}],"version":"2.1.0"}),
         );
 
         // validate the schema
