@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::collections::HashMap;
 use std::fmt;
+use std::path::Path;
 
 /// In the RuleCategory, we keep unknown. Old rules keep putting
 /// whatever they want as category. As a matter of fact, old rules that
@@ -269,6 +270,7 @@ impl fmt::Display for Rule {
 }
 
 #[derive(Clone, Builder, Serialize, Debug)]
+#[builder(build_fn(validate = "Self::validate"))]
 pub struct RuleResult {
     pub rule_name: String,
     pub filename: String,
@@ -277,6 +279,17 @@ pub struct RuleResult {
     pub execution_error: Option<String>,
     pub output: Option<String>,
     pub execution_time_ms: u128,
+}
+
+impl RuleResultBuilder {
+    fn validate(&self) -> Result<(), String> {
+        if let Some(filename) = self.filename.as_ref() {
+            if Path::new(filename).is_absolute() {
+                return Err(format!("expected relative path, got: `{}`", filename));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -393,5 +406,33 @@ mod tests {
         };
         let fixed_ruled = rule.fix_cwe();
         assert!(fixed_ruled.cwe.is_some());
+    }
+
+    #[test]
+    fn absolute_path_err() {
+        fn builder_with(filename: &str) -> RuleResultBuilder {
+            RuleResultBuilder::default()
+                .rule_name("default".to_string())
+                .filename(filename.to_string())
+                .violations(vec![])
+                .errors(vec![])
+                .execution_error(None)
+                .output(None)
+                .execution_time_ms(0)
+                .clone()
+        }
+
+        let (abs_path, rel_path) = if cfg!(target_family = "windows") {
+            (r#"C:\etc\file.txt"#, r#"etc\file.txt"#)
+        } else {
+            ("/etc/file.txt", "etc/file.txt")
+        };
+
+        assert!(builder_with(abs_path)
+            .build()
+            .unwrap_err()
+            .to_string()
+            .contains("expected relative path"));
+        assert!(builder_with(rel_path).build().is_ok());
     }
 }
