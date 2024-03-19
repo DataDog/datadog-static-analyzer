@@ -11,7 +11,7 @@ Currently, only static linking is supported.
 ### Debian/Ubuntu
 Install required dependencies:
 ```shell
-sudo apt install build-essential cmake ragel
+sudo apt install build-essential cmake libboost-all-dev ragel
 ```
 
 ### macOS - arm64
