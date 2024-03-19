@@ -51,7 +51,7 @@ impl DatabaseWrapper {
         // release the memory. Thus, this is guaranteed to be non-null, and won't be a double-free.
         //
         // Source: https://github.com/VectorCamp/vectorscan/blob/d29730e1cb9daaa66bda63426cdce83505d2c809/src/database.c#L390
-        unsafe { hs::libc_free(info_ptr as *mut ffi::c_void) }
+        unsafe { hs::hs_misc_free(info_ptr as *mut ffi::c_void) }
         Ok(info)
     }
 }

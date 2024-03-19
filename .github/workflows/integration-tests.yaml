@@ -6,90 +6,32 @@ on:
     - cron:  '0 9 * * *'
 name: Run Integration tests
 jobs:
-  integration_test_git:
+  test_scripts:
     runs-on: ubuntu-latest
     env:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: ${{ vars.DD_SITE }}
+    strategy:
+      matrix:
+        scripts:
+          - { file: './misc/integration-test-git.sh', gha_alias: 'Git' }
+          - { file: './misc/integration-test-python.sh', gha_alias: 'Python' }
+          - { file: './misc/integration-test-docker.sh', gha_alias: 'Docker' }
+          - { file: './misc/integration-test-js-ts.sh', gha_alias: 'JavaScript/TypeScript' }
+          - { file: './misc/integration-test-filter-rules.sh', gha_alias: 'Per-Path Rule Filtering' }
+    name: Run integration test - ${{ matrix.scripts.gha_alias }}
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
-        with:
-            toolchain: stable
-            components: clippy
-            override: true
-            default: true
-      - name: Use cache for cargo build
-        uses: Swatinem/rust-cache@v2.7.3
-      - name: Run Integration Test for Git
-        run: ./misc/integration-test-git.sh
-  integration_test_python:
-    runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
         uses: actions-rs/toolchain@v1
         with:
           toolchain: stable
-          components: clippy
-          override: true
-          default: true
-      - name: Run Integration Test for Python
-        run: ./misc/integration-test-python.sh
-  integration_test_docker:
-    runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+          profile: default
+      - uses: ./.github/actions/setup-build-env
+      - uses: ./.github/actions/rust-cache
         with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
-      - name: Run Integration Test for Docker
-        run: ./misc/integration-test-docker.sh
-  integration_test_jsts:
-    runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
-      - name: Run Integration Test for JavaScript/TypeScript
-        run: ./misc/integration-test-js-ts.sh
-  integration_test_filter_rules:
-    runs-on: ubuntu-latest
-    env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
-      DD_SITE: ${{ vars.DD_SITE }}
-    steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          components: clippy
-          override: true
-          default: true
-      - name: Run Integration Test for Per-Path Rule Filtering
-        run: ./misc/integration-test-filter-rules.sh
+          cargo-target: x86_64-unknown-linux-gnu
+          save-if: false
+      - name: Execute script
+        run: ${{ matrix.scripts.file }}

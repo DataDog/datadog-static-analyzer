@@ -1,0 +1,45 @@
+name: Setup build environment
+description: Installs OS-specific dependencies required to build the workspace.
+runs:
+  using: composite
+  steps:
+  - name: 'linux: install build dependencies'
+    if: runner.os == 'linux'
+    run: |
+      sudo apt-get update
+      sudo apt install -y build-essential cmake libboost-all-dev ragel
+    shell: bash
+  - name: 'macOS: install build dependencies'
+    if: runner.os == 'macOS'
+    run: brew install boost cmake ragel
+    shell: bash
+  - name: 'windows: setup cmake'
+    if: runner.os == 'windows'
+    uses: lukka/get-cmake@latest
+  - name: 'windows: cache ragel'
+    id: windows-cache-ragel
+    if: runner.os == 'windows'
+    uses: actions/cache@v4
+    with:
+      path: C:\vcpkg\installed\x64-windows\tools\ragel.exe
+      key: windows-msvc-ragel
+  - name: 'windows: install ragel'
+    if: runner.os == 'windows'
+    run: |
+      vcpkg install ragel:x64-windows
+    shell: pwsh
+  - name: 'windows: install boost'
+    id: windows-install-boost
+    if: runner.os == 'windows'
+    uses: MarkusJx/install-boost@v2.4.5
+    with:
+      toolset: msvc
+      platform_version: 2022
+      boost_version: 1.78.0
+      boost_install_dir: ${{ runner.workspace }}
+  - name: 'windows: configure env'
+    if: runner.os == 'windows'
+    run: |
+      "C:\vcpkg\installed\x64-windows\tools" | Out-File -FilePath $env:GITHUB_PATH -Append
+      "BOOST_ROOT=${{ steps.windows-install-boost.outputs.BOOST_ROOT }}" | Out-File -FilePath $env:GITHUB_ENV -Append
+    shell: pwsh
