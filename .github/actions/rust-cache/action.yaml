@@ -19,5 +19,9 @@ runs:
     - name: Cache vectorscan-sys build
       uses: actions/cache@v4
       with:
-        path: '**/target/*/build/vectorscan-sys-*'
+        path: |
+          **/target/*/deps/libvectorscan_sys-*
+          **/target/*/deps/vectorscan_sys-*
+          **/target/*/build/vectorscan-sys-*
+          **/target/*/libvectorscan_sys.*
         key: ${{ inputs.cargo-target }}-vectorscan-sys
