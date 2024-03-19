@@ -38,6 +38,7 @@ jobs:
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: ${{ matrix.config.target }}
+          cargo-cache-key: debug
       - name: Run cargo ${{ matrix.cargo_cmd.cmd_name }} ${{ matrix.cargo_cmd.args }}
         uses: actions-rs/cargo@v1
         with:
