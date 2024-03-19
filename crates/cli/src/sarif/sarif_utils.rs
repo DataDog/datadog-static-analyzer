@@ -14,7 +14,8 @@ use serde_sarif::sarif::{
 };
 
 use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
-use kernel::model::rule::RuleSeverity;
+use kernel::model::rule::{RuleCategory, RuleSeverity};
+use kernel::model::violation::Violation;
 use kernel::model::{
     common::PositionBuilder,
     rule::{Rule, RuleResult},
@@ -28,6 +29,90 @@ trait IntoSarif {
     type SarifType;
 
     fn into_sarif(self) -> Self::SarifType;
+}
+
+#[derive(Debug, Clone)]
+pub enum SarifRule {
+    StaticAnalysis(Rule),
+}
+
+impl SarifRule {
+    fn name(&self) -> &str {
+        match self {
+            SarifRule::StaticAnalysis(r) => r.name.as_str(),
+        }
+    }
+
+    fn category(&self) -> RuleCategory {
+        match self {
+            SarifRule::StaticAnalysis(r) => r.category,
+        }
+    }
+
+    fn cwe(&self) -> Option<&str> {
+        match self {
+            SarifRule::StaticAnalysis(r) => r.cwe.as_deref(),
+        }
+    }
+
+    fn severity(&self) -> RuleSeverity {
+        match self {
+            SarifRule::StaticAnalysis(r) => r.severity,
+        }
+    }
+
+    fn rule_type(&self) -> &'static str {
+        match self {
+            SarifRule::StaticAnalysis(_) => "STATIC_ANALYSIS",
+        }
+    }
+}
+
+impl IntoSarif for &SarifRule {
+    type SarifType = ReportingDescriptor;
+
+    fn into_sarif(self) -> Self::SarifType {
+        match self {
+            SarifRule::StaticAnalysis(r) => r.into_sarif(),
+        }
+    }
+}
+
+impl From<Rule> for SarifRule {
+    fn from(value: Rule) -> Self {
+        Self::StaticAnalysis(value)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum SarifRuleResult {
+    StaticAnalysis(RuleResult),
+}
+
+impl SarifRuleResult {
+    fn violations(&self) -> &[Violation] {
+        match self {
+            SarifRuleResult::StaticAnalysis(r) => r.violations.as_slice(),
+        }
+    }
+
+    fn file_path(&self) -> &str {
+        match self {
+            SarifRuleResult::StaticAnalysis(r) => r.filename.as_str(),
+        }
+    }
+
+    fn rule_name(&self) -> &str {
+        match self {
+            SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
+        }
+    }
+}
+
+impl From<RuleResult> for SarifRuleResult {
+    fn from(value: RuleResult) -> Self {
+        Self::StaticAnalysis(value)
+    }
 }
 
 // Options to use when to generate the SARIF reports.
@@ -175,7 +260,7 @@ impl IntoSarif for &Edit {
 }
 
 // Generate the tool section that reports all the rules being run
-fn generate_tool_section(rules: &[Rule], options: &SarifGenerationOptions) -> Result<Tool> {
+fn generate_tool_section(rules: &[SarifRule], options: &SarifGenerationOptions) -> Result<Tool> {
     let mut tags = vec![];
     tags.push(format!(
         "DATADOG_DIFF_AWARE_CONFIG_DIGEST:{}",
@@ -287,8 +372,8 @@ fn encode_filename(filename: String) -> String {
 
 // Generate the tool section that reports all the rules being run
 fn generate_results(
-    rules: &[Rule],
-    rules_results: &[RuleResult],
+    rules: &[SarifRule],
+    rules_results: &[SarifRuleResult],
     options_orig: SarifGenerationOptions,
 ) -> Result<Vec<SarifResult>> {
     rules_results
@@ -298,29 +383,32 @@ fn generate_results(
             let mut result_builder = ResultBuilder::default();
             let mut tags = vec![];
 
-            if let Some(rule_index) = rules.iter().position(|r| r.name == rule_result.rule_name) {
+            if let Some(rule_index) = rules
+                .iter()
+                .position(|r| r.name() == rule_result.rule_name())
+            {
                 let rule = &rules[rule_index];
-                let category = format!("DATADOG_CATEGORY:{}", rule.category).to_uppercase();
+                let category = format!("DATADOG_CATEGORY:{}", rule.category()).to_uppercase();
 
                 result_builder.rule_index(i64::try_from(rule_index).unwrap());
-                result_builder.level(get_level_from_severity(rule.severity));
+                result_builder.level(get_level_from_severity(rule.severity()));
                 tags.push(category);
 
                 // If there is a CWE, add it
-                if let Some(cwe) = &rule.cwe {
+                if let Some(cwe) = rule.cwe() {
                     tags.push(format!("CWE:{}", cwe));
                 }
             }
 
             let options = options_orig.clone();
-            rule_result.violations.iter().map(move |violation| {
+            rule_result.violations().iter().map(move |violation| {
                 // if we find the rule for this violation, get the id, level and category
                 let location = LocationBuilder::default()
                     .physical_location(
                         PhysicalLocationBuilder::default()
                             .artifact_location(
                                 ArtifactLocationBuilder::default()
-                                    .uri(encode_filename(rule_result.filename.clone()))
+                                    .uri(encode_filename(rule_result.file_path().to_string()))
                                     .build()
                                     .unwrap(),
                             )
@@ -346,7 +434,7 @@ fn generate_results(
                         let changes = ArtifactChangeBuilder::default()
                             .artifact_location(
                                 ArtifactLocationBuilder::default()
-                                    .uri(encode_filename(rule_result.filename.clone()))
+                                    .uri(encode_filename(rule_result.file_path().to_string()))
                                     .build()?,
                             )
                             .replacements(replacements)
@@ -364,7 +452,7 @@ fn generate_results(
 
                 let sha_option = if options.add_git_info {
                     get_sha_for_line(
-                        rule_result.filename.as_str(),
+                        rule_result.file_path(),
                         violation.start.line as usize,
                         &options,
                     )
@@ -375,7 +463,7 @@ fn generate_results(
                 let fingerprint_option = get_fingerprint_for_violation(
                     violation,
                     Path::new(options.repository_directory.as_str()),
-                    Path::new(rule_result.filename.as_str()),
+                    Path::new(rule_result.file_path()),
                     options.debug,
                 );
 
@@ -396,7 +484,7 @@ fn generate_results(
 
                 Ok(result_builder
                     .clone()
-                    .rule_id(rule_result.rule_name.clone())
+                    .rule_id(rule_result.rule_name())
                     .locations([location])
                     .fixes(fixes)
                     .message(
@@ -422,8 +510,8 @@ fn generate_results(
 // the rules parameter is the list of rules used for this run
 // the violations parameter is the list of violations for this run.
 pub fn generate_sarif_report(
-    rules: &[Rule],
-    rules_results: &[RuleResult],
+    rules: &[SarifRule],
+    rules_results: &[SarifRuleResult],
     directory: &String,
     add_git_info: bool,
     debug: bool,
@@ -543,8 +631,8 @@ mod tests {
             .expect("building violation");
 
         let sarif_report = generate_sarif_report(
-            &[rule],
-            &vec![rule_result],
+            &[rule.into()],
+            &[rule_result.into()],
             &"mydir".to_string(),
             false,
             false,
@@ -645,8 +733,8 @@ mod tests {
             .expect("building violation");
 
         let sarif_report = generate_sarif_report(
-            &[rule],
-            &vec![rule_result],
+            &[rule.into()],
+            &[rule_result.into()],
             &"mydir".to_string(),
             false,
             false,
@@ -720,8 +808,8 @@ mod tests {
             .expect("building violation");
 
         let sarif_report = generate_sarif_report(
-            &[rule],
-            &vec![rule_result],
+            &[rule.into()],
+            &[rule_result.into()],
             &"mydir".to_string(),
             false,
             false,
