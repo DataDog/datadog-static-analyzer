@@ -100,7 +100,7 @@ fn main() {
             name: "tree-sitter-java".to_string(),
             compilation_unit: "tree-sitter-java".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-java.git".to_string(),
-            commit_hash: "2b57cd9541f9fd3a89207d054ce8fbe72657c444".to_string(),
+            commit_hash: "5e62fbb519b608dfd856000fdc66536304c414de".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string()],
             cpp: false,
