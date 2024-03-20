@@ -458,6 +458,7 @@ fn generate_results(
                 };
 
                 let fingerprint_option = get_fingerprint_for_violation(
+                    rule_result.rule_name().to_string(),
                     violation,
                     Path::new(options.repository_directory.as_str()),
                     Path::new(rule_result.file_path()),

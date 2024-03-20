@@ -292,6 +292,7 @@ pub fn filter_files_by_diff_aware_info(
 /// as is
 ///  SHA2(<file-location-in-repository> - <characters-in-directory> - <content-of-code-line> - <number of characters in line>)
 pub fn get_fingerprint_for_violation(
+    rule_name: String,
     violation: &Violation,
     repository_root: &Path,
     file: &Path,
@@ -312,7 +313,8 @@ pub fn get_fingerprint_for_violation(
                     .filter(|ch| !ch.is_whitespace())
                     .collect::<String>();
                 let hash_content = format!(
-                    "{}-{}-{}-{}",
+                    "{}-{}-{}-{}-{}",
+                    rule_name,
                     filename,
                     filename.len(),
                     line_content_stripped,
@@ -385,6 +387,7 @@ mod tests {
         };
         let directory_string = d.into_os_string().into_string().unwrap();
         let fingerprint = get_fingerprint_for_violation(
+            "my_rule".to_string(),
             &violation,
             Path::new(directory_string.as_str()),
             Path::new("resources/test/gitignore/test1"),
@@ -393,16 +396,60 @@ mod tests {
         assert!(!fingerprint.is_none());
         assert_eq!(
             fingerprint.unwrap(),
-            "d21ffb61a8b8ac31e1defb337faf11c9b92fc011f29eb3dc35f88fd5e145cd17".to_string()
+            "4c5987c7fe4b561923265bf911650d25d255a3cbc0e9894f553ccc704f691c9f".to_string()
         );
 
         let fingerprint_unknown_file = get_fingerprint_for_violation(
+            "my_rule".to_string(),
             &violation,
             Path::new(directory_string.as_str()),
             Path::new("path/does/not/exists"),
             false,
         );
         assert!(fingerprint_unknown_file.is_none());
+    }
+
+    /// same violation, same location, just a different rule id: the fingerprint should
+    /// be different.
+    #[test]
+    fn get_fingerprint_different_by_rule() {
+        let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let violation = Violation {
+            start: Position { line: 10, col: 1 },
+            end: Position { line: 12, col: 1 },
+            message: "something bad happened".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Performance,
+            fixes: vec![],
+        };
+        let directory_string = d.into_os_string().into_string().unwrap();
+        let fingerprint1 = get_fingerprint_for_violation(
+            "my_rule".to_string(),
+            &violation,
+            Path::new(directory_string.as_str()),
+            Path::new("resources/test/gitignore/test1"),
+            false,
+        )
+        .unwrap();
+        let fingerprint2 = get_fingerprint_for_violation(
+            "my_rule".to_string(),
+            &violation,
+            Path::new(directory_string.as_str()),
+            Path::new("resources/test/gitignore/test1"),
+            false,
+        )
+        .unwrap();
+        let fingerprint3 = get_fingerprint_for_violation(
+            "my_rule2".to_string(),
+            &violation,
+            Path::new(directory_string.as_str()),
+            Path::new("resources/test/gitignore/test1"),
+            false,
+        )
+        .unwrap();
+        assert_eq!(&fingerprint1, &fingerprint2);
+        assert_ne!(&fingerprint1, &fingerprint3);
+        assert_ne!(&fingerprint2, &fingerprint3);
     }
 
     #[test]
