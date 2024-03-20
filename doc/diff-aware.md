@@ -95,4 +95,5 @@ diff aware not enabled (error when receiving diff-aware data from Datadog with c
 Common causes are:
  - there was no first scan performed with this configuration
  - environment variables `DD_API_KEY`, `DD_APP_KEY` or `DD_SITE` are not specified or invalid
- - new rulesets are being used
+ - one or more new rulesets are being used
+ - `datadog-ci` was not used before the analysis to update git metadata
