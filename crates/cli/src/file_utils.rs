@@ -313,7 +313,7 @@ pub fn get_fingerprint_for_violation(
                     .filter(|ch| !ch.is_whitespace())
                     .collect::<String>();
                 let hash_content = format!(
-                    "{}-{}-{}-{}-{}",
+                    "{}|{}|{}|{}|{}",
                     rule_name,
                     filename,
                     filename.len(),
@@ -396,7 +396,7 @@ mod tests {
         assert!(!fingerprint.is_none());
         assert_eq!(
             fingerprint.unwrap(),
-            "4c5987c7fe4b561923265bf911650d25d255a3cbc0e9894f553ccc704f691c9f".to_string()
+            "882d2eca8a353641ecfc71d4befb5dcb115a05b543dce6b7fa8a55cce62982db".to_string()
         );
 
         let fingerprint_unknown_file = get_fingerprint_for_violation(
@@ -414,6 +414,8 @@ mod tests {
     #[test]
     fn get_fingerprint_different_by_rule() {
         let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let path = "resources/test/gitignore/test1";
+
         let violation = Violation {
             start: Position { line: 10, col: 1 },
             end: Position { line: 12, col: 1 },
@@ -423,27 +425,28 @@ mod tests {
             fixes: vec![],
         };
         let directory_string = d.into_os_string().into_string().unwrap();
+
         let fingerprint1 = get_fingerprint_for_violation(
-            "my_rule".to_string(),
+            "rule1".to_string(),
             &violation,
             Path::new(directory_string.as_str()),
-            Path::new("resources/test/gitignore/test1"),
+            Path::new(path),
             false,
         )
         .unwrap();
         let fingerprint2 = get_fingerprint_for_violation(
-            "my_rule".to_string(),
+            "rule1".to_string(),
             &violation,
             Path::new(directory_string.as_str()),
-            Path::new("resources/test/gitignore/test1"),
+            Path::new(path),
             false,
         )
         .unwrap();
         let fingerprint3 = get_fingerprint_for_violation(
-            "my_rule2".to_string(),
+            "rule2".to_string(),
             &violation,
             Path::new(directory_string.as_str()),
-            Path::new("resources/test/gitignore/test1"),
+            Path::new(path),
             false,
         )
         .unwrap();
