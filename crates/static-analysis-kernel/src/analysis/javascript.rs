@@ -98,7 +98,7 @@ pub fn execute_rule(
                 );
             }
 
-            let _ = mutex.lock();
+            let _unused = mutex.lock();
             // notify the main thread we are done with the execution
             cvar.notify_one();
         });
