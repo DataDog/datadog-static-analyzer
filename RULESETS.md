@@ -16,6 +16,7 @@ The complete list is available in [our documentation](https://docs.datadoghq.com
 
 ## Go
 - go-best-practices
+- go-inclusive
 - go-security
 
 ## Java
@@ -43,9 +44,11 @@ The complete list is available in [our documentation](https://docs.datadoghq.com
  - python-flask
  - python-django
  - python-design
+ - python-inclusive
 
 ## Ruby
 
+ - rails-best-practices 
  - ruby-best-practices
  - ruby-code-style
  - ruby-security
