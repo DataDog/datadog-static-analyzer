@@ -22,6 +22,7 @@ use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
 use cli::sarif::sarif_utils::{generate_sarif_report, SarifRule, SarifRuleResult};
+use cli::secrets::{DetectedSecret, SecretRule};
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
@@ -172,6 +173,8 @@ fn main() -> Result<()> {
         "add-git-info",
         "add Git information to the SARIF report",
     );
+    #[cfg(feature = "secrets")]
+    opts.optflag("", "test-secrets", "run the secret scanner in test mode");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -486,6 +489,94 @@ fn main() -> Result<()> {
         );
     }
 
+    ////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////
+    // Secrets Test
+    #[allow(unused_mut)]
+    let mut detected_secrets = Vec::<DetectedSecret>::new();
+    #[allow(unused_mut)]
+    let mut secrets_rules = Vec::<SecretRule>::new();
+    #[cfg(feature = "secrets")]
+    if matches.opt_present("test-secrets") {
+        use cli::secrets::ValidationStatus;
+        use kernel::model::common::Position;
+        use secrets::temp_integration_test::{build_secrets_engine, shannon_entropy};
+        use std::time::Instant;
+
+        secrets_rules.push(SecretRule::new(
+            "datadog-app-key",
+            "An application key associated with the Datadog user account that created it",
+            "A Datadog application key",
+        ));
+        secrets_rules.push(SecretRule::new(
+            "datadog-api-key",
+            "An API key unique to a Datadog organization that is required to submit metrics and events",
+            "A Datadog API key",
+        ));
+
+        println!("scanning {} files for secrets", files_to_analyze.len());
+        let progress_bar =
+            (!configuration.use_debug).then(|| ProgressBar::new(files_to_analyze.len() as u64));
+
+        let start_timestamp = Instant::now();
+        let engine = build_secrets_engine();
+        let candidates = files_to_analyze
+            .par_iter()
+            .filter_map(|path| {
+                let scan_result = engine.scan_file(path);
+                if let Some(pb) = &progress_bar {
+                    pb.inc(1);
+                }
+                // Temporary: swallow errors
+                scan_result.map_err(drop).ok()
+            })
+            .filter(|candidates| !candidates.is_empty())
+            // Temporary: implement this here, but conceptually this is a Matcher
+            .flatten()
+            .filter(|cand| {
+                // For this test, we know all regexes have a capture named "candidate".
+                let captured = cand.rule_match.captures.get("candidate").unwrap().as_str();
+                // Included for this test, even though entropy will eventually be implemented as a Matcher.
+                shannon_entropy(captured.chars().map(|ch| ch.to_ascii_lowercase()), 16) > 0.5
+            })
+            .collect::<Vec<_>>();
+
+        for candidate in &candidates {
+            let relative_path = candidate
+                .source
+                .strip_prefix(directory_path)
+                // Temporary: panic here until we can refactor how `main` propagates errors
+                .expect("path should under `directory_path`");
+            let captured = candidate.rule_match.captures.get("candidate").unwrap();
+            detected_secrets.push(DetectedSecret::new(
+                candidate.rule_match.rule_id.as_ref().to_string(),
+                relative_path.to_string_lossy().to_string(),
+                ValidationStatus::Unvalidated,
+                Position {
+                    line: captured.point_span.start().line.get(),
+                    col: captured.point_span.start().col.get(),
+                },
+                Position {
+                    line: captured.point_span.end().line.get(),
+                    col: captured.point_span.end().col.get(),
+                },
+                captured.as_str(),
+            ));
+        }
+
+        let elapsed = start_timestamp.elapsed();
+        println!(
+            "secrets scan returned {} results in {:.1}s",
+            candidates.len(),
+            elapsed.as_secs_f32()
+        );
+        if let Some(pb) = &progress_bar {
+            pb.finish();
+        }
+    }
+    ////////////////////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////////////////
+
     let mut number_of_rules_used = 0;
     // Finally run the analysis
     for language in &languages {
@@ -645,18 +736,27 @@ fn main() -> Result<()> {
             serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => {
-            let rules: Vec<SarifRule> = configuration
+            let mut rules: Vec<SarifRule> = configuration
                 .rules
                 .iter()
                 .cloned()
                 .map(|r| r.into())
                 .collect();
-            let results = all_rule_results
+            let mut results = all_rule_results
                 .iter()
                 .cloned()
                 .map(SarifRuleResult::try_from)
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(anyhow::Error::msg)?;
+
+            rules.extend(secrets_rules.into_iter().map(SarifRule::from));
+            let detected_secrets = detected_secrets
+                .into_iter()
+                .map(SarifRuleResult::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)?;
+            results.extend(detected_secrets);
+
             match generate_sarif_report(
                 &rules,
                 &results,
