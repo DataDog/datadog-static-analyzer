@@ -8,7 +8,6 @@ use crate::matcher::PatternId;
 use crate::validator::ValidatorId;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::rc::Rc;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
 
@@ -21,11 +20,11 @@ pub enum Expression {
         pattern_id: PatternId,
     },
     /// Logical `AND`
-    And(Rc<Expression>, Rc<Expression>),
+    And(Arc<Expression>, Arc<Expression>),
     /// Logical `OR`
-    Or(Rc<Expression>, Rc<Expression>),
+    Or(Arc<Expression>, Arc<Expression>),
     /// Logical `NOT`
-    Not(Rc<Expression>),
+    Not(Arc<Expression>),
 }
 
 /// A data source to search when evaluating a [`Rule`]'s matchers.
@@ -61,8 +60,8 @@ impl AsRef<str> for RuleId {
 #[derive(Debug, Clone)]
 pub struct Rule {
     id: RuleId,
-    conditions: Vec<Rc<RuleCondition>>,
-    match_stages: Vec<Rc<Expression>>,
+    conditions: Vec<Arc<RuleCondition>>,
+    match_stages: Vec<Arc<Expression>>,
     validators: Vec<ValidatorId>,
 }
 
@@ -73,8 +72,8 @@ impl Rule {
         match_stages: impl Into<Vec<Expression>>,
         validators: impl Into<Vec<ValidatorId>>,
     ) -> Self {
-        let match_stages = match_stages.into().into_iter().map(Rc::new).collect();
-        let conditions = conditions.into().into_iter().map(Rc::new).collect();
+        let match_stages = match_stages.into().into_iter().map(Arc::new).collect();
+        let conditions = conditions.into().into_iter().map(Arc::new).collect();
         Self {
             id,
             conditions,
@@ -87,7 +86,7 @@ impl Rule {
         &self.id
     }
 
-    pub fn match_stages(&self) -> &[Rc<Expression>] {
+    pub fn match_stages(&self) -> &[Arc<Expression>] {
         &self.match_stages
     }
 }

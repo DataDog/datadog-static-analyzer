@@ -22,9 +22,19 @@ pub struct Hyperscan {
     id: MatcherId,
     database: Arc<BlockDatabase>,
     patterns: Vec<PatternWithId>,
-    hs_scratch: vectorscan::Scratch,
+    hs_scratch: HsScratchWrapper,
     match_scratch: Scratch,
 }
+
+/// A newtype wrapper of [`vectorscan::Scratch`] that marks it as `Sync`.
+#[derive(Debug, Clone)]
+#[repr(transparent)]
+struct HsScratchWrapper(vectorscan::Scratch);
+
+/// This is safe because every function that accesses the scratch in [`Hyperscan`] is  `&mut self`,
+/// so the scratch can't be concurrently accessed. Additionally, because of the mutable reference,
+/// the scratch can't be accessed in a re-entrant manner either.
+unsafe impl Sync for HsScratchWrapper {}
 
 // NOTE: See `matcher.rs` for an explanation why this is an approximation of `impl Matcher for Hyperscan`
 impl Hyperscan {
@@ -77,7 +87,7 @@ impl Hyperscan {
             database,
             patterns,
             match_scratch,
-            hs_scratch,
+            hs_scratch: HsScratchWrapper(hs_scratch),
         }
     }
 
@@ -87,7 +97,7 @@ impl Hyperscan {
 
         self.database
             .scan(
-                &mut self.hs_scratch,
+                &mut self.hs_scratch.0,
                 data,
                 Box::new(|hs_match| {
                     // TODO: Add logic to implement a scan timeout

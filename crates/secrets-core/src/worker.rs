@@ -10,8 +10,8 @@ use crate::validator::Candidate;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use std::rc::Rc;
 use std::string::FromUtf8Error;
+use std::sync::Arc;
 
 pub struct Worker {
     rules: Vec<RuleId>,
@@ -29,7 +29,7 @@ pub enum WorkerError {
 }
 
 impl Worker {
-    pub fn new(matchers: impl Into<Vec<Matcher>>, rules: impl AsRef<[Rc<Rule>]>) -> Self {
+    pub fn new(matchers: impl Into<Vec<Matcher>>, rules: impl AsRef<[Arc<Rule>]>) -> Self {
         let rule_ids = rules
             .as_ref()
             .iter()
