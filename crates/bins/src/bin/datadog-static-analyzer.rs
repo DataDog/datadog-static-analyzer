@@ -651,8 +651,12 @@ fn main() -> Result<()> {
                 .cloned()
                 .map(|r| r.into())
                 .collect();
-            let results: Vec<SarifRuleResult> =
-                all_rule_results.iter().cloned().map(|r| r.into()).collect();
+            let results = all_rule_results
+                .iter()
+                .cloned()
+                .map(SarifRuleResult::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)?;
             match generate_sarif_report(
                 &rules,
                 &results,

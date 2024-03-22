@@ -107,9 +107,15 @@ impl SarifRuleResult {
     }
 }
 
-impl From<RuleResult> for SarifRuleResult {
-    fn from(value: RuleResult) -> Self {
-        Self::StaticAnalysis(value)
+impl TryFrom<RuleResult> for SarifRuleResult {
+    type Error = String;
+
+    fn try_from(value: RuleResult) -> std::result::Result<Self, Self::Error> {
+        if Path::new(&value.filename).is_absolute() {
+            Err(format!("path `{}` must be relative", &value.filename))
+        } else {
+            Ok(Self::StaticAnalysis(value))
+        }
     }
 }
 
@@ -630,7 +636,7 @@ mod tests {
 
         let sarif_report = generate_sarif_report(
             &[rule.into()],
-            &[rule_result.into()],
+            &[rule_result.try_into().unwrap()],
             &"mydir".to_string(),
             false,
             false,
@@ -732,7 +738,7 @@ mod tests {
 
         let sarif_report = generate_sarif_report(
             &[rule.into()],
-            &[rule_result.into()],
+            &[rule_result.try_into().unwrap()],
             &"mydir".to_string(),
             false,
             false,
@@ -807,7 +813,7 @@ mod tests {
 
         let sarif_report = generate_sarif_report(
             &[rule.into()],
-            &[rule_result.into()],
+            &[rule_result.try_into().unwrap()],
             &"mydir".to_string(),
             false,
             false,
