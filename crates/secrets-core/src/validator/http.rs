@@ -120,7 +120,7 @@ pub struct RequestGenerator {
     agent: ureq::Agent,
     method: HttpMethod,
     format_url: Box<dyn Fn(&Candidate) -> String>,
-    add_headers: Box<dyn Fn(&Candidate, &mut ureq::Request)>,
+    add_headers: Box<dyn Fn(&Candidate, ureq::Request) -> ureq::Request>,
     build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
@@ -186,7 +186,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 .request_generator
                 .agent
                 .request(self.request_generator.method.as_ref(), url.as_str());
-            (self.request_generator.add_headers)(&candidate, &mut request);
+            request = (self.request_generator.add_headers)(&candidate, request);
 
             attempted += 1;
             let response = match &self.request_generator.method {
