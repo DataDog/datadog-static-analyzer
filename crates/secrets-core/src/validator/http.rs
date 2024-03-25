@@ -5,10 +5,11 @@
 use crate::rule::RuleId;
 use crate::validator::http;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
-use governor::clock::Clock;
+use governor::clock::{Clock, DefaultClock};
 use governor::middleware::NoOpMiddleware;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
+use std::num::NonZeroU32;
 use std::ops::Add;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -467,6 +468,102 @@ impl TryFrom<&str> for HttpMethod {
 impl Display for HttpMethod {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())
+    }
+}
+
+const DEFAULT_REQ_PER_SECOND: u32 = 50;
+
+/// The limit to instantiate the rate limiter with.
+///
+/// Defaults to [`DEFAULT_REQ_PER_SECOND`] requests per second.
+#[derive(Debug, Clone)]
+struct RateLimitQuota(governor::Quota);
+impl Default for RateLimitQuota {
+    fn default() -> Self {
+        Self(governor::Quota::per_second(
+            NonZeroU32::new(DEFAULT_REQ_PER_SECOND).unwrap(),
+        ))
+    }
+}
+
+pub struct HttpValidatorBuilder {
+    validator_id: ValidatorId,
+    max_attempted_duration: Duration,
+    rule_id: RuleId,
+    request_generator: RequestGenerator,
+    response_parser: Box<DynFnResponseParser>,
+    rate_limit: RateLimitQuota,
+    retry_config: RetryConfig,
+}
+
+impl HttpValidatorBuilder {
+    pub fn new(
+        validator_id: ValidatorId,
+        rule_id: RuleId,
+        request_generator: RequestGenerator,
+        response_parser: Box<DynFnResponseParser>,
+    ) -> Self {
+        Self {
+            validator_id,
+            max_attempted_duration: Duration::from_secs(15),
+            rule_id,
+            request_generator,
+            response_parser,
+            rate_limit: RateLimitQuota::default(),
+            retry_config: RetryConfig::default(),
+        }
+    }
+
+    pub fn retry_config(mut self, config: RetryConfig) -> Self {
+        self.retry_config = config;
+        self
+    }
+
+    /// Configures the rate limiter's max burst rate.
+    ///
+    /// # Panics
+    /// Panics if the rate is under 1 unit per second, or if `units` or `interval` are zero.
+    pub fn rate_limit(mut self, units: u32, interval: Duration) -> Self {
+        let units_per_second = units as f32 / interval.as_secs_f32();
+        let units = NonZeroU32::new(units_per_second as u32)
+            .expect("caller should pass in non-zero number");
+        self.rate_limit = RateLimitQuota(governor::Quota::per_second(units));
+        self
+    }
+
+    /// The maximum amount of time to spend on a single validation attempt, inclusive of retries and
+    /// round-trip latency.
+    pub fn max_attempt_duration(mut self, max: Duration) -> Self {
+        self.max_attempted_duration = max;
+        self
+    }
+
+    pub fn build(self) -> HttpValidator<DefaultClock> {
+        let clock = DefaultClock::default();
+        self.build_with_clock(clock)
+    }
+
+    /// Builds the [`HttpValidator`] with a [`time::MockClock`].
+    #[cfg(test)]
+    fn build_for_test(self) -> HttpValidator<time::MockClock> {
+        let clock = time::MockClock;
+        self.build_with_clock(clock)
+    }
+
+    /// Builds the `HttpValidator` with the given clock.
+    fn build_with_clock<T: Clock>(self, clock: T) -> HttpValidator<T> {
+        let rate_limiter = RateLimiter::direct_with_clock(self.rate_limit.0, &clock);
+        HttpValidator {
+            validator_id: self.validator_id,
+            max_attempt_duration: self.max_attempted_duration,
+            rule_id: self.rule_id,
+            attempted_cache: Arc::new(Mutex::new(HashSet::new())),
+            clock,
+            rate_limiter: Arc::new(rate_limiter),
+            request_generator: self.request_generator,
+            response_parser: self.response_parser,
+            backoff_generator: self.retry_config.to_backoff_generator(),
+        }
     }
 }
 
