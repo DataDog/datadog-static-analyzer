@@ -132,13 +132,19 @@ pub enum NextAction {
     Unhandled,
 }
 
+/// A function that formats data to send as part of an HTTP POST request.
+/// The function must return a tuple, containing:
+/// * `0`: `Vec<u8>` of the data to send
+/// * `1`: `String` to send as the `Content-Type` HTTP header
+type DynFnPostPayloadGenerator = dyn Fn(&Candidate) -> (Vec<u8>, String);
+
 #[allow(clippy::type_complexity)]
-struct RequestGenerator {
+pub struct RequestGenerator {
     agent: ureq::Agent,
     method: HttpMethod,
     format_url: Box<dyn Fn(&Candidate) -> String>,
     add_headers: Box<dyn Fn(&Candidate, &mut ureq::Request)>,
-    build_post_payload: Option<Box<dyn Fn(&Candidate) -> Vec<u8>>>,
+    build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
 /// A wrapper around [`thread::sleep`](std::thread::sleep) that advances a [`MockClock`](crate::common::time::MockClock)
@@ -211,13 +217,15 @@ impl<T: Clock> Validator for HttpValidator<T> {
             let response = match &self.request_generator.method {
                 HttpMethod::Get => request.call(),
                 HttpMethod::Post => {
-                    let bytes_payload = self
+                    let payload = self
                         .request_generator
                         .build_post_payload
                         .as_ref()
-                        .map(|get_payload_for| get_payload_for(&candidate))
-                        .unwrap_or_default();
-                    request.send_bytes(&bytes_payload)
+                        .map(|get_payload_for| get_payload_for(&candidate));
+                    if let Some((_, content_type)) = &payload {
+                        request = request.set("Content-Type", content_type);
+                    }
+                    request.send_bytes(&payload.map(|(bytes, _)| bytes).unwrap_or_default())
                 }
             };
 
