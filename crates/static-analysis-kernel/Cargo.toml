@@ -14,7 +14,7 @@ serde-sarif = { workspace = true }
 sha2 = { workspace = true }
 
 # other
-deno_core = "0.196.0"
+deno_core = "0.272.0"
 globset = "0.4.14"
 lazy_static = "1.4.0"
 sequence_trie = "0.3.6"
