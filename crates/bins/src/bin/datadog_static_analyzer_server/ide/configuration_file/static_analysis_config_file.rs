@@ -1,0 +1,545 @@
+use super::error::ConfigFileError;
+use indexmap::IndexMap;
+use kernel::{
+    config_file::parse_config_file,
+    model::config_file::{ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig},
+    utils::decode_base64_string,
+};
+use std::{borrow::Cow, fmt::Debug, ops::Deref};
+use tracing::instrument;
+
+pub const LATEST_SUPPORTED_CONFIG_VERSION: &str = "v1";
+
+pub struct StaticAnalysisConfigFile(ConfigFile);
+
+impl From<ConfigFile> for StaticAnalysisConfigFile {
+    fn from(value: ConfigFile) -> Self {
+        Self(value)
+    }
+}
+
+impl TryFrom<String> for StaticAnalysisConfigFile {
+    type Error = ConfigFileError;
+
+    fn try_from(base64_str: String) -> Result<Self, Self::Error> {
+        let content = decode_base64_string(base64_str)?;
+        let config = parse_config_file(&content)?;
+        Ok(config.into())
+    }
+}
+
+impl Deref for StaticAnalysisConfigFile {
+    type Target = ConfigFile;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+fn create_ignore_rule() -> RuleConfig {
+    RuleConfig {
+        paths: PathConfig {
+            ignore: vec![PathPattern {
+                prefix: "*/*".into(),
+                glob: None,
+            }],
+            only: None,
+        },
+        ..Default::default()
+    }
+}
+
+impl StaticAnalysisConfigFile {
+    /// Ignores a specific rule in the static analysis configuration file.
+    ///
+    /// # Parameters
+    ///
+    /// * `rule`: The rule to be ignored.
+    /// * `config_content_base64`: The base64-encoded content of the static analysis configuration file.
+    ///
+    /// # Returns
+    ///
+    /// If successful, this function returns a `Result` containing a `String`. The `String` is the updated content of the static analysis configuration file with the specified rule ignored. If the `config_content_base64` is `None`. A default `StaticAnalysisConfigFile` will be used.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error of type `ConfigFileError` if:
+    ///
+    /// * The `config_content_base64` string cannot be base64-decoded.
+    /// * The decoded content cannot be parsed as a static analysis configuration file.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let rule = "RULE_TO_IGNORE".into();
+    /// let config_content_base64 = kernel::utils::encode_base64_string("...".to_string());
+    /// let result = StaticAnalysisConfigFile::with_ignored_rule(rule, config_content_base64);
+    /// match result {
+    ///     Ok(updated_config) => println!("Updated config: {}", updated_config),
+    ///     Err(e) => eprintln!("Error: {}", e),
+    /// }
+    /// ```
+    #[instrument]
+    pub fn with_ignored_rule(
+        rule: Cow<str>,
+        config_content_base64: String,
+    ) -> Result<String, ConfigFileError> {
+        let mut config = Self::try_from(config_content_base64).map_err(|e| {
+            tracing::error!(error =?e, "Error trying to parse config file");
+            e
+        })?;
+
+        config.ignore_rule(rule);
+        config.to_string().map_err(|e| {
+            tracing::error!(error =?e, "Error trying to serializing config file");
+            e
+        })
+    }
+
+    #[instrument(skip(self))]
+    pub fn ignore_rule(&mut self, rule: Cow<str>) {
+        let config = &mut self.0;
+        if let Some((ruleset_name, rule_name)) = rule.split_once('/') {
+            // the ruleset may exist and contain other rules so we
+            // can't update it blindly
+            let rule_to_ignore = create_ignore_rule();
+
+            if let Some(existing_ruleset) = config.rulesets.get_mut(ruleset_name) {
+                // if the rule already exists we can update it without a problem
+                existing_ruleset
+                    .rules
+                    .insert(rule_name.to_string(), rule_to_ignore);
+            } else {
+                // we can add the new ruleset
+                let mut rules_to_ignore = IndexMap::new();
+                rules_to_ignore.insert(rule_name.to_string(), rule_to_ignore);
+
+                config.rulesets.insert(
+                    ruleset_name.to_string(),
+                    RulesetConfig {
+                        rules: rules_to_ignore,
+                        ..Default::default()
+                    },
+                );
+            }
+        }
+    }
+
+    /// Adds new rulesets to the static analysis configuration file.
+    ///
+    /// # Parameters
+    ///
+    /// * `rulesets`: A slice of strings, where each string is a ruleset to be added.
+    /// * `config_content_base64`: The base64-encoded content of the static analysis configuration file. This is optional.
+    ///
+    /// # Returns
+    ///
+    /// If successful, this function returns a `Result` containing a `String`. The `String` is the updated content of the static analysis configuration file with the new rulesets added.
+    ///
+    /// # Errors
+    ///
+    /// This function will return an error of type `ConfigFileError` if:
+    ///
+    /// * The `config_content_base64` string cannot be base64-decoded.
+    /// * The decoded content cannot be parsed as a static analysis configuration file.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let rulesets = vec!["RULESET_TO_ADD".to_string()];
+    /// let config_content_base64 = kernel::utils::encode_base64_string("...".to_string());
+    /// let result = StaticAnalysisConfigFile::with_added_rulesets(&rulesets, Some(config_content_base64));
+    /// match result {
+    ///     Ok(updated_config) => println!("Updated config: {}", updated_config),
+    ///     Err(e) => eprintln!("Error: {}", e),
+    /// }
+    /// ```
+    #[instrument]
+    pub fn with_added_rulesets(
+        rulesets: &[impl AsRef<str> + Debug],
+        config_content_base64: Option<String>,
+    ) -> Result<String, ConfigFileError> {
+        let mut config = if config_content_base64.is_some() {
+            Self::try_from(config_content_base64.unwrap()).map_err(|e| {
+                tracing::error!(error =?e, "Error trying to parse config file");
+                e
+            })
+        } else {
+            let mut inner = ConfigFile::default();
+            if inner.schema_version.is_empty() {
+                inner.schema_version = LATEST_SUPPORTED_CONFIG_VERSION.to_string();
+            }
+            Ok(Self(inner))
+        }?;
+
+        config.add_rulesets(rulesets);
+        config.to_string().map_err(|e| {
+            tracing::error!(error =?e, "Error trying to serializing config file");
+            e
+        })
+    }
+
+    #[instrument(skip(self))]
+    pub fn add_rulesets(&mut self, rulesets: &[impl AsRef<str> + Debug]) {
+        let config = &mut self.0;
+        for ruleset in rulesets {
+            if !config.rulesets.contains_key(ruleset.as_ref()) {
+                config
+                    .rulesets
+                    .insert(ruleset.as_ref().to_owned(), RulesetConfig::default());
+            }
+        }
+    }
+
+    /// Parses the content of a static analysis configuration file and returns the list of rulesets.
+    ///
+    /// # Parameters
+    ///
+    /// * `config_content_base64`: The base64-encoded content of the static analysis configuration file.
+    ///
+    /// # Returns
+    ///
+    /// This function returns a `Vec<String>`, where each `String` is a ruleset from the configuration file.
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// let config_content_base64 = kernel::utils::encode_base64_string("...".to_string());
+    /// let rulesets = StaticAnalysisConfigFile::to_rulesets(config_content_base64);
+    /// for ruleset in rulesets {
+    ///     println!("Ruleset: {}", ruleset);
+    /// }
+    /// ```
+    #[instrument]
+    pub fn to_rulesets(config_content_base64: String) -> Vec<String> {
+        let config = match Self::try_from(config_content_base64) {
+            Ok(config) => config,
+            Err(e) => {
+                tracing::error!(error =?e, "Error trying to parse config file");
+                return vec![];
+            }
+        };
+        config.rulesets.iter().map(|rs| rs.0.clone()).collect()
+    }
+
+    /// Serializes the `StaticAnalysisConfigFile` into a YAML string.
+    pub fn to_string(&self) -> Result<String, ConfigFileError> {
+        let str = serde_yaml::to_string(&**self)?;
+        // fix null maps
+        let fixed = str.replace(": null", ":");
+        Ok(fixed)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use kernel::utils::encode_base64_string;
+
+    fn to_encoded_content(content: &'static str) -> String {
+        encode_base64_string(content.to_owned())
+    }
+
+    // fn read_test_file(filename: &'static str) -> String {
+    //     let content = std::fs::read_to_string(filename).unwrap();
+    //     encode_base64_string(content)
+    // }
+
+    // fn write_to_test(config: &StaticAnalysisConfigFile) {
+    //     let _ = std::fs::write("test.yaml", config.to_string().unwrap());
+    // }
+
+    // #[test]
+    // fn it_works() {
+    //     let content = read_test_file("tests/example_base.yaml");
+    //     let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+    //     write_to_test(&config);
+    // }
+
+    mod get_rulesets {
+        use super::super::*;
+        use super::*;
+
+        #[test]
+        fn it_works_simple() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+"#,
+            );
+            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
+            assert_eq!(rulesets, vec!["java-security", "java-1",])
+        }
+
+        #[test]
+        fn it_works_complex() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+        only:
+        - foo/bar
+    rule1:
+        ignore:
+        - '*/*'
+"#,
+            );
+            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
+            assert_eq!(rulesets, vec!["java-security", "java-1", "ruleset1"])
+        }
+
+        #[test]
+        fn it_returns_empty_array_if_bad_format() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+        rules:
+            rule2:
+                only:
+                - foo/bar
+            rule1:
+                ignore:
+                - '*/*'
+"#,
+            );
+            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
+            assert!(rulesets.is_empty())
+        }
+    }
+
+    mod add_rulesets {
+        use super::super::*;
+        use super::*;
+
+        #[test]
+        fn it_works_without_content() {
+            let config = StaticAnalysisConfigFile::with_added_rulesets(
+                &["ruleset1", "ruleset2", "a-ruleset3"],
+                None,
+            )
+            .unwrap();
+            let expected = format!(
+                r#"
+schema-version: {LATEST_SUPPORTED_CONFIG_VERSION}
+rulesets:
+- ruleset1
+- ruleset2
+- a-ruleset3
+"#
+            );
+            assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_works_simple() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+"#,
+            );
+            let config = StaticAnalysisConfigFile::with_added_rulesets(
+                &["ruleset1", "ruleset2", "a-ruleset3"],
+                Some(content),
+            )
+            .unwrap();
+
+            let expected = r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1
+- ruleset2
+- a-ruleset3
+"#;
+
+            assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_works_complex() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      only:
+      - foo/bar
+    rule1:
+      ignore:
+      - '*/*'
+"#,
+            );
+            let config = StaticAnalysisConfigFile::with_added_rulesets(
+                &["ruleset1", "ruleset2", "a-ruleset3"],
+                Some(content),
+            )
+            .unwrap();
+
+            let expected = r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      only:
+      - foo/bar
+    rule1:
+      ignore:
+      - '*/*'
+- ruleset2
+- a-ruleset3
+"#;
+
+            assert_eq!(config.trim(), expected.trim());
+        }
+    }
+
+    mod ignore_rules {
+        use super::super::*;
+        use super::*;
+
+        #[test]
+        fn it_works_with_non_previously_existing_ruleset() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-1
+- java-security
+"#,
+            );
+            let config =
+                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
+                    .unwrap();
+
+            let expected = r#"
+schema-version: v1
+rulesets:
+- java-1
+- java-security
+- ruleset1:
+  rules:
+    rule1:
+      ignore:
+      - '*/*'
+"#;
+
+            assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_works_with_a_previously_existing_ruleset() {
+            let content = to_encoded_content(
+                r#"schema-version: v1
+rulesets:
+- java-1
+- java-security
+- ruleset1"#,
+            );
+            let config =
+                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
+                    .unwrap();
+
+            let expected = r#"schema-version: v1
+rulesets:
+- java-1
+- java-security
+- ruleset1:
+  rules:
+    rule1:
+      ignore:
+      - '*/*'"#;
+
+            assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_works_with_a_previously_existing_ruleset_with_same_rule() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-1
+- java-security
+- ruleset1:
+  rules:
+    rule1:
+      only:
+      - foo/bar
+        "#,
+            );
+            let config =
+                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
+                    .unwrap();
+
+            let expected = r#"schema-version: v1
+rulesets:
+- java-1
+- java-security
+- ruleset1:
+  rules:
+    rule1:
+      ignore:
+      - '*/*'"#;
+
+            assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_works_with_a_previously_existing_ruleset_with_same_rule_with_paths() {
+            let content = to_encoded_content(
+                r#"
+schema-version: v1
+rulesets:
+- java-1
+- java-security
+- ruleset1:
+  rules:
+    rule2:
+      only:
+      - foo/bar
+"#,
+            );
+            let config =
+                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
+                    .unwrap();
+
+            let expected = r#"
+schema-version: v1
+rulesets:
+- java-1
+- java-security
+- ruleset1:
+  rules:
+    rule2:
+      only:
+      - foo/bar
+    rule1:
+      ignore:
+      - '*/*'
+"#;
+            assert!(config.trim() == expected.trim());
+        }
+    }
+}
