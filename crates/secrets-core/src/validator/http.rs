@@ -592,6 +592,93 @@ impl HttpValidatorBuilder {
     }
 }
 
+#[allow(clippy::type_complexity)]
+pub struct RequestGeneratorBuilder {
+    agent: ureq::Agent,
+    method: HttpMethod,
+    format_url: Box<dyn Fn(&Candidate) -> String>,
+    add_header_fns: Vec<Box<dyn Fn(&Candidate, ureq::Request) -> ureq::Request>>,
+    build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
+}
+
+impl RequestGeneratorBuilder {
+    /// Creates a new builder for an HTTP GET request generator.
+    pub fn http_get(
+        agent: ureq::Agent,
+        url_generator: Box<dyn Fn(&Candidate) -> String>,
+    ) -> RequestGeneratorBuilder {
+        RequestGeneratorBuilder {
+            agent,
+            method: HttpMethod::Get,
+            format_url: url_generator,
+            add_header_fns: Vec::new(),
+            build_post_payload: None,
+        }
+    }
+
+    /// Creates a new builder for an HTTP POST request generator.
+    pub fn http_post(
+        agent: ureq::Agent,
+        url_generator: Box<dyn Fn(&Candidate) -> String>,
+        payload_generator: Option<Box<DynFnPostPayloadGenerator>>,
+    ) -> RequestGeneratorBuilder {
+        RequestGeneratorBuilder {
+            agent,
+            method: HttpMethod::Post,
+            format_url: url_generator,
+            add_header_fns: Vec::new(),
+            build_post_payload: payload_generator,
+        }
+    }
+
+    /// Adds a header with a constant value to the HTTP request.
+    pub fn header(mut self, header: impl Into<String>, value: impl Into<String>) -> Self {
+        let (header, value) = (header.into(), value.into());
+        let add_header = move |_c: &Candidate, mut req: ureq::Request| -> ureq::Request {
+            req = req.set(header.as_str(), value.as_str());
+            req
+        };
+        self.add_header_fns.push(Box::new(add_header));
+        self
+    }
+
+    /// Adds a header with a value based on the [`Candidate`] to the HTTP request.
+    pub fn dynamic_header(
+        mut self,
+        header: impl Into<String>,
+        value_generator: Box<dyn Fn(&Candidate) -> String>,
+    ) -> Self {
+        let header = header.into();
+        let add_header = move |cand: &Candidate, mut req: ureq::Request| -> ureq::Request {
+            let value = value_generator(cand);
+            req = req.set(&header, value.as_str());
+            req
+        };
+        self.add_header_fns.push(Box::new(add_header));
+        self
+    }
+}
+
+impl RequestGeneratorBuilder {
+    pub fn build(self) -> RequestGenerator {
+        let header_fns = self.add_header_fns;
+        let add_headers =
+            move |candidate: &Candidate, mut request: ureq::Request| -> ureq::Request {
+                for header_fn in &header_fns {
+                    request = header_fn(candidate, request);
+                }
+                request
+            };
+        RequestGenerator {
+            agent: self.agent,
+            method: self.method,
+            format_url: self.format_url,
+            add_headers: Box::new(add_headers),
+            build_post_payload: self.build_post_payload,
+        }
+    }
+}
+
 #[cfg(test)]
 mod time {
     use governor::clock::{Clock, Reference};
