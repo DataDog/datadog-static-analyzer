@@ -54,17 +54,161 @@ enum ValidationError {
     UnhandledResponse(Box<Result<ureq::Response, ureq::Error>>),
 }
 
+const DEFAULT_MAX_ATTEMPTS: usize = 4;
+const DEFAULT_USE_JITTER: bool = true;
+const DEFAULT_BASE: Duration = Duration::from_secs(1);
+const DEFAULT_FACTOR: f32 = 1.6;
+const DEFAULT_MAX_BACKOFF: Duration = Duration::from_secs(8);
+
 /// The configuration for re-attempting failed HTTP requests.
-pub(crate) struct RetryConfig {
-    max_attempts: usize,
-    use_jitter: bool,
-    policy: RetryPolicy,
+///
+/// By default, this is configured to:
+/// * `max_attempts`: [`DEFAULT_MAX_ATTEMPTS`]
+/// * `use_jitter`: [`DEFAULT_USE_JITTER`]
+/// * `policy`: Exponential
+///    * Base: [`DEFAULT_BASE`],
+///    * Factor: [`DEFAULT_FACTOR`]
+///    * Maximum: [`DEFAULT_MAX_BACKOFF`]
+pub struct RetryConfig {
+    pub max_attempts: usize,
+    pub use_jitter: bool,
+    pub policy: RetryPolicy,
 }
 
-pub(crate) enum RetryPolicy {
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: DEFAULT_MAX_ATTEMPTS,
+            use_jitter: DEFAULT_USE_JITTER,
+            policy: RetryPolicy::Exponential {
+                base: DEFAULT_BASE,
+                factor: DEFAULT_FACTOR,
+                maximum: DEFAULT_MAX_BACKOFF,
+            },
+        }
+    }
+}
+
+/// An iterator of exponentially growing values.
+///
+/// If `jitter` is used, a uniformly random number up to 50% of the base will be added.
+///
+/// For most practical uses, this is unbounded, however it will return `None` if it reaches the maximum `f32`.
+pub struct ExponentialBackoff {
+    current: Duration,
+    factor: f32,
+}
+
+impl ExponentialBackoff {
+    pub fn new(base: Duration, factor: f32) -> Self {
+        Self {
+            current: base,
+            factor,
+        }
+    }
+}
+
+impl Iterator for ExponentialBackoff {
+    type Item = Duration;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let next_val = self.current.as_secs_f32() * self.factor;
+        if f32::is_finite(next_val) {
+            self.current = Duration::from_secs_f32(next_val);
+            Some(self.current)
+        } else {
+            None
+        }
+    }
+}
+
+/// An iterator that takes an underlying iterator of [`Duration`] and for each item, adds up to 50%
+/// of the duration to the base.
+struct Jitter<T: Iterator<Item = Duration>>(T);
+
+impl<T: Iterator<Item = Duration>> Jitter<T> {
+    fn new(inner: T) -> Jitter<T> {
+        Jitter(inner)
+    }
+
+    /// A random number between 0 and 1 using a simple xorshift algorithm on the system nanosecond time.
+    /// While not "high quality" randomness, it's good enough for jitter.
+    fn xorshift_rand() -> f32 {
+        /// u32 xorshift from Marsaglia's "Xorshift RNGs"
+        fn xorshift(mut state: u32) -> u32 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        }
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u32;
+        (xorshift(nanos) as f32) / (u32::MAX as f32)
+    }
+}
+
+impl<T: Iterator<Item = Duration>> Iterator for Jitter<T> {
+    type Item = Duration;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0.next().map(|duration| {
+            let duration = duration.as_secs_f32();
+            let jitter = Self::xorshift_rand() * (duration / 2.0);
+            Duration::from_secs_f32(duration + jitter)
+        })
+    }
+}
+
+impl RetryConfig {
+    /// Returns a function that will generate a [`Duration`] iterator that implements this policy.
+    pub fn to_backoff_generator(&self) -> Box<DynFnBackoffGenerator> {
+        let max_attempts = self.max_attempts;
+        let jitter = self.use_jitter;
+        match self.policy {
+            RetryPolicy::Exponential {
+                base,
+                factor,
+                maximum: max_delay,
+            } => {
+                let generator = move || {
+                    Self::boxed_iterator(
+                        ExponentialBackoff::new(base, factor)
+                            .map(move |backoff| max_delay.min(backoff))
+                            .take(max_attempts),
+                        jitter,
+                    )
+                };
+                Box::new(generator)
+            }
+            RetryPolicy::Fixed { duration } => {
+                let generator = move || {
+                    Self::boxed_iterator(std::iter::repeat(duration).take(max_attempts), jitter)
+                };
+                Box::new(generator)
+            }
+        }
+    }
+
+    fn boxed_iterator<T: Iterator<Item = Duration> + 'static>(
+        iter: T,
+        use_jitter: bool,
+    ) -> Box<dyn Iterator<Item = Duration>> {
+        let boxed: Box<dyn Iterator<Item = Duration>> = if use_jitter {
+            Box::new(Jitter(iter))
+        } else {
+            Box::new(iter)
+        };
+        boxed
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum RetryPolicy {
     Exponential {
         base: Duration,
-        factor: f64,
+        factor: f32,
         maximum: Duration,
     },
     Fixed {
@@ -73,6 +217,8 @@ pub(crate) enum RetryPolicy {
 }
 
 type DynFnResponseParser = dyn Fn(&Result<ureq::Response, ureq::Error>) -> NextAction;
+/// A function that generates an Iterator of [`Duration`] representing a [`RetryPolicy`]
+type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>>;
 
 type RateLimiter<T> = governor::RateLimiter<
     governor::state::NotKeyed,
@@ -91,7 +237,7 @@ pub struct HttpValidator<T: Clock> {
     rate_limiter: Arc<RateLimiter<T>>,
     request_generator: RequestGenerator,
     response_parser: Box<DynFnResponseParser>,
-    retry_timings_iter: Box<dyn Fn() -> Box<dyn Iterator<Item = Duration>>>,
+    backoff_generator: Box<DynFnBackoffGenerator>,
 }
 
 /// The next action to take after an HTTP request has received a response.
@@ -146,7 +292,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
 
         let start_time = Instant::now();
 
-        let retry_delays = (self.retry_timings_iter)();
+        let retry_delays = (self.backoff_generator)();
         let mut iter = retry_delays.peekable();
         let mut attempted = 0;
 
