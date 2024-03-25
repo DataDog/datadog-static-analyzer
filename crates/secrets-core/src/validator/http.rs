@@ -654,6 +654,89 @@ impl RequestGeneratorBuilder {
     }
 }
 
+/// The default duration to wait when failing to parse an expected "Retry-After" header.
+const DEFAULT_RETRY_AFTER: Duration = Duration::from_secs(2);
+
+/// Builds a generalized Response parser that only looks at HTTP status codes.
+///
+/// When a transport error occurs, the original request will be retried if it was due to a
+/// network error (not an incorrectly-formatted request)
+pub struct ResponseParserBuilder(Vec<Box<DynFnResponseParser>>);
+
+impl ResponseParserBuilder {
+    pub fn new() -> Self {
+        Self(Vec::new())
+    }
+
+    /// Provides a simple inspection of the HTTP response's status code, using the specified
+    /// `NextAction` upon match.
+    ///
+    /// Note: response parsers are evaluated in the order they are inserted into the builder.
+    pub fn on_status_code(mut self, target_code: u16, next_action: NextAction) -> Self {
+        let handler = move |res: &Result<ureq::Response, ureq::Error>| -> NextAction {
+            let response_code = match res.as_ref() {
+                Ok(response) => Some(response.status()),
+                Err(ureq::Error::Status(status, _)) => Some(*status),
+                _ => None,
+            };
+            if response_code.is_some_and(|resp_code| resp_code == target_code) {
+                next_action
+            } else {
+                NextAction::Unhandled
+            }
+        };
+        self.0.push(Box::new(handler));
+        self
+    }
+
+    pub fn build(mut self) -> Box<DynFnResponseParser> {
+        self.0.push(Self::default_err_handler());
+        let handlers = self.0;
+        let sequential = move |res: &Result<ureq::Response, ureq::Error>| -> NextAction {
+            for handler in &handlers {
+                let next_action = handler(res);
+                if next_action != NextAction::Unhandled {
+                    return next_action;
+                }
+            }
+            NextAction::Unhandled
+        };
+        Box::new(sequential)
+    }
+
+    /// Builds a default handler for errors.
+    fn default_err_handler() -> Box<DynFnResponseParser> {
+        let handler = |res: &Result<ureq::Response, ureq::Error>| -> NextAction {
+            match res.as_ref() {
+                Ok(_) => NextAction::Unhandled,
+                Err(err) => match err {
+                    ureq::Error::Status(code, response) => match code {
+                        429 => {
+                            let retry_after = response.header("Retry-After").map(str::parse::<u64>);
+                            if let Some(Ok(retry_after)) = retry_after {
+                                NextAction::RetryAfter(Duration::from_secs(retry_after))
+                            } else {
+                                NextAction::RetryAfter(DEFAULT_RETRY_AFTER)
+                            }
+                        }
+                        500 | 502 | 503 | 504 => NextAction::Retry,
+                        501 | 506 | 507 | 508 | 510 | 511 => NextAction::Abort,
+                        _ => NextAction::Unhandled,
+                    },
+                    ureq::Error::Transport(transport) => match transport.kind() {
+                        ureq::ErrorKind::Dns
+                        | ureq::ErrorKind::ConnectionFailed
+                        | ureq::ErrorKind::Io
+                        | ureq::ErrorKind::ProxyConnect => NextAction::Retry,
+                        _ => NextAction::Abort,
+                    },
+                },
+            }
+        };
+        Box::new(handler)
+    }
+}
+
 #[cfg(test)]
 mod time {
     use governor::clock::{Clock, Reference};
