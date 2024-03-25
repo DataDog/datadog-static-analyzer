@@ -5,8 +5,11 @@
 # - java-1
 # - java-security
 
-# ### version
+### version
 GET {{host}}/version HTTP/1.1
+
+### revision
+GET {{host}}/revision HTTP/1.1
 
 ### languages
 GET {{host}}/languages HTTP/1.1
@@ -72,3 +75,4 @@ Content-Type: application/json
 
 ### get rulesets
 GET {{host}}/ide/config/rulesets/{{configuration}} HTTP/1.1
+# X-Request-Id: 1234

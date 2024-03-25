@@ -2,6 +2,7 @@
 workspace = false
 command = "cargo"
 watch = true
+env = { RUST_LOG = "off,datadog_static_analyzer=debug" }
 args = [
   "run",
   "-p",

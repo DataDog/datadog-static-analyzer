@@ -12,9 +12,7 @@ use tracing::Span;
 use uuid::Uuid;
 
 use super::{
-    endpoints::{get_revision, get_version},
-    state::ServerState,
-    utils::get_current_timestamp_ms,
+    state::ServerState, utils::get_current_timestamp_ms, utils::get_revision, utils::get_version,
 };
 
 pub struct Cors;

@@ -1,5 +1,4 @@
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
-use kernel::constants::{CARGO_VERSION, VERSION};
 use rocket::{
     fs::NamedFile,
     futures::FutureExt,
@@ -16,7 +15,7 @@ use std::{path::Path, process::exit, sync::mpsc::Sender};
 
 use crate::datadog_static_analyzer_server::state::ServerState;
 
-use super::ide::ide_routes;
+use super::{ide::ide_routes, utils};
 
 /// The shutdown endpoint, when a GET request is received, will return a 204 code if the shutdown mechanism is enabled.
 /// It will return a 403 code otherwise.
@@ -120,12 +119,12 @@ fn get_tree(span: TraceSpan, request: Json<TreeSitterRequest>) -> Value {
 
 #[rocket::get("/version", format = "text/plain")]
 pub fn get_version() -> String {
-    CARGO_VERSION.to_string()
+    utils::get_version()
 }
 
 #[rocket::get("/revision", format = "text/plain")]
 pub fn get_revision() -> String {
-    VERSION.to_string()
+    utils::get_revision()
 }
 
 #[rocket::get("/static/<name>")]

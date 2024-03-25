@@ -1,45 +1,51 @@
 use super::error::ConfigFileError;
 use super::models::{AddRuleSetsRequest, IgnoreRuleRequest};
 use super::static_analysis_config_file::StaticAnalysisConfigFile;
-use crate::datadog_static_analyzer_server::fairings::TraceSpan;
 use kernel::utils::encode_base64_string;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use tracing::instrument;
 
-#[instrument(skip(span))]
+#[instrument()]
 #[rocket::post("/config/ignore-rule", format = "application/json", data = "<request>")]
 pub fn ignore_rule(
-    span: TraceSpan,
     request: Json<IgnoreRuleRequest>,
 ) -> Result<Json<String>, rocket::response::status::Custom<String>> {
-    let _entered = span.enter();
-    tracing::debug!("{:?}", &request.0);
-    let req: IgnoreRuleRequest = request.into_inner();
-    let result =
-        StaticAnalysisConfigFile::with_ignored_rule(req.rule.into(), req.configuration_base64);
-    to_json_result(result, req.encoded)
+    let IgnoreRuleRequest {
+        rule,
+        configuration_base64,
+        encoded,
+        ..
+    } = request.into_inner();
+    tracing::debug!(rule, content = &configuration_base64);
+    let result = StaticAnalysisConfigFile::with_ignored_rule(rule.into(), configuration_base64);
+    to_json_result(result, encoded)
 }
 
-#[instrument(skip(span))]
+#[instrument()]
 #[rocket::post("/config/rulesets", format = "application/json", data = "<request>")]
 pub fn post_rulesets(
-    span: TraceSpan,
     request: Json<AddRuleSetsRequest>,
 ) -> Result<Json<String>, rocket::response::status::Custom<String>> {
-    let _entered = span.enter();
-    tracing::debug!("{:?}", &request.0);
-    let req: AddRuleSetsRequest = request.into_inner();
-    let result =
-        StaticAnalysisConfigFile::with_added_rulesets(&req.rulesets, req.configuration_base64);
-    to_json_result(result, req.encoded)
+    let AddRuleSetsRequest {
+        rulesets,
+        configuration_base64,
+        encoded,
+        ..
+    } = request.into_inner();
+    tracing::debug!(
+        rulesets=?&rulesets,
+        content=&configuration_base64
+    );
+    let result = StaticAnalysisConfigFile::with_added_rulesets(&rulesets, configuration_base64);
+    to_json_result(result, encoded)
 }
 
-#[instrument(skip(span))]
+#[instrument()]
 #[rocket::get("/config/rulesets/<content>", format = "application/json")]
-pub fn get_rulesets(span: TraceSpan, content: String) -> Json<Vec<String>> {
-    let _entered = span.enter();
-    Json(StaticAnalysisConfigFile::to_rulesets(content))
+pub fn get_rulesets(content: &str) -> Json<Vec<String>> {
+    tracing::debug!(%content);
+    Json(StaticAnalysisConfigFile::to_rulesets(content.to_string()))
 }
 
 fn to_json_result(
