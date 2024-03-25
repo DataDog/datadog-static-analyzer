@@ -4,9 +4,8 @@
 
 use crate::rule::RuleId;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
-use governor::clock::DefaultClock;
-use governor::state::{InMemoryState, NotKeyed};
-use governor::RateLimiter;
+use governor::clock::Clock;
+use governor::middleware::NoOpMiddleware;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Add;
@@ -58,13 +57,21 @@ pub(crate) enum RetryPolicy {
 
 type DynFnResponseParser = dyn Fn(&Result<ureq::Response, ureq::Error>) -> NextAction;
 
-pub struct HttpValidator {
+type RateLimiter<T> = governor::RateLimiter<
+    governor::state::NotKeyed,
+    governor::state::InMemoryState,
+    T,
+    NoOpMiddleware<<T as Clock>::Instant>,
+>;
+
+pub struct HttpValidator<T: Clock> {
     validator_id: ValidatorId,
     /// The maximum time allowed for a single validation attempt, inclusive of rate-limiting and retry delay.
     max_attempt_duration: Duration,
     rule_id: RuleId,
     attempted_cache: Arc<Mutex<HashSet<[u8; 32]>>>,
-    rate_limiter: Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock>>,
+    clock: T,
+    rate_limiter: Arc<RateLimiter<T>>,
     request_generator: RequestGenerator,
     response_parser: Box<DynFnResponseParser>,
     retry_timings_iter: Box<dyn Fn() -> Box<dyn Iterator<Item = Duration>>>,
@@ -94,7 +101,7 @@ struct RequestGenerator {
     build_post_payload: Option<Box<dyn Fn(&Candidate) -> Vec<u8>>>,
 }
 
-impl Validator for HttpValidator {
+impl<T: Clock> Validator for HttpValidator<T> {
     fn id(&self) -> &ValidatorId {
         &self.validator_id
     }
@@ -118,7 +125,7 @@ impl Validator for HttpValidator {
                 match self.rate_limiter.check() {
                     Ok(_) => break,
                     Err(try_again_at) => {
-                        let next_delay = try_again_at.wait_time_from(Instant::now());
+                        let next_delay = try_again_at.wait_time_from(self.clock.now());
                         let elapsed = start_time.elapsed();
                         if elapsed.add(next_delay) > self.max_attempt_duration {
                             return Err(HttpValidatorError::RetryWillExceedTime {
