@@ -1,0 +1,74 @@
+@host = http://localhost:49159
+@configuration = c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHk=
+# schema-version: v1
+# rulesets:
+# - java-1
+# - java-security
+
+# ### version
+GET {{host}}/version HTTP/1.1
+
+### languages
+GET {{host}}/languages HTTP/1.1
+
+### Analyze
+POST {{host}}/analyze
+Content-Type: application/json
+
+{
+  "code": "MTIzID09IE5hTjsKMTIzID09PSBOYU47Ck5hTiA9PT0gImFiYyI7Ck5hTiA9PSJhYmMiOwoxMjMgIT0gTmFOOwoxMjMgIT09IE5hTjsKTmFOICE9PSAiYWJjIjsKTmFOICE9ICJhYmMiOwpOYU4gPCAiYWJjIjsKImFiYyIgPCBOYU47Ck5hTiA+ICJhYmMiOwoiYWJjIiA+IE5hTjsKTmFOIDw9ICJhYmMiOwoiYWJjIiA8PSBOYU47Ck5hTiA+PSAiYWJjIjsKImFiYyIgPj0gTmFOOwoxMjMgPT0gTnVtYmVyLk5hTjsKMTIzID09PSBOdW1iZXIuTmFOOwpOdW1iZXIuTmFOID09PSAiYWJjIjsKTnVtYmVyLk5hTiA9PSAiYWJjIjsKMTIzICE9IE51bWJlci5OYU47CjEyMyAhPT0gTnVtYmVyLk5hTjsKTnVtYmVyLk5hTiAhPT0gImFiYyI7Ck51bWJlci5OYU4gIT0gImFiYyI7Ck51bWJlci5OYU4gPCAiYWJjIjsKImFiYyIgPCBOdW1iZXIuTmFOOwpOdW1iZXIuTmFOID4gImFiYyI7CiJhYmMiID4gTnVtYmVyLk5hTjsKTnVtYmVyLk5hTiA8PSAiYWJjIjsKImFiYyIgPD0gTnVtYmVyLk5hTjsKTnVtYmVyLk5hTiA+PSAiYWJjIjsKImFiYyIgPj0gTnVtYmVyLk5hTjsKeCA9PT0gTnVtYmVyPy5OYU47CnggPT09IE51bWJlclsnTmFOJ107",
+  "filename": "invalid.js",
+  "file_encoding": "utf-8",
+  "language": "JAVASCRIPT",
+  "rules": [
+    {
+      "id": "rob/use-isnan",
+      "code": "LyoqCiAqIEEgdmlzaXQgZnVuY3Rpb24KICogQHBhcmFtIHtRdWVyeX0gbm9kZSAtIEEgbm9kZSBwYXJhbS4KICogQHBhcmFtIHtzdHJpbmd9IGZpbGVuYW1lIC0gQSBmaWxlbmFtZSBwYXJhbS4KICogQHBhcmFtIHtzdHJpbmd9IGNvZGUgLSBBIGNvZGUgcGFyYW0uCiAqIEByZXR1cm5zCiAqLwpmdW5jdGlvbiB2aXNpdChub2RlLCBmaWxlbmFtZSwgY29kZSkgewogIGNvbnN0IGV4cHJlc3Npb24gPSBub2RlLmNhcHR1cmVzWyJleHByZXNzaW9uIl07CiAgY29uc3QgaWRlbnRpZmllciA9IG5vZGUuY2FwdHVyZXNbImlkZW50aWZpZXIiXTsKCiAgLy8gVE9ETzogcmVtb3ZlIGNoZWNrIG9uY2Ugd2UgaGF2ZSBwcmVkaWNhdGVzCiAgaWYgKGV4cHJlc3Npb24gJiYgZ2V0Q29kZUZvck5vZGUoaWRlbnRpZmllciwgY29kZSkgPT09ICJOYU4iKSB7CiAgICBhZGRFcnJvcigKICAgICAgYnVpbGRFcnJvcigKICAgICAgICBleHByZXNzaW9uLnN0YXJ0LmxpbmUsCiAgICAgICAgZXhwcmVzc2lvbi5zdGFydC5jb2wsCiAgICAgICAgZXhwcmVzc2lvbi5lbmQubGluZSwKICAgICAgICBleHByZXNzaW9uLmVuZC5jb2wsCiAgICAgICAgIlVzZSB0aGUgaXNOYU4gZnVuY3Rpb24gdG8gY29tcGFyZSB3aXRoIE5hTi4iLAogICAgICApCiAgICApOwogIH0KfQo=",
+      "language": "JAVASCRIPT",
+      "severity": "ERROR",
+      "category": "BEST_PRACTICES",
+      "type": "TREE_SITTER_QUERY",
+      "entity_checked": null,
+      "regex": null,
+      "tree_sitter_query": "WwogICAgKGJpbmFyeV9leHByZXNzaW9uCiAgICAgICAgbGVmdDogWwogICAgICAgICAgICAoaWRlbnRpZmllcikgQGlkZW50aWZpZXIKICAgICAgICAgICAgKG1lbWJlcl9leHByZXNzaW9uCiAgICAgICAgICAgICAgICBwcm9wZXJ0eTogKHByb3BlcnR5X2lkZW50aWZpZXIpIEBpZGVudGlmaWVyCiAgICAgICAgICAgICkKICAgICAgICAgICAgKHN1YnNjcmlwdF9leHByZXNzaW9uCiAgICAgICAgICAgICAgICBpbmRleDogKHN0cmluZyAoc3RyaW5nX2ZyYWdtZW50KUBpZGVudGlmaWVyKQogICAgICAgICAgICApCiAgICAgICAgXSAoI2VxPyBAaWRlbnRpZmllciBOYU4pCiAgICAgICAgb3BlcmF0b3I6IFsiPiIgIj49IiAiPCIgIjw9IiAiPT0iICI9PT0iICIhPSIgIiE9PSJdCiAgICApIEBleHByZXNzaW9uCiAgICAoYmluYXJ5X2V4cHJlc3Npb24KICAgICAgICBvcGVyYXRvcjogWyI+IiAiPj0iICI8IiAiPD0iICI9PSIgIj09PSIgIiE9IiAiIT09Il0KICAgICAgICByaWdodDogWwogICAgICAgICAgICAoaWRlbnRpZmllcikgQGlkZW50aWZpZXIKICAgICAgICAgICAgKG1lbWJlcl9leHByZXNzaW9uCiAgICAgICAgICAgICAgICBwcm9wZXJ0eTogKHByb3BlcnR5X2lkZW50aWZpZXIpIEBpZGVudGlmaWVyCiAgICAgICAgICAgICkKICAgICAgICAgICAgKHN1YnNjcmlwdF9leHByZXNzaW9uCiAgICAgICAgICAgICAgICBpbmRleDogKHN0cmluZyAoc3RyaW5nX2ZyYWdtZW50KUBpZGVudGlmaWVyKQogICAgICAgICAgICApCiAgICAgICAgXSAoI2VxPyBAaWRlbnRpZmllciBOYU4pCiAgICApIEBleHByZXNzaW9uCl0g",
+      "checksum": "6a01273abe500632af11ea76d43af39a3a321bebab8527dbefb2d6f1961bb525"
+    }
+  ],
+  "options": {
+    "use_tree_sitter": true,
+    "log_output": true
+  }
+}
+
+### Tree-sitter
+POST {{host}}/get-treesitter-ast
+Content-Type: application/json
+
+{
+    "file_encoding": "utf-8",
+    "language": "JAVASCRIPT",
+    "code": "MTIzID09IE5hTjsKMTIzID09PSBOYU47Ck5hTiA9PT0gImFiYyI7Ck5hTiA9PSJhYmMiOwoxMjMgIT0gTmFOOwoxMjMgIT09IE5hTjsKTmFOICE9PSAiYWJjIjsKTmFOICE9ICJhYmMiOwpOYU4gPCAiYWJjIjsKImFiYyIgPCBOYU47Ck5hTiA+ICJhYmMiOwoiYWJjIiA+IE5hTjsKTmFOIDw9ICJhYmMiOwoiYWJjIiA8PSBOYU47Ck5hTiA+PSAiYWJjIjsKImFiYyIgPj0gTmFOOwoxMjMgPT0gTnVtYmVyLk5hTjsKMTIzID09PSBOdW1iZXIuTmFOOwpOdW1iZXIuTmFOID09PSAiYWJjIjsKTnVtYmVyLk5hTiA9PSAiYWJjIjsKMTIzICE9IE51bWJlci5OYU47CjEyMyAhPT0gTnVtYmVyLk5hTjsKTnVtYmVyLk5hTiAhPT0gImFiYyI7Ck51bWJlci5OYU4gIT0gImFiYyI7Ck51bWJlci5OYU4gPCAiYWJjIjsKImFiYyIgPCBOdW1iZXIuTmFOOwpOdW1iZXIuTmFOID4gImFiYyI7CiJhYmMiID4gTnVtYmVyLk5hTjsKTnVtYmVyLk5hTiA8PSAiYWJjIjsKImFiYyIgPD0gTnVtYmVyLk5hTjsKTnVtYmVyLk5hTiA+PSAiYWJjIjsKImFiYyIgPj0gTnVtYmVyLk5hTjsKeCA9PT0gTnVtYmVyPy5OYU47CnggPT09IE51bWJlclsnTmFOJ107"
+}
+
+### ignore rule
+POST {{host}}/ide/config/ignore-rule HTTP/1.1
+Content-Type: application/json
+
+{
+  "rule": "ruleset1/rule1",
+  "configuration": "c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHk=",
+  "encoded": false
+}
+
+### add-rulesets
+POST {{host}}/ide/config/rulesets HTTP/1.1
+Content-Type: application/json
+
+{
+  "rulesets": ["ruleset1", "ruleset2"],
+  "configuration": "c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHk=",
+  "encoded": false
+}
+
+### get rulesets
+GET {{host}}/ide/config/rulesets/{{configuration}} HTTP/1.1

@@ -36,6 +36,9 @@ itertools = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
+indexmap = { workspace = true }
+serde = { workspace = true }
+serde_yaml = { workspace = true }
 # other
 getopts = "0.2.21"
 num_cpus = "1.15.0"
@@ -43,8 +46,7 @@ indicatif = "0.17.6"
 rayon = "1.7.0"
 rocket = { version = "=0.5.0", features = ["json"] }
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
-
-
+thiserror = "1"
 
 # For linux and macos, we need the vendored ssl
 [target.'cfg(target_os = "linux")'.dependencies]
