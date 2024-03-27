@@ -254,7 +254,7 @@ rulesets:
 ",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
-            assert_eq!(rulesets, vec!["java-security", "java-1",])
+            assert_eq!(rulesets, vec!["java-security", "java-1"]);
         }
 
         #[test]
@@ -276,7 +276,7 @@ rulesets:
 ",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
-            assert_eq!(rulesets, vec!["java-security", "java-1", "ruleset1"])
+            assert_eq!(rulesets, vec!["java-security", "java-1", "ruleset1"]);
         }
 
         #[test]
@@ -298,7 +298,7 @@ rulesets:
 ",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
-            assert!(rulesets.is_empty())
+            assert!(rulesets.is_empty());
         }
 
         #[test]
@@ -312,7 +312,7 @@ rulesets:
 ",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
-            assert!(rulesets.is_empty())
+            assert!(rulesets.is_empty());
         }
     }
 
