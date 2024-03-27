@@ -68,12 +68,16 @@ impl CliConfiguration {
     /// we need, we return an error.
     pub fn generate_diff_aware_request_data(&self) -> anyhow::Result<DiffAwareRequestArguments> {
         let config_hash = self.generate_diff_aware_digest();
+
         let repository = Repository::init(&self.source_directory)?;
-        let repository_url = repository
-            .find_remote("origin")?
-            .url()
-            .unwrap_or("")
-            .to_string();
+        let remote = repository.find_remote("origin")?;
+        let repository_url_option = remote.url();
+
+        if repository_url_option.is_none() {
+            return Err(anyhow!("cannot get the repository origin URL"));
+        }
+
+        let repository_url = repository_url_option.unwrap().to_string();
 
         // let's get the latest commit
         let head = repository.head()?;
