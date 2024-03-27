@@ -61,7 +61,7 @@ Content-Type: application/json
 }
 
 ### ignore rule
-POST {{host}}/ide/config/ignore-rule HTTP/1.1
+POST {{host}}/ide/v1/config/ignore-rule HTTP/1.1
 Content-Type: application/json
 
 {
@@ -71,7 +71,7 @@ Content-Type: application/json
 }
 
 ### add-rulesets
-POST {{host}}/ide/config/rulesets HTTP/1.1
+POST {{host}}/ide/v1/config/rulesets HTTP/1.1
 Content-Type: application/json
 
 {
@@ -81,5 +81,5 @@ Content-Type: application/json
 }
 
 ### get rulesets
-GET {{host}}/ide/config/rulesets/{{configuration}} HTTP/1.1
+GET {{host}}/ide/v1/config/rulesets/{{configuration}} HTTP/1.1
 # X-Request-Id: 1234

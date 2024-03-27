@@ -7,7 +7,11 @@ use rocket::serde::json::Json;
 use tracing::instrument;
 
 #[instrument()]
-#[rocket::post("/config/ignore-rule", format = "application/json", data = "<request>")]
+#[rocket::post(
+    "/v1/config/ignore-rule",
+    format = "application/json",
+    data = "<request>"
+)]
 pub fn ignore_rule(
     request: Json<IgnoreRuleRequest>,
 ) -> Result<Json<String>, rocket::response::status::Custom<ConfigFileError>> {
@@ -23,7 +27,7 @@ pub fn ignore_rule(
 }
 
 #[instrument()]
-#[rocket::post("/config/rulesets", format = "application/json", data = "<request>")]
+#[rocket::post("/v1/config/rulesets", format = "application/json", data = "<request>")]
 pub fn post_rulesets(
     request: Json<AddRuleSetsRequest>,
 ) -> Result<Json<String>, rocket::response::status::Custom<ConfigFileError>> {
@@ -42,7 +46,7 @@ pub fn post_rulesets(
 }
 
 #[instrument()]
-#[rocket::get("/config/rulesets/<content>", format = "application/json")]
+#[rocket::get("/v1/config/rulesets/<content>", format = "application/json")]
 pub fn get_rulesets(content: &str) -> Json<Vec<String>> {
     tracing::debug!(%content);
     Json(StaticAnalysisConfigFile::to_rulesets(content.to_string()))
