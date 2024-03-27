@@ -160,7 +160,6 @@ mod tests {
     use crate::analysis::tree_sitter::get_query;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
-    use std::collections::HashMap;
 
     const QUERY_CODE: &str = r#"
 (function_definition
@@ -204,7 +203,6 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
-            variables: HashMap::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -270,7 +268,6 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
-            variables: HashMap::new(),
         };
         let rule2 = RuleInternal {
             name: "myrule".to_string(),
@@ -281,7 +278,6 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code2.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
-            variables: HashMap::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -382,7 +378,6 @@ for(var i = 0; i <= 10; i--){}
             language: Language::JavaScript,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(tree_sitter_query, &Language::JavaScript).unwrap(),
-            variables: HashMap::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -437,7 +432,6 @@ def foo():
             language: Language::Python,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(tree_sitter_query, &Language::Python).unwrap(),
-            variables: HashMap::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -492,7 +486,6 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
-            variables: HashMap::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -583,7 +576,6 @@ function visit(node, filename, code) {
             language: Language::Go,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(query, &Language::Go).unwrap(),
-            variables: HashMap::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -740,7 +732,6 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
-            variables: HashMap::new(),
         };
         let rule2 = RuleInternal {
             name: "rule2".to_string(),
@@ -751,7 +742,6 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
-            variables: HashMap::new(),
         };
 
         let analysis_options = AnalysisOptions {

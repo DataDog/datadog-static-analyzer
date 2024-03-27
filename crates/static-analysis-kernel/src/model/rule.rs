@@ -9,7 +9,6 @@ use anyhow::anyhow;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
-use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
@@ -151,8 +150,17 @@ pub struct Rule {
     pub pattern: Option<String>,
     #[serde(rename = "tree_sitter_query")]
     pub tree_sitter_query_base64: Option<String>,
-    pub variables: HashMap<String, String>,
+    #[serde(default)]
+    pub arguments: Vec<Argument>,
     pub tests: Vec<RuleTest>,
+}
+
+#[derive(Clone, Deserialize, Debug, Serialize, Builder)]
+pub struct Argument {
+    #[serde(rename = "name")]
+    pub name_base64: String,
+    #[serde(rename = "description")]
+    pub description_base64: String,
 }
 
 // This structure is used internally to handle rules.
@@ -168,7 +176,6 @@ pub struct RuleInternal {
     pub language: Language,
     pub code: String,
     pub tree_sitter_query: tree_sitter::Query,
-    pub variables: HashMap<String, String>,
 }
 
 impl Rule {
@@ -238,7 +245,6 @@ impl Rule {
             language: self.language,
             code,
             tree_sitter_query,
-            variables: self.variables.clone(),
         })
     }
 
@@ -296,7 +302,6 @@ impl RuleResultBuilder {
 mod tests {
     use super::*;
     use crate::utils::encode_base64_string;
-    use std::collections::HashMap;
 
     #[test]
     fn test_checksum_valid() {
@@ -314,7 +319,7 @@ mod tests {
             pattern: None,
             cwe: None,
             tree_sitter_query_base64: None,
-            variables: HashMap::new(),
+            arguments: vec![],
             tests: vec![],
         };
         let rule_valid_checksum = Rule {
@@ -332,7 +337,7 @@ mod tests {
             pattern: None,
             cwe: None,
             tree_sitter_query_base64: None,
-            variables: HashMap::new(),
+            arguments: vec![],
             tests: vec![],
         };
         assert!(!rule_invalid_checksum.verify_checksum());
@@ -355,7 +360,7 @@ mod tests {
             pattern: None,
             cwe: None,
             tree_sitter_query_base64: None,
-            variables: HashMap::new(),
+            arguments: vec![],
             tests: vec![],
         };
         let fixed_ruled = rule.fix_cwe();
@@ -378,7 +383,7 @@ mod tests {
             pattern: None,
             cwe: Some("".to_string()),
             tree_sitter_query_base64: None,
-            variables: HashMap::new(),
+            arguments: vec![],
             tests: vec![],
         };
         let fixed_ruled = rule.fix_cwe();
@@ -401,7 +406,7 @@ mod tests {
             pattern: None,
             cwe: Some("1234".to_string()),
             tree_sitter_query_base64: None,
-            variables: HashMap::new(),
+            arguments: vec![],
             tests: vec![],
         };
         let fixed_ruled = rule.fix_cwe();

@@ -377,7 +377,6 @@ mod tests {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: query,
-            variables: HashMap::new(),
         };
 
         let nodes = get_query_nodes(
@@ -438,7 +437,6 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: query,
-            variables: HashMap::new(),
         };
 
         let nodes = get_query_nodes(
@@ -508,7 +506,6 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: query,
-            variables: HashMap::new(),
         };
         let nodes = get_query_nodes(&tree, &rule.tree_sitter_query, "plop", c, &HashMap::new());
 
@@ -601,7 +598,6 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code_string.to_string(),
             tree_sitter_query: query,
-            variables: HashMap::new(),
         };
 
         let nodes = get_query_nodes(
@@ -732,7 +728,6 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: query,
-            variables: HashMap::new(),
         };
 
         let nodes = get_query_nodes(
@@ -792,7 +787,6 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: query,
-            variables: HashMap::new(),
         };
 
         let nodes = get_query_nodes(

@@ -93,7 +93,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             checksum: r.checksum.clone().unwrap_or("".to_string()),
             pattern: r.pattern.clone(),
             tree_sitter_query_base64: r.tree_sitter_query_base64.clone(),
-            variables: r.variables.clone().unwrap_or_default(),
+            arguments: r.arguments.clone(),
             tests: vec![],
         })
         .collect();
@@ -233,7 +233,7 @@ mod tests {
                     checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    variables: None,
+                    arguments: vec![],
                 }
             ]
         };
@@ -266,7 +266,7 @@ mod tests {
                     checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c36d8b59237c4ba23340057".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    variables: None,
+                    arguments: vec![],
                 }
             ]
         };
@@ -301,7 +301,7 @@ mod tests {
                     checksum: None,
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    variables: None,
+                    arguments: vec![],
                 }
             ]
         };
@@ -336,7 +336,7 @@ mod tests {
                     checksum: Some("1a1dd51c47738a19b073a20ffc16c1eb816a4a6ed05ffaa53c19db0caf036c0c".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    variables: None,
+                    arguments: vec![],
                 }
             ]
         };
@@ -371,7 +371,7 @@ mod tests {
                     checksum: None,
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    variables: None,
+                    arguments: vec![],
                 }
             ]
         };
@@ -398,7 +398,7 @@ mod tests {
             checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
             pattern: None,
             tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-            variables: None,
+            arguments: vec![],
         };
         let mut request = AnalysisRequest {
             filename: "path/to/myfile.py".to_string(),
@@ -532,7 +532,7 @@ rulesets:
                 checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
                 pattern: None,
                 tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                variables: None,
+                arguments: vec![],
             }],
         };
         let response = process_analysis_request(request.clone());
@@ -588,7 +588,7 @@ function visit(node, filename, code) {
                     checksum: Some("984ba37fbfdfa4245ed7922efd224365ec216e540647989ac5e8559624ba9be4".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    variables: None,
+                    arguments: vec![],
                 }
             ]
         };

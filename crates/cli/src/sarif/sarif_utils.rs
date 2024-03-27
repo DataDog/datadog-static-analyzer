@@ -623,8 +623,6 @@ pub fn generate_sarif_report(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use assert_json_diff::assert_json_eq;
     use serde_json::{from_str, Value};
     use valico::json_schema;
@@ -665,7 +663,7 @@ mod tests {
             .rule_type(RuleType::TreeSitterQuery)
             .severity(RuleSeverity::Error)
             .cwe(Some("1234".to_string()))
-            .variables(HashMap::new())
+            .arguments(vec![])
             .tests(vec![])
             .build()
             .unwrap();
@@ -804,7 +802,7 @@ mod tests {
             .rule_type(RuleType::TreeSitterQuery)
             .severity(RuleSeverity::Error)
             .cwe(Some("1234".to_string()))
-            .variables(HashMap::new())
+            .arguments(vec![])
             .tests(vec![])
             .build()
             .unwrap();
@@ -878,7 +876,7 @@ mod tests {
             .entity_checked(None)
             .rule_type(RuleType::TreeSitterQuery)
             .severity(RuleSeverity::Error)
-            .variables(HashMap::new())
+            .arguments(vec![])
             .cwe(None)
             .tests(vec![])
             .build()

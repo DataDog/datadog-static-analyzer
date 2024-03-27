@@ -1,9 +1,8 @@
 use kernel::model::common::Language;
-use kernel::model::rule::{EntityChecked, Rule, RuleCategory, RuleSeverity, RuleType};
+use kernel::model::rule::{Argument, EntityChecked, Rule, RuleCategory, RuleSeverity, RuleType};
 use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // Data for diff-aware scanning
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -114,7 +113,7 @@ pub struct ApiResponseRule {
     #[serde(rename = "type")]
     pub rule_type: RuleType,
     pub entity_checked: Option<EntityChecked>,
-    pub variables: Option<HashMap<String, String>>,
+    pub arguments: Option<Vec<ApiResponseArgument>>,
     pub pattern: Option<String>,
     pub cve: Option<String>,
     pub cwe: Option<String>,
@@ -122,6 +121,12 @@ pub struct ApiResponseRule {
     pub severity: RuleSeverity,
     pub category: RuleCategory,
     pub tests: Vec<ApiResponseRuleTest>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ApiResponseArgument {
+    pub name: String,
+    pub description: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -157,7 +162,15 @@ impl ApiResponseRuleset {
                     severity: rule_from_api.severity,
                     pattern: rule_from_api.pattern,
                     tree_sitter_query_base64: rule_from_api.tree_sitter_query,
-                    variables: rule_from_api.variables.unwrap_or_default(),
+                    arguments: rule_from_api
+                        .arguments
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|a| Argument {
+                            name_base64: a.name,
+                            description_base64: a.description,
+                        })
+                        .collect(),
                     tests: rule_from_api
                         .tests
                         .into_iter()
