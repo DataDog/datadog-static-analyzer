@@ -18,8 +18,11 @@ use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum HttpValidatorError {
-    #[error(transparent)]
-    Ureq(#[from] Box<ureq::Error>),
+    /// The validation hit an unrecoverable error, and no further attempts will be made.
+    #[error("unrecoverable validation failure")]
+    RequestedAbort(Box<Result<ureq::Response, ureq::Error>>),
+    #[error("validator requested retry")]
+    RequestedRetry,
     #[error("invalid url: `{0}` ({1})")]
     InvalidUrl(String, url::ParseError),
     #[error("unsupported HTTP method `{0}`")]
@@ -31,8 +34,8 @@ pub(crate) enum HttpValidatorError {
         elapsed: Duration,
         next_delay: Duration,
     },
-    #[error("the rule received a valid response it was not expecting")]
-    UnhandledResponse,
+    #[error("no qualifying handler that matches the server response")]
+    UnhandledResponse(Box<Result<ureq::Response, ureq::Error>>),
 }
 
 /// The configuration for re-attempting failed HTTP requests.
@@ -53,8 +56,7 @@ pub(crate) enum RetryPolicy {
     },
 }
 
-type DynFnResponseParser =
-    dyn Fn(Result<ureq::Response, ureq::Error>) -> Result<NextAction, HttpValidatorError>;
+type DynFnResponseParser = dyn Fn(&Result<ureq::Response, ureq::Error>) -> NextAction;
 
 pub struct HttpValidator {
     validator_id: ValidatorId,
@@ -69,11 +71,18 @@ pub struct HttpValidator {
 }
 
 /// The next action to take after an HTTP request has received a response.
-enum NextAction {
-    Abort(Box<ureq::Error>),
-    Retry(Box<ureq::Error>),
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
+pub enum NextAction {
+    /// The validation should immediately be halted, and no further retries should be attempted.
+    Abort,
+    /// The handler indicated that the validation should be retried.
+    Retry,
+    /// The handler indicated that the validation should be retried, and gave a specific time to re-attempt.
     RetryAfter(Duration),
+    /// The handler successfully performed a validation and categorized the candidate.
     ReturnResult(SecretCategory),
+    /// No registered handler could handle the HTTP response result, so a default fallback error was generated.
+    Unhandled,
 }
 
 #[allow(clippy::type_complexity)]
@@ -147,44 +156,36 @@ impl Validator for HttpValidator {
                 }
             };
 
-            let parse_result = (self.response_parser)(response);
-            match parse_result {
-                Ok(next_action) => {
-                    match next_action {
-                        NextAction::Abort(err) => {
-                            OperationResult::Err(HttpValidatorError::Ureq(err))
-                        }
-                        NextAction::Retry(err) => {
-                            OperationResult::Retry(HttpValidatorError::Ureq(err))
-                        }
-                        NextAction::RetryAfter(http_retry_after) => {
-                            // NOTE: It would be nice to subtract what we know will be our next retry delay from
-                            // the HTTP 429 Retry-After to maximize efficiency.
-                            // However, due to `retry` API constraints, we can't peek the next retry time delay, so
-                            // for now, we over-estimate the amount we need to sleep.
-                            let elapsed = start_time.elapsed();
-                            if elapsed.add(http_retry_after) > self.max_attempt_duration {
-                                OperationResult::Err(HttpValidatorError::RetryWillTimeout {
-                                    elapsed,
-                                    next_delay: http_retry_after,
-                                })
-                            } else {
-                                thread::sleep(http_retry_after);
-                                // The `retry` API is a bit awkward here -- because of the duration calculations we've just
-                                // done, the inner `HttpValidatorError::TimedOut` should never be returned because the
-                                // next run of the iterator should never cause a timeout. Thus, the `time_spent` we pass in
-                                // here isn't accurate, though it will not matter.
-                                OperationResult::Retry(HttpValidatorError::RetryTimeout(
-                                    http_retry_after,
-                                ))
-                            }
-                        }
-                        NextAction::ReturnResult(result) => OperationResult::Ok(result),
+            let next_action = (self.response_parser)(&response);
+
+            match next_action {
+                NextAction::Abort => {
+                    OperationResult::Err(HttpValidatorError::RequestedAbort(Box::new(response)))
+                }
+                NextAction::Retry => OperationResult::Retry(HttpValidatorError::RequestedRetry),
+                NextAction::RetryAfter(http_retry_after) => {
+                    // NOTE: It would be nice to subtract what we know will be our next retry delay from
+                    // the HTTP 429 Retry-After to maximize efficiency.
+                    // However, due to `retry` API constraints, we can't peek the next retry time delay, so
+                    // for now, we over-estimate the amount we need to sleep.
+                    let elapsed = start_time.elapsed();
+                    if elapsed.add(http_retry_after) > self.max_attempt_duration {
+                        OperationResult::Err(HttpValidatorError::RetryWillTimeout {
+                            elapsed,
+                            next_delay: http_retry_after,
+                        })
+                    } else {
+                        thread::sleep(http_retry_after);
+                        // The `retry` API is a bit awkward here -- because of the duration calculations we've just
+                        // done, the inner `HttpValidatorError::TimedOut` should never be returned because the
+                        // next run of the iterator should never cause a timeout. Thus, the `time_spent` we pass in
+                        // here isn't accurate, though it will not matter.
+                        OperationResult::Retry(HttpValidatorError::RetryTimeout(http_retry_after))
                     }
                 }
-                Err(err) => {
-                    // An error that couldn't be categorized into a `NextAction` means we need to bail.
-                    OperationResult::Err(err)
+                NextAction::ReturnResult(result) => OperationResult::Ok(result),
+                NextAction::Unhandled => {
+                    OperationResult::Err(HttpValidatorError::UnhandledResponse(Box::new(response)))
                 }
             }
         })
