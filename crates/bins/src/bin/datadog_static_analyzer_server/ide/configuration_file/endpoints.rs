@@ -10,7 +10,7 @@ use tracing::instrument;
 #[rocket::post("/config/ignore-rule", format = "application/json", data = "<request>")]
 pub fn ignore_rule(
     request: Json<IgnoreRuleRequest>,
-) -> Result<Json<String>, rocket::response::status::Custom<String>> {
+) -> Result<Json<String>, rocket::response::status::Custom<ConfigFileError>> {
     let IgnoreRuleRequest {
         rule,
         configuration_base64,
@@ -26,7 +26,7 @@ pub fn ignore_rule(
 #[rocket::post("/config/rulesets", format = "application/json", data = "<request>")]
 pub fn post_rulesets(
     request: Json<AddRuleSetsRequest>,
-) -> Result<Json<String>, rocket::response::status::Custom<String>> {
+) -> Result<Json<String>, rocket::response::status::Custom<ConfigFileError>> {
     let AddRuleSetsRequest {
         rulesets,
         configuration_base64,
@@ -51,9 +51,9 @@ pub fn get_rulesets(content: &str) -> Json<Vec<String>> {
 fn to_json_result(
     result: Result<String, ConfigFileError>,
     encode: bool,
-) -> Result<Json<String>, rocket::response::status::Custom<String>> {
+) -> Result<Json<String>, rocket::response::status::Custom<ConfigFileError>> {
     result
         .map(|r| if encode { encode_base64_string(r) } else { r })
         .map(Into::into)
-        .map_err(|e| rocket::response::status::Custom(Status::InternalServerError, e.to_string()))
+        .map_err(|e| rocket::response::status::Custom(Status::InternalServerError, e))
 }

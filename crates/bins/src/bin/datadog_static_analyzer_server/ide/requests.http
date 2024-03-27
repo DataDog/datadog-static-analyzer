@@ -5,6 +5,13 @@
 # - java-1
 # - java-security
 
+@bad_configuration = c2NoZW1hLXZlcnNpb246IHY1MDAwCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHk=
+# schema-version: v5000
+# rulesets:
+# - java-1
+# - java-security
+
+
 ### version
 GET {{host}}/version HTTP/1.1
 
@@ -59,7 +66,7 @@ Content-Type: application/json
 
 {
   "rule": "ruleset1/rule1",
-  "configuration": "c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHk=",
+  "configuration": "{{configuration}}",
   "encoded": false
 }
 
@@ -69,7 +76,7 @@ Content-Type: application/json
 
 {
   "rulesets": ["ruleset1", "ruleset2"],
-  "configuration": "c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHk=",
+  "configuration": "{{configuration}}",
   "encoded": false
 }
 

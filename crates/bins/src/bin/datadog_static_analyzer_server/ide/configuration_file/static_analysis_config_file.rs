@@ -239,22 +239,6 @@ mod tests {
         encode_base64_string(content.to_owned())
     }
 
-    // fn read_test_file(filename: &'static str) -> String {
-    //     let content = std::fs::read_to_string(filename).unwrap();
-    //     encode_base64_string(content)
-    // }
-
-    // fn write_to_test(config: &StaticAnalysisConfigFile) {
-    //     let _ = std::fs::write("test.yaml", config.to_string().unwrap());
-    // }
-
-    // #[test]
-    // fn it_works() {
-    //     let content = read_test_file("tests/example_base.yaml");
-    //     let config = StaticAnalysisConfigFile::try_from(content).unwrap();
-    //     write_to_test(&config);
-    // }
-
     mod get_rulesets {
         use super::super::*;
         use super::*;
@@ -262,12 +246,12 @@ mod tests {
         #[test]
         fn it_works_simple() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-security
 - java-1
-"#,
+",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
             assert_eq!(rulesets, vec!["java-security", "java-1",])
@@ -276,7 +260,7 @@ rulesets:
         #[test]
         fn it_works_complex() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-security
@@ -289,7 +273,7 @@ rulesets:
     rule1:
         ignore:
         - '*/*'
-"#,
+",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
             assert_eq!(rulesets, vec!["java-security", "java-1", "ruleset1"])
@@ -298,7 +282,7 @@ rulesets:
         #[test]
         fn it_returns_empty_array_if_bad_format() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-security
@@ -311,7 +295,21 @@ rulesets:
             rule1:
                 ignore:
                 - '*/*'
-"#,
+",
+            );
+            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
+            assert!(rulesets.is_empty())
+        }
+
+        #[test]
+        fn it_returns_empty_array_if_wrong_version() {
+            let content = to_encoded_content(
+                r"
+schema-version: v354
+rulesets:
+- java-security
+- java-1
+",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
             assert!(rulesets.is_empty())
@@ -330,13 +328,13 @@ rulesets:
             )
             .unwrap();
             let expected = format!(
-                r#"
+                r"
 schema-version: {LATEST_SUPPORTED_CONFIG_VERSION}
 rulesets:
 - ruleset1
 - ruleset2
 - a-ruleset3
-"#
+"
             );
             assert_eq!(config.trim(), expected.trim());
         }
@@ -344,12 +342,12 @@ rulesets:
         #[test]
         fn it_works_simple() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-security
 - java-1
-"#,
+",
             );
             let config = StaticAnalysisConfigFile::with_added_rulesets(
                 &["ruleset1", "ruleset2", "a-ruleset3"],
@@ -357,7 +355,7 @@ rulesets:
             )
             .unwrap();
 
-            let expected = r#"
+            let expected = r"
 schema-version: v1
 rulesets:
 - java-security
@@ -365,7 +363,7 @@ rulesets:
 - ruleset1
 - ruleset2
 - a-ruleset3
-"#;
+";
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -373,7 +371,7 @@ rulesets:
         #[test]
         fn it_works_complex() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-security
@@ -386,7 +384,7 @@ rulesets:
     rule1:
       ignore:
       - '*/*'
-"#,
+",
             );
             let config = StaticAnalysisConfigFile::with_added_rulesets(
                 &["ruleset1", "ruleset2", "a-ruleset3"],
@@ -394,7 +392,7 @@ rulesets:
             )
             .unwrap();
 
-            let expected = r#"
+            let expected = r"
 schema-version: v1
 rulesets:
 - java-security
@@ -409,9 +407,28 @@ rulesets:
       - '*/*'
 - ruleset2
 - a-ruleset3
-"#;
+";
 
             assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_fails_if_wrong_version() {
+            let content = to_encoded_content(
+                r"
+schema-version: v354
+rulesets:
+- java-security
+- java-1
+",
+            );
+            let err = StaticAnalysisConfigFile::with_added_rulesets(
+                &["ruleset1", "ruleset2", "a-ruleset3"],
+                Some(content),
+            )
+            .unwrap_err();
+
+            assert_eq!(err.code(), 1);
         }
     }
 
@@ -422,18 +439,18 @@ rulesets:
         #[test]
         fn it_works_with_non_previously_existing_ruleset() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-1
 - java-security
-"#,
+",
             );
             let config =
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r#"
+            let expected = r"
 schema-version: v1
 rulesets:
 - java-1
@@ -443,7 +460,7 @@ rulesets:
     rule1:
       ignore:
       - '*/*'
-"#;
+";
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -451,17 +468,19 @@ rulesets:
         #[test]
         fn it_works_with_a_previously_existing_ruleset() {
             let content = to_encoded_content(
-                r#"schema-version: v1
+                r"
+schema-version: v1
 rulesets:
 - java-1
 - java-security
-- ruleset1"#,
+- ruleset1",
             );
             let config =
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r#"schema-version: v1
+            let expected = r"
+schema-version: v1
 rulesets:
 - java-1
 - java-security
@@ -469,7 +488,7 @@ rulesets:
   rules:
     rule1:
       ignore:
-      - '*/*'"#;
+      - '*/*'";
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -477,7 +496,7 @@ rulesets:
         #[test]
         fn it_works_with_a_previously_existing_ruleset_with_same_rule() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-1
@@ -487,13 +506,14 @@ rulesets:
     rule1:
       only:
       - foo/bar
-        "#,
+        ",
             );
             let config =
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r#"schema-version: v1
+            let expected = r"
+schema-version: v1
 rulesets:
 - java-1
 - java-security
@@ -501,7 +521,7 @@ rulesets:
   rules:
     rule1:
       ignore:
-      - '*/*'"#;
+      - '*/*'";
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -509,7 +529,7 @@ rulesets:
         #[test]
         fn it_works_with_a_previously_existing_ruleset_with_same_rule_with_paths() {
             let content = to_encoded_content(
-                r#"
+                r"
 schema-version: v1
 rulesets:
 - java-1
@@ -519,13 +539,13 @@ rulesets:
     rule2:
       only:
       - foo/bar
-"#,
+",
             );
             let config =
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r#"
+            let expected = r"
 schema-version: v1
 rulesets:
 - java-1
@@ -538,8 +558,24 @@ rulesets:
     rule1:
       ignore:
       - '*/*'
-"#;
+";
             assert!(config.trim() == expected.trim());
+        }
+
+        #[test]
+        fn it_fails_if_wrong_version() {
+            let content = to_encoded_content(
+                r"
+schema-version: v354
+rulesets:
+- java-security
+- java-1
+",
+            );
+            let err = StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
+                .unwrap_err();
+
+            assert_eq!(err.code(), 1);
         }
     }
 }

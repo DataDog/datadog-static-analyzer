@@ -17,6 +17,7 @@ args = [
 [tasks.ide-test]
 workspace = false
 command = "cargo"
+watch = true
 args = ["test", "-p", "datadog-static-analyzer", "ide", "--", "--nocapture"]
 
 [tasks.udeps]
