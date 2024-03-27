@@ -221,6 +221,11 @@ impl StaticAnalysisConfigFile {
         config.rulesets.iter().map(|rs| rs.0.clone()).collect()
     }
 
+    #[instrument(skip(self))]
+    pub fn is_onboarding_allowed(&self) -> bool {
+        self.paths.only.is_none() && self.paths.ignore.is_empty()
+    }
+
     /// Serializes the `StaticAnalysisConfigFile` into a YAML string.
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
         let str = serde_yaml::to_string(&**self)?;
@@ -576,6 +581,97 @@ rulesets:
                 .unwrap_err();
 
             assert_eq!(err.code(), 1);
+        }
+    }
+
+    mod onboarding {
+
+        use super::super::*;
+        use super::*;
+
+        #[test]
+        fn it_should_return_false_if_only_at_top_level_is_present() {
+            let content = to_encoded_content(
+                r"
+schema-version: v1
+rulesets:
+    - java-security
+    - java-1
+only:
+    - domains/project1
+",
+            );
+
+            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+            assert!(!config.is_onboarding_allowed())
+        }
+
+        #[test]
+        fn it_should_return_false_if_ignore_at_top_level_is_present() {
+            let content = to_encoded_content(
+                r"
+schema-version: v1
+rulesets:
+    - java-security
+    - java-1
+ignore:
+    - domains/project1
+",
+            );
+
+            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+            assert!(!config.is_onboarding_allowed())
+        }
+
+        #[test]
+        fn it_should_return_false_if_ignore_and_only_at_top_level_are_present() {
+            let content = to_encoded_content(
+                r"
+schema-version: v1
+rulesets:
+    - java-security
+    - java-1
+only:
+    - domains/project1
+ignore:
+    - domains/project1
+",
+            );
+
+            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+            assert!(!config.is_onboarding_allowed())
+        }
+
+        #[test]
+        fn it_should_return_true_if_ignore_and_only_at_top_level_are_not_present() {
+            let content = to_encoded_content(
+                r"
+schema-version: v1
+rulesets:
+    - java-security
+    - java-1
+",
+            );
+
+            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+            assert!(config.is_onboarding_allowed())
+        }
+
+        #[test]
+        fn it_should_return_true_with_nested_paths() {
+            let content = to_encoded_content(
+                r"
+schema-version: v1
+rulesets:
+    - java-security
+    - java-1:
+      only:
+        - domains/project1
+",
+            );
+
+            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+            assert!(config.is_onboarding_allowed())
         }
     }
 }

@@ -83,3 +83,12 @@ Content-Type: application/json
 ### get rulesets
 GET {{host}}/ide/v1/config/rulesets/{{configuration}} HTTP/1.1
 # X-Request-Id: 1234
+
+### can onboard
+GET {{host}}/ide/v1/config/can-onboard/{{configuration}} HTTP/1.1
+
+### can onboard should return a parse error
+GET {{host}}/ide/v1/config/can-onboard/c2NoZW1hLXZlcnNpb246IHY1MDAwCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHkKb25seToKLSBpZ25vcmUvZG9tYWlu HTTP/1.1
+
+### can onboard should return false
+GET {{host}}/ide/v1/config/can-onboard/c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHkKb25seToKLSBpZ25vcmUvZG9tYWlu HTTP/1.1
