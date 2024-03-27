@@ -41,3 +41,4 @@ uuid,https://crates.io/crates/uuid,MIT,Copyright 2018 The Uuid Developers
 valico,https://github.com/s-panferov/valico,MIT,Copyright (c) 2014 Stanislav Panferov
 vectorscan,https://github.com/VectorCamp/vectorscan,BSD-3-Clause,Copyright (c) 2020 VectorCamp PC
 walkdir,https://github.com/BurntSushi/walkdir,MIT,Copyright (c) 2015 Andrew Gallant
+xxhash-rust,https://github.com/DoumanAsh/xxhash-rust,BSL-1.0,Copyright (c) 2003-Present The original authors

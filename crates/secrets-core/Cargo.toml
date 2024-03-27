@@ -6,7 +6,7 @@ edition = "2021"
 
 [features]
 default = ["validator-http"]
-validator-http = ["governor", "ureq", "url"]
+validator-http = ["governor", "ureq", "url", "xxhash-rust"]
 
 [dependencies]
 bstr = "1.9.1"
@@ -16,6 +16,7 @@ thiserror = "1.0.57"
 ureq = { version = "2.9.6", default-features = false, features = ["tls"], optional = true }
 url = { version = "2.5.0", optional = true }
 vectorscan = { path = "../vectorscan" }
+xxhash-rust = {  version = "0.8.10", features = ["xxh3"], optional = true }
 
 [dev-dependencies]
 httpmock = { version = "0.7.0", default-features = false }

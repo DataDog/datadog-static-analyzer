@@ -7,13 +7,15 @@ use crate::validator::http;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
 use governor::clock::{Clock, DefaultClock};
 use governor::middleware::NoOpMiddleware;
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZeroU32;
 use std::ops::Add;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
+use xxhash_rust::xxh3::xxh3_128;
 
 /// An error returned by an [`HttpValidator`] when performing a validation attempt.
 ///
@@ -236,7 +238,7 @@ pub struct HttpValidator<T: Clock> {
     /// The maximum time allowed for a single validation attempt, inclusive of rate-limiting and retry delay.
     max_attempt_duration: Duration,
     rule_id: RuleId,
-    attempted_cache: Arc<Mutex<HashSet<[u8; 32]>>>,
+    attempted_cache: Arc<Mutex<HashMap<RequestHash, Result<SecretCategory, HttpValidatorError>>>>,
     clock: T,
     rate_limiter: Arc<RateLimiter<T>>,
     request_generator: RequestGenerator,
@@ -300,6 +302,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
         let retry_delays = (self.backoff_generator)();
         let mut iter = retry_delays.peekable();
         let mut attempted = 0;
+        let mut cache_key = RequestHash::default();
 
         while let Some(retry_delay) = iter.next() {
             // Certain branches can add to the required sleep time, so we track this as a mutable variable.
@@ -308,7 +311,10 @@ impl<T: Clock> Validator for HttpValidator<T> {
             loop {
                 let elapsed = start_time.elapsed();
                 if elapsed > self.max_attempt_duration {
-                    return Err(ValidationError::RetryTimeExceeded { attempted, elapsed }.into());
+                    return self.cached_or(
+                        cache_key,
+                        Err(ValidationError::RetryTimeExceeded { attempted, elapsed }),
+                    );
                 }
                 match self.rate_limiter.check() {
                     Ok(_) => break,
@@ -316,12 +322,14 @@ impl<T: Clock> Validator for HttpValidator<T> {
                         let next_delay = try_again_at.wait_time_from(self.clock.now());
                         let elapsed = start_time.elapsed();
                         if elapsed.add(next_delay) > self.max_attempt_duration {
-                            return Err(ValidationError::RetryWillExceedTime {
-                                attempted,
-                                elapsed,
-                                next_delay,
-                            }
-                            .into());
+                            return self.cached_or(
+                                cache_key,
+                                Err(ValidationError::RetryWillExceedTime {
+                                    attempted,
+                                    elapsed,
+                                    next_delay,
+                                }),
+                            );
                         }
                         thread_sleep(next_delay);
                     }
@@ -346,9 +354,20 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 .timeout(time_budget.min(self.request_timeout));
             request = (self.request_generator.add_headers)(&candidate, request);
 
-            attempted += 1;
             let response = match &self.request_generator.method {
-                HttpMethod::Get => request.call(),
+                HttpMethod::Get => {
+                    cache_key = RequestHash::from_request(&request, None);
+                    if let Some(cached) = self
+                        .attempted_cache
+                        .lock()
+                        .expect("mutex should not be poisoned")
+                        .get(&cache_key)
+                    {
+                        return cached.clone().map_err(Into::into);
+                    }
+                    attempted += 1;
+                    request.call()
+                }
                 HttpMethod::Post => {
                     let payload = self
                         .request_generator
@@ -358,6 +377,20 @@ impl<T: Clock> Validator for HttpValidator<T> {
                     if let Some((_, content_type)) = &payload {
                         request = request.set("Content-Type", content_type);
                     }
+
+                    cache_key = RequestHash::from_request(
+                        &request,
+                        payload.as_ref().map(|(bytes, _)| bytes.as_slice()),
+                    );
+                    if let Some(cached) = self
+                        .attempted_cache
+                        .lock()
+                        .expect("mutex should not be poisoned")
+                        .get(&cache_key)
+                    {
+                        return cached.clone().map_err(Into::into);
+                    }
+                    attempted += 1;
                     request.send_bytes(&payload.map(|(bytes, _)| bytes).unwrap_or_default())
                 }
             };
@@ -366,7 +399,10 @@ impl<T: Clock> Validator for HttpValidator<T> {
 
             match next_action {
                 NextAction::Abort => {
-                    return Err(ValidationError::RequestedAbort(Box::new(response)).into());
+                    return self.cached_or(
+                        cache_key,
+                        Err(ValidationError::RequestedAbort(Box::new(response))),
+                    )
                 }
                 NextAction::Retry => {}
                 NextAction::RetryAfter(http_retry_after) => {
@@ -377,9 +413,12 @@ impl<T: Clock> Validator for HttpValidator<T> {
                         .checked_sub(iter.peek().copied().unwrap_or_default())
                         .unwrap_or_default();
                 }
-                NextAction::ReturnResult(result) => return Ok(result),
+                NextAction::ReturnResult(result) => return self.cached_or(cache_key, Ok(result)),
                 NextAction::Unhandled => {
-                    return Err(ValidationError::UnhandledResponse(Box::new(response)).into());
+                    return self.cached_or(
+                        cache_key,
+                        Err(ValidationError::UnhandledResponse(Box::new(response))),
+                    )
                 }
             }
 
@@ -387,23 +426,95 @@ impl<T: Clock> Validator for HttpValidator<T> {
             if iter.peek().is_some() {
                 let elapsed = start_time.elapsed();
                 if (elapsed + to_sleep) >= self.max_attempt_duration {
-                    return Err(ValidationError::RetryWillExceedTime {
-                        attempted,
-                        elapsed,
-                        next_delay: to_sleep,
-                    }
-                    .into());
+                    return self.cached_or(
+                        cache_key,
+                        Err(ValidationError::RetryWillExceedTime {
+                            attempted,
+                            elapsed,
+                            next_delay: to_sleep,
+                        }),
+                    );
                 }
                 thread_sleep(to_sleep);
             }
         }
 
         // We're within our time budget but exhausted our retry budget
-        Err(ValidationError::RetryAttemptsExceeded {
-            attempted,
-            elapsed: start_time.elapsed(),
+        self.cached_or(
+            cache_key,
+            Err(ValidationError::RetryAttemptsExceeded {
+                attempted,
+                elapsed: start_time.elapsed(),
+            }),
+        )
+    }
+}
+
+impl<T: Clock> HttpValidator<T> {
+    /// Returns the current cached result if it exists.
+    ///
+    /// Otherwise, the `incoming` is returned (and cached if it isn't a retry-related failure).
+    fn cached_or(
+        &self,
+        cache_key: RequestHash,
+        incoming: Result<SecretCategory, ValidationError>,
+    ) -> Result<SecretCategory, ValidatorError> {
+        let mut cached = self
+            .attempted_cache
+            .lock()
+            .expect("mutex should be acquirable");
+
+        match cached.entry(cache_key) {
+            Entry::Occupied(existing) => existing.get().clone().map_err(Into::into),
+            Entry::Vacant(vacant) => {
+                let http_val_res = incoming.map_err(HttpValidatorError::from);
+                if !matches!(http_val_res, Err(HttpValidatorError::TimedOut { .. })) {
+                    vacant.insert(http_val_res.clone());
+                }
+                http_val_res.map_err(Into::into)
+            }
         }
-        .into())
+    }
+}
+
+/// A non-cryptographic 128-bit hash of a [`ureq::Request`].
+///
+/// This is used to allow de-duplication of request attempts without needing to keep potential
+/// secrets in long-lived memory.
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
+#[repr(transparent)]
+struct RequestHash(u128);
+
+impl RequestHash {
+    pub fn from_request(request: &ureq::Request, data: Option<&[u8]>) -> Self {
+        let input = Self::generate_input(request, data);
+        Self(xxh3_128(input.as_bytes()))
+    }
+
+    /// Serializes the [`ureq::Request`] into a hashable string.
+    ///
+    /// (Only fundamental properties are considered. Runtime configurations like request timeout are ignored).
+    fn generate_input(request: &ureq::Request, data: Option<&[u8]>) -> String {
+        let mut header_pairs = request.header_names();
+        header_pairs.sort();
+        let header_pairs = header_pairs
+            .into_iter()
+            .map(|name| {
+                let mut values = request.all(&name);
+                values.sort();
+                format!("{}:{}", name, values.join(","))
+            })
+            .collect::<Vec<_>>();
+        let method = format!("Method({})", request.method());
+        let url = format!("Url({})", request.url());
+        let headers = format!("Headers({})", header_pairs.join("|"));
+        let data = data.map(|bytes| format!("Data({})", String::from_utf8_lossy(bytes)));
+
+        let input = [Some(method), Some(url), Some(headers), data]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>();
+        input.join("|")
     }
 }
 
@@ -578,7 +689,7 @@ impl HttpValidatorBuilder {
             validator_id: self.validator_id,
             max_attempt_duration: self.max_attempted_duration,
             rule_id: self.rule_id,
-            attempted_cache: Arc::new(Mutex::new(HashSet::new())),
+            attempted_cache: Arc::new(Mutex::new(HashMap::new())),
             clock,
             rate_limiter: Arc::new(rate_limiter),
             request_generator: self.request_generator,
@@ -802,6 +913,13 @@ mod tests {
                 $(.$call($($args)*))*
                 .build_for_test()
         }};
+    }
+
+    /// Repeats the inputs tokens twice.
+    macro_rules! do_twice {
+        ($($code:tt)+) => {
+            $($code)+ $($code)+
+        };
     }
 
     fn to_candidate(text: &str) -> Candidate {
@@ -1061,6 +1179,82 @@ mod tests {
         let _ = validator.validate(to_candidate(VALID));
 
         mock.assert_hits(1);
+    }
+
+    #[test]
+    fn cache_validation_success() {
+        let ms = MockServer::start();
+        let validator = default_validator(&ms);
+        let mock = ms.mock(|when, then| {
+            when.header("Authorization", format!("Bearer {}", VALID));
+            then.status(200);
+        });
+        do_twice! {
+            let result = validator.validate(to_candidate(VALID));
+            assert_eq!(result.unwrap(), SecretCategory::Valid(Severity::Error));
+            mock.assert_hits(1);
+        }
+        let mock = ms.mock(|when, then| {
+            when.header("Authorization", format!("Bearer {}", INVALID));
+            then.status(401);
+        });
+        do_twice! {
+            let result = validator.validate(to_candidate(INVALID));
+            assert_eq!(result.unwrap(), SecretCategory::Invalid);
+            mock.assert_hits(1);
+        }
+    }
+
+    #[test]
+    fn cache_remote_error() {
+        let ms = MockServer::start();
+        let validator = default_validator(&ms);
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(404);
+        });
+        do_twice! {
+            let ValidatorError::ChildError { err, .. } = validator.validate(to_candidate(VALID)).unwrap_err();
+            let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+            assert!(matches!(err, HttpValidatorError::RemoteError(_)));
+            mock.assert_hits(1);
+        }
+    }
+
+    #[test]
+    fn cache_local_error() {
+        let ms = MockServer::start();
+        let url_gen = Box::new(|_c: &Candidate| "invalid url.com".to_string());
+        let req_gen = RequestGeneratorBuilder::http_get(Agent::new(), url_gen).build();
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(req_gen, resp_parser);
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(404);
+        });
+        do_twice! {
+            let ValidatorError::ChildError { err, .. } = validator.validate(to_candidate(VALID)).unwrap_err();
+            let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+            assert!(matches!(err, HttpValidatorError::LocalError(_)));
+            mock.assert_hits(0);
+        }
+    }
+
+    /// Attempts that fail for retry-related reasons are not cached
+    #[test]
+    fn cache_doesnt_store_retry_err() {
+        let ms = MockServer::start();
+        let validator = default_validator(&ms);
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(503);
+        });
+        do_twice! {
+            let ValidatorError::ChildError { err, .. } = validator.validate(to_candidate(VALID)).unwrap_err();
+            let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+            assert!(matches!(err, HttpValidatorError::TimedOut { .. }));
+        }
+        mock.assert_hits(DEFAULT_MAX_ATTEMPTS * 2);
     }
 }
 
