@@ -25,6 +25,19 @@
     {
       "type": "lldb",
       "request": "launch",
+      "name": "Debug Tests in Server Binary",
+      "cargo": {
+        "args": ["test", "--no-run", "--package=datadog-static-analyzer"],
+        "filter": {
+          "name": "datadog-static-analyzer-server"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}/crates/bins"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
       "name": "Debug Tests in Kernel",
       "cargo": {
         "args": [
