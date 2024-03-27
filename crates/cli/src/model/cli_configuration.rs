@@ -70,14 +70,12 @@ impl CliConfiguration {
         let config_hash = self.generate_diff_aware_digest();
 
         let repository = Repository::init(&self.source_directory)?;
-        let remote = repository.find_remote("origin")?;
-        let repository_url_option = remote.url();
 
-        if repository_url_option.is_none() {
-            return Err(anyhow!("cannot get the repository origin URL"));
-        }
-
-        let repository_url = repository_url_option.unwrap().to_string();
+        let repository_url = repository
+            .find_remote("origin")?
+            .url()
+            .ok_or(anyhow!("cannot get the repository origin URL"))?
+            .to_string();
 
         // let's get the latest commit
         let head = repository.head()?;
