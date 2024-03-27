@@ -43,6 +43,20 @@ Use the `--format csv` option like this
 datadog-static-analyzer --directory /path/to/code -o results.csv -f csv
 ```
 
+## Diff-aware scan fails
+
+If you get the error `diff aware not enabled (unable to generate diff-aware request data), proceeding with full scan`, it
+is generally because the user running the scan and the user owning the repository are different.
+
+To fix this issue you can disable the `safe_directory` Git option. To do so, run the following command:
+
+```shell
+
+git config --global --add safe.directory /path/to/repository
+
+```
+
+
 ## I do not see an answer to my question
 
 Please ask your question in the [discussions section](https://github.com/DataDog/datadog-static-analyzer/discussions).

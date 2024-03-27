@@ -97,3 +97,19 @@ Common causes are:
  - environment variables `DD_API_KEY`, `DD_APP_KEY` or `DD_SITE` are not specified or invalid
  - one or more new rulesets are being used
  - `datadog-ci` was not used before the analysis to update git metadata
+
+
+### Common Errors
+
+#### Diff-aware scan fails
+
+If you get the error `diff aware not enabled (unable to generate diff-aware request data), proceeding with full scan`, it
+is generally because the user running the scan and the user owning the repository are different.
+
+To fix this issue you can disable the `safe_directory` Git option. To do so, run the following command:
+
+```shell
+
+git config --global --add safe.directory /path/to/repository
+
+```
