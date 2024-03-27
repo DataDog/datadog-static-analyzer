@@ -21,7 +21,9 @@ use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
 use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
-use cli::sarif::sarif_utils::{generate_sarif_report, SarifRule, SarifRuleResult};
+use cli::sarif::sarif_utils::{
+    generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
+};
 use cli::secrets::{DetectedSecret, SecretRule};
 use cli::violations_table;
 use getopts::Options;
@@ -677,12 +679,11 @@ fn main() -> Result<()> {
         .map(|x| x.violations.len() as u32)
         .sum();
 
+    let execution_time_secs = end_timestamp - start_timestamp;
+
     println!(
         "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
-        nb_violations,
-        total_files_analyzed,
-        number_of_rules_used,
-        end_timestamp - start_timestamp
+        nb_violations, total_files_analyzed, number_of_rules_used, execution_time_secs
     );
 
     // If the performance statistics are enabled, we show the total execution time per rule
@@ -761,10 +762,13 @@ fn main() -> Result<()> {
                 &rules,
                 &results,
                 &directory_to_analyze,
-                add_git_info,
-                configuration.use_debug,
-                configuration.generate_diff_aware_digest(),
-                diff_aware_parameters,
+                SarifReportMetadata {
+                    add_git_info,
+                    debug: configuration.use_debug,
+                    config_digest: configuration.generate_diff_aware_digest(),
+                    diff_aware_parameters,
+                    execution_time_secs,
+                },
             ) {
                 Ok(report) => {
                     serde_json::to_string(&report).expect("error when getting the SARIF report")
