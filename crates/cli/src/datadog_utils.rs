@@ -176,7 +176,7 @@ pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
 ///
 /// If we can do a diff-aware scan, we will then receive the list of files
 /// to analyze and the base sha (e.g. the sha we used in the past to find
-/// the list of files). Those information will later be added in the
+/// the list of files). This information will later be added in the
 /// results.
 pub fn get_diff_aware_information(arguments: &DiffAwareRequestArguments) -> Result<DiffAwareData> {
     let site = get_datadog_site(false);

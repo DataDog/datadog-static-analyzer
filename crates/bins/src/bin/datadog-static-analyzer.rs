@@ -432,6 +432,9 @@ fn main() -> Result<()> {
             },
             Err(e) => {
                 eprintln!("diff aware not enabled (unable to generate diff-aware request data), proceeding with full scan.");
+                eprintln!("Make sure the user running the scan owns the repository (use git config --global --add safe.directory <repo-path> if needed)");
+                eprintln!("You can run the analyzer with --debug true to get more details about the error");
+                eprintln!("Proceeding with full scan");
 
                 if configuration.use_debug {
                     eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
