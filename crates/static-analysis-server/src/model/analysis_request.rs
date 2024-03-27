@@ -1,7 +1,6 @@
 use kernel::model::common::Language;
-use kernel::model::rule::{EntityChecked, RuleCategory, RuleSeverity, RuleType};
+use kernel::model::rule::{Argument, EntityChecked, RuleCategory, RuleSeverity, RuleType};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // This is a copy of the rule. We are just renaming the attribute to be
 // backward compatible with the existing rosie server.
@@ -26,7 +25,8 @@ pub struct ServerRule {
     pub pattern: Option<String>,
     #[serde(rename = "tree_sitter_query")]
     pub tree_sitter_query_base64: Option<String>,
-    pub variables: Option<HashMap<String, String>>,
+    #[serde(default)]
+    pub arguments: Vec<Argument>,
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]

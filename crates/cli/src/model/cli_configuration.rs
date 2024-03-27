@@ -108,7 +108,6 @@ mod tests {
     use kernel::model::common::Language;
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
-    use std::collections::HashMap;
 
     #[test]
     fn test_generate_diff_aware_hash() {
@@ -137,7 +136,7 @@ mod tests {
                 pattern: None,
                 cwe: None,
                 tree_sitter_query_base64: None,
-                variables: HashMap::new(),
+                arguments: vec![],
                 tests: vec![],
             }],
             path_restrictions: PathRestrictions::default(),
