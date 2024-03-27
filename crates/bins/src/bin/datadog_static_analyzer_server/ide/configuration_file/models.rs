@@ -15,12 +15,3 @@ pub struct AddRuleSetsRequest {
     pub configuration_base64: Option<String>,
     pub encoded: bool,
 }
-
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-pub struct Version {
-    pub version: String,
-    #[serde(rename = "staticAnalyzerVersion")]
-    pub sa_version: String,
-    #[serde(rename = "staticAnalyzerRevision")]
-    pub sa_revision: String,
-}
