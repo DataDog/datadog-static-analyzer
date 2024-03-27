@@ -1,4 +1,4 @@
-[tasks.server-dev]
+[tasks.dev]
 workspace = false
 command = "cargo"
 watch = true
