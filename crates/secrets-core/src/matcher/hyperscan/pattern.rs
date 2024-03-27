@@ -163,7 +163,7 @@ impl InnerRegex {
     /// Returns an `Option` of the named lookup. If `Some`, the value is the cloned [`Arc`].
     #[inline]
     pub fn to_named_lookup_arc(&self) -> Option<Arc<Vec<Option<String>>>> {
-        self.named_slots.as_ref().map(Arc::clone)
+        self.named_slots.clone()
     }
 }
 
