@@ -269,7 +269,10 @@ impl Display for HttpMethod {
 
 #[cfg(test)]
 mod time {
+    use governor::clock::{Clock, Reference};
+    use governor::nanos::Nanos;
     use std::cell::RefCell;
+    use std::ops::Add;
     use std::time::Duration;
 
     thread_local! {
@@ -308,6 +311,33 @@ mod time {
 
         pub fn elapsed(&self) -> Duration {
             MockClock::current_time() - self.0
+        }
+    }
+
+    impl Clock for MockClock {
+        type Instant = Instant;
+
+        fn now(&self) -> Self::Instant {
+            Instant::now()
+        }
+    }
+
+    impl Reference for Instant {
+        fn duration_since(&self, earlier: Self) -> Nanos {
+            Nanos::new(self.0.saturating_sub(earlier.0).as_nanos() as u64)
+        }
+
+        fn saturating_sub(&self, duration: Nanos) -> Self {
+            Instant(self.0.saturating_sub(duration.into()))
+        }
+    }
+
+    impl Add<Nanos> for Instant {
+        type Output = Instant;
+
+        fn add(self, rhs: Nanos) -> Self::Output {
+            let rhs: Duration = rhs.into();
+            Instant(self.0 + rhs)
         }
     }
 }
