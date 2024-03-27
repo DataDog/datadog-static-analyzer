@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::rule::RuleId;
+use crate::validator::http;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
 use governor::clock::Clock;
 use governor::middleware::NoOpMiddleware;
@@ -10,8 +11,7 @@ use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Add;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use url::Url;
 
 #[derive(Debug, thiserror::Error)]
@@ -101,12 +101,26 @@ struct RequestGenerator {
     build_post_payload: Option<Box<dyn Fn(&Candidate) -> Vec<u8>>>,
 }
 
+/// A wrapper around [`thread::sleep`](std::thread::sleep) that advances a [`MockClock`](crate::common::time::MockClock)
+/// when running tests.
+fn thread_sleep(duration: Duration) {
+    #[cfg(test)]
+    time::MockClock::advance(duration);
+    #[cfg(not(test))]
+    std::thread::sleep(duration);
+}
+
 impl<T: Clock> Validator for HttpValidator<T> {
     fn id(&self) -> &ValidatorId {
         &self.validator_id
     }
 
     fn validate(&self, candidate: Candidate) -> Result<SecretCategory, ValidatorError> {
+        #[cfg(test)]
+        use http::time::Instant;
+        #[cfg(not(test))]
+        use std::time::Instant;
+
         let start_time = Instant::now();
 
         let retry_delays = (self.retry_timings_iter)();
@@ -135,7 +149,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
                             }
                             .into());
                         }
-                        thread::sleep(next_delay);
+                        thread_sleep(next_delay);
                     }
                 }
             }
@@ -197,7 +211,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
                     }
                     .into());
                 }
-                thread::sleep(to_sleep);
+                thread_sleep(to_sleep);
             }
         }
 
@@ -250,5 +264,50 @@ impl TryFrom<&str> for HttpMethod {
 impl Display for HttpMethod {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())
+    }
+}
+
+#[cfg(test)]
+mod time {
+    use std::cell::RefCell;
+    use std::time::Duration;
+
+    thread_local! {
+        static TIME: RefCell<Duration> = RefCell::new(Duration::default());
+    }
+
+    /// A clock whose time can be assigned and advanced, providing deterministic readings of "now".
+    #[derive(Clone, Copy)]
+    pub struct MockClock;
+
+    impl MockClock {
+        /// Sets the clock to the given [`Duration`].
+        pub fn set(time: Duration) {
+            TIME.with_borrow_mut(|current| *current = time);
+        }
+
+        /// Advances the clock forward by the given [`Duration`].
+        pub fn advance(time: Duration) {
+            TIME.with_borrow_mut(|current| *current += time);
+        }
+
+        /// Returns the current time.
+        pub fn current_time() -> Duration {
+            TIME.with_borrow(|t| *t)
+        }
+    }
+
+    /// A partial drop-in replacement for [`std::time::Instant`] that bases its time reading off of a [`MockClock`].
+    #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+    pub struct Instant(Duration);
+
+    impl Instant {
+        pub fn now() -> Self {
+            Self(MockClock::current_time())
+        }
+
+        pub fn elapsed(&self) -> Duration {
+            MockClock::current_time() - self.0
+        }
     }
 }
