@@ -20,6 +20,7 @@ jobs:
           - { file: './misc/integration-test-docker.sh', gha_alias: 'Docker' }
           - { file: './misc/integration-test-js-ts.sh', gha_alias: 'JavaScript/TypeScript' }
           - { file: './misc/integration-test-filter-rules.sh', gha_alias: 'Per-Path Rule Filtering' }
+          - { file: './misc/integration-test-secrets.sh', gha_alias: 'Secret Scanning' }
     name: Run integration test - ${{ matrix.scripts.gha_alias }}
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +33,6 @@ jobs:
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu
-          save-if: false
+          cargo-cache-key: release
       - name: Execute script
         run: ${{ matrix.scripts.file }}
