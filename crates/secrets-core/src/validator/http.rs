@@ -14,8 +14,25 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use url::Url;
 
-#[derive(Debug, thiserror::Error)]
+/// An error returned by an [`HttpValidator`] when performing a validation attempt.
+///
+/// (This is a facade for [`ValidationError`] that can be cloned).
+#[derive(Debug, Clone, thiserror::Error)]
 pub(crate) enum HttpValidatorError {
+    /// The validator either improperly formatted the request or received a response it should have
+    /// been able to parse (but could not).
+    #[error("local validator error: {0}")]
+    LocalError(String),
+    /// The validator has indicated that this validation (and all future validation attempts) will fail due
+    /// to a remote server error or a transport error.
+    #[error("remote validation error: {0}")]
+    RemoteError(String),
+    #[error("validation timed out: {attempted} attempts, {elapsed:?} elapsed")]
+    TimedOut { attempted: usize, elapsed: Duration },
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ValidationError {
     /// The validation hit an unrecoverable error, and no further attempts will be made.
     #[error("unrecoverable validation failure")]
     RequestedAbort(Box<Result<ureq::Response, ureq::Error>>),
@@ -159,7 +176,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
             loop {
                 let elapsed = start_time.elapsed();
                 if elapsed > self.max_attempt_duration {
-                    return Err(HttpValidatorError::RetryTimeExceeded { attempted, elapsed }.into());
+                    return Err(ValidationError::RetryTimeExceeded { attempted, elapsed }.into());
                 }
                 match self.rate_limiter.check() {
                     Ok(_) => break,
@@ -167,7 +184,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
                         let next_delay = try_again_at.wait_time_from(self.clock.now());
                         let elapsed = start_time.elapsed();
                         if elapsed.add(next_delay) > self.max_attempt_duration {
-                            return Err(HttpValidatorError::RetryWillExceedTime {
+                            return Err(ValidationError::RetryWillExceedTime {
                                 attempted,
                                 elapsed,
                                 next_delay,
@@ -182,7 +199,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
             let formatted_url = (self.request_generator.format_url)(&candidate);
 
             let url = Url::parse(&formatted_url)
-                .map_err(|parse_err| HttpValidatorError::InvalidUrl(formatted_url, parse_err))?;
+                .map_err(|parse_err| ValidationError::InvalidUrl(formatted_url, parse_err))?;
 
             let mut request = self
                 .request_generator
@@ -208,7 +225,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
 
             match next_action {
                 NextAction::Abort => {
-                    return Err(HttpValidatorError::RequestedAbort(Box::new(response)).into());
+                    return Err(ValidationError::RequestedAbort(Box::new(response)).into());
                 }
                 NextAction::Retry => {}
                 NextAction::RetryAfter(http_retry_after) => {
@@ -221,7 +238,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 }
                 NextAction::ReturnResult(result) => return Ok(result),
                 NextAction::Unhandled => {
-                    return Err(HttpValidatorError::UnhandledResponse(Box::new(response)).into());
+                    return Err(ValidationError::UnhandledResponse(Box::new(response)).into());
                 }
             }
 
@@ -229,7 +246,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
             if iter.peek().is_some() {
                 let elapsed = start_time.elapsed();
                 if (elapsed + to_sleep) >= self.max_attempt_duration {
-                    return Err(HttpValidatorError::RetryWillExceedTime {
+                    return Err(ValidationError::RetryWillExceedTime {
                         attempted,
                         elapsed,
                         next_delay: to_sleep,
@@ -241,11 +258,36 @@ impl<T: Clock> Validator for HttpValidator<T> {
         }
 
         // We're within our time budget but exhausted our retry budget
-        Err(HttpValidatorError::RetryAttemptsExceeded {
+        Err(ValidationError::RetryAttemptsExceeded {
             attempted,
             elapsed: start_time.elapsed(),
         }
         .into())
+    }
+}
+
+impl From<ValidationError> for HttpValidatorError {
+    fn from(value: ValidationError) -> Self {
+        match value {
+            ValidationError::RequestedAbort(res) => {
+                let message = match res.as_ref() {
+                    Ok(resp) => format!(
+                        "validator indicated failure for response with http status: {}",
+                        resp.status()
+                    ),
+                    Err(err) => format!("ureq error: {}", err),
+                };
+                Self::RemoteError(message)
+            }
+            ValidationError::InvalidUrl(_, _)
+            | ValidationError::InvalidMethod(_)
+            | ValidationError::UnhandledResponse(_) => Self::LocalError(value.to_string()),
+            ValidationError::RetryTimeExceeded { attempted, elapsed }
+            | ValidationError::RetryAttemptsExceeded { attempted, elapsed }
+            | ValidationError::RetryWillExceedTime {
+                attempted, elapsed, ..
+            } => Self::TimedOut { attempted, elapsed },
+        }
     }
 }
 
@@ -255,6 +297,13 @@ impl From<HttpValidatorError> for ValidatorError {
             validator_type: "http".to_string(),
             err: Box::new(value),
         }
+    }
+}
+
+impl From<ValidationError> for ValidatorError {
+    fn from(value: ValidationError) -> Self {
+        let http_err: HttpValidatorError = value.into();
+        http_err.into()
     }
 }
 
@@ -275,13 +324,13 @@ impl AsRef<str> for HttpMethod {
 }
 
 impl TryFrom<&str> for HttpMethod {
-    type Error = HttpValidatorError;
+    type Error = ValidationError;
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         Ok(match value {
             "GET" => Self::Get,
             "POST" => Self::Post,
-            _ => Err(HttpValidatorError::InvalidMethod(value.to_string()))?,
+            _ => Err(ValidationError::InvalidMethod(value.to_string()))?,
         })
     }
 }
