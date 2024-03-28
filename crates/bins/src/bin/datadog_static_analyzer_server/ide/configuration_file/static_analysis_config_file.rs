@@ -39,7 +39,7 @@ fn create_ignore_rule() -> RuleConfig {
     RuleConfig {
         paths: PathConfig {
             ignore: vec![PathPattern {
-                prefix: "*/*".into(),
+                prefix: "**".into(),
                 glob: None,
             }],
             only: None,
@@ -277,7 +277,7 @@ rulesets:
         - foo/bar
     rule1:
         ignore:
-        - '*/*'
+        - '**'
 ",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
@@ -299,7 +299,7 @@ rulesets:
                 - foo/bar
             rule1:
                 ignore:
-                - '*/*'
+                - '**'
 ",
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
@@ -388,7 +388,7 @@ rulesets:
       - foo/bar
     rule1:
       ignore:
-      - '*/*'
+      - '**'
 ",
             );
             let config = StaticAnalysisConfigFile::with_added_rulesets(
@@ -409,7 +409,7 @@ rulesets:
       - foo/bar
     rule1:
       ignore:
-      - '*/*'
+      - '**'
 - ruleset2
 - a-ruleset3
 ";
@@ -464,7 +464,7 @@ rulesets:
   rules:
     rule1:
       ignore:
-      - '*/*'
+      - '**'
 ";
 
             assert_eq!(config.trim(), expected.trim());
@@ -493,7 +493,7 @@ rulesets:
   rules:
     rule1:
       ignore:
-      - '*/*'";
+      - '**'";
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -526,7 +526,7 @@ rulesets:
   rules:
     rule1:
       ignore:
-      - '*/*'";
+      - '**'";
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -562,7 +562,7 @@ rulesets:
       - foo/bar
     rule1:
       ignore:
-      - '*/*'
+      - '**'
 ";
             assert!(config.trim() == expected.trim());
         }
