@@ -1,5 +1,4 @@
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
-use kernel::constants::{CARGO_VERSION, VERSION};
 use rocket::{
     fs::NamedFile,
     futures::FutureExt,
@@ -15,6 +14,8 @@ use server::tree_sitter_tree::process_tree_sitter_tree_request;
 use std::{path::Path, process::exit, sync::mpsc::Sender};
 
 use crate::datadog_static_analyzer_server::state::ServerState;
+
+use super::{ide::ide_routes, utils};
 
 /// The shutdown endpoint, when a GET request is received, will return a 204 code if the shutdown mechanism is enabled.
 /// It will return a 403 code otherwise.
@@ -118,12 +119,12 @@ fn get_tree(span: TraceSpan, request: Json<TreeSitterRequest>) -> Value {
 
 #[rocket::get("/version", format = "text/plain")]
 pub fn get_version() -> String {
-    CARGO_VERSION.to_string()
+    utils::get_version()
 }
 
 #[rocket::get("/revision", format = "text/plain")]
 pub fn get_revision() -> String {
-    VERSION.to_string()
+    utils::get_revision()
 }
 
 #[rocket::get("/static/<name>")]
@@ -161,16 +162,23 @@ fn ping() -> String {
 
 fn mount_endpoints(rocket: Rocket<Build>) -> Rocket<Build> {
     rocket
-        .mount("/", rocket::routes![analyze])
-        .mount("/", rocket::routes![get_tree])
-        .mount("/", rocket::routes![get_version])
-        .mount("/", rocket::routes![get_revision])
-        .mount("/", rocket::routes![ping])
-        .mount("/", rocket::routes![get_options])
-        .mount("/", rocket::routes![serve_static])
-        .mount("/", rocket::routes![languages])
-        .mount("/", rocket::routes![shutdown_get])
-        .mount("/", rocket::routes![shutdown_post])
+        .mount(
+            "/",
+            rocket::routes![
+                analyze,
+                get_tree,
+                get_version,
+                get_revision,
+                ping,
+                get_options,
+                serve_static,
+                languages,
+                shutdown_get,
+                shutdown_post
+            ],
+        )
+        // IDE owned routes
+        .mount("/ide", ide_routes())
 }
 
 pub async fn launch_rocket_with_endpoints(

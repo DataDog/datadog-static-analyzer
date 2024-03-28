@@ -1,0 +1,45 @@
+[tasks.dev]
+workspace = false
+command = "cargo"
+watch = true
+env = { RUST_LOG = "off,datadog_static_analyzer=debug" }
+args = [
+  "run",
+  "-p",
+  "datadog-static-analyzer",
+  "--bin",
+  "datadog-static-analyzer-server",
+  "--",
+  "-p",
+  "49159",
+]
+
+[tasks.ide-test]
+workspace = false
+command = "cargo"
+watch = true
+args = ["test", "-p", "datadog-static-analyzer", "ide", "--", "--nocapture"]
+
+[tasks.udeps]
+workspace = false
+install_crate = "udeps"
+toolchain = "nightly"
+command = "cargo"
+args = ["udeps", "--all-targets"]
+
+[tasks.format]
+clear = true
+workspace = false
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clippy]
+workspace = false
+install_crate = "cargo-clippy"
+command = "cargo"
+args = ["clippy"]
+
+[tasks.all]
+workspace = false
+dependencies = ["check", "format", "clippy"]

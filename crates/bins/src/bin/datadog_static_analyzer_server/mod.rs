@@ -3,6 +3,7 @@ use tracing_subscriber::EnvFilter;
 mod cli;
 mod endpoints;
 mod fairings;
+mod ide;
 mod state;
 mod utils;
 
