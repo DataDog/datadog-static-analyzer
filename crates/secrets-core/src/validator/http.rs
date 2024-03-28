@@ -738,6 +738,287 @@ impl ResponseParserBuilder {
 }
 
 #[cfg(test)]
+mod tests {
+    use crate::common::ByteSpan;
+    use crate::location::{Point, PointSpan};
+    use crate::rule::{LocatedString, RuleMatch};
+    use crate::validator::http::time::{Instant, MockClock};
+    use crate::validator::http::{
+        DynFnResponseParser, HttpValidator, HttpValidatorBuilder, HttpValidatorError, NextAction,
+        RequestGenerator, RequestGeneratorBuilder, ResponseParserBuilder, RetryConfig, RetryPolicy,
+    };
+    use crate::validator::{Candidate, SecretCategory, Severity, ValidatorError};
+    use crate::Validator;
+    use httpmock::MockServer;
+    use std::collections::HashMap;
+    use std::ops::Mul;
+    use std::path::PathBuf;
+    use std::time::Duration;
+    use ureq::Agent;
+
+    const VALID: &str = "121bdc4e---------valid----------49935a92";
+    const INVALID: &str = "7730b8f8--------invalid---------7c1fd58f";
+
+    const RULE_ID: &str = "service-key";
+
+    const DEFAULT_MAX_ATTEMPTS: usize = 5;
+    const DEFAULT_RETRY_DURATION: Duration = Duration::from_secs(2);
+    const DEFAULT_MAX_ATTEMPT_DURATION: Duration = Duration::from_secs(15);
+
+    /// Constructs an [`HttpValidator`] with defaults:
+    /// * `retry_policy`: Fixed (up to [`DEFAULT_MAX_ATTEMPTS`] times, [`DEFAULT_RETRY_DURATION`] seconds)
+    /// * `max_attempt_duration`: [`DEFAULT_MAX_ATTEMPT_DURATION`]
+    ///
+    /// Additionally, a comma-separated list of valid [`HttpValidatorBuilder`] calls will configure the validator.
+    macro_rules! build_validator {
+        ($req_gen:ident, $resp_parser:ident $(, $call:ident($($args:tt)*))* $(,)?) => {{
+            HttpValidatorBuilder::new("http".into(), RULE_ID.into(), $req_gen, $resp_parser)
+                .retry_config(fixed_retry(DEFAULT_MAX_ATTEMPTS, DEFAULT_RETRY_DURATION))
+                .max_attempt_duration(DEFAULT_MAX_ATTEMPT_DURATION)
+                $(.$call($($args)*))*
+                .build_for_test()
+        }};
+    }
+
+    fn to_candidate(text: &str) -> Candidate {
+        let byte_span = ByteSpan::new(288, 288 + text.len());
+        let point_start = Point::new(8, 25);
+        let point_end = Point::new(8, 25 + text.len() as u32);
+        Candidate {
+            source: PathBuf::from("foo/bar/baz.rs"),
+            rule_match: RuleMatch {
+                rule_id: RULE_ID.into(),
+                matched: LocatedString {
+                    inner: text.to_string(),
+                    byte_span,
+                    point_span: PointSpan::new(point_start, point_end),
+                },
+                captures: HashMap::new(),
+            },
+        }
+    }
+
+    fn default_validator(mock_server: &MockServer) -> HttpValidator<MockClock> {
+        let req_gen = base_request_generator(&mock_server);
+        let resp_parser = base_response_parser();
+        build_validator!(req_gen, resp_parser)
+    }
+
+    fn base_request_generator(server: &MockServer) -> RequestGenerator {
+        let base_url = server.base_url();
+        let url_gen = Box::new(move |_c: &Candidate| format!("{}/", base_url));
+        let gen_header = Box::new(|c: &Candidate| format!("Bearer {}", c.rule_match.matched.inner));
+        RequestGeneratorBuilder::http_get(Agent::new(), url_gen)
+            .header("Accept", "text/plain")
+            .dynamic_header("Authorization", gen_header)
+            .build()
+    }
+
+    fn base_response_parser() -> Box<DynFnResponseParser> {
+        ResponseParserBuilder::new()
+            .on_status_code(
+                200,
+                NextAction::ReturnResult(SecretCategory::Valid(Severity::Error)),
+            )
+            .on_status_code(401, NextAction::ReturnResult(SecretCategory::Invalid))
+            .on_status_code(404, NextAction::Abort)
+            .build()
+    }
+
+    fn fixed_retry(max_attempts: usize, duration: Duration) -> RetryConfig {
+        RetryConfig {
+            max_attempts,
+            use_jitter: false,
+            policy: RetryPolicy::Fixed { duration },
+        }
+    }
+
+    #[test]
+    fn valid_secret() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.header("Authorization", format!("Bearer {}", VALID));
+            then.status(200);
+        });
+        let validator = default_validator(&ms);
+        let category = validator.validate(to_candidate(VALID)).unwrap();
+        mock.assert_hits(1);
+        assert_eq!(category, SecretCategory::Valid(Severity::Error));
+    }
+
+    #[test]
+    fn invalid_secret() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.header("Authorization", format!("Bearer {}", INVALID));
+            then.status(401);
+        });
+        let validator = default_validator(&ms);
+        let category = validator.validate(to_candidate(INVALID)).unwrap();
+        mock.assert_hits(1);
+        assert_eq!(category, SecretCategory::Invalid);
+    }
+
+    #[test]
+    fn validation_abort() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(404);
+        });
+        let validator = default_validator(&ms);
+        let ValidatorError::ChildError { err, .. } =
+            validator.validate(to_candidate(VALID)).unwrap_err();
+        let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+        mock.assert_hits(1);
+        assert!(matches!(err, HttpValidatorError::RemoteError(..)))
+    }
+
+    #[test]
+    fn validation_all_retry() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(503);
+        });
+        let validator = default_validator(&ms);
+        let ValidatorError::ChildError { err, .. } =
+            validator.validate(to_candidate(VALID)).unwrap_err();
+        let &HttpValidatorError::TimedOut { attempted, elapsed } =
+            err.downcast_ref::<HttpValidatorError>().unwrap()
+        else {
+            panic!("err should be `TimedOut`")
+        };
+
+        mock.assert_hits(DEFAULT_MAX_ATTEMPTS);
+        assert_eq!(attempted, DEFAULT_MAX_ATTEMPTS);
+        // Never sleep on the last attempt
+        assert_eq!(
+            elapsed,
+            DEFAULT_RETRY_DURATION.mul((DEFAULT_MAX_ATTEMPTS - 1) as u32)
+        );
+    }
+
+    /// The maximum attempt duration is respected, regardless of maximum retry attempts.
+    #[test]
+    fn validation_retry_truncate() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.header("Authorization", format!("Bearer {}", VALID));
+            then.status(503);
+        });
+        let req_gen = base_request_generator(&ms);
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(
+            req_gen,
+            resp_parser,
+            retry_config(fixed_retry(10, Duration::from_secs(5))),
+            max_attempt_duration(Duration::from_secs(12))
+        );
+        let pre_validation = Instant::now();
+        let _ = validator.validate(to_candidate(VALID));
+        mock.assert_hits(3);
+        assert_eq!(pre_validation.elapsed(), Duration::from_secs(10));
+    }
+
+    /// The retry delay respects the server's `Retry-After`
+    #[test]
+    fn validation_429() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.header("Authorization", format!("Bearer {}", VALID));
+            then.header("Retry-After", "10").status(429);
+        });
+        let req_gen = base_request_generator(&ms);
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(
+            req_gen,
+            resp_parser,
+            retry_config(fixed_retry(5, Duration::from_secs(2)))
+        );
+        let pre_validation = Instant::now();
+        let _ = validator.validate(to_candidate(VALID));
+        mock.assert_hits(2);
+        assert_eq!(pre_validation.elapsed(), Duration::from_secs(10));
+    }
+
+    /// No retry happens if the `Retry-After` would push the job over its maximum
+    #[test]
+    fn validation_429_over() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(429).header("Retry-After", "100");
+        });
+        let req_gen = base_request_generator(&ms);
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(req_gen, resp_parser);
+        let pre_validation = Instant::now();
+        let ValidatorError::ChildError { err, .. } =
+            validator.validate(to_candidate(VALID)).unwrap_err();
+        let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+        mock.assert_hits(1);
+        assert!(matches!(err, HttpValidatorError::TimedOut { attempted, .. } if *attempted == 1));
+        assert_eq!(pre_validation.elapsed(), Duration::from_secs(0));
+    }
+
+    /// Tests rate limiting for unique requests.
+    #[test]
+    fn rate_limiter_full_attempts() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(200);
+        });
+        let req_gen = base_request_generator(&ms);
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(
+            req_gen,
+            resp_parser,
+            max_attempt_duration(Duration::MAX),
+            rate_limit(1, Duration::from_secs(1))
+        );
+        let pre_validation = Instant::now();
+        for i in 0..1000 {
+            let num_str = i.to_string();
+            let category = validator.validate(to_candidate(&num_str)).unwrap();
+            assert!(matches!(category, SecretCategory::Valid(_)));
+        }
+        mock.assert_hits(1000);
+        // 1000 requests at 1 req/s, but the first has no delay == 999s
+        assert_eq!(pre_validation.elapsed(), Duration::from_secs(1000 - 1));
+    }
+
+    /// Tests rate limiting for request retries.
+    #[test]
+    fn rate_limiter_retry() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(503);
+        });
+        let req_gen = base_request_generator(&ms);
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(
+            req_gen,
+            resp_parser,
+            max_attempt_duration(Duration::MAX),
+            rate_limit(1, Duration::from_secs(1)),
+            retry_config(fixed_retry(1000, Duration::from_millis(1)))
+        );
+        let pre_validation = Instant::now();
+        let ValidatorError::ChildError { err, .. } =
+            validator.validate(to_candidate(VALID)).unwrap_err();
+        let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+        assert!(matches!(err, HttpValidatorError::TimedOut { .. }));
+
+        mock.assert_hits(1000);
+        // 1000 requests at 1 req/s, but the first has no delay == 999s
+        assert_eq!(pre_validation.elapsed(), Duration::from_secs(1000 - 1));
+    }
+}
+
+#[cfg(test)]
 mod time {
     use governor::clock::{Clock, Reference};
     use governor::nanos::Nanos;
