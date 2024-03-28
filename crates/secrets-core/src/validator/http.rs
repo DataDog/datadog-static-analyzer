@@ -262,6 +262,8 @@ pub struct HttpValidator<T: Clock = MonotonicClock> {
     response_parser: Box<DynFnResponseParser>,
     /// A function that generates an iterator of [`Duration`] that implements this validator's retry policy.
     backoff_generator: Box<DynFnBackoffGenerator>,
+    /// The duration the validator will wait for a server response before considering a request failed.
+    request_timeout: Duration,
 }
 
 /// The next action to take after an HTTP request has received a response.
@@ -354,10 +356,17 @@ impl<T: Clock> Validator for HttpValidator<T> {
             let url = Url::parse(&formatted_url)
                 .map_err(|parse_err| ValidationError::InvalidUrl(formatted_url, parse_err))?;
 
+            let time_budget = {
+                let elapsed = start_time.elapsed();
+                self.max_attempt_duration
+                    .checked_sub(elapsed)
+                    .ok_or(ValidationError::RetryTimeExceeded { attempted, elapsed })
+            }?;
             let mut request = self
                 .request_generator
                 .agent
-                .request(self.request_generator.method.as_ref(), url.as_str());
+                .request(self.request_generator.method.as_ref(), url.as_str())
+                .timeout(time_budget.min(self.request_timeout));
             request = (self.request_generator.add_headers)(&candidate, request);
 
             attempted += 1;
@@ -519,9 +528,12 @@ pub struct HttpValidatorBuilder {
     response_parser: Box<DynFnResponseParser>,
     rate_limit: RateLimitQuota,
     retry_config: RetryConfig,
+    request_timeout: Duration,
 }
 
 impl HttpValidatorBuilder {
+    const DEFAULT_REQ_TIMEOUT: Duration = Duration::from_secs(5);
+
     pub fn new(
         validator_id: ValidatorId,
         rule_id: RuleId,
@@ -536,6 +548,7 @@ impl HttpValidatorBuilder {
             response_parser,
             rate_limit: RateLimitQuota::default(),
             retry_config: RetryConfig::default(),
+            request_timeout: Self::DEFAULT_REQ_TIMEOUT,
         }
     }
 
@@ -560,6 +573,12 @@ impl HttpValidatorBuilder {
     /// round-trip latency.
     pub fn max_attempt_duration(mut self, max: Duration) -> Self {
         self.max_attempted_duration = max;
+        self
+    }
+
+    /// Sets the timeout for an HTTP request.
+    pub fn request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
         self
     }
 
@@ -588,6 +607,7 @@ impl HttpValidatorBuilder {
             request_generator: self.request_generator,
             response_parser: self.response_parser,
             backoff_generator: self.retry_config.to_backoff_generator(),
+            request_timeout: self.request_timeout,
         }
     }
 }
