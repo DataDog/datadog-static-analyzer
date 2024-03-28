@@ -44,7 +44,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .map(|cfg_file| !is_allowed_by_path_config(&cfg_file.paths, &request.filename))
         .unwrap_or_default();
     if file_is_excluded_by_cfg {
-        tracing::info!("Successfully completed analysis for excluded file");
+        tracing::info!("Skipped excluded file");
         return AnalysisResponse {
             rule_responses: vec![],
             errors: vec![],
