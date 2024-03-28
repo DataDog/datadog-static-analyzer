@@ -9,7 +9,7 @@ use kernel::analysis::analyze::analyze;
 use kernel::config_file::{parse_config_file, ArgumentProvider};
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
-use kernel::path_restrictions::PathRestrictions;
+use kernel::path_restrictions::{is_allowed_by_path_config, PathRestrictions};
 use kernel::utils::decode_base64_string;
 
 #[tracing::instrument(skip_all)]
@@ -37,6 +37,19 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         },
         None => None,
     };
+
+    // If the file is excluded by the global configuration, stop early.
+    let file_is_excluded_by_cfg = configuration
+        .as_ref()
+        .map(|cfg_file| !is_allowed_by_path_config(&cfg_file.paths, &request.filename))
+        .unwrap_or_default();
+    if file_is_excluded_by_cfg {
+        tracing::debug!("Skipped excluded file: {}", request.filename);
+        return AnalysisResponse {
+            rule_responses: vec![],
+            errors: vec![],
+        };
+    }
 
     // Extract the path restrictions from the configuration file.
     let path_restrictions = configuration
@@ -431,6 +444,25 @@ mod tests {
         let response = process_analysis_request(request.clone());
         assert_eq!(4, response.rule_responses.len());
 
+        // Global exclude for 'path/to'
+        request.configuration_base64 = Some(encode_base64_string(
+            r#"
+rulesets:
+  - rs_one
+ignore: [path/to]
+        "#
+            .to_string(),
+        ));
+        let response = process_analysis_request(request.clone());
+        eprintln!("{:?}", response);
+        assert_eq!(0, response.rule_responses.len());
+
+        let response = process_analysis_request(AnalysisRequest {
+            filename: "other/path/myfile.py".to_string(),
+            ..request.clone()
+        });
+        assert_eq!(4, response.rule_responses.len());
+
         // rs_one excludes 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
             r#"
@@ -449,6 +481,24 @@ rulesets:
             ..request.clone()
         });
         assert_eq!(4, response.rule_responses.len());
+
+        // Globally only allows 'path/to'
+        request.configuration_base64 = Some(encode_base64_string(
+            r#"
+rulesets:
+  - rs_one
+only: [path/to]
+        "#
+            .to_string(),
+        ));
+        let response = process_analysis_request(request.clone());
+        assert_eq!(4, response.rule_responses.len());
+
+        let response = process_analysis_request(AnalysisRequest {
+            filename: "other/path/myfile.py".to_string(),
+            ..request.clone()
+        });
+        assert_eq!(0, response.rule_responses.len());
 
         // rs_one only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
