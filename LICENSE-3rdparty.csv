@@ -21,7 +21,6 @@ pcre2,https://github.com/BurntSushi/rust-pcre2,MIT,Copyright (c) 2017 Andrew Gal
 percent-encoding,https://github.com/servo/rust-url/,MIT, Copyright (c) 2013-2022 The rust-url developers
 prettytable-rs,https://github.com/phsym/prettytable-rs/,BSD-3-Clause,Copyright (c) 2022 Pierre-Henri Symoneaux
 rayon,https://crates.io/crates/rayon,MIT,Copyright (c) 2010 The Rust Project Developers
-retry,https://github.com/jimmycuadra/retry,MIT,Copyright (c) 2015-2020 Jimmy Cuadra and Sam Rijs
 rocket,https://github.com/SergioBenitez/Rocket,Apache-2.0,Copyright 2016 Sergio Benitez
 rust-bindgen,https://github.com/rust-lang/rust-bindgen,BSD-3-Clause,Copyright (c) 2013 Jyun-Yan You
 tree-sitter,https://github.com/tree-sitter/tree-sitter,MIT,2014 Max Brunsfeld
