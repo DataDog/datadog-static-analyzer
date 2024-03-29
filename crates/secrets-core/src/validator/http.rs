@@ -55,6 +55,9 @@ enum ValidationError {
     UnhandledResponse(Box<Result<ureq::Response, ureq::Error>>),
 }
 
+/// The `User-Agent` sent in HTTP requests to external servers.
+const DD_USER_AGENT: &str = "Datadog/StaticAnalyzer";
+
 const DEFAULT_MAX_ATTEMPTS: usize = 4;
 const DEFAULT_USE_JITTER: bool = true;
 const DEFAULT_BASE: Duration = Duration::from_secs(1);
@@ -661,6 +664,7 @@ impl RequestGeneratorBuilder {
                 for header_fn in &header_fns {
                     request = header_fn(candidate, request);
                 }
+                request = request.set("User-Agent", DD_USER_AGENT);
                 request
             };
         RequestGenerator {
@@ -765,6 +769,7 @@ mod tests {
     use crate::validator::http::{
         DynFnResponseParser, HttpValidator, HttpValidatorBuilder, HttpValidatorError, NextAction,
         RequestGenerator, RequestGeneratorBuilder, ResponseParserBuilder, RetryConfig, RetryPolicy,
+        DD_USER_AGENT,
     };
     use crate::validator::{Candidate, SecretCategory, Severity, ValidatorError};
     use crate::Validator;
@@ -1034,6 +1039,28 @@ mod tests {
         mock.assert_hits(1000);
         // 1000 requests at 1 req/s, but the first has no delay == 999s
         assert_eq!(pre_validation.elapsed(), Duration::from_secs(1000 - 1));
+    }
+
+    /// The [`RequestGeneratorBuilder`] should force all requests to use [`DD_USER_AGENT`] as the User-Agent,
+    /// even if the user tried to specify a different user agent.
+    #[test]
+    fn dd_user_agent() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.header("User-Agent", DD_USER_AGENT);
+            then.status(200);
+        });
+
+        let base_url = ms.base_url();
+        let url_gen = Box::new(move |_c: &Candidate| format!("{}/", base_url));
+        let req_gen = RequestGeneratorBuilder::http_get(Agent::new(), url_gen)
+            .header("User-Agent", "Abc/1.0")
+            .build();
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(req_gen, resp_parser);
+        let _ = validator.validate(to_candidate(VALID));
+
+        mock.assert_hits(1);
     }
 }
 
