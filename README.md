@@ -152,6 +152,12 @@ The map in the `rules` field uses the rule's name as its key, and the values are
 
 - `ignore` (optional) a list of path prefixes and glob patterns to ignore _for this rule_. This rule will not be evaluated for any files that match any of the entries in the `ignore` list.
 - `only`: (optional) a list of path prefixes and glob patterns to analyze _for this rule_. If `only` is specified, this rule will only be evaluated for files that match one of the entries.
+- `arguments`: (optional) a map of values for the rule's arguments.
+
+The map in the `arguments` field uses an argument's name as its key, and the values are either strings or maps:
+
+- if you want to set a value for the whole repository, you can specify it as a string;
+- if you want to set different values for different subtrees in the repository, you can specify them as a map from a subtree prefix to the value that the argument will have within that subtree. See the example for more details.
 
 An annotated example of a configuration file:
 
@@ -160,8 +166,8 @@ An annotated example of a configuration file:
 schema-version: v1
 # The list of rulesets to enable for this repository.
 rulesets:
-  # Enable the `python-code-style ruleset` with the default configuration.
-  - python-code-style
+  # Enable the `python-inclusive` ruleset with the default configuration.
+  - python-inclusive
   # Enable the `python-best-practices` ruleset with a custom configuration.
   - python-best-practices:
     # Do not apply any of the rules in this ruleset to files that match `src/**/*.generated.py`.
@@ -173,8 +179,23 @@ rulesets:
         # Only apply this rule to files under the `src/new-code` subtree.
         only:
           - src/new-code
-  # Enable the `python-inclusive` ruleset with the default configuration.
-  - python-inclusive
+  # Enable the `python-code-style ruleset` with a custom configuration.
+  - python-code-style:
+    rules:
+      max-function-lines:
+        # Set arguments for the `python-code-style/max-function-lines` rule.
+        arguments:
+          # Set the `max-lines` argument to 150 in the whole repository.
+          max-lines: 150
+      max-class-lines:
+        # Set arguments for the `python-code-style/max-class-lines` rule.
+        arguments:
+          # Set different values for the `max-lines` argument in different subtrees.
+          max-lines:
+            # Set the `max-lines` argument to 100 by default
+            /: 100
+            # Set the `max-lines` argument to 75 under the `src/new-code` subtree.
+            src/new-code: 75
 # Analyze only files in the `src` and `imported` subtrees.
 only:
   - src
@@ -193,8 +214,8 @@ Another example that shows every option being used:
 ```yaml
 schema-version: v1
 rulesets:
-  - python-code-style
-  - python-best-practices:
+  - python-best-practices
+  - python-code-style:
     ignore:
       - src/generated
       - src/**/*_test.py
@@ -202,13 +223,18 @@ rulesets:
       - src
       - imported/**/new/**
     rules:
-      no-generic-exception:
+      max-function-lines:
         ignore:
           - src/new-code
           - src/new/*.gen.py
         only:
           - src/new
           - src/**/new-code/**
+        arguments:
+          max-lines: 150
+          min-lines:
+            /: 10
+            src/new-code: 0
 ignore:
   - dist
   - lib/**/*.py
