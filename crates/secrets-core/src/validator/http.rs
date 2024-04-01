@@ -57,6 +57,9 @@ pub(crate) enum RetryPolicy {
 
 type DynFnResponseParser = dyn Fn(&Result<ureq::Response, ureq::Error>) -> NextAction;
 
+/// The rate limiter used to cap the outbound requests per second for an [`HttpValidator`].
+// NOTE: This has to be generic over `Clock` instead of the more ergonomic `governor::DefaultDirectRateLimiter`
+// because we need to be able to override the clock in unit tests.
 type RateLimiter<T> = governor::RateLimiter<
     governor::state::NotKeyed,
     governor::state::InMemoryState,
@@ -64,16 +67,36 @@ type RateLimiter<T> = governor::RateLimiter<
     NoOpMiddleware<<T as Clock>::Instant>,
 >;
 
+/// A [`Validator`] that uses outbound HTTP requests to perform validation of a secret.
+///
+/// This validator is tagged with a [`RuleId`] because it conceptually "belongs" to a rule.
+/// Thus, this validator contains all the logic required to format an HTTP request, make the request,
+/// and parse the response to determine a [`SecretCategory`].
+///
+/// This validator supports:
+/// * A request retry policy
+/// * Rate limiting of outbound requests
+/// * Parsing/handling of HTTP response
 pub struct HttpValidator<T: Clock = MonotonicClock> {
+    /// The user-assigned [`ValidatorId`] of this validator.
     validator_id: ValidatorId,
     /// The maximum time allowed for a single validation attempt, inclusive of rate-limiting and retry delay.
     max_attempt_duration: Duration,
+    /// The user-assigned [`RuleId`] of which this validator validates.
     rule_id: RuleId,
+    /// A cache of the requests that have already been attempted so that no duplicates are sent.
     attempted_cache: Arc<Mutex<HashSet<[u8; 32]>>>,
+    /// The [`Clock`] implementation used by the rate limiter.
+    // NOTE: This needs to be included as part of the struct in order to override the clock for unit tests.
     clock: T,
+    /// The limiter that enforces a maximum outbound HTTP request rate across all threads using this validator.
     rate_limiter: Arc<RateLimiter<T>>,
+    /// The implementation that determines how to structure the HTTP request on a per-
+    /// [`Candidate`] basis.
     request_generator: RequestGenerator,
+    /// The boxed function that parses the [`ureq::Response`] to determine the appropriate action to take.
     response_parser: Box<DynFnResponseParser>,
+    /// A function that generates an iterator of [`Duration`] that implements this validator's retry policy.
     retry_timings_iter: Box<dyn Fn() -> Box<dyn Iterator<Item = Duration>>>,
 }
 
