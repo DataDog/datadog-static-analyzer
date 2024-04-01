@@ -8,9 +8,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::config_file::{
-    deserialize_ruleconfigs, deserialize_rulesetconfigs, deserialize_schema_version,
-    get_default_schema_version, serialize_rulesetconfigs,
+    deserialize_category, deserialize_ruleconfigs, deserialize_rulesetconfigs,
+    deserialize_schema_version, get_default_schema_version, serialize_rulesetconfigs,
 };
+use crate::model::rule::{RuleCategory, RuleSeverity};
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
@@ -45,6 +46,14 @@ pub struct RuleConfig {
     pub paths: PathConfig,
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub arguments: HashMap<String, ArgumentValues>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub severity: Option<RuleSeverity>,
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_category",
+        default
+    )]
+    pub category: Option<RuleCategory>,
 }
 
 // Configuration for a ruleset.

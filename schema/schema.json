@@ -54,16 +54,25 @@
         "arguments": {
           "type": "object",
           "additionalProperties": {
-            "types": [
-              "string",
-              {
-                "type": "object",
-                "additionalProperties": {
-                  "type": "string"
-                }
-              }
-            ]
+            "$ref": "#/definitions/argumentValue"
           }
+        },
+        "severity": {
+          "enum": [
+            "ERROR",
+            "WARNING",
+            "NOTICE",
+            "NONE"
+          ]
+        },
+        "category": {
+          "enum": [
+            "BEST_PRACTICES",
+            "CODE_STYLE",
+            "ERROR_PRONE",
+            "PERFORMANCE",
+            "SECURITY"
+          ]
         }
       }
     },
@@ -81,7 +90,7 @@
         "rules": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/rule "
+            "$ref": "#/definitions/rule"
           }
         },
         "ignore": {
@@ -99,6 +108,34 @@
         "type": "string",
         "minLength": 1
       }
+    },
+    "argumentValue": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/singularArgumentValue"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/singularArgumentValue"
+          }
+        }
+      ]
+    },
+    "singularArgumentValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number",
+          "$comment": "will be internally coerced to string"
+        },
+        {
+          "type": "boolean",
+          "$comment": "will be internally coerced to string"
+        }
+      ]
     }
   }
 }

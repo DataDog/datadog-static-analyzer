@@ -11,6 +11,7 @@ use std::fmt::Formatter;
 use crate::model::config_file::{
     ArgumentValues, ConfigFile, PathPattern, RuleConfig, RulesetConfig,
 };
+use crate::model::rule::RuleCategory;
 
 pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
@@ -461,6 +462,22 @@ impl<'de> Deserialize<'de> for ArgumentValues {
     }
 }
 
+/// Deserializer for a `RuleConfig` map which rejects duplicate rules.
+pub fn deserialize_category<'de, D>(deserializer: D) -> Result<Option<RuleCategory>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let category = RuleCategory::deserialize(deserializer)?;
+    if category == RuleCategory::Unknown {
+        Err(Error::invalid_value(
+            Unexpected::Str("unknown"),
+            &"a rule category",
+        ))
+    } else {
+        Ok(Some(category))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -676,6 +693,8 @@ rulesets:
                                 ignore: vec!["py/insecure/**".to_string().into()],
                             },
                             arguments: HashMap::new(),
+                            severity: None,
+                            category: None,
                         },
                     )]),
                 },
@@ -789,6 +808,8 @@ rulesets:
                                         },
                                     ),
                                 ]),
+                                severity: None,
+                                category: None,
                             },
                         ),
                         (
@@ -815,6 +836,8 @@ rulesets:
                                         },
                                     ),
                                 ]),
+                                severity: None,
+                                category: None,
                             },
                         ),
                     ]),

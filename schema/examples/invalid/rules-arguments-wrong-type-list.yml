@@ -6,5 +6,3 @@ rulesets:
         arguments:
           - foo
           - bar
-      loose-coupling:
-      one-declaration-per-line:
