@@ -30,7 +30,7 @@ pub struct Engine {
 }
 
 thread_local! {
-    static WORKER: RefCell<Option<Worker>> = RefCell::new(None);
+    static WORKER: RefCell<Option<Worker>> = const { RefCell::new(None) };
 }
 impl Engine {
     pub fn scan_file(&self, file_path: &Path) -> Result<Vec<Candidate>, EngineError> {

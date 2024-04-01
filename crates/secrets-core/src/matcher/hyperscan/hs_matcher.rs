@@ -173,7 +173,7 @@ impl<'b> Iterator for MatchCursor<'_, 'b> {
             }) = &mut self.current_mappers_iter
             {
                 if let Some(capture_slots) = iter.next() {
-                    let named_lookup = named_lookup.as_ref().map(Arc::clone);
+                    let named_lookup = named_lookup.clone();
                     let rule_match = PatternMatch {
                         pattern_id: *pattern_id,
                         full_data: self.data,
