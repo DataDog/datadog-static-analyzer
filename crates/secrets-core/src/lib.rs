@@ -17,6 +17,8 @@ pub mod rule_evaluator;
 pub mod validator;
 pub use validator::Validator;
 
+pub extern crate ureq;
+
 // TODO: Remove re-export once a `Hyperscan` builder is implemented
 pub use vectorscan;
 

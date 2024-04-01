@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[cfg(feature = "validator-http")]
-mod http;
+pub mod http;
 
 pub trait Validator {
     fn id(&self) -> &ValidatorId;

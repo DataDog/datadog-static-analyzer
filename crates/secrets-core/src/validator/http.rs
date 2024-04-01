@@ -224,9 +224,9 @@ pub enum RetryPolicy {
     },
 }
 
-type DynFnResponseParser = dyn Fn(&Result<HttpResponse, ureq::Error>) -> NextAction;
+pub type DynFnResponseParser = dyn Fn(&Result<HttpResponse, ureq::Error>) -> NextAction;
 /// A function that generates an Iterator of [`Duration`] representing a [`RetryPolicy`]
-type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>>;
+pub type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>>;
 
 /// The rate limiter used to cap the outbound requests per second for an [`HttpValidator`].
 // NOTE: This has to be generic over `Clock` instead of the more ergonomic `governor::DefaultDirectRateLimiter`
@@ -292,7 +292,7 @@ pub type GeneratorResult<T> = Result<T, Box<dyn std::error::Error>>;
 /// The function must return a tuple, containing:
 /// * `0`: `Vec<u8>` of the data to send
 /// * `1`: `String` to send as the `Content-Type` HTTP header
-type DynFnPostPayloadGenerator = dyn Fn(&Candidate) -> GeneratorResult<(Vec<u8>, String)>;
+pub type DynFnPostPayloadGenerator = dyn Fn(&Candidate) -> GeneratorResult<(Vec<u8>, String)>;
 
 #[allow(clippy::type_complexity)]
 pub struct RequestGenerator {
