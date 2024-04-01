@@ -126,10 +126,12 @@ struct RequestGenerator {
 
 /// A wrapper around [`thread::sleep`](std::thread::sleep) that advances a [`MockClock`](crate::common::time::MockClock)
 /// when running tests.
+#[cfg(test)]
 fn thread_sleep(duration: Duration) {
-    #[cfg(test)]
     time::MockClock::advance(duration);
-    #[cfg(not(test))]
+}
+#[cfg(not(test))]
+fn thread_sleep(duration: Duration) {
     std::thread::sleep(duration);
 }
 
