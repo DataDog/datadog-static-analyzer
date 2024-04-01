@@ -462,7 +462,7 @@ impl<'de> Deserialize<'de> for ArgumentValues {
     }
 }
 
-/// Deserializer for a `RuleConfig` map which rejects duplicate rules.
+/// Deserializer for a `RuleCategory` which rejects the 'unknown' option.
 pub fn deserialize_category<'de, D>(deserializer: D) -> Result<Option<RuleCategory>, D::Error>
 where
     D: Deserializer<'de>,
