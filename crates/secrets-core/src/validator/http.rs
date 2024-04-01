@@ -5,7 +5,7 @@
 use crate::rule::RuleId;
 use crate::validator::http;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
-use governor::clock::Clock;
+use governor::clock::{Clock, MonotonicClock};
 use governor::middleware::NoOpMiddleware;
 use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
@@ -64,7 +64,7 @@ type RateLimiter<T> = governor::RateLimiter<
     NoOpMiddleware<<T as Clock>::Instant>,
 >;
 
-pub struct HttpValidator<T: Clock> {
+pub struct HttpValidator<T: Clock = MonotonicClock> {
     validator_id: ValidatorId,
     /// The maximum time allowed for a single validation attempt, inclusive of rate-limiting and retry delay.
     max_attempt_duration: Duration,
