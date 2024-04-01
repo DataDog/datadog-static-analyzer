@@ -15,6 +15,8 @@ rulesets:
         arguments:
           foo: bar
       one-declaration-per-line:
+        severity: ERROR
+        category: CODE_STYLE
         ignore:
           - "**"
   - go-best-practices:

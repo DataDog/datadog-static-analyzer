@@ -6,5 +6,3 @@ rulesets:
           # 'rulesets/rules/<rule>/arguments/<argument>' is a string or a map.
           foo:
             - bar
-      loose-coupling:
-      one-declaration-per-line:

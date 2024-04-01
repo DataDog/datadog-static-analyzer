@@ -2,5 +2,4 @@ rulesets:
   - java-best-practices:
     rules:
       avoid-printstacktrace:
-        # 'rulesets/rules/<rule>/ignore' is a list.
-        only: foo
+        category: XXXXXX
