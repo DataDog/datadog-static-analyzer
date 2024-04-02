@@ -42,6 +42,8 @@ enum ValidationError {
     InvalidUrl(String, url::ParseError),
     #[error("unsupported HTTP method `{0}`")]
     InvalidMethod(String),
+    #[error("error calling generator function: {0}")]
+    GeneratorError(&'static str),
     #[error("validation attempt exceeded the time limit")]
     RetryTimeExceeded { attempted: usize, elapsed: Duration },
     #[error("all validation retry attempts used")]
@@ -284,18 +286,20 @@ pub enum NextAction {
     Unhandled,
 }
 
+pub type GeneratorResult<T> = Result<T, Box<dyn std::error::Error>>;
+
 /// A function that formats data to send as part of an HTTP POST request.
 /// The function must return a tuple, containing:
 /// * `0`: `Vec<u8>` of the data to send
 /// * `1`: `String` to send as the `Content-Type` HTTP header
-type DynFnPostPayloadGenerator = dyn Fn(&Candidate) -> (Vec<u8>, String);
+type DynFnPostPayloadGenerator = dyn Fn(&Candidate) -> GeneratorResult<(Vec<u8>, String)>;
 
 #[allow(clippy::type_complexity)]
 pub struct RequestGenerator {
     agent: ureq::Agent,
     method: HttpMethod,
-    format_url: Box<dyn Fn(&Candidate) -> String>,
-    add_headers: Box<dyn Fn(&Candidate, ureq::Request) -> ureq::Request>,
+    format_url: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
+    add_headers: Box<dyn Fn(&Candidate, ureq::Request) -> GeneratorResult<ureq::Request>>,
     build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
@@ -354,7 +358,8 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 }
             }
 
-            let formatted_url = (self.request_generator.format_url)(&candidate);
+            let formatted_url = (self.request_generator.format_url)(&candidate)
+                .map_err(|_| ValidationError::GeneratorError("format_url"))?;
 
             let url = Url::parse(&formatted_url)
                 .map_err(|parse_err| ValidationError::InvalidUrl(formatted_url, parse_err))?;
@@ -370,7 +375,8 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 .agent
                 .request(self.request_generator.method.as_ref(), url.as_str())
                 .timeout(time_budget.min(self.request_timeout));
-            request = (self.request_generator.add_headers)(&candidate, request);
+            request = (self.request_generator.add_headers)(&candidate, request)
+                .map_err(|_| ValidationError::GeneratorError("add_headers"))?;
 
             attempted += 1;
             let ureq_result = match &self.request_generator.method {
@@ -380,7 +386,9 @@ impl<T: Clock> Validator for HttpValidator<T> {
                         .request_generator
                         .build_post_payload
                         .as_ref()
-                        .map(|get_payload_for| get_payload_for(&candidate));
+                        .map(|get_payload_for| get_payload_for(&candidate))
+                        .transpose()
+                        .map_err(|_| ValidationError::GeneratorError("build_post_payload"))?;
                     if let Some((_, content_type)) = &payload {
                         request = request.set("Content-Type", content_type);
                     }
@@ -455,7 +463,8 @@ impl From<ValidationError> for HttpValidatorError {
             }
             ValidationError::InvalidUrl(_, _)
             | ValidationError::InvalidMethod(_)
-            | ValidationError::UnhandledResponse(_) => Self::LocalError(value.to_string()),
+            | ValidationError::UnhandledResponse(_)
+            | ValidationError::GeneratorError(_) => Self::LocalError(value.to_string()),
             ValidationError::RetryTimeExceeded { attempted, elapsed }
             | ValidationError::RetryAttemptsExceeded { attempted, elapsed }
             | ValidationError::RetryWillExceedTime {
@@ -707,8 +716,8 @@ impl HttpValidatorBuilder {
 pub struct RequestGeneratorBuilder {
     agent: ureq::Agent,
     method: HttpMethod,
-    format_url: Box<dyn Fn(&Candidate) -> String>,
-    add_header_fns: Vec<Box<dyn Fn(&Candidate, ureq::Request) -> ureq::Request>>,
+    format_url: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
+    add_header_fns: Vec<Box<dyn Fn(&Candidate, ureq::Request) -> GeneratorResult<ureq::Request>>>,
     build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
@@ -716,7 +725,7 @@ impl RequestGeneratorBuilder {
     /// Creates a new builder for an HTTP GET request generator.
     pub fn http_get(
         agent: ureq::Agent,
-        url_generator: Box<dyn Fn(&Candidate) -> String>,
+        url_generator: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
     ) -> RequestGeneratorBuilder {
         RequestGeneratorBuilder {
             agent,
@@ -730,7 +739,7 @@ impl RequestGeneratorBuilder {
     /// Creates a new builder for an HTTP POST request generator.
     pub fn http_post(
         agent: ureq::Agent,
-        url_generator: Box<dyn Fn(&Candidate) -> String>,
+        url_generator: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
         payload_generator: Option<Box<DynFnPostPayloadGenerator>>,
     ) -> RequestGeneratorBuilder {
         RequestGeneratorBuilder {
@@ -745,10 +754,11 @@ impl RequestGeneratorBuilder {
     /// Adds a header with a constant value to the HTTP request.
     pub fn header(mut self, header: impl Into<String>, value: impl Into<String>) -> Self {
         let (header, value) = (header.into(), value.into());
-        let add_header = move |_c: &Candidate, mut req: ureq::Request| -> ureq::Request {
-            req = req.set(header.as_str(), value.as_str());
-            req
-        };
+        let add_header =
+            move |_c: &Candidate, mut req: ureq::Request| -> GeneratorResult<ureq::Request> {
+                req = req.set(header.as_str(), value.as_str());
+                Ok(req)
+            };
         self.add_header_fns.push(Box::new(add_header));
         self
     }
@@ -757,14 +767,15 @@ impl RequestGeneratorBuilder {
     pub fn dynamic_header(
         mut self,
         header: impl Into<String>,
-        value_generator: Box<dyn Fn(&Candidate) -> String>,
+        value_generator: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
     ) -> Self {
         let header = header.into();
-        let add_header = move |cand: &Candidate, mut req: ureq::Request| -> ureq::Request {
-            let value = value_generator(cand);
-            req = req.set(&header, value.as_str());
-            req
-        };
+        let add_header =
+            move |cand: &Candidate, mut req: ureq::Request| -> GeneratorResult<ureq::Request> {
+                let value = value_generator(cand)?;
+                req = req.set(&header, value.as_str());
+                Ok(req)
+            };
         self.add_header_fns.push(Box::new(add_header));
         self
     }
@@ -774,11 +785,11 @@ impl RequestGeneratorBuilder {
     pub fn build(self) -> RequestGenerator {
         let header_fns = self.add_header_fns;
         let add_headers =
-            move |candidate: &Candidate, mut request: ureq::Request| -> ureq::Request {
+            move |cand: &Candidate, mut request: ureq::Request| -> GeneratorResult<ureq::Request> {
                 for header_fn in &header_fns {
-                    request = header_fn(candidate, request);
+                    request = header_fn(cand, request)?;
                 }
-                request
+                Ok(request)
             };
         RequestGenerator {
             agent: self.agent,
@@ -943,8 +954,9 @@ mod tests {
 
     fn base_request_generator(server: &MockServer) -> RequestGenerator {
         let base_url = server.base_url();
-        let url_gen = Box::new(move |_c: &Candidate| format!("{}/", base_url));
-        let gen_header = Box::new(|c: &Candidate| format!("Bearer {}", c.rule_match.matched.inner));
+        let url_gen = Box::new(move |_c: &Candidate| Ok(format!("{}/", base_url)));
+        let gen_header =
+            Box::new(|c: &Candidate| Ok(format!("Bearer {}", c.rule_match.matched.inner)));
         RequestGeneratorBuilder::http_get(Agent::new(), url_gen)
             .header("Accept", "text/plain")
             .dynamic_header("Authorization", gen_header)
