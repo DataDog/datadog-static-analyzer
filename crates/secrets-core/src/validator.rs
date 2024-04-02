@@ -21,7 +21,7 @@ pub enum ValidatorError {
     #[error("validator error: {err}")]
     ChildError {
         validator_type: String,
-        err: Box<dyn std::error::Error>,
+        err: Box<dyn std::error::Error + Send + Sync>,
     },
 }
 

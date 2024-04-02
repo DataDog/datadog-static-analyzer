@@ -71,7 +71,7 @@ pub enum MatcherError {
     #[error("matcher couldn't complete scan")]
     Scan {
         matcher_id: &'static str,
-        err: Box<dyn std::error::Error>,
+        err: Box<dyn std::error::Error + Send + Sync>,
     },
 }
 

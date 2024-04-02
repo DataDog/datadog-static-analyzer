@@ -224,9 +224,17 @@ pub enum RetryPolicy {
     },
 }
 
-pub type DynFnResponseParser = dyn Fn(&Result<HttpResponse, ureq::Error>) -> NextAction;
+/// A function that takes a [`Candidate`] and returns a string.
+pub type DynFnCandidateString = dyn Fn(&Candidate) -> GeneratorResult<String> + Send + Sync;
+/// A function that maps an [`HttpResponse`] to a [`NextAction`].
+pub type DynFnResponseParser =
+    dyn Fn(&Result<HttpResponse, ureq::Error>) -> NextAction + Send + Sync;
+/// A function that takes ownership of a [`ureq::Request`], adds a header to it (given a [`Candidate`]),
+/// and returns the `Request` back to the caller. This functions like a builder.
+pub type DynFnAddHeaders =
+    dyn Fn(&Candidate, ureq::Request) -> GeneratorResult<ureq::Request> + Send + Sync;
 /// A function that generates an Iterator of [`Duration`] representing a [`RetryPolicy`]
-pub type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>>;
+pub type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>> + Send + Sync;
 
 /// The rate limiter used to cap the outbound requests per second for an [`HttpValidator`].
 // NOTE: This has to be generic over `Clock` instead of the more ergonomic `governor::DefaultDirectRateLimiter`
@@ -286,20 +294,20 @@ pub enum NextAction {
     Unhandled,
 }
 
-pub type GeneratorResult<T> = Result<T, Box<dyn std::error::Error>>;
+pub type GeneratorResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 
 /// A function that formats data to send as part of an HTTP POST request.
 /// The function must return a tuple, containing:
 /// * `0`: `Vec<u8>` of the data to send
 /// * `1`: `String` to send as the `Content-Type` HTTP header
-pub type DynFnPostPayloadGenerator = dyn Fn(&Candidate) -> GeneratorResult<(Vec<u8>, String)>;
+pub type DynFnPostPayloadGenerator =
+    dyn Fn(&Candidate) -> GeneratorResult<(Vec<u8>, String)> + Send + Sync;
 
-#[allow(clippy::type_complexity)]
 pub struct RequestGenerator {
     agent: ureq::Agent,
     method: HttpMethod,
-    format_url: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
-    add_headers: Box<dyn Fn(&Candidate, ureq::Request) -> GeneratorResult<ureq::Request>>,
+    format_url: Box<DynFnCandidateString>,
+    add_headers: Box<DynFnAddHeaders>,
     build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
@@ -712,12 +720,11 @@ impl HttpValidatorBuilder {
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub struct RequestGeneratorBuilder {
     agent: ureq::Agent,
     method: HttpMethod,
-    format_url: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
-    add_header_fns: Vec<Box<dyn Fn(&Candidate, ureq::Request) -> GeneratorResult<ureq::Request>>>,
+    format_url: Box<DynFnCandidateString>,
+    add_header_fns: Vec<Box<DynFnAddHeaders>>,
     build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
@@ -725,7 +732,7 @@ impl RequestGeneratorBuilder {
     /// Creates a new builder for an HTTP GET request generator.
     pub fn http_get(
         agent: ureq::Agent,
-        url_generator: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
+        url_generator: Box<DynFnCandidateString>,
     ) -> RequestGeneratorBuilder {
         RequestGeneratorBuilder {
             agent,
@@ -739,7 +746,7 @@ impl RequestGeneratorBuilder {
     /// Creates a new builder for an HTTP POST request generator.
     pub fn http_post(
         agent: ureq::Agent,
-        url_generator: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
+        url_generator: Box<DynFnCandidateString>,
         payload_generator: Option<Box<DynFnPostPayloadGenerator>>,
     ) -> RequestGeneratorBuilder {
         RequestGeneratorBuilder {
@@ -767,7 +774,7 @@ impl RequestGeneratorBuilder {
     pub fn dynamic_header(
         mut self,
         header: impl Into<String>,
-        value_generator: Box<dyn Fn(&Candidate) -> GeneratorResult<String>>,
+        value_generator: Box<DynFnCandidateString>,
     ) -> Self {
         let header = header.into();
         let add_header =
