@@ -177,7 +177,10 @@ fn main() -> Result<()> {
         "add Git information to the SARIF report",
     );
     #[cfg(feature = "secrets")]
-    opts.optflag("", "test-secrets", "run the secret scanner in test mode");
+    {
+        opts.optflag("", "test-secrets", "run the secret scanner in test mode");
+        opts.optflag("", "validate-secrets", "attempt to validate secrets");
+    }
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -509,27 +512,25 @@ fn main() -> Result<()> {
     #[cfg(feature = "secrets")]
     if matches.opt_present("test-secrets") {
         use cli::secrets::ValidationStatus;
-        use kernel::model::common::Position;
         use secrets::temp_integration_test::{build_secrets_engine, shannon_entropy};
-        use std::time::Instant;
+        use std::sync::mpsc;
+        use std::sync::mpsc::RecvTimeoutError;
+        use std::sync::Arc;
+        use std::time::{Duration, Instant};
 
-        secrets_rules.push(SecretRule::new(
-            "datadog-app-key",
-            "An application key associated with the Datadog user account that created it",
-            "A Datadog application key",
-        ));
         secrets_rules.push(SecretRule::new(
             "datadog-api-key",
             "An API key unique to a Datadog organization that is required to submit metrics and events",
             "A Datadog API key",
         ));
+        let should_validate = matches.opt_present("validate-secrets");
 
         println!("scanning {} files for secrets", files_to_analyze.len());
         let progress_bar =
             (!configuration.use_debug).then(|| ProgressBar::new(files_to_analyze.len() as u64));
 
         let start_timestamp = Instant::now();
-        let engine = build_secrets_engine();
+        let engine = Arc::new(build_secrets_engine(should_validate));
         let candidates = files_to_analyze
             .par_iter()
             .filter_map(|path| {
@@ -551,35 +552,97 @@ fn main() -> Result<()> {
             })
             .collect::<Vec<_>>();
 
-        for candidate in &candidates {
+        let elapsed = start_timestamp.elapsed();
+        println!(
+            "secrets scan found {} candidates in {:.1}s",
+            candidates.len(),
+            elapsed.as_secs_f32()
+        );
+        let start_timestamp = Instant::now();
+
+        // Temporary limit validation count to 100 to sidestep not having a threadpool to limit thread spawning
+        let empty = vec![];
+        let (with_validation, sans_validation) = match (candidates.len(), should_validate) {
+            (_, false) => (empty.as_slice(), candidates.as_slice()),
+            (0..=100, true) => (candidates.as_slice(), empty.as_slice()),
+            (_, true) => candidates.split_at(100),
+        };
+
+        let (tx, rx) = mpsc::channel();
+        for candidate in with_validation {
+            let clone_tx = tx.clone();
+            let engine = Arc::clone(&engine);
+            let candidate = candidate.clone();
+            let _ = std::thread::spawn(move || {
+                let res = engine.validate_candidate(candidate.clone());
+                clone_tx.send(res).unwrap();
+            });
+        }
+
+        for candidate in sans_validation {
             let relative_path = candidate
                 .source
                 .strip_prefix(directory_path)
                 // Temporary: panic here until we can refactor how `main` propagates errors
                 .expect("path should under `directory_path`");
+            // Access the hardcoded capture name "candidate"
             let captured = candidate.rule_match.captures.get("candidate").unwrap();
+            let (start, end) = into_positions(captured.point_span);
             detected_secrets.push(DetectedSecret::new(
                 candidate.rule_match.rule_id.as_ref().to_string(),
                 relative_path.to_string_lossy().to_string(),
                 ValidationStatus::Unvalidated,
-                Position {
-                    line: captured.point_span.start().line.get(),
-                    col: captured.point_span.start().col.get(),
-                },
-                Position {
-                    line: captured.point_span.end().line.get(),
-                    col: captured.point_span.end().col.get(),
-                },
-                captured.as_str(),
+                start,
+                end,
             ));
         }
 
-        let elapsed = start_timestamp.elapsed();
-        println!(
-            "secrets scan returned {} results in {:.1}s",
-            candidates.len(),
-            elapsed.as_secs_f32()
-        );
+        if !with_validation.is_empty() {
+            let mut attempts = Vec::with_capacity(with_validation.len());
+            loop {
+                match rx.recv_timeout(Duration::from_secs(30)) {
+                    Ok(val_attempt) => {
+                        attempts.push(val_attempt);
+                        if attempts.len() == with_validation.len() {
+                            break;
+                        }
+                    }
+                    Err(RecvTimeoutError::Timeout) => break,
+                    Err(RecvTimeoutError::Disconnected) => panic!("channel should not disconnect"),
+                }
+            }
+            let mut completed = 0;
+            for attempt in &attempts {
+                // Temporary: swallow errors
+                let Ok(result) = attempt else {
+                    continue;
+                };
+                completed += 1;
+                let (start, end) = into_positions(result.point_span());
+                let relative_path = result
+                    .source()
+                    .strip_prefix(directory_path)
+                    // Temporary: panic here until we can refactor how `main` propagates errors
+                    .expect("path should under `directory_path`");
+                detected_secrets.push(DetectedSecret::new(
+                    result.rule_id().as_ref().to_string(),
+                    relative_path.to_string_lossy().to_string(),
+                    into_val_status(result.category()),
+                    start,
+                    end,
+                ));
+            }
+
+            let elapsed = start_timestamp.elapsed();
+            let timed_out = with_validation.len() - completed;
+            println!(
+                "secrets validation performed in {:.1}s ({} completed, {} timed out)",
+                elapsed.as_secs_f32(),
+                completed,
+                timed_out,
+            );
+        }
+
         if let Some(pb) = &progress_bar {
             pb.finish();
         }
@@ -811,4 +874,51 @@ fn choose_cpu_count(user_input: Option<usize>) -> usize {
     let logical_cores = num_cpus::get();
     let cores = user_input.unwrap_or(DEFAULT_MAX_CPUS);
     usize::min(logical_cores, cores)
+}
+
+// Temporary to sidestep that we can't impl these across crates.
+// When fully-integrated, these will be standard From impls
+#[cfg(feature = "secrets")]
+fn into_rule_severity(sev: secrets::temp_integration_test::Severity) -> RuleSeverity {
+    use secrets::temp_integration_test::Severity;
+    match sev {
+        Severity::Error => RuleSeverity::Error,
+        Severity::Warning => RuleSeverity::Warning,
+        Severity::Notice => RuleSeverity::Notice,
+        Severity::Info => RuleSeverity::None,
+    }
+}
+#[cfg(feature = "secrets")]
+fn into_positions(
+    span: secrets::temp_integration_test::PointSpan,
+) -> (
+    kernel::model::common::Position,
+    kernel::model::common::Position,
+) {
+    use kernel::model::common::Position;
+    let start = Position {
+        line: span.start().line.get(),
+        col: span.start().col.get(),
+    };
+    let end = Position {
+        line: span.end().line.get(),
+        col: span.end().col.get(),
+    };
+    (start, end)
+}
+
+#[cfg(feature = "secrets")]
+fn into_val_status(
+    category: secrets::temp_integration_test::SecretCategory,
+) -> cli::secrets::ValidationStatus {
+    use cli::secrets::ValidationStatus;
+    use secrets::temp_integration_test::SecretCategory;
+    match category {
+        SecretCategory::Valid(sev) => {
+            let severity = into_rule_severity(sev);
+            ValidationStatus::Valid(severity)
+        }
+        SecretCategory::Invalid => ValidationStatus::Invalid,
+        SecretCategory::Inconclusive => ValidationStatus::Inconclusive,
+    }
 }

@@ -6,7 +6,6 @@ use kernel::model::common::Position;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
 use kernel::model::violation::Violation;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::fmt::{Display, Formatter};
 
 // This file contains structs that will allow us to test the secrets scanner while also
@@ -21,8 +20,6 @@ pub struct DetectedSecret {
     pub file_path: String,
     pub status: ValidationStatus,
     pub violation: Violation,
-    /// The SHA256 hash of the secret
-    pub text_hash: [u8; 32],
 }
 
 impl DetectedSecret {
@@ -32,17 +29,27 @@ impl DetectedSecret {
         status: ValidationStatus,
         start: Position,
         end: Position,
-        content: &str,
     ) -> Self {
-        let text_hash: [u8; 32] = Sha256::digest(content.as_bytes()).into();
+        let message = match status {
+            ValidationStatus::Unvalidated => {
+                "A potential secret where validation was not attempted"
+            }
+            ValidationStatus::Valid(_) => "A validated and confirmed active secret",
+            ValidationStatus::Invalid => "A validated candidate that was not active",
+            ValidationStatus::Inconclusive => {
+                "A candidate where the validation result was inconclusive"
+            }
+        };
+        let severity = match status {
+            ValidationStatus::Valid(severity) => severity,
+            _ => RuleSeverity::Notice,
+        };
 
         let violation = Violation {
             start,
             end,
-            // TODO: This will eventually be dynamic
-            message: "Unvalidated potential secret".to_string(),
-            // TODO: This will eventually be dynamic
-            severity: RuleSeverity::Notice,
+            message: message.to_string(),
+            severity,
             category: RuleCategory::Security,
             fixes: vec![],
         };
@@ -52,7 +59,6 @@ impl DetectedSecret {
             file_path: file_path.into(),
             status,
             violation,
-            text_hash,
         }
     }
 }
