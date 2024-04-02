@@ -7,7 +7,9 @@ use crate::validator::http;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
 use governor::clock::{Clock, DefaultClock, MonotonicClock};
 use governor::middleware::NoOpMiddleware;
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
+use std::io::Read;
 use std::num::NonZeroU32;
 use std::ops::Add;
 use std::sync::{Arc, Mutex};
@@ -35,7 +37,7 @@ pub(crate) enum HttpValidatorError {
 enum ValidationError {
     /// The validation hit an unrecoverable error, and no further attempts will be made.
     #[error("unrecoverable validation failure")]
-    RequestedAbort(Box<Result<ureq::Response, ureq::Error>>),
+    RequestedAbort(Box<Result<HttpResponse, ureq::Error>>),
     #[error("invalid url: `{0}` ({1})")]
     InvalidUrl(String, url::ParseError),
     #[error("unsupported HTTP method `{0}`")]
@@ -51,7 +53,9 @@ enum ValidationError {
         next_delay: Duration,
     },
     #[error("no qualifying handler that matches the server response")]
-    UnhandledResponse(Box<Result<ureq::Response, ureq::Error>>),
+    UnhandledResponse(Box<Result<HttpResponse, ureq::Error>>),
+    #[error("http response value for `{0}` was present but contained an unexpected value")]
+    UnexpectedValue(String),
 }
 
 const DEFAULT_MAX_ATTEMPTS: usize = 4;
@@ -216,7 +220,7 @@ pub enum RetryPolicy {
     },
 }
 
-type DynFnResponseParser = dyn Fn(&Result<ureq::Response, ureq::Error>) -> NextAction;
+type DynFnResponseParser = dyn Fn(&Result<HttpResponse, ureq::Error>) -> NextAction;
 /// A function that generates an Iterator of [`Duration`] representing a [`RetryPolicy`]
 type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>>;
 
@@ -367,7 +371,7 @@ impl<T: Clock> Validator for HttpValidator<T> {
             request = (self.request_generator.add_headers)(&candidate, request);
 
             attempted += 1;
-            let response = match &self.request_generator.method {
+            let ureq_result = match &self.request_generator.method {
                 HttpMethod::Get => request.call(),
                 HttpMethod::Post => {
                     let payload = self
@@ -382,6 +386,13 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 }
             };
 
+            let response = match ureq_result {
+                Ok(ureq_response) => {
+                    let response = HttpResponse::try_read(ureq_response)?;
+                    Ok(response)
+                }
+                Err(err) => Err(err),
+            };
             let next_action = (self.response_parser)(&response);
 
             match next_action {
@@ -448,6 +459,7 @@ impl From<ValidationError> for HttpValidatorError {
             | ValidationError::RetryWillExceedTime {
                 attempted, elapsed, ..
             } => Self::TimedOut { attempted, elapsed },
+            ValidationError::UnexpectedValue(_) => Self::RemoteError(value.to_string()),
         }
     }
 }
@@ -465,6 +477,71 @@ impl From<ValidationError> for ValidatorError {
     fn from(value: ValidationError) -> Self {
         let http_err: HttpValidatorError = value.into();
         http_err.into()
+    }
+}
+
+/// A response from an HTTP request.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct HttpResponse {
+    headers: HashMap<String, Vec<String>>,
+    status: u16,
+    body: String,
+}
+
+impl HttpResponse {
+    /// The HTTP status code.
+    pub fn status(&self) -> u16 {
+        self.status
+    }
+
+    /// The contents of the HTTP body. If no body was sent, this will be an empty string slice.
+    pub fn body(&self) -> &str {
+        &self.body
+    }
+
+    /// The value of the first header matching the given name.
+    ///
+    /// NOTE: This ignores headers that may have multiple definitions for multiple values.
+    pub fn first_header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .get(&name.to_ascii_lowercase())
+            .and_then(|values| values.get(0).map(String::as_str))
+    }
+
+    /// Synchronously reads the headers, status, and body from a [`ureq::Response`] to build a [`HttpResponse`].
+    ///
+    /// After reading, the active socket is closed.
+    fn try_read(response: ureq::Response) -> Result<Self, ValidationError> {
+        let status = response.status();
+        let header_names = response.headers_names();
+        let mut headers = HashMap::<String, Vec<String>>::with_capacity(header_names.len());
+        for mut header_name in header_names {
+            let values = response
+                .all(&header_name)
+                .into_iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>();
+            header_name.make_ascii_lowercase();
+            let _ = headers.insert(header_name, values);
+        }
+
+        let mut body = String::new();
+        if let Some(content_len) = response.header("content-length") {
+            let content_len: usize = content_len
+                .parse::<usize>()
+                .map_err(|_| ValidationError::UnexpectedValue("content-length".to_string()))?;
+            body.reserve_exact(content_len);
+            response
+                .into_reader()
+                .read_to_string(&mut body)
+                .map_err(|_| ValidationError::UnexpectedValue("body".to_string()))?;
+        };
+
+        Ok(Self {
+            headers,
+            status,
+            body,
+        })
     }
 }
 
@@ -714,7 +791,7 @@ impl ResponseParserBuilder {
     ///
     /// Note: response parsers are evaluated in the order they are inserted into the builder.
     pub fn on_status_code(mut self, target_code: u16, next_action: NextAction) -> Self {
-        let handler = move |res: &Result<ureq::Response, ureq::Error>| -> NextAction {
+        let handler = move |res: &Result<HttpResponse, ureq::Error>| -> NextAction {
             let response_code = match res.as_ref() {
                 Ok(response) => Some(response.status()),
                 Err(ureq::Error::Status(status, _)) => Some(*status),
@@ -733,7 +810,7 @@ impl ResponseParserBuilder {
     pub fn build(mut self) -> Box<DynFnResponseParser> {
         self.0.push(Self::default_err_handler());
         let handlers = self.0;
-        let sequential = move |res: &Result<ureq::Response, ureq::Error>| -> NextAction {
+        let sequential = move |res: &Result<HttpResponse, ureq::Error>| -> NextAction {
             for handler in &handlers {
                 let next_action = handler(res);
                 if next_action != NextAction::Unhandled {
@@ -747,7 +824,7 @@ impl ResponseParserBuilder {
 
     /// Builds a default handler for errors.
     fn default_err_handler() -> Box<DynFnResponseParser> {
-        let handler = |res: &Result<ureq::Response, ureq::Error>| -> NextAction {
+        let handler = |res: &Result<HttpResponse, ureq::Error>| -> NextAction {
             match res.as_ref() {
                 Ok(_) => NextAction::Unhandled,
                 Err(err) => match err {
@@ -785,8 +862,9 @@ mod tests {
     use crate::rule::{LocatedString, RuleMatch};
     use crate::validator::http::time::{Instant, MockClock};
     use crate::validator::http::{
-        DynFnResponseParser, HttpValidator, HttpValidatorBuilder, HttpValidatorError, NextAction,
-        RequestGenerator, RequestGeneratorBuilder, ResponseParserBuilder, RetryConfig, RetryPolicy,
+        DynFnResponseParser, HttpResponse, HttpValidator, HttpValidatorBuilder, HttpValidatorError,
+        NextAction, RequestGenerator, RequestGeneratorBuilder, ResponseParserBuilder, RetryConfig,
+        RetryPolicy,
     };
     use crate::validator::{Candidate, SecretCategory, Severity, ValidatorError};
     use crate::Validator;
@@ -1056,6 +1134,46 @@ mod tests {
         mock.assert_hits(1000);
         // 1000 requests at 1 req/s, but the first has no delay == 999s
         assert_eq!(pre_validation.elapsed(), Duration::from_secs(1000 - 1));
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn http_response_headers() {
+        let ms = MockServer::start();
+        let mock = ms.mock(|when, then| {
+            when.any_request();
+            then.header("Cache-Control", "no-cache, no-store")
+                .header("Set-Cookie", "foo=bar")
+                .header("Set-Cookie", "baz=foo")
+                .status(200);
+        });
+        let ureq_response = ureq::get(&ms.base_url()).call().unwrap();
+        let http_resp = HttpResponse::try_read(ureq_response).unwrap();
+        assert_eq!(http_resp.first_header("cache-control"), Some("no-cache, no-store"));
+        assert_eq!(http_resp.first_header("Set-Cookie"), Some("foo=bar"));
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn http_body() {
+        let data = "1".repeat(64);
+        let ms = MockServer::start();
+        let mut mock = ms.mock(|when, then| {
+            when.any_request();
+            then.status(200).body(&data);
+        });
+        let ureq_response = ureq::get(&ms.base_url()).call().unwrap();
+        let http_resp = HttpResponse::try_read(ureq_response).unwrap();
+        assert_eq!(http_resp.body(), data.as_str());
+
+        mock.delete();
+        ms.mock(|when, then| {
+            when.any_request();
+            then.status(200);
+        });
+        let ureq_response = ureq::get(&ms.base_url()).call().unwrap();
+        let http_resp = HttpResponse::try_read(ureq_response).unwrap();
+        assert_eq!(http_resp.body(), "");
     }
 }
 
