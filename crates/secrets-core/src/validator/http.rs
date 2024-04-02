@@ -56,6 +56,8 @@ enum ValidationError {
     UnhandledResponse(Box<Result<HttpResponse, ureq::Error>>),
     #[error("http response value for `{0}` was present but contained an unexpected value")]
     UnexpectedValue(String),
+    #[error("http body length of {length} bytes exceeds limit of {limit} bytes")]
+    BodyTooLarge { length: usize, limit: usize },
 }
 
 const DEFAULT_MAX_ATTEMPTS: usize = 4;
@@ -459,7 +461,9 @@ impl From<ValidationError> for HttpValidatorError {
             | ValidationError::RetryWillExceedTime {
                 attempted, elapsed, ..
             } => Self::TimedOut { attempted, elapsed },
-            ValidationError::UnexpectedValue(_) => Self::RemoteError(value.to_string()),
+            ValidationError::BodyTooLarge { .. } | ValidationError::UnexpectedValue(_) => {
+                Self::RemoteError(value.to_string())
+            }
         }
     }
 }
@@ -481,6 +485,8 @@ impl From<ValidationError> for ValidatorError {
 }
 
 /// A response from an HTTP request.
+///
+/// This is guaranteed to have a body length less than or equal to [`MAX_BODY_SIZE`](HttpResponse::MAX_BODY_SIZE).
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct HttpResponse {
     headers: HashMap<String, Vec<String>>,
@@ -489,6 +495,11 @@ pub struct HttpResponse {
 }
 
 impl HttpResponse {
+    /// Because it's unlikely that a secret validation response will have a body of any significant size,
+    /// this is the maximum allowable size of an HTTP response's body. When reading a body, if the
+    /// byte length is larger than this, an error will be returned.
+    pub const MAX_BODY_SIZE: usize = 100_000;
+
     /// The HTTP status code.
     pub fn status(&self) -> u16 {
         self.status
@@ -530,9 +541,16 @@ impl HttpResponse {
             let content_len: usize = content_len
                 .parse::<usize>()
                 .map_err(|_| ValidationError::UnexpectedValue("content-length".to_string()))?;
+            if content_len > HttpResponse::MAX_BODY_SIZE {
+                return Err(ValidationError::BodyTooLarge {
+                    length: content_len,
+                    limit: HttpResponse::MAX_BODY_SIZE,
+                });
+            }
             body.reserve_exact(content_len);
             response
                 .into_reader()
+                .take(content_len as u64)
                 .read_to_string(&mut body)
                 .map_err(|_| ValidationError::UnexpectedValue("body".to_string()))?;
         };
@@ -864,7 +882,7 @@ mod tests {
     use crate::validator::http::{
         DynFnResponseParser, HttpResponse, HttpValidator, HttpValidatorBuilder, HttpValidatorError,
         NextAction, RequestGenerator, RequestGeneratorBuilder, ResponseParserBuilder, RetryConfig,
-        RetryPolicy,
+        RetryPolicy, ValidationError,
     };
     use crate::validator::{Candidate, SecretCategory, Severity, ValidatorError};
     use crate::Validator;
@@ -1174,6 +1192,26 @@ mod tests {
         let ureq_response = ureq::get(&ms.base_url()).call().unwrap();
         let http_resp = HttpResponse::try_read(ureq_response).unwrap();
         assert_eq!(http_resp.body(), "");
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn http_body_length() {
+        let ms = MockServer::start();
+        ms.mock(|when, then| {
+            when.path("/within");
+            then.body("a".repeat(HttpResponse::MAX_BODY_SIZE));
+        });
+        ms.mock(|when, then| {
+            when.path("/beyond");
+            then.body("a".repeat(HttpResponse::MAX_BODY_SIZE + 1));
+        });
+        let ureq_response = ureq::get(&format!("{}/within", ms.base_url())).call().unwrap();
+        let http_resp = HttpResponse::try_read(ureq_response);
+        assert!(http_resp.is_ok());
+        let ureq_response = ureq::get(&format!("{}/beyond", ms.base_url())).call().unwrap();
+        let http_resp = HttpResponse::try_read(ureq_response);
+        assert!(matches!(http_resp.unwrap_err(), ValidationError::BodyTooLarge { .. }));
     }
 }
 
