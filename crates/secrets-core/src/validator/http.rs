@@ -7,7 +7,6 @@ use crate::validator::http;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
 use governor::clock::{Clock, DefaultClock, MonotonicClock};
 use governor::middleware::NoOpMiddleware;
-use std::collections::HashSet;
 use std::fmt::{Debug, Display, Formatter};
 use std::num::NonZeroU32;
 use std::ops::Add;
@@ -248,8 +247,6 @@ pub struct HttpValidator<T: Clock = MonotonicClock> {
     max_attempt_duration: Duration,
     /// The user-assigned [`RuleId`] of which this validator validates.
     rule_id: RuleId,
-    /// A cache of the requests that have already been attempted so that no duplicates are sent.
-    attempted_cache: Arc<Mutex<HashSet<[u8; 32]>>>,
     /// The [`Clock`] implementation used by the rate limiter.
     // NOTE: This needs to be included as part of the struct in order to override the clock for unit tests.
     clock: T,
@@ -601,7 +598,6 @@ impl HttpValidatorBuilder {
             validator_id: self.validator_id,
             max_attempt_duration: self.max_attempted_duration,
             rule_id: self.rule_id,
-            attempted_cache: Arc::new(Mutex::new(HashSet::new())),
             clock,
             rate_limiter: Arc::new(rate_limiter),
             request_generator: self.request_generator,
