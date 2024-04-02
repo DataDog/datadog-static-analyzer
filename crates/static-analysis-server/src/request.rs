@@ -10,6 +10,7 @@ use kernel::config_file::{parse_config_file, ArgumentProvider};
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::{is_allowed_by_path_config, PathRestrictions};
+use kernel::rule_overrides::RuleOverrides;
 use kernel::utils::decode_base64_string;
 
 #[tracing::instrument(skip_all)]
@@ -54,13 +55,20 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     // Extract the path restrictions from the configuration file.
     let path_restrictions = configuration
         .as_ref()
-        .map(|cfg_file| PathRestrictions::from_ruleset_configs(&cfg_file.rulesets));
+        .map(|cfg_file| PathRestrictions::from_ruleset_configs(&cfg_file.rulesets))
+        .unwrap_or_default();
+
+    // Extract the overrides from the configuration file.
+    let overrides = configuration
+        .as_ref()
+        .map(RuleOverrides::from_config_file)
+        .unwrap_or_default();
 
     // Build an argument provider from the configuration file.
-    let mut argument_provider = ArgumentProvider::new();
-    if let Some(cfg_file) = &configuration {
-        argument_provider = ArgumentProvider::from(cfg_file);
-    }
+    let argument_provider = configuration
+        .as_ref()
+        .map(ArgumentProvider::from)
+        .unwrap_or_default();
 
     let rules_with_invalid_language: Vec<ServerRule> = request
         .rules
@@ -86,18 +94,14 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     let server_rules_to_rules: Vec<Rule> = request
         .rules
         .iter()
-        .filter(|r| {
-            path_restrictions
-                .as_ref()
-                .map(|pr| pr.rule_applies(&r.name, &request.filename))
-                .unwrap_or(true)
-        })
+        .filter(|r| path_restrictions.rule_applies(&r.name, &request.filename))
         .map(|r| Rule {
             name: r.name.clone(),
             short_description_base64: r.short_description_base64.clone(),
             description_base64: r.description_base64.clone(),
-            category: r.category.unwrap_or(RuleCategory::BestPractices),
-            severity: r.severity.unwrap_or(RuleSeverity::Warning),
+            category: overrides
+                .category(&r.name, r.category.unwrap_or(RuleCategory::BestPractices)),
+            severity: overrides.severity(&r.name, r.severity.unwrap_or(RuleSeverity::Warning)),
             language: r.language,
             rule_type: r.rule_type,
             cwe: None,
@@ -649,5 +653,82 @@ function visit(node, filename, code) {
         assert!(response.rule_responses[0].violations[0]
             .message
             .contains("argument = 101"));
+    }
+
+    #[test]
+    fn test_request_with_overrides() {
+        let base_request = AnalysisRequest {
+            filename: "mypath/myfile.py".to_string(),
+            language: Language::Python,
+            file_encoding: "utf-8".to_string(),
+            code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            configuration_base64: None,
+            options: None,
+            rules: vec![
+                ServerRule{
+                    name: "myrs/myrule".to_string(),
+                    short_description_base64: None,
+                    description_base64: None,
+                    category: Some(RuleCategory::BestPractices),
+                    severity: Some(RuleSeverity::Warning),
+                    language: Language::Python,
+                    rule_type: RuleType::TreeSitterQuery,
+                    entity_checked: None,
+                    code_base64: encode_base64_string(r#"
+function visit(node, filename, code) {
+    const arg = node.context.arguments['arg1'];
+    addError(buildError(1, 1, 1, 2, `argument = ${arg}`));
+}
+                    "#.to_string()),
+                    checksum: Some("984ba37fbfdfa4245ed7922efd224365ec216e540647989ac5e8559624ba9be4".to_string()),
+                    pattern: None,
+                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
+                    arguments: vec![],
+                }
+            ]
+        };
+
+        // Default severity and category.
+        let request = base_request.clone();
+        let response = process_analysis_request(request);
+        assert!(response.errors.is_empty(), "{:?}", response.errors);
+        assert_eq!(1, response.rule_responses.len());
+        assert_eq!(1, response.rule_responses[0].violations.len());
+        assert_eq!(
+            RuleCategory::BestPractices,
+            response.rule_responses[0].violations[0].category
+        );
+        assert_eq!(
+            RuleSeverity::Warning,
+            response.rule_responses[0].violations[0].severity
+        );
+
+        // Override severity and category.
+        let request = AnalysisRequest {
+            configuration_base64: Some(encode_base64_string(
+                r#"
+rulesets:
+  - myrs:
+    rules:
+      myrule:
+        severity: ERROR
+        category: CODE_STYLE
+            "#
+                .to_string(),
+            )),
+            ..base_request.clone()
+        };
+        let response = process_analysis_request(request);
+        assert!(response.errors.is_empty());
+        assert_eq!(1, response.rule_responses.len());
+        assert_eq!(1, response.rule_responses[0].violations.len());
+        assert_eq!(
+            RuleCategory::CodeStyle,
+            response.rule_responses[0].violations[0].category
+        );
+        assert_eq!(
+            RuleSeverity::Error,
+            response.rule_responses[0].violations[0].severity
+        );
     }
 }

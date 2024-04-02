@@ -152,6 +152,8 @@ The map in the `rules` field uses the rule's name as its key, and the values are
 
 - `ignore` (optional) a list of path prefixes and glob patterns to ignore _for this rule_. This rule will not be evaluated for any files that match any of the entries in the `ignore` list.
 - `only`: (optional) a list of path prefixes and glob patterns to analyze _for this rule_. If `only` is specified, this rule will only be evaluated for files that match one of the entries.
+- `severity`: (optional) if provided, override the severity of violations produced by this rule. The valid severities are `ERROR`, `WARNING`, `NOTICE`, and `NONE`.
+- `category`: (optional) if provided, override this rule's category. The valid categories are `BEST_PRACTICES`, `CODE_STYLE`, `ERROR_PRONE`, `PERFORMANCE`, and `SECURITY`.
 - `arguments`: (optional) a map of values for the rule's arguments.
 
 The map in the `arguments` field uses an argument's name as its key, and the values are either strings or maps:
@@ -176,6 +178,10 @@ rulesets:
     rules:
       # Special configuration for the `python-best-practices/no-generic-exception` rule.
       no-generic-exception:
+        # Treat violations of this rule as errors (normally "notice").
+        severity: ERROR
+        # Classify violations of this rule under the "code style" category.
+        category: CODE_STYLE
         # Only apply this rule to files under the `src/new-code` subtree.
         only:
           - src/new-code
@@ -224,6 +230,8 @@ rulesets:
       - imported/**/new/**
     rules:
       max-function-lines:
+        severity: WARNING
+        category: PERFORMANCE
         ignore:
           - src/new-code
           - src/new/*.gen.py

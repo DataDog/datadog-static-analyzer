@@ -31,6 +31,7 @@ use indicatif::ProgressBar;
 use kernel::config_file::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::path_restrictions::PathRestrictions;
+use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;
@@ -290,9 +291,16 @@ fn main() -> Result<()> {
             exit(1);
         }
 
+        let overrides = RuleOverrides::from_config_file(&conf);
+
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
-        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging);
-        rules.extend(rules_from_api.context("error when reading rules from API")?);
+        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging)
+            .context("error when reading rules from API")?;
+        rules.extend(rules_from_api.into_iter().map(|rule| Rule {
+            severity: overrides.severity(&rule.name, rule.severity),
+            category: overrides.category(&rule.name, rule.category),
+            ..rule
+        }));
         path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
         argument_provider = ArgumentProvider::from(&conf);
 
