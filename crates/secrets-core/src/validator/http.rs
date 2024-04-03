@@ -808,11 +808,20 @@ const DEFAULT_RETRY_AFTER: Duration = Duration::from_secs(2);
 ///
 /// When a transport error occurs, the original request will be retried if it was due to a
 /// network error (not an incorrectly-formatted request)
-pub struct ResponseParserBuilder(Vec<Box<DynFnResponseParser>>);
+#[derive(Default)]
+pub struct ResponseParserBuilder {
+    /// The sequence of handlers to run against an HTTP response.
+    sequence: Vec<Box<DynFnResponseParser>>,
+    /// If none of the handlers in the `sequence` handle the response, this
+    fallthrough: Option<NextAction>,
+}
 
 impl ResponseParserBuilder {
     pub fn new() -> Self {
-        Self(Vec::new())
+        Self {
+            sequence: Vec::new(),
+            fallthrough: None,
+        }
     }
 
     /// Provides a simple inspection of the HTTP response's status code, using the specified
@@ -832,19 +841,33 @@ impl ResponseParserBuilder {
                 NextAction::Unhandled
             }
         };
-        self.0.push(Box::new(handler));
+        self.sequence.push(Box::new(handler));
         self
     }
 
     /// Adds a handler to the sequential chain of handlers.
     pub fn add_handler(mut self, handler: Box<DynFnResponseParser>) -> Self {
-        self.0.push(handler);
+        self.sequence.push(handler);
+        self
+    }
+
+    /// Sets a default value that will be returned if none of the handlers match.
+    ///
+    /// This value will only be returned if the injected error handler ([`default_err_handler`](Self::default_err_handler)) does not trigger.
+    pub fn set_default(mut self, default: NextAction) -> Self {
+        let _ = self.fallthrough.replace(default);
         self
     }
 
     pub fn build(mut self) -> Box<DynFnResponseParser> {
-        self.0.push(Self::default_err_handler());
-        let handlers = self.0;
+        self.sequence.push(Self::default_err_handler());
+
+        if let Some(default) = self.fallthrough {
+            let fallthrough_fn = move |_: &_| -> NextAction { default };
+            self.sequence.push(Box::new(fallthrough_fn))
+        }
+
+        let handlers = self.sequence;
         let sequential = move |res: &Result<HttpResponse, ureq::Error>| -> NextAction {
             for handler in &handlers {
                 let next_action = handler(res);
@@ -1230,6 +1253,32 @@ mod tests {
         let ureq_response = ureq::get(&format!("{}/beyond", ms.base_url())).call().unwrap();
         let http_resp = HttpResponse::try_read(ureq_response);
         assert!(matches!(http_resp.unwrap_err(), ValidationError::BodyTooLarge { .. }));
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn builder_fallthrough_result() {
+        let ms = MockServer::start();
+        ms.mock(|when, then| {
+            when.any_request();
+            then.status(301);
+        });
+        let req_gen = base_request_generator(&ms);
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(req_gen, resp_parser);
+        let ValidatorError::ChildError { err, .. } =
+            validator.validate(to_candidate(VALID)).unwrap_err();
+        let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+        assert!(matches!(err, HttpValidatorError::LocalError(s) if s.contains("no qualifying handler")));
+
+        let req_gen = base_request_generator(&ms);
+        let fallthrough_resp_parser = ResponseParserBuilder::new()
+            .on_status_code(200, NextAction::ReturnResult(SecretCategory::Valid(Severity::Error)))
+            .set_default(NextAction::ReturnResult(SecretCategory::Inconclusive))
+            .build();
+        let with_fallthrough = build_validator!(req_gen, fallthrough_resp_parser);
+        let category = with_fallthrough.validate(to_candidate(VALID)).unwrap();
+        assert_eq!(category, SecretCategory::Inconclusive);
     }
 }
 
