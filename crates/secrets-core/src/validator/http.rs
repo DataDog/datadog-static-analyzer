@@ -516,7 +516,7 @@ impl HttpResponse {
     pub fn first_header(&self, name: &str) -> Option<&str> {
         self.headers
             .get(&name.to_ascii_lowercase())
-            .and_then(|values| values.get(0).map(String::as_str))
+            .and_then(|values| values.first().map(String::as_str))
     }
 
     /// Synchronously reads the headers, status, and body from a [`ureq::Response`] to build a [`HttpResponse`].
@@ -1158,7 +1158,7 @@ mod tests {
     #[test]
     fn http_response_headers() {
         let ms = MockServer::start();
-        let mock = ms.mock(|when, then| {
+        ms.mock(|when, then| {
             when.any_request();
             then.header("Cache-Control", "no-cache, no-store")
                 .header("Set-Cookie", "foo=bar")
