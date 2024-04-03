@@ -836,6 +836,12 @@ impl ResponseParserBuilder {
         self
     }
 
+    /// Adds a handler to the sequential chain of handlers.
+    pub fn add_handler(mut self, handler: Box<DynFnResponseParser>) -> Self {
+        self.0.push(handler);
+        self
+    }
+
     pub fn build(mut self) -> Box<DynFnResponseParser> {
         self.0.push(Self::default_err_handler());
         let handlers = self.0;
