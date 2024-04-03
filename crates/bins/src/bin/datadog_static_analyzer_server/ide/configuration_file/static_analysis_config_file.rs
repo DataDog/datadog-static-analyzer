@@ -35,13 +35,17 @@ impl Deref for StaticAnalysisConfigFile {
     }
 }
 
-fn create_ignore_rule() -> RuleConfig {
+fn create_ignored_pattern() -> Vec<PathPattern> {
+    vec![PathPattern {
+        prefix: "**".into(),
+        glob: None,
+    }]
+}
+
+fn create_ignored_rule() -> RuleConfig {
     RuleConfig {
         paths: PathConfig {
-            ignore: vec![PathPattern {
-                prefix: "**".into(),
-                glob: None,
-            }],
+            ignore: create_ignored_pattern(),
             only: None,
         },
         ..Default::default()
@@ -101,17 +105,20 @@ impl StaticAnalysisConfigFile {
         if let Some((ruleset_name, rule_name)) = rule.split_once('/') {
             // the ruleset may exist and contain other rules so we
             // can't update it blindly
-            let rule_to_ignore = create_ignore_rule();
-
             if let Some(existing_ruleset) = config.rulesets.get_mut(ruleset_name) {
-                // if the rule already exists we can update it without a problem
-                existing_ruleset
-                    .rules
-                    .insert(rule_name.to_string(), rule_to_ignore);
+                // if the rule already exists we need to see if the rule was already present.
+                // if that's the case, we need to keep the old properties
+                if let Some(existing_rule) = existing_ruleset.rules.get_mut(rule_name) {
+                    existing_rule.paths.ignore = create_ignored_pattern();
+                } else {
+                    existing_ruleset
+                        .rules
+                        .insert(rule_name.to_string(), create_ignored_rule());
+                }
             } else {
                 // we can add the new ruleset
                 let mut rules_to_ignore = IndexMap::new();
-                rules_to_ignore.insert(rule_name.to_string(), rule_to_ignore);
+                rules_to_ignore.insert(rule_name.to_string(), create_ignored_rule());
 
                 config.rulesets.insert(
                     ruleset_name.to_string(),
@@ -525,6 +532,8 @@ rulesets:
 - ruleset1:
   rules:
     rule1:
+      only:
+      - foo/bar
       ignore:
       - '**'";
 
@@ -581,6 +590,77 @@ rulesets:
                 .unwrap_err();
 
             assert_eq!(err.code(), 1);
+        }
+
+        #[test]
+        fn it_keeps_existing_properties_when_ignoring_other_rules() {
+            let content = to_encoded_content(
+                r"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      severity: ERROR
+",
+            );
+
+            let config =
+                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
+                    .unwrap();
+
+            let expected = r"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      severity: ERROR
+    rule1:
+      ignore:
+      - '**'
+";
+
+            assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_keeps_existing_properties_when_ignoring_same_rule() {
+            let content = to_encoded_content(
+                r"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      severity: ERROR
+",
+            );
+
+            let config =
+                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule2".into(), content)
+                    .unwrap();
+
+            let expected = r"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      ignore:
+      - '**'
+      severity: ERROR
+";
+
+            assert_eq!(config.trim(), expected.trim());
         }
     }
 
