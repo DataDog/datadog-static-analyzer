@@ -62,7 +62,7 @@ pub struct Rule {
     id: RuleId,
     conditions: Vec<Arc<RuleCondition>>,
     match_stages: Vec<Arc<Expression>>,
-    validators: Vec<ValidatorId>,
+    validator_id: ValidatorId,
 }
 
 impl Rule {
@@ -70,7 +70,7 @@ impl Rule {
         id: RuleId,
         conditions: impl Into<Vec<RuleCondition>>,
         match_stages: impl Into<Vec<Expression>>,
-        validators: impl Into<Vec<ValidatorId>>,
+        validator_id: ValidatorId,
     ) -> Self {
         let match_stages = match_stages.into().into_iter().map(Arc::new).collect();
         let conditions = conditions.into().into_iter().map(Arc::new).collect();
@@ -78,7 +78,7 @@ impl Rule {
             id,
             conditions,
             match_stages,
-            validators: validators.into(),
+            validator_id,
         }
     }
 
@@ -88,6 +88,10 @@ impl Rule {
 
     pub fn match_stages(&self) -> &[Arc<Expression>] {
         &self.match_stages
+    }
+
+    pub fn validator_id(&self) -> &ValidatorId {
+        &self.validator_id
     }
 }
 
