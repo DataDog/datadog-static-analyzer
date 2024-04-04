@@ -2,6 +2,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::rule_file::template::DynFnVariableProvider;
+use secrets_core::validator::Candidate;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 
@@ -100,6 +102,46 @@ impl Display for StringOrInt {
             StringOrInt::Integer(int) => write!(f, "{}", int),
         }
     }
+}
+
+/// An enum representing either the entire candidate, or one of its captures.
+pub enum CandidateVariable {
+    /// The entire candidate.
+    Entire,
+    /// The named capture of a candidate.
+    Capture(String),
+}
+
+/// The syntax for accessing the output of a Matcher is:
+///
+/// The variables accepted are:
+/// * `"candidate"`: the entire matched string
+/// * `"candidate.captures.<CAPTURE_NAME>"`: a named capture
+///
+/// This function parses these and converts them into a [`CandidateVariable`], so that the YAML
+/// implementation is decoupled from what secrets-core expects.
+pub fn parse_candidate_variable(var: &str) -> Option<CandidateVariable> {
+    if var == "candidate" {
+        return Some(CandidateVariable::Entire);
+    }
+    if let Some(rhs) = var.strip_prefix("candidate.captures.") {
+        return Some(CandidateVariable::Capture(rhs.to_string()));
+    }
+    None
+}
+
+/// Given a [`Candidate`], constructs a variable provider used to evaluate a [`TemplateString`](crate::rule_file::TemplateString).
+pub fn make_candidate_provider(candidate: &Candidate) -> Box<DynFnVariableProvider<'_>> {
+    Box::new(|var: &str| {
+        parse_candidate_variable(var).and_then(|candidate_var| match candidate_var {
+            CandidateVariable::Entire => Some(candidate.rule_match.matched.as_str()),
+            CandidateVariable::Capture(name) => candidate
+                .rule_match
+                .captures
+                .get(&name)
+                .map(|ls| ls.as_str()),
+        })
+    })
 }
 
 #[rustfmt::skip]
