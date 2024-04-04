@@ -53,8 +53,8 @@ fn build_test_rules() -> (Vec<Matcher>, Vec<Rule>) {
     (
         vec![hyperscan],
         vec![
-            Rule::new(rule_id_1, vec![], stages_1, vec![]),
-            Rule::new(rule_id_2, vec![], stages_2, vec![]),
+            Rule::new(rule_id_1, vec![], stages_1, "".into()),
+            Rule::new(rule_id_2, vec![], stages_2, "".into()),
         ],
     )
 }

@@ -42,6 +42,8 @@ enum ValidationError {
     InvalidUrl(String, url::ParseError),
     #[error("unsupported HTTP method `{0}`")]
     InvalidMethod(String),
+    #[error("error calling generator function: {0}")]
+    GeneratorError(&'static str),
     #[error("validation attempt exceeded the time limit")]
     RetryTimeExceeded { attempted: usize, elapsed: Duration },
     #[error("all validation retry attempts used")]
@@ -222,9 +224,17 @@ pub enum RetryPolicy {
     },
 }
 
-type DynFnResponseParser = dyn Fn(&Result<HttpResponse, ureq::Error>) -> NextAction;
+/// A function that takes a [`Candidate`] and returns a string.
+pub type DynFnCandidateString = dyn Fn(&Candidate) -> GeneratorResult<String> + Send + Sync;
+/// A function that maps an [`HttpResponse`] to a [`NextAction`].
+pub type DynFnResponseParser =
+    dyn Fn(&Result<HttpResponse, ureq::Error>) -> NextAction + Send + Sync;
+/// A function that takes ownership of a [`ureq::Request`], adds a header to it (given a [`Candidate`]),
+/// and returns the `Request` back to the caller. This functions like a builder.
+pub type DynFnAddHeaders =
+    dyn Fn(&Candidate, ureq::Request) -> GeneratorResult<ureq::Request> + Send + Sync;
 /// A function that generates an Iterator of [`Duration`] representing a [`RetryPolicy`]
-type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>>;
+pub type DynFnBackoffGenerator = dyn Fn() -> Box<dyn Iterator<Item = Duration>> + Send + Sync;
 
 /// The rate limiter used to cap the outbound requests per second for an [`HttpValidator`].
 // NOTE: This has to be generic over `Clock` instead of the more ergonomic `governor::DefaultDirectRateLimiter`
@@ -284,18 +294,20 @@ pub enum NextAction {
     Unhandled,
 }
 
+pub type GeneratorResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+
 /// A function that formats data to send as part of an HTTP POST request.
 /// The function must return a tuple, containing:
 /// * `0`: `Vec<u8>` of the data to send
 /// * `1`: `String` to send as the `Content-Type` HTTP header
-type DynFnPostPayloadGenerator = dyn Fn(&Candidate) -> (Vec<u8>, String);
+pub type DynFnPostPayloadGenerator =
+    dyn Fn(&Candidate) -> GeneratorResult<(Vec<u8>, String)> + Send + Sync;
 
-#[allow(clippy::type_complexity)]
 pub struct RequestGenerator {
     agent: ureq::Agent,
     method: HttpMethod,
-    format_url: Box<dyn Fn(&Candidate) -> String>,
-    add_headers: Box<dyn Fn(&Candidate, ureq::Request) -> ureq::Request>,
+    format_url: Box<DynFnCandidateString>,
+    add_headers: Box<DynFnAddHeaders>,
     build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
@@ -354,7 +366,8 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 }
             }
 
-            let formatted_url = (self.request_generator.format_url)(&candidate);
+            let formatted_url = (self.request_generator.format_url)(&candidate)
+                .map_err(|_| ValidationError::GeneratorError("format_url"))?;
 
             let url = Url::parse(&formatted_url)
                 .map_err(|parse_err| ValidationError::InvalidUrl(formatted_url, parse_err))?;
@@ -370,7 +383,8 @@ impl<T: Clock> Validator for HttpValidator<T> {
                 .agent
                 .request(self.request_generator.method.as_ref(), url.as_str())
                 .timeout(time_budget.min(self.request_timeout));
-            request = (self.request_generator.add_headers)(&candidate, request);
+            request = (self.request_generator.add_headers)(&candidate, request)
+                .map_err(|_| ValidationError::GeneratorError("add_headers"))?;
 
             attempted += 1;
             let ureq_result = match &self.request_generator.method {
@@ -380,7 +394,9 @@ impl<T: Clock> Validator for HttpValidator<T> {
                         .request_generator
                         .build_post_payload
                         .as_ref()
-                        .map(|get_payload_for| get_payload_for(&candidate));
+                        .map(|get_payload_for| get_payload_for(&candidate))
+                        .transpose()
+                        .map_err(|_| ValidationError::GeneratorError("build_post_payload"))?;
                     if let Some((_, content_type)) = &payload {
                         request = request.set("Content-Type", content_type);
                     }
@@ -455,7 +471,8 @@ impl From<ValidationError> for HttpValidatorError {
             }
             ValidationError::InvalidUrl(_, _)
             | ValidationError::InvalidMethod(_)
-            | ValidationError::UnhandledResponse(_) => Self::LocalError(value.to_string()),
+            | ValidationError::UnhandledResponse(_)
+            | ValidationError::GeneratorError(_) => Self::LocalError(value.to_string()),
             ValidationError::RetryTimeExceeded { attempted, elapsed }
             | ValidationError::RetryAttemptsExceeded { attempted, elapsed }
             | ValidationError::RetryWillExceedTime {
@@ -516,7 +533,7 @@ impl HttpResponse {
     pub fn first_header(&self, name: &str) -> Option<&str> {
         self.headers
             .get(&name.to_ascii_lowercase())
-            .and_then(|values| values.get(0).map(String::as_str))
+            .and_then(|values| values.first().map(String::as_str))
     }
 
     /// Synchronously reads the headers, status, and body from a [`ureq::Response`] to build a [`HttpResponse`].
@@ -703,12 +720,11 @@ impl HttpValidatorBuilder {
     }
 }
 
-#[allow(clippy::type_complexity)]
 pub struct RequestGeneratorBuilder {
     agent: ureq::Agent,
     method: HttpMethod,
-    format_url: Box<dyn Fn(&Candidate) -> String>,
-    add_header_fns: Vec<Box<dyn Fn(&Candidate, ureq::Request) -> ureq::Request>>,
+    format_url: Box<DynFnCandidateString>,
+    add_header_fns: Vec<Box<DynFnAddHeaders>>,
     build_post_payload: Option<Box<DynFnPostPayloadGenerator>>,
 }
 
@@ -716,7 +732,7 @@ impl RequestGeneratorBuilder {
     /// Creates a new builder for an HTTP GET request generator.
     pub fn http_get(
         agent: ureq::Agent,
-        url_generator: Box<dyn Fn(&Candidate) -> String>,
+        url_generator: Box<DynFnCandidateString>,
     ) -> RequestGeneratorBuilder {
         RequestGeneratorBuilder {
             agent,
@@ -730,7 +746,7 @@ impl RequestGeneratorBuilder {
     /// Creates a new builder for an HTTP POST request generator.
     pub fn http_post(
         agent: ureq::Agent,
-        url_generator: Box<dyn Fn(&Candidate) -> String>,
+        url_generator: Box<DynFnCandidateString>,
         payload_generator: Option<Box<DynFnPostPayloadGenerator>>,
     ) -> RequestGeneratorBuilder {
         RequestGeneratorBuilder {
@@ -745,10 +761,11 @@ impl RequestGeneratorBuilder {
     /// Adds a header with a constant value to the HTTP request.
     pub fn header(mut self, header: impl Into<String>, value: impl Into<String>) -> Self {
         let (header, value) = (header.into(), value.into());
-        let add_header = move |_c: &Candidate, mut req: ureq::Request| -> ureq::Request {
-            req = req.set(header.as_str(), value.as_str());
-            req
-        };
+        let add_header =
+            move |_c: &Candidate, mut req: ureq::Request| -> GeneratorResult<ureq::Request> {
+                req = req.set(header.as_str(), value.as_str());
+                Ok(req)
+            };
         self.add_header_fns.push(Box::new(add_header));
         self
     }
@@ -757,14 +774,15 @@ impl RequestGeneratorBuilder {
     pub fn dynamic_header(
         mut self,
         header: impl Into<String>,
-        value_generator: Box<dyn Fn(&Candidate) -> String>,
+        value_generator: Box<DynFnCandidateString>,
     ) -> Self {
         let header = header.into();
-        let add_header = move |cand: &Candidate, mut req: ureq::Request| -> ureq::Request {
-            let value = value_generator(cand);
-            req = req.set(&header, value.as_str());
-            req
-        };
+        let add_header =
+            move |cand: &Candidate, mut req: ureq::Request| -> GeneratorResult<ureq::Request> {
+                let value = value_generator(cand)?;
+                req = req.set(&header, value.as_str());
+                Ok(req)
+            };
         self.add_header_fns.push(Box::new(add_header));
         self
     }
@@ -774,11 +792,11 @@ impl RequestGeneratorBuilder {
     pub fn build(self) -> RequestGenerator {
         let header_fns = self.add_header_fns;
         let add_headers =
-            move |candidate: &Candidate, mut request: ureq::Request| -> ureq::Request {
+            move |cand: &Candidate, mut request: ureq::Request| -> GeneratorResult<ureq::Request> {
                 for header_fn in &header_fns {
-                    request = header_fn(candidate, request);
+                    request = header_fn(cand, request)?;
                 }
-                request
+                Ok(request)
             };
         RequestGenerator {
             agent: self.agent,
@@ -797,11 +815,20 @@ const DEFAULT_RETRY_AFTER: Duration = Duration::from_secs(2);
 ///
 /// When a transport error occurs, the original request will be retried if it was due to a
 /// network error (not an incorrectly-formatted request)
-pub struct ResponseParserBuilder(Vec<Box<DynFnResponseParser>>);
+#[derive(Default)]
+pub struct ResponseParserBuilder {
+    /// The sequence of handlers to run against an HTTP response.
+    sequence: Vec<Box<DynFnResponseParser>>,
+    /// If none of the handlers in the `sequence` handle the response, this
+    fallthrough: Option<NextAction>,
+}
 
 impl ResponseParserBuilder {
     pub fn new() -> Self {
-        Self(Vec::new())
+        Self {
+            sequence: Vec::new(),
+            fallthrough: None,
+        }
     }
 
     /// Provides a simple inspection of the HTTP response's status code, using the specified
@@ -821,13 +848,33 @@ impl ResponseParserBuilder {
                 NextAction::Unhandled
             }
         };
-        self.0.push(Box::new(handler));
+        self.sequence.push(Box::new(handler));
+        self
+    }
+
+    /// Adds a handler to the sequential chain of handlers.
+    pub fn add_handler(mut self, handler: Box<DynFnResponseParser>) -> Self {
+        self.sequence.push(handler);
+        self
+    }
+
+    /// Sets a default value that will be returned if none of the handlers match.
+    ///
+    /// This value will only be returned if the injected error handler ([`default_err_handler`](Self::default_err_handler)) does not trigger.
+    pub fn set_default(mut self, default: NextAction) -> Self {
+        let _ = self.fallthrough.replace(default);
         self
     }
 
     pub fn build(mut self) -> Box<DynFnResponseParser> {
-        self.0.push(Self::default_err_handler());
-        let handlers = self.0;
+        self.sequence.push(Self::default_err_handler());
+
+        if let Some(default) = self.fallthrough {
+            let fallthrough_fn = move |_: &_| -> NextAction { default };
+            self.sequence.push(Box::new(fallthrough_fn))
+        }
+
+        let handlers = self.sequence;
         let sequential = move |res: &Result<HttpResponse, ureq::Error>| -> NextAction {
             for handler in &handlers {
                 let next_action = handler(res);
@@ -943,8 +990,9 @@ mod tests {
 
     fn base_request_generator(server: &MockServer) -> RequestGenerator {
         let base_url = server.base_url();
-        let url_gen = Box::new(move |_c: &Candidate| format!("{}/", base_url));
-        let gen_header = Box::new(|c: &Candidate| format!("Bearer {}", c.rule_match.matched.inner));
+        let url_gen = Box::new(move |_c: &Candidate| Ok(format!("{}/", base_url)));
+        let gen_header =
+            Box::new(|c: &Candidate| Ok(format!("Bearer {}", c.rule_match.matched.inner)));
         RequestGeneratorBuilder::http_get(Agent::new(), url_gen)
             .header("Accept", "text/plain")
             .dynamic_header("Authorization", gen_header)
@@ -1158,7 +1206,7 @@ mod tests {
     #[test]
     fn http_response_headers() {
         let ms = MockServer::start();
-        let mock = ms.mock(|when, then| {
+        ms.mock(|when, then| {
             when.any_request();
             then.header("Cache-Control", "no-cache, no-store")
                 .header("Set-Cookie", "foo=bar")
@@ -1212,6 +1260,32 @@ mod tests {
         let ureq_response = ureq::get(&format!("{}/beyond", ms.base_url())).call().unwrap();
         let http_resp = HttpResponse::try_read(ureq_response);
         assert!(matches!(http_resp.unwrap_err(), ValidationError::BodyTooLarge { .. }));
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn builder_fallthrough_result() {
+        let ms = MockServer::start();
+        ms.mock(|when, then| {
+            when.any_request();
+            then.status(301);
+        });
+        let req_gen = base_request_generator(&ms);
+        let resp_parser = base_response_parser();
+        let validator = build_validator!(req_gen, resp_parser);
+        let ValidatorError::ChildError { err, .. } =
+            validator.validate(to_candidate(VALID)).unwrap_err();
+        let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+        assert!(matches!(err, HttpValidatorError::LocalError(s) if s.contains("no qualifying handler")));
+
+        let req_gen = base_request_generator(&ms);
+        let fallthrough_resp_parser = ResponseParserBuilder::new()
+            .on_status_code(200, NextAction::ReturnResult(SecretCategory::Valid(Severity::Error)))
+            .set_default(NextAction::ReturnResult(SecretCategory::Inconclusive))
+            .build();
+        let with_fallthrough = build_validator!(req_gen, fallthrough_resp_parser);
+        let category = with_fallthrough.validate(to_candidate(VALID)).unwrap();
+        assert_eq!(category, SecretCategory::Inconclusive);
     }
 }
 

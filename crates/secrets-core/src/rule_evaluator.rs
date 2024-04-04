@@ -591,7 +591,7 @@ mod tests {
                     .iter()
                     .map(|pattern| Arc::try_unwrap(build_tree(pattern, &mut psb)).unwrap())
                     .collect::<Vec<_>>();
-                Arc::new(Rule::new(rule.0.clone(), vec![], expressions, vec![]))
+                Arc::new(Rule::new(rule.0.clone(), vec![], expressions, "validator-1".into()))
             })
             .collect::<Vec<_>>();
 

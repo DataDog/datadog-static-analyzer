@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 #[cfg(feature = "validator-http")]
-mod http;
+pub mod http;
 
 pub trait Validator {
     fn id(&self) -> &ValidatorId;
@@ -21,7 +21,7 @@ pub enum ValidatorError {
     #[error("validator error: {err}")]
     ChildError {
         validator_type: String,
-        err: Box<dyn std::error::Error>,
+        err: Box<dyn std::error::Error + Send + Sync>,
     },
 }
 
