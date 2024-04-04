@@ -2,30 +2,37 @@ use secrets_core::engine::{Engine, EngineBuilder};
 use secrets_core::matcher::hyperscan::pattern_set::PatternSet;
 use secrets_core::matcher::hyperscan::Hyperscan;
 use secrets_core::matcher::Matcher;
-use secrets_core::rule::{Expression, MatchSource, Rule, RuleId};
-use secrets_core::vectorscan;
+use secrets_core::rule::{Expression, MatchSource, Rule};
+use secrets_core::{engine, ureq, vectorscan, Validator};
+
+pub use engine::ValidationResult;
+pub use secrets_core::location::PointSpan;
+pub use secrets_core::rule::RuleId;
+use secrets_core::validator::http::{
+    GeneratorResult, HttpValidator, HttpValidatorBuilder, NextAction, RequestGeneratorBuilder,
+    ResponseParserBuilder,
+};
+use secrets_core::validator::Candidate;
+pub use secrets_core::validator::{SecretCategory, Severity};
 
 /// This module is for (temporary) testing purposes only
 
-fn build_test_rules() -> (Vec<Matcher>, Vec<Rule>) {
-    let rule_id_1: RuleId = "datadog-app-key".into();
+fn build_test_rules() -> (
+    Vec<Matcher>,
+    Vec<Rule>,
+    Vec<Box<dyn Validator + Send + Sync>>,
+) {
+    let rule_id_1: RuleId = "datadog-api-key".into();
     let pattern_1 = vectorscan::Pattern::new(
-        r#"\b(?is)(?<prelude>(?:datadog|dd|ddog)(?:.{0,40}))(?-is)\b(?<candidate>[[:xdigit:]]{40})\b"#,
-    )
-    .try_build()
-    .unwrap();
-    let rule_id_2: RuleId = "datadog-api-key".into();
-    let pattern_2 = vectorscan::Pattern::new(
         r#"\b(?is)(?<prelude>(?:datadog|dd|ddog)(?:.{0,40}))(?-is)\b(?<candidate>[[:xdigit:]]{32})\b"#,
     )
     .try_build()
     .unwrap();
-    let pattern_3 = vectorscan::Pattern::new(r#"\s"#).try_build().unwrap();
+    let pattern_2 = vectorscan::Pattern::new(r#"\s"#).try_build().unwrap();
 
     let mut set = PatternSet::new(0.into());
     let pid_1 = set.add_pattern(pattern_1);
     let pid_2 = set.add_pattern(pattern_2);
-    let pid_3 = set.add_pattern(pattern_3);
     let set = set.try_compile().unwrap();
     let hyperscan = Matcher::Hyperscan(Hyperscan::new(set));
 
@@ -36,26 +43,19 @@ fn build_test_rules() -> (Vec<Matcher>, Vec<Rule>) {
         },
         Expression::IsMatch {
             source: MatchSource::Capture("prelude".into()),
-            pattern_id: pid_3,
-        },
-    ];
-    let stages_2 = vec![
-        Expression::IsMatch {
-            source: MatchSource::Prior,
             pattern_id: pid_2,
-        },
-        Expression::IsMatch {
-            source: MatchSource::Capture("prelude".into()),
-            pattern_id: pid_3,
         },
     ];
 
+    let val1 = build_simple_http(&rule_id_1, "https://api.datad0g.com");
+    let val_id_1 = val1.id().clone();
+
+    let val1: Box<dyn Validator + Send + Sync> = Box::new(val1);
+
     (
         vec![hyperscan],
-        vec![
-            Rule::new(rule_id_1, vec![], stages_1, "".into()),
-            Rule::new(rule_id_2, vec![], stages_2, "".into()),
-        ],
+        vec![Rule::new(rule_id_1, vec![], stages_1, val_id_1)],
+        vec![val1],
     )
 }
 
@@ -78,9 +78,56 @@ pub fn shannon_entropy(data: impl IntoIterator<Item = char>, base: usize) -> f32
 }
 
 /// Builds an [`Engine`] with hard-coded Datadog token detectors, to be used for testing.
-pub fn build_secrets_engine() -> Engine {
-    let (matchers, rules) = build_test_rules();
-    EngineBuilder::new().matchers(matchers).rules(rules).build()
+pub fn build_secrets_engine(validation: bool) -> Engine {
+    let (matchers, rules, validators) = build_test_rules();
+    EngineBuilder::new()
+        .matchers(matchers)
+        .rules(rules)
+        .validators(validators)
+        .validation(validation)
+        .build()
+}
+
+fn build_simple_http(rule_id: &RuleId, url: &str) -> HttpValidator {
+    let url = url.to_string();
+    let url_generator =
+        Box::new(move |_c: &Candidate| -> GeneratorResult<String> { Ok(url.clone()) });
+    let agent = ureq::Agent::new();
+    let mut request_generator = RequestGeneratorBuilder::http_get(agent, url_generator);
+    request_generator = request_generator.header("Content-Type", "application/json");
+    request_generator = request_generator.dynamic_header(
+        "DD-API-KEY",
+        Box::new(|c: &Candidate| {
+            Ok(c.rule_match
+                .captures
+                .get("candidate")
+                .unwrap()
+                .inner
+                .clone())
+        }),
+    );
+
+    request_generator = request_generator.header("User-Agent", "Datadog/StaticAnalysis");
+    let request_generator = request_generator.build();
+
+    let mut response_handler = ResponseParserBuilder::new();
+    response_handler = response_handler.on_status_code(
+        200,
+        NextAction::ReturnResult(SecretCategory::Valid(Severity::Error)),
+    );
+    response_handler =
+        response_handler.on_status_code(403, NextAction::ReturnResult(SecretCategory::Invalid));
+    response_handler =
+        response_handler.set_default(NextAction::ReturnResult(SecretCategory::Inconclusive));
+    let response_handler = response_handler.build();
+
+    HttpValidatorBuilder::new(
+        format!("validator-http_{}", rule_id.as_ref()).into(),
+        rule_id.clone(),
+        request_generator,
+        response_handler,
+    )
+    .build()
 }
 
 #[cfg(test)]
@@ -97,7 +144,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn datadog_key_detection() {
-        let engine = build_secrets_engine();
+        let engine = build_secrets_engine(false);
 
         let file_contents = r#"// Create a client for the Datadog API
 const client = await buildClient("918d1aaf6e301c1aa4ff315396459906");
@@ -133,10 +180,6 @@ const url = "https://github.com/DataDog/repository/blob/main/3380f4569079edec8b1
         assert_eq!(rule_match.rule_id.as_ref(), "datadog-api-key");
         assert_eq!(parse_capture(rule_match, "candidate"), Some("861fd58f910308a8d9986c81e776be59"));
 
-        let rule_match = &candidates[2].rule_match;
-        assert_eq!(rule_match.rule_id.as_ref(), "datadog-app-key");
-        assert_eq!(parse_capture(rule_match, "candidate"), Some("a0ef3594e77b5346791b02bdb1b2ea20c9057d61"));
-
-        assert!(candidates.get(3).is_none());
+        assert!(candidates.get(2).is_none());
     }
 }

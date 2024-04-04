@@ -23,12 +23,12 @@ if [ "${FIRST_SCAN}" != "null" ]; then echo "secret scan results should be empty
 
 rm "${TEMP_DIR}/results.json" &&
   perl -pi -e 's/(quick)/$1 DD_API_KEY=/' $TEMP_FILE &&
-  perl -pi -e 's/(over)/$1 a0ef3594e77b5346791b02bdb1b2ea20c9057d61/' $TEMP_FILE
+  perl -pi -e 's/(over)/$1 e77b5346791b02bdb1b2ea20c9057d61/' $TEMP_FILE
 
 ./target/release/datadog-static-analyzer --test-secrets --directory "${TEMP_DIR}" -o "${TEMP_DIR}/results.json" -f sarif &>/dev/null
 
 RULE_ID=$(jq '.runs[0].results[0].ruleId' "${TEMP_DIR}/results.json")
-if [ "${RULE_ID}" != "\"datadog-app-key\"" ]; then echo "expected violation for secret detection rule"; exit 1; fi
+if [ "${RULE_ID}" != "\"datadog-api-key\"" ]; then echo "expected violation for secret detection rule"; exit 1; fi
 
 echo "All tests passed"
 

@@ -750,7 +750,6 @@ mod tests {
             ValidationStatus::Unvalidated,
             Position { line: 1, col: 24 },
             Position { line: 1, col: 64 },
-            "detected-secret-that-is-stored-as-a-hash",
         );
 
         let sarif_report = generate_sarif_report(
@@ -770,7 +769,7 @@ mod tests {
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"note","locations":[{"physicalLocation":{"artifactLocation":{"uri":"folder/file.txt"},"region":{"endColumn":64,"endLine":1,"startColumn":24,"startLine":1}}}],"message":{"text":"Unvalidated potential secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_VALIDATION_STATUS:UNVALIDATED"]},"ruleId":"datadog-app-key","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"Long description about detecting a Datadog secret..."},"id":"datadog-app-key","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"Short description"}}]}}}],"version":"2.1.0"}),
+            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"note","locations":[{"physicalLocation":{"artifactLocation":{"uri":"folder/file.txt"},"region":{"endColumn":64,"endLine":1,"startColumn":24,"startLine":1}}}],"message":{"text":"A potential secret where validation was not attempted"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_VALIDATION_STATUS:UNVALIDATED"]},"ruleId":"datadog-app-key","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"Long description about detecting a Datadog secret..."},"id":"datadog-app-key","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"Short description"}}]}}}],"version":"2.1.0"}),
         );
 
         // validate the schema
