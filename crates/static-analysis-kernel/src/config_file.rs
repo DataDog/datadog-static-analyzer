@@ -1176,4 +1176,117 @@ rulesets:
 
         assert_eq!(serialized, expected);
     }
+
+    #[test]
+    fn test_serialize_arguments() {
+        let mut rulesets = IndexMap::new();
+
+        let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
+        let mut arguments = HashMap::new();
+        let mut by_subtree = HashMap::new();
+        by_subtree.insert("".to_string(), "3".to_string());
+        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+
+        rules.insert(
+            "rule-number-1".into(),
+            RuleConfig {
+                arguments,
+                ..Default::default()
+            },
+        );
+
+        rulesets.insert(
+            "java-1".to_string(),
+            RulesetConfig {
+                rules,
+                ..Default::default()
+            },
+        );
+
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = serialized.trim();
+        let expected = r"
+schema-version: v1
+rulesets:
+- java-1: null
+  rules:
+    rule-number-1:
+      arguments:
+        max-params: '3'
+"
+        .trim();
+
+        assert_eq!(serialized, expected);
+    }
+
+    #[test]
+    fn test_serialize_arguments_multiple_subtrees() {
+        let mut rulesets = IndexMap::new();
+
+        let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
+        let mut arguments = HashMap::new();
+        let mut by_subtree = HashMap::new();
+        by_subtree.insert("".to_string(), "3".to_string());
+        by_subtree.insert("my-path/to-file".to_string(), "4".to_string());
+        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+
+        rules.insert(
+            "rule-number-1".into(),
+            RuleConfig {
+                arguments,
+                ..Default::default()
+            },
+        );
+
+        rulesets.insert(
+            "java-1".to_string(),
+            RulesetConfig {
+                rules,
+                ..Default::default()
+            },
+        );
+
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = serialized.trim();
+        let expected = r"
+schema-version: v1
+rulesets:
+- java-1: null
+  rules:
+    rule-number-1:
+      arguments:
+        max-params:
+          '': '3'
+          my-path/to-file: '4'
+"
+        .trim();
+
+        let expected2 = r"
+schema-version: v1
+rulesets:
+- java-1: null
+  rules:
+    rule-number-1:
+      arguments:
+        max-params:
+          my-path/to-file: '4'
+          '': '3'
+"
+        .trim();
+
+        // NOTE: order of the arguments is not guaranteed. We could use IndexMap though.
+        assert!(serialized.eq(expected) || serialized.eq(expected2));
+    }
 }
