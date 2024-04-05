@@ -2,122 +2,71 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
+use std::ops::Deref;
 
-/// Adds a [`serde::Deserialize`] implementation for an enum of the following signature:
+/// A transparent wrapper struct that instructs `serde_yaml` to deserialize the
+/// inner as an externally tagged enum.
 ///
-/// ```text
-/// pub enum ExampleEnum<'de, T, U, /* .. */>
-/// where
-///     T: serde::Deserialize<'de>,
-///     U: serde::Deserialize<'de>,
-///     // ...
-/// {
-///     Golf(T),
-///     Hotel(U),
-///     // ...
+/// This is required because the behavior of `serde_yaml` when deserializing maps changed in version 0.9.0.
+///
+/// Pre-0.9.0, you could deserialize a YAML object into an externally-tagged enum, like so:
+/// ```rust
+/// #[derive(Debug, serde::Deserialize)]
+/// #[serde(rename_all = "lowercase")]
+/// enum Restricted {
+///     Echo(usize),
+///     Foxtrot(usize),
 /// }
-/// ```
-/// Usage:
-/// ```text
-/// deserialize_enum_exactly_one_of!(
-///     ExampleEnum,
-///     "example",
-///     // The caller must manually implement the mapping of Rust enum variant names to their plain-text
-///     // representation. This is conceptually equivalent to using `#[serde(rename = "...")]`
-///     {
-///         "golf_alias" => ExampleEnum::Golf,
-///         "hotel" => ExampleEnum::Hotel,
-///     }
-/// );
-/// ```
-/// This implementation deserializes a map-like object into an `ExampleEnum`, but first validates
-/// to ensure that the map-like object has only one key-value pair, that the key equals the literal
-/// specified in the macro, and the value is a valid deserialization of the Rust value.
-/// For example, given
-/// ```yaml
-/// parent:
-///   example:
-///     golf_alias: [1, 2, 3]  // Let's say it's ExampleEnum::Golf(Vec<usize>)
-/// ```
-/// will deserialize to `ExampleEnum::Golf(_)`
 ///
-/// and
-/// ```yaml
-/// parent:
-///   example:
-///     hotel:        // Let's say it's ExampleEnum::Hotel(InnerStruct { nested: usize, field: usize })
-///       nested: 1
-///       field: 2
+/// let yaml = r#"
+/// restricted:
+///  echo: 5
+/// "#;
+/// let des = serde_yaml::from_str::<Restricted>(yaml);
+/// // Before v0.9.0, the following was true:
+/// // assert!(matches!(des, Ok(Restricted::Echo(n)) if n == 5));
+/// // Post 0.9.0, the following is true:
+/// assert!(des.is_err_and(|err| err.to_string().contains("invalid type: map")));
 /// ```
-/// will deserialize to `ExampleEnum::Hotel(_)`
 ///
-/// However,
-/// ```yaml
-/// parent:
-///   example:
-///     golf_alias: [1, 2, 3]
-///     hotel: { 'nested': 1, 'field': 2 }
-/// ```
-/// will throw a deserialization/validation error because only one matching key must exist.
-macro_rules! deserialize_enum_exactly_one_of {
-    (
-        $enum_ident:ident,
-        $unit:literal,
-        {$($key:literal => $variant:path),* $(,)?}
-    ) => {
-        impl<'de> serde::Deserialize<'de> for $enum_ident {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                struct MapVisitor;
+/// Now, in order to get this behavior, we have to deserialize with [`serde_yaml::with::singleton_map`]
+/// to achieve the same effect.
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(transparent)]
+pub struct SingletonMap<T>(#[serde(with = "serde_yaml::with::singleton_map_recursive")] pub T)
+where
+    T: serde::de::DeserializeOwned + Clone + Debug;
 
-                impl<'de> serde::de::Visitor<'de> for MapVisitor {
-                    type Value = $enum_ident;
+impl<T> Deref for SingletonMap<T>
+where
+    T: serde::de::DeserializeOwned + Clone + Debug,
+{
+    type Target = T;
 
-                    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-                        write!(formatter, "a supported `{}`", $unit)
-                    }
-
-                    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-                    where
-                        A: serde::de::MapAccess<'de>,
-                    {
-                        let first_key = map
-                            .next_key::<&str>()?
-                            .ok_or(serde::de::Error::custom(format!("expected a single `{}`", $unit)))?;
-
-                        let raw: $enum_ident = match first_key {
-                            $($key => Ok($variant(map.next_value()?)),)*
-                            other => Err(serde::de::Error::custom(format!("unknown {} `{other}`", $unit))),
-                        }?;
-
-                        if let Some(key) = map.next_key::<&str>()? {
-                            return Err(serde::de::Error::custom(format!(
-                                "invalid use of {} `{key}`: expecting a single {} and already found `{first_key}`",
-                                $unit, $unit
-                            )));
-                        }
-                        Ok(raw)
-                    }
-                }
-
-                deserializer.deserialize_map(MapVisitor)
-            }
-        }
-    };
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
-pub(crate) use deserialize_enum_exactly_one_of;
 
-/// Provides the default derive implementations for a struct representing a JSON object in a rule file.
+impl<T> SingletonMap<T>
+where
+    T: serde::de::DeserializeOwned + Clone + Debug,
+{
+    /// Consumes the `SingletonMap`, returning the inner value
+    pub fn into_inner(self) -> T {
+        self.0
+    }
+}
+
+/// Provides the default derive implementations for an item representing a JSON object in a rule file.
 ///
 /// ```text
 /// #[derive(Debug, Clone, serde::Deserialize)]
 /// #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 /// struct Example(usize);
 /// ```
-macro_rules! raw_struct {
+macro_rules! raw_item {
     ($raw_struct:item) => {
         #[derive(Debug, Clone, serde::Deserialize)]
         #[serde(deny_unknown_fields, rename_all = "kebab-case")]
@@ -125,10 +74,10 @@ macro_rules! raw_struct {
     };
 
     ($($raw_struct:item)+) => {
-        $(raw_struct!($raw_struct);)+
+        $(raw_item!($raw_struct);)+
     };
 }
-pub(crate) use raw_struct;
+pub(crate) use raw_item;
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged, rename_all = "kebab-case")]
@@ -153,87 +102,12 @@ impl Display for StringOrInt {
     }
 }
 
-#[allow(dead_code)]
 #[rustfmt::skip]
 #[cfg(test)]
 mod tests {
-    #[derive(Debug)]
-    enum Restricted {
-        Echo(usize),
-        Foxtrot(Vec<isize>),
-        Golf(String),
-    }
-    deserialize_enum_exactly_one_of!(
-        Restricted,
-        "restricted",
-        {
-            "echo" => Restricted::Echo,
-            "foxtrot" => Restricted::Foxtrot,
-            "golf-alias" => Restricted::Golf,
-        }
-    );
-
-    #[derive(Debug, serde::Deserialize)]
-    struct RawFile {
-        restricted: Restricted,
-        other: String,
-    }
-
-    #[test]
-    fn exactly_one_of_not_multi() {
-        let contents = "
-restricted:
-  echo: 5
-other: 'hello'
-        ";
-        assert!(serde_yaml::from_str::<RawFile>(contents).is_ok());
-        let contents = "
-restricted:
-  foxtrot: [-1, 0, 1]
-other: 'hello'
-        ";
-        assert!(serde_yaml::from_str::<RawFile>(contents).is_ok());
-        let contents = "
-restricted:
-  echo: 5
-  foxtrot: [-1, 0, 1]
-other: 'hello'
-        ";
-        let result = serde_yaml::from_str::<RawFile>(contents);
-        assert!(result.unwrap_err().to_string().contains("invalid use of restricted `foxtrot`"));
-        let contents = "
-restricted:
-  foxtrot: [-1, 0, 1]
-  echo: 5
-other: 'hello'
-        ";
-        let result = serde_yaml::from_str::<RawFile>(contents);
-        assert!(result.unwrap_err().to_string().contains("invalid use of restricted `echo`"));
-    }
-
-    #[test]
-    fn exactly_one_of_not_zero() {
-        let contents = "
-restricted:
-other: 'hello'
-        ";
-        let result = serde_yaml::from_str::<RawFile>(contents);
-        assert!(result.unwrap_err().to_string().contains("expected a single `restricted`"));
-    }
-
-    #[test]
-    fn exactly_one_of_alias() {
-        let contents = "
-restricted:
-  golf-alias: 'hotel india'
-other: 'hello'
-        ";
-        assert!(serde_yaml::from_str::<RawFile>(contents).is_ok(), "variant alias should work");
-    }
-
     #[test]
     fn raw_struct_case() {
-        raw_struct! {
+        raw_item! {
             struct RawFile {
                 some_field: usize,
             }
@@ -246,7 +120,7 @@ some-field: 123
 
     #[test]
     fn raw_struct_reject_unexpected() {
-        raw_struct! {
+        raw_item! {
             struct RawFile {
                 first: Vec<usize>,
                 second: Vec<usize>,

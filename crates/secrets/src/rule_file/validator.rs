@@ -2,23 +2,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::rule_file::deserialize_enum_exactly_one_of;
+use crate::rule_file::raw_item;
 use crate::rule_file::validator::http::RawHttp;
 
 pub(crate) mod http;
 
-/// A secret validator and its configuration.
-#[derive(Debug, Clone)]
-pub enum RawValidator {
-    Http(RawHttp),
-}
-deserialize_enum_exactly_one_of!(
-    RawValidator,
-    "validator",
-    {
-        "http" => RawValidator::Http,
+raw_item! {
+    /// A secret validator and its configuration.
+    pub enum RawValidator {
+        Http(RawHttp),
     }
-);
+}
 
 /// The status of a secret.
 #[derive(Debug, Clone, serde::Deserialize)]

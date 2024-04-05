@@ -2,28 +2,16 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::rule_file::{
-    deserialize_enum_exactly_one_of, raw_struct, StringOrInt, StringsOrInts, TemplateVar,
-};
+use crate::rule_file::{raw_item, StringOrInt, StringsOrInts, TemplateVar};
 
-/// A check and its configuration.
-#[derive(Debug, Clone)]
-pub enum RawCheck {
-    Equals(RawEquals),
-    AnyOf(RawAnyOf),
-    Contains(RawContains),
-}
-deserialize_enum_exactly_one_of!(
-    RawCheck,
-    "check",
-    {
-        "equals" => RawCheck::Equals,
-        "any-of" => RawCheck::AnyOf,
-        "contains" => RawCheck::Contains,
+raw_item! {
+    /// A check and its configuration.
+    pub enum RawCheck {
+        Equals(RawEquals),
+        AnyOf(RawAnyOf),
+        Contains(RawContains),
     }
-);
 
-raw_struct! {
     /// The configuration for check `equals`
     pub struct RawEquals {
         /// The variable to check for equality

@@ -3,22 +3,14 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::rule_file::check::RawCheck;
-use crate::rule_file::{deserialize_enum_exactly_one_of, raw_struct};
+use crate::rule_file::raw_item;
 
-/// A secret matcher and its configuration.
-#[derive(Debug, Clone)]
-pub enum RawMatcher {
-    Hyperscan(RawHyperscan),
-}
-deserialize_enum_exactly_one_of!(
-    RawMatcher,
-    "matcher",
-    {
-        "hyperscan" => RawMatcher::Hyperscan,
+raw_item! {
+    /// A secret matcher and its configuration.
+    pub enum RawMatcher {
+        Hyperscan(RawHyperscan),
     }
-);
 
-raw_struct! {
     /// The configuration for matcher `hyperscan`
     pub struct RawHyperscan {
         pub id: Option<String>,

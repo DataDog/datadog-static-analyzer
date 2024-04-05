@@ -3,11 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::rule_file::check::RawCheck;
-use crate::rule_file::{deserialize_enum_exactly_one_of, RawSecretStatus, RawSeverity};
-use crate::rule_file::{raw_struct, TemplateString};
+use crate::rule_file::{raw_item, RawSecretStatus, RawSeverity, SingletonMap, TemplateString};
 use std::collections::BTreeMap;
 
-raw_struct! {
+raw_item! {
     pub struct RawHttp(pub RawExtension);
 }
 
@@ -21,7 +20,7 @@ pub enum RawExtension {
 // Simple HTTP Request
 ////////////////////////////////////////
 
-raw_struct! {
+raw_item! {
     pub struct RawCfgSimpleRequest {
         pub request: RawRequest,
         pub response_handler: RawResponseHandler,
@@ -47,14 +46,20 @@ raw_struct! {
     }
 
     pub struct RawHandler {
-        pub on_match: RawCheck,
-        pub action: RawAction,
+        pub on_match: SingletonMap<RawCheck>,
+        pub action: SingletonMap<RawAction>,
     }
 
     pub struct RawActionReturn {
         #[serde(rename = "secret")]
         pub status: RawSecretStatus,
         pub severity: RawSeverity,
+    }
+
+    pub enum RawAction {
+        Return(RawActionReturn),
+        #[serde(rename = "validation")]
+        ControlFlow(RawControlFlow),
     }
 }
 
@@ -64,17 +69,6 @@ pub enum RawMethod {
     Get,
     Post,
 }
-
-#[derive(Debug, Clone)]
-pub enum RawAction {
-    Return(RawActionReturn),
-    ControlFlow(RawControlFlow),
-}
-deserialize_enum_exactly_one_of!(
-    RawAction,
-    "validation_result",
-    { "return" => RawAction::Return, "validation" => RawAction::ControlFlow }
-);
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "UPPERCASE")]

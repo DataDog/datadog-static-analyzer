@@ -3,10 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::rule_file::matcher::RawMatcher;
-use crate::rule_file::raw_struct;
 use crate::rule_file::validator::RawValidator;
+use crate::rule_file::{raw_item, SingletonMap};
 
-raw_struct! {
+raw_item! {
     /// The intermediate representation of a rule, deserialized directly from a file format.
     //
     // NOTE: The deserialization process also performs validation. While it's not ideal to mix concerns
@@ -20,8 +20,8 @@ raw_struct! {
         pub description: Option<String>,
         pub short_description: Option<String>,
         // Rule logic
-        pub matcher: RawMatcher,
-        pub validator: RawValidator,
+        pub matcher: SingletonMap<RawMatcher>,
+        pub validator: SingletonMap<RawValidator>,
     }
 }
 
