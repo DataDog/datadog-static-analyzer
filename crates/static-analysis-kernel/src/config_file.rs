@@ -214,7 +214,7 @@ pub fn serialize_ruleset_configs<S: Serializer>(
 }
 
 pub fn serialize_arguments<S: Serializer>(
-    arguments: &HashMap<String, ArgumentValues>,
+    arguments: &IndexMap<String, ArgumentValues>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     let mut map = serializer.serialize_map(Some(arguments.len()))?;
@@ -222,7 +222,20 @@ pub fn serialize_arguments<S: Serializer>(
         if let (1, Some(val)) = (value.by_subtree.len(), value.by_subtree.get("")) {
             map.serialize_entry(key, val)?
         } else {
-            map.serialize_entry(key, &value.by_subtree)?
+            map.serialize_entry(
+                key,
+                &value
+                    .by_subtree
+                    .iter()
+                    .map(|(k, v)| {
+                        if k.is_empty() {
+                            ("/", v.as_str())
+                        } else {
+                            (k.as_str(), v.as_str())
+                        }
+                    })
+                    .collect::<IndexMap<_, _>>(),
+            )?
         }
     }
     map.end()
@@ -455,7 +468,7 @@ impl<'de> Deserialize<'de> for ArgumentValues {
                 E: Error,
             {
                 Ok(ArgumentValues {
-                    by_subtree: HashMap::from([("".to_string(), v)]),
+                    by_subtree: IndexMap::from([("".to_string(), v)]),
                 })
             }
 
@@ -463,7 +476,7 @@ impl<'de> Deserialize<'de> for ArgumentValues {
             where
                 A: MapAccess<'de>,
             {
-                let mut by_subtree = HashMap::new();
+                let mut by_subtree = IndexMap::new();
                 while let Some((key, value)) = map.next_entry::<String, String>()? {
                     let prefix = if key == "/" || key == "**" { "" } else { &key };
                     if by_subtree.insert(prefix.to_string(), value).is_some() {
@@ -707,7 +720,7 @@ rulesets:
                                 only: Some(vec!["py/**".to_string().into()]),
                                 ignore: vec!["py/insecure/**".to_string().into()],
                             },
-                            arguments: HashMap::new(),
+                            arguments: IndexMap::new(),
                             severity: None,
                             category: None,
                         },
@@ -801,11 +814,11 @@ rulesets:
                             "no-eval".to_string(),
                             RuleConfig {
                                 paths: PathConfig::default(),
-                                arguments: HashMap::from([
+                                arguments: IndexMap::from([
                                     (
                                         "arg1".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([(
+                                            by_subtree: IndexMap::from([(
                                                 "".to_string(),
                                                 "100".to_string(),
                                             )]),
@@ -814,7 +827,7 @@ rulesets:
                                     (
                                         "arg2".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([
+                                            by_subtree: IndexMap::from([
                                                 ("".to_string(), "200".to_string()),
                                                 ("uno".to_string(), "201".to_string()),
                                                 ("uno/dos".to_string(), "202".to_string()),
@@ -831,11 +844,11 @@ rulesets:
                             "yes-eval".to_string(),
                             RuleConfig {
                                 paths: PathConfig::default(),
-                                arguments: HashMap::from([
+                                arguments: IndexMap::from([
                                     (
                                         "arg3".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([(
+                                            by_subtree: IndexMap::from([(
                                                 "".to_string(),
                                                 "300".to_string(),
                                             )]),
@@ -844,7 +857,7 @@ rulesets:
                                     (
                                         "arg4".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([(
+                                            by_subtree: IndexMap::from([(
                                                 "cuatro".to_string(),
                                                 "400".to_string(),
                                             )]),
@@ -1182,8 +1195,8 @@ rulesets:
         let mut rulesets = IndexMap::new();
 
         let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
-        let mut arguments = HashMap::new();
-        let mut by_subtree = HashMap::new();
+        let mut arguments = IndexMap::new();
+        let mut by_subtree = IndexMap::new();
         by_subtree.insert("".to_string(), "3".to_string());
         arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
 
@@ -1230,8 +1243,8 @@ rulesets:
         let mut rulesets = IndexMap::new();
 
         let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
-        let mut arguments = HashMap::new();
-        let mut by_subtree = HashMap::new();
+        let mut arguments = IndexMap::new();
+        let mut by_subtree = IndexMap::new();
         by_subtree.insert("".to_string(), "3".to_string());
         by_subtree.insert("my-path/to-file".to_string(), "4".to_string());
         arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
@@ -1268,25 +1281,11 @@ rulesets:
     rule-number-1:
       arguments:
         max-params:
-          '': '3'
+          /: '3'
           my-path/to-file: '4'
 "
         .trim();
 
-        let expected2 = r"
-schema-version: v1
-rulesets:
-- java-1: null
-  rules:
-    rule-number-1:
-      arguments:
-        max-params:
-          my-path/to-file: '4'
-          '': '3'
-"
-        .trim();
-
-        // NOTE: order of the arguments is not guaranteed. We could use IndexMap though.
-        assert!(serialized.eq(expected) || serialized.eq(expected2));
+        assert_eq!(serialized, expected);
     }
 }

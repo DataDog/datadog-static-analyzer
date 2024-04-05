@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -36,7 +35,7 @@ pub struct PathConfig {
 
 #[derive(Serialize, Debug, PartialEq, Default)]
 pub struct ArgumentValues {
-    pub by_subtree: HashMap<String, String>,
+    pub by_subtree: IndexMap<String, String>,
 }
 
 // Configuration for a single rule.
@@ -47,10 +46,10 @@ pub struct RuleConfig {
     pub paths: PathConfig,
     #[serde(
         default,
-        skip_serializing_if = "HashMap::is_empty",
+        skip_serializing_if = "IndexMap::is_empty",
         serialize_with = "serialize_arguments"
     )]
-    pub arguments: HashMap<String, ArgumentValues>,
+    pub arguments: IndexMap<String, ArgumentValues>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<RuleSeverity>,
     #[serde(
