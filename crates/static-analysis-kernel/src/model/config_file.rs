@@ -3,13 +3,13 @@ use indexmap::IndexMap;
 use serde;
 use serde::{Deserialize, Serialize};
 use std::borrow::Borrow;
-use std::collections::HashMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::config_file::{
-    deserialize_category, deserialize_ruleconfigs, deserialize_rulesetconfigs,
-    deserialize_schema_version, get_default_schema_version, serialize_rulesetconfigs,
+    deserialize_category, deserialize_rule_configs, deserialize_ruleset_configs,
+    deserialize_schema_version, get_default_schema_version, serialize_arguments,
+    serialize_ruleset_configs,
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
@@ -35,7 +35,7 @@ pub struct PathConfig {
 
 #[derive(Serialize, Debug, PartialEq, Default)]
 pub struct ArgumentValues {
-    pub by_subtree: HashMap<String, String>,
+    pub by_subtree: IndexMap<String, String>,
 }
 
 // Configuration for a single rule.
@@ -44,8 +44,12 @@ pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     #[serde(flatten)]
     pub paths: PathConfig,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    pub arguments: HashMap<String, ArgumentValues>,
+    #[serde(
+        default,
+        skip_serializing_if = "IndexMap::is_empty",
+        serialize_with = "serialize_arguments"
+    )]
+    pub arguments: IndexMap<String, ArgumentValues>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<RuleSeverity>,
     #[serde(
@@ -65,7 +69,7 @@ pub struct RulesetConfig {
     // Rule-specific configurations.
     #[serde(
         default,
-        deserialize_with = "deserialize_ruleconfigs",
+        deserialize_with = "deserialize_rule_configs",
         skip_serializing_if = "IndexMap::is_empty"
     )]
     pub rules: IndexMap<String, RuleConfig>,
@@ -78,7 +82,7 @@ pub struct ConfigFile {
     #[serde(rename = "schema-version")]
     pub schema_version: String,
     // Configurations for the rulesets.
-    #[serde(serialize_with = "serialize_rulesetconfigs")]
+    #[serde(serialize_with = "serialize_ruleset_configs")]
     pub rulesets: IndexMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]
@@ -102,7 +106,7 @@ struct RawConfigFile {
     )]
     schema_version: String,
     // Configurations for the rulesets.
-    #[serde(deserialize_with = "deserialize_rulesetconfigs")]
+    #[serde(deserialize_with = "deserialize_ruleset_configs")]
     rulesets: IndexMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.
     #[serde(flatten)]

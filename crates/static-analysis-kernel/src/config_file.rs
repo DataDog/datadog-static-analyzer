@@ -2,7 +2,7 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
 use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
-use serde::ser::SerializeSeq;
+use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
@@ -129,7 +129,7 @@ impl Default for ArgumentProvider {
 /// config.
 /// Lists of strings produce maps of empty `RulesetConfig`s.
 /// Duplicate rulesets are rejected.
-pub fn deserialize_rulesetconfigs<'de, D>(
+pub fn deserialize_ruleset_configs<'de, D>(
     deserializer: D,
 ) -> Result<IndexMap<String, RulesetConfig>, D::Error>
 where
@@ -181,7 +181,7 @@ impl<'a> Serialize for CompatMapValue<'a> {
     }
 }
 
-pub fn serialize_rulesetconfigs<S: Serializer>(
+pub fn serialize_ruleset_configs<S: Serializer>(
     rulesets: &IndexMap<String, RulesetConfig>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
@@ -211,6 +211,34 @@ pub fn serialize_rulesetconfigs<S: Serializer>(
         }
     }
     seq.end()
+}
+
+pub fn serialize_arguments<S: Serializer>(
+    arguments: &IndexMap<String, ArgumentValues>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut map = serializer.serialize_map(Some(arguments.len()))?;
+    for (key, value) in arguments {
+        if let (1, Some(val)) = (value.by_subtree.len(), value.by_subtree.get("")) {
+            map.serialize_entry(key, val)?
+        } else {
+            map.serialize_entry(
+                key,
+                &value
+                    .by_subtree
+                    .iter()
+                    .map(|(k, v)| {
+                        if k.is_empty() {
+                            ("/", v.as_str())
+                        } else {
+                            (k.as_str(), v.as_str())
+                        }
+                    })
+                    .collect::<IndexMap<_, _>>(),
+            )?
+        }
+    }
+    map.end()
 }
 
 /// Holder for ruleset configurations specified in lists.
@@ -334,7 +362,7 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
 }
 
 /// Deserializer for a `RuleConfig` map which rejects duplicate rules.
-pub fn deserialize_ruleconfigs<'de, D>(
+pub fn deserialize_rule_configs<'de, D>(
     deserializer: D,
 ) -> Result<IndexMap<String, RuleConfig>, D::Error>
 where
@@ -440,7 +468,7 @@ impl<'de> Deserialize<'de> for ArgumentValues {
                 E: Error,
             {
                 Ok(ArgumentValues {
-                    by_subtree: HashMap::from([("".to_string(), v)]),
+                    by_subtree: IndexMap::from([("".to_string(), v)]),
                 })
             }
 
@@ -448,7 +476,7 @@ impl<'de> Deserialize<'de> for ArgumentValues {
             where
                 A: MapAccess<'de>,
             {
-                let mut by_subtree = HashMap::new();
+                let mut by_subtree = IndexMap::new();
                 while let Some((key, value)) = map.next_entry::<String, String>()? {
                     let prefix = if key == "/" || key == "**" { "" } else { &key };
                     if by_subtree.insert(prefix.to_string(), value).is_some() {
@@ -692,7 +720,7 @@ rulesets:
                                 only: Some(vec!["py/**".to_string().into()]),
                                 ignore: vec!["py/insecure/**".to_string().into()],
                             },
-                            arguments: HashMap::new(),
+                            arguments: IndexMap::new(),
                             severity: None,
                             category: None,
                         },
@@ -786,11 +814,11 @@ rulesets:
                             "no-eval".to_string(),
                             RuleConfig {
                                 paths: PathConfig::default(),
-                                arguments: HashMap::from([
+                                arguments: IndexMap::from([
                                     (
                                         "arg1".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([(
+                                            by_subtree: IndexMap::from([(
                                                 "".to_string(),
                                                 "100".to_string(),
                                             )]),
@@ -799,7 +827,7 @@ rulesets:
                                     (
                                         "arg2".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([
+                                            by_subtree: IndexMap::from([
                                                 ("".to_string(), "200".to_string()),
                                                 ("uno".to_string(), "201".to_string()),
                                                 ("uno/dos".to_string(), "202".to_string()),
@@ -816,11 +844,11 @@ rulesets:
                             "yes-eval".to_string(),
                             RuleConfig {
                                 paths: PathConfig::default(),
-                                arguments: HashMap::from([
+                                arguments: IndexMap::from([
                                     (
                                         "arg3".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([(
+                                            by_subtree: IndexMap::from([(
                                                 "".to_string(),
                                                 "300".to_string(),
                                             )]),
@@ -829,7 +857,7 @@ rulesets:
                                     (
                                         "arg4".to_string(),
                                         ArgumentValues {
-                                            by_subtree: HashMap::from([(
+                                            by_subtree: IndexMap::from([(
                                                 "cuatro".to_string(),
                                                 "400".to_string(),
                                             )]),
@@ -1007,7 +1035,7 @@ max-file-size-kb: 512
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_empty() {
+    fn test_serialize_ruleset_configs_empty() {
         let config = ConfigFile {
             schema_version: "v1".to_string(),
             rulesets: IndexMap::new(),
@@ -1023,7 +1051,7 @@ rulesets: []"#
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_single_empty() {
+    fn test_serialize_ruleset_configs_single_empty() {
         let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
@@ -1043,7 +1071,7 @@ rulesets:
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_multiple() {
+    fn test_serialize_ruleset_configs_multiple() {
         let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
@@ -1103,7 +1131,7 @@ rulesets:
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_multiple_order_is_not_affected() {
+    fn test_serialize_ruleset_configs_multiple_order_is_not_affected() {
         let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
@@ -1157,6 +1185,105 @@ rulesets:
       ignore:
       - ignore/to/win
       "#
+        .trim();
+
+        assert_eq!(serialized, expected);
+    }
+
+    #[test]
+    fn test_serialize_arguments() {
+        let mut rulesets = IndexMap::new();
+
+        let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
+        let mut arguments = IndexMap::new();
+        let mut by_subtree = IndexMap::new();
+        by_subtree.insert("".to_string(), "3".to_string());
+        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+
+        rules.insert(
+            "rule-number-1".into(),
+            RuleConfig {
+                arguments,
+                ..Default::default()
+            },
+        );
+
+        rulesets.insert(
+            "java-1".to_string(),
+            RulesetConfig {
+                rules,
+                ..Default::default()
+            },
+        );
+
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = serialized.trim();
+        let expected = r"
+schema-version: v1
+rulesets:
+- java-1: null
+  rules:
+    rule-number-1:
+      arguments:
+        max-params: '3'
+"
+        .trim();
+
+        assert_eq!(serialized, expected);
+    }
+
+    #[test]
+    fn test_serialize_arguments_multiple_subtrees() {
+        let mut rulesets = IndexMap::new();
+
+        let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
+        let mut arguments = IndexMap::new();
+        let mut by_subtree = IndexMap::new();
+        by_subtree.insert("".to_string(), "3".to_string());
+        by_subtree.insert("my-path/to-file".to_string(), "4".to_string());
+        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+
+        rules.insert(
+            "rule-number-1".into(),
+            RuleConfig {
+                arguments,
+                ..Default::default()
+            },
+        );
+
+        rulesets.insert(
+            "java-1".to_string(),
+            RulesetConfig {
+                rules,
+                ..Default::default()
+            },
+        );
+
+        let config = ConfigFile {
+            schema_version: "v1".to_string(),
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = serialized.trim();
+        let expected = r"
+schema-version: v1
+rulesets:
+- java-1: null
+  rules:
+    rule-number-1:
+      arguments:
+        max-params:
+          /: '3'
+          my-path/to-file: '4'
+"
         .trim();
 
         assert_eq!(serialized, expected);
