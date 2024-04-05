@@ -2,7 +2,7 @@ use anyhow::Result;
 use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
 use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
-use serde::ser::SerializeSeq;
+use serde::ser::{SerializeMap, SerializeSeq};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 use std::fmt;
@@ -129,7 +129,7 @@ impl Default for ArgumentProvider {
 /// config.
 /// Lists of strings produce maps of empty `RulesetConfig`s.
 /// Duplicate rulesets are rejected.
-pub fn deserialize_rulesetconfigs<'de, D>(
+pub fn deserialize_ruleset_configs<'de, D>(
     deserializer: D,
 ) -> Result<IndexMap<String, RulesetConfig>, D::Error>
 where
@@ -181,7 +181,7 @@ impl<'a> Serialize for CompatMapValue<'a> {
     }
 }
 
-pub fn serialize_rulesetconfigs<S: Serializer>(
+pub fn serialize_ruleset_configs<S: Serializer>(
     rulesets: &IndexMap<String, RulesetConfig>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
@@ -211,6 +211,21 @@ pub fn serialize_rulesetconfigs<S: Serializer>(
         }
     }
     seq.end()
+}
+
+pub fn serialize_arguments<S: Serializer>(
+    arguments: &HashMap<String, ArgumentValues>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut map = serializer.serialize_map(Some(arguments.len()))?;
+    for (key, value) in arguments {
+        if let (1, Some(val)) = (value.by_subtree.len(), value.by_subtree.get("")) {
+            map.serialize_entry(key, val)?
+        } else {
+            map.serialize_entry(key, &value.by_subtree)?
+        }
+    }
+    map.end()
 }
 
 /// Holder for ruleset configurations specified in lists.
@@ -334,7 +349,7 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
 }
 
 /// Deserializer for a `RuleConfig` map which rejects duplicate rules.
-pub fn deserialize_ruleconfigs<'de, D>(
+pub fn deserialize_rule_configs<'de, D>(
     deserializer: D,
 ) -> Result<IndexMap<String, RuleConfig>, D::Error>
 where
@@ -1007,7 +1022,7 @@ max-file-size-kb: 512
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_empty() {
+    fn test_serialize_ruleset_configs_empty() {
         let config = ConfigFile {
             schema_version: "v1".to_string(),
             rulesets: IndexMap::new(),
@@ -1023,7 +1038,7 @@ rulesets: []"#
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_single_empty() {
+    fn test_serialize_ruleset_configs_single_empty() {
         let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
@@ -1043,7 +1058,7 @@ rulesets:
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_multiple() {
+    fn test_serialize_ruleset_configs_multiple() {
         let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
@@ -1103,7 +1118,7 @@ rulesets:
     }
 
     #[test]
-    fn test_serialize_rulesetconfigs_multiple_order_is_not_affected() {
+    fn test_serialize_ruleset_configs_multiple_order_is_not_affected() {
         let mut rulesets = IndexMap::new();
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
