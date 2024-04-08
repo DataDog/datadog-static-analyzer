@@ -2,6 +2,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+pub mod boolean_logic;
+pub use boolean_logic::BooleanLogic;
 mod regex;
 pub use regex::Regex;
 
