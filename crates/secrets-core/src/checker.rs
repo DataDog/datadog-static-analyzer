@@ -2,6 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+mod regex;
+pub use regex::Regex;
+
 use crate::capture::Captures;
 use std::borrow::Cow;
 use std::path::Path;
