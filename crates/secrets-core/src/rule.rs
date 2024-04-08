@@ -6,33 +6,11 @@ use crate::common::ByteSpan;
 use crate::location::{PointLocator, PointSpan};
 use crate::matcher::PatternId;
 use crate::validator::ValidatorId;
+use crate::Checker;
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::string::FromUtf8Error;
 use std::sync::Arc;
-
-/// A boolean logic expression supporting AND, OR, and NOT
-#[derive(Debug, Clone)]
-pub enum Expression {
-    /// A predicate stating that a pattern with the given `PatternId` must match the source.
-    IsMatch {
-        source: MatchSource,
-        pattern_id: PatternId,
-    },
-    /// Logical `AND`
-    And(Arc<Expression>, Arc<Expression>),
-    /// Logical `OR`
-    Or(Arc<Expression>, Arc<Expression>),
-    /// Logical `NOT`
-    Not(Arc<Expression>),
-}
-
-/// A data source to search when evaluating a [`Rule`]'s matchers.
-#[derive(Debug, Clone)]
-pub enum MatchSource {
-    Capture(String),
-    Prior,
-}
 
 /// A unique id that identifies a [`Rule`].
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -58,28 +36,28 @@ impl Display for RuleId {
     }
 }
 
-#[derive(Debug, Clone)]
 pub struct Rule {
     id: RuleId,
-    conditions: Vec<Arc<RuleCondition>>,
-    match_stages: Vec<Arc<Expression>>,
+    pattern_id: PatternId,
     validator_id: ValidatorId,
+    pre_condition: Vec<Box<dyn Checker>>,
+    match_checks: Vec<Box<dyn Checker>>,
 }
 
 impl Rule {
     pub fn new(
         id: RuleId,
-        conditions: impl Into<Vec<RuleCondition>>,
-        match_stages: impl Into<Vec<Expression>>,
+        pattern_id: PatternId,
         validator_id: ValidatorId,
+        pre_condition: Vec<Box<dyn Checker>>,
+        match_checks: Vec<Box<dyn Checker>>,
     ) -> Self {
-        let match_stages = match_stages.into().into_iter().map(Arc::new).collect();
-        let conditions = conditions.into().into_iter().map(Arc::new).collect();
         Self {
             id,
-            conditions,
-            match_stages,
+            pattern_id,
             validator_id,
+            pre_condition,
+            match_checks,
         }
     }
 
@@ -87,28 +65,21 @@ impl Rule {
         &self.id
     }
 
-    pub fn match_stages(&self) -> &[Arc<Expression>] {
-        &self.match_stages
+    pub fn pattern_id(&self) -> PatternId {
+        self.pattern_id
     }
 
     pub fn validator_id(&self) -> &ValidatorId {
         &self.validator_id
     }
-}
 
-/// A predicate that must hold true for a rule to be considered "active" and able to generate a [`RuleMatch`].
-#[derive(Debug)]
-pub enum RuleCondition {
-    FilePath(GlobAssertion<String>),
-}
+    pub fn pre_condition(&self) -> &[Box<dyn Checker>] {
+        self.pre_condition.as_slice()
+    }
 
-/// A Unix-style glob with either a positive or negative assertion:
-/// * `MustMatch`: A pattern must match the provided glob
-/// * `MustNotMatch`: A pattern must not match the provided glob
-#[derive(Debug, Clone)]
-pub enum GlobAssertion<T> {
-    MustMatch(T),
-    MustNotMatch(T),
+    pub fn match_checks(&self) -> &[Box<dyn Checker>] {
+        self.match_checks.as_slice()
+    }
 }
 
 /// A string that detected by a rule's [`Matcher`](crate::Matcher) that has passed the rule's [`Checker`](crate::Checker).

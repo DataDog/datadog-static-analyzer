@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::checker::CheckData;
 use crate::location::PointLocator;
 use crate::rule::{LocatedString, Rule, RuleId, RuleMatch};
 use crate::rule_evaluator::{EvaluatorError, RuleEvaluator};
@@ -42,7 +43,7 @@ impl Worker {
         }
     }
 
-    /// Analyzes a rule against all rules, returning candidates to validate.
+    /// Performs an IO operation to read the specified rule and run all rules against the content.
     pub fn analyze_file(&mut self, path: &Path) -> Result<Vec<Candidate>, WorkerError> {
         let data = self.read_file(path)?;
 
@@ -57,25 +58,26 @@ impl Worker {
     pub fn scan_file(&mut self, path: &Path, data: &[u8]) -> Result<Vec<Candidate>, WorkerError> {
         let locator = PointLocator::new(data);
         let mut candidates = Vec::new();
-        let scanner = self.rule_evaluator.scan(data);
+        let check_data = CheckData::new(Some(data), None, Some(path));
+        let scanner = self.rule_evaluator.scan(check_data);
+
         for rule_id in &self.rules {
-            let scan_iter = scanner.rule(rule_id);
-            for eval_match in scan_iter {
-                let eval_match = eval_match.map_err(WorkerError::Evaluator)?;
-                let mut captures = HashMap::<String, LocatedString>::new();
-                for (name, text) in eval_match
-                    .all_captures
-                    .iter()
-                    .flat_map(|caps| caps.into_iter())
-                {
-                    if let (Some(name), Some(text)) = (name, text) {
-                        let located = LocatedString::from_locator(&locator, text.byte_span())
+            let scan_iter = scanner.rule(rule_id).map_err(WorkerError::Evaluator)?;
+            for checked_match in scan_iter {
+                let mut captures = HashMap::<String, LocatedString>::with_capacity(
+                    checked_match.0.captures().captures_len(),
+                );
+                let captures_iter = checked_match.0.captures().into_iter();
+                for (name, capture) in captures_iter {
+                    if let (Some(name), Some(capture)) = (name, capture) {
+                        let located = LocatedString::from_locator(&locator, capture.byte_span())
                             .map_err(WorkerError::Utf8)?;
                         captures.insert(name.to_string(), located);
                     }
                 }
-                let matched = LocatedString::from_locator(&locator, eval_match.matched.byte_span())
-                    .map_err(WorkerError::Utf8)?;
+                let matched =
+                    LocatedString::from_locator(&locator, checked_match.0.entire().byte_span())
+                        .map_err(WorkerError::Utf8)?;
 
                 let candidate = Candidate {
                     source: path.to_path_buf(),

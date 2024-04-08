@@ -30,7 +30,7 @@ pub enum EngineError {
 }
 
 pub struct Engine {
-    rules: HashMap<RuleId, Rule>,
+    rules: HashMap<RuleId, Arc<Rule>>,
     matchers: HashMap<MatcherId, Matcher>,
     // Whereas `Rule` and `Matcher` are intended to be thread-local, a validator must be held
     // in an Arc because it may need to respect a rate-limit across threads.
@@ -89,11 +89,7 @@ impl Engine {
     /// Creates a new Worker. This should be considered an expensive operation, as it will create a
     /// new instance of each Matcher and initialize it, which may have significant overhead.
     fn init_worker(&self) -> Worker {
-        let rules = self
-            .rules
-            .values()
-            .map(|rule| Arc::new(rule.clone()))
-            .collect::<Vec<_>>();
+        let rules = self.rules.values().map(Arc::clone).collect::<Vec<_>>();
 
         // NOTE: This should be assumed to be expensive
         let matchers = self.matchers.values().cloned().collect::<Vec<_>>();
@@ -171,7 +167,7 @@ impl EngineBuilder {
         let rules = self
             .rules
             .into_iter()
-            .map(|rule| (rule.id().clone(), rule))
+            .map(|rule| (rule.id().clone(), Arc::from(rule)))
             .collect::<HashMap<_, _>>();
         Engine {
             rules,
