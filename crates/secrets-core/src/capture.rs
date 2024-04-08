@@ -35,6 +35,16 @@ impl<'b> Captures<'b> {
         }
     }
 
+    /// Creates a new [`Captures`] from a byte slice, treating the byte slice as both the entire
+    /// capture and the `full_data`.
+    pub fn new_from_data(data: &'b [u8]) -> Captures<'b> {
+        let empty_slots = CaptureSlots::new_without_captures(data, ByteSpan::from_slice(data));
+        Self {
+            name_slots: None,
+            capture_slots: empty_slots,
+        }
+    }
+
     /// Returns the capture names if they exist.
     pub fn name_slots(&self) -> Option<&[Option<String>]> {
         self.name_slots.as_ref().map(|vec| vec.as_slice())
