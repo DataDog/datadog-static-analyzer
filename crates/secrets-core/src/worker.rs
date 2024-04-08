@@ -3,10 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::location::PointLocator;
-use crate::matcher::Matcher;
 use crate::rule::{LocatedString, Rule, RuleId, RuleMatch};
 use crate::rule_evaluator::{EvaluatorError, RuleEvaluator};
 use crate::validator::Candidate;
+use crate::Matcher;
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;

@@ -7,7 +7,7 @@ use crate::location::{PointLocator, PointSpan};
 use crate::matcher::PatternId;
 use crate::validator::ValidatorId;
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::string::FromUtf8Error;
 use std::sync::Arc;
 
@@ -39,21 +39,22 @@ pub enum MatchSource {
 #[repr(transparent)]
 pub struct RuleId(pub Arc<str>);
 
-impl From<&str> for RuleId {
-    fn from(value: &str) -> Self {
-        Self(Arc::from(value))
+impl<T: AsRef<str>> From<T> for RuleId {
+    fn from(value: T) -> Self {
+        Self(Arc::from(value.as_ref()))
     }
 }
 
-impl From<String> for RuleId {
-    fn from(value: String) -> Self {
-        Self(Arc::from(value.as_str()))
-    }
-}
-
-impl AsRef<str> for RuleId {
-    fn as_ref(&self) -> &str {
+impl RuleId {
+    /// Returns the rule id as a string slice.
+    pub fn as_str(&self) -> &str {
         self.0.as_ref()
+    }
+}
+
+impl Display for RuleId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -110,7 +111,7 @@ pub enum GlobAssertion<T> {
     MustNotMatch(T),
 }
 
-/// A string that has passed all of a rule's matcher stages.
+/// A string that detected by a rule's [`Matcher`](crate::Matcher) that has passed the rule's [`Checker`](crate::Checker).
 #[derive(Debug, Clone)]
 pub struct RuleMatch {
     /// The id of the [`Rule`] that triggered this match.

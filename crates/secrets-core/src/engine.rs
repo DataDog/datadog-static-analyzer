@@ -64,10 +64,11 @@ impl Engine {
         let rule = self
             .rules
             .get(rule_id)
-            .ok_or_else(|| EngineError::UnknownRule(rule_id.as_ref().to_string()))?;
-        let validator = self.validators.get(rule.validator_id()).ok_or_else(|| {
-            EngineError::UnknownValidator(rule.validator_id().as_ref().to_string())
-        })?;
+            .ok_or_else(|| EngineError::UnknownRule(rule_id.to_string()))?;
+        let validator = self
+            .validators
+            .get(rule.validator_id())
+            .ok_or_else(|| EngineError::UnknownValidator(rule.validator_id().to_string()))?;
 
         let source = candidate.source.clone();
         let byte_span = candidate.rule_match.matched.byte_span;

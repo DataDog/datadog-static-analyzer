@@ -122,7 +122,7 @@ fn build_simple_http(rule_id: &RuleId, url: &str) -> HttpValidator {
     let response_handler = response_handler.build();
 
     HttpValidatorBuilder::new(
-        format!("validator-http_{}", rule_id.as_ref()).into(),
+        format!("validator-http_{}", rule_id).into(),
         rule_id.clone(),
         request_generator,
         response_handler,
@@ -173,11 +173,11 @@ const url = "https://github.com/DataDog/repository/blob/main/3380f4569079edec8b1
         candidates.sort_by_key(|cand| cand.rule_match.matched.byte_span.start_index);
 
         let rule_match = &candidates[0].rule_match;
-        assert_eq!(rule_match.rule_id.as_ref(), "datadog-api-key");
+        assert_eq!(rule_match.rule_id.as_str(), "datadog-api-key");
         assert_eq!(parse_capture(rule_match, "candidate"), Some("918d1aaf6e301c1aa4ff315396459906"));
 
         let rule_match = &candidates[1].rule_match;
-        assert_eq!(rule_match.rule_id.as_ref(), "datadog-api-key");
+        assert_eq!(rule_match.rule_id.as_str(), "datadog-api-key");
         assert_eq!(parse_capture(rule_match, "candidate"), Some("861fd58f910308a8d9986c81e776be59"));
 
         assert!(candidates.get(2).is_none());

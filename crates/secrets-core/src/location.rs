@@ -49,7 +49,7 @@ impl Default for Point {
 }
 
 /// A span of [`Point`]s representing a range of lines and columns in a text.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Copy, Clone, Default, PartialEq, Eq, Hash)]
 pub struct PointSpan {
     start: Point,
     end: Point,

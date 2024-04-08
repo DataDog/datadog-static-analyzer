@@ -589,7 +589,7 @@ fn main() -> Result<()> {
             let captured = candidate.rule_match.captures.get("candidate").unwrap();
             let (start, end) = into_positions(captured.point_span);
             detected_secrets.push(DetectedSecret::new(
-                candidate.rule_match.rule_id.as_ref().to_string(),
+                candidate.rule_match.rule_id.to_string(),
                 relative_path.to_string_lossy().to_string(),
                 ValidationStatus::Unvalidated,
                 start,
@@ -625,7 +625,7 @@ fn main() -> Result<()> {
                     // Temporary: panic here until we can refactor how `main` propagates errors
                     .expect("path should under `directory_path`");
                 detected_secrets.push(DetectedSecret::new(
-                    result.rule_id().as_ref().to_string(),
+                    result.rule_id().to_string(),
                     relative_path.to_string_lossy().to_string(),
                     into_val_status(result.category()),
                     start,
