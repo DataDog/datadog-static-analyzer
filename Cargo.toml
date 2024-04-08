@@ -9,7 +9,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.9"
+version = "0.3.0"
 
 [profile.release]
 lto = true
