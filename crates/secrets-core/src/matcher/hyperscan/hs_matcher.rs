@@ -6,7 +6,7 @@ use std::iter::FusedIterator;
 use vectorscan::scan::ScanStatus;
 
 use crate::capture::Captures;
-use crate::matcher::hyperscan::pattern_set::PatternWithId;
+use crate::matcher::hyperscan::pattern_set::{PatternSetBuilder, PatternWithId};
 use crate::matcher::hyperscan::scratch::Scratch;
 use crate::matcher::hyperscan::transform::MatchIter;
 use crate::matcher::hyperscan::PatternSet;
@@ -227,6 +227,92 @@ impl<'a, 'b> MatchCursor<'a, 'b> {
             data,
             current_mappers_iter: None,
         }
+    }
+}
+
+/// A builder that constructs a [`Hyperscan`] matcher.
+#[derive(Debug, Clone, Default)]
+pub struct HyperscanBuilder(PatternSetBuilder);
+
+#[derive(Debug, thiserror::Error)]
+pub enum HyperscanBuilderError {
+    /// A pattern that may be a valid regex, but is disallowed
+    #[error("disallowed regex `{pattern}`: {message}")]
+    DisallowedPattern { pattern: String, message: String },
+    #[error("can't compile regex `{pattern}`: {message}")]
+    InvalidRegex { pattern: String, message: String },
+    /// An error that means that all the patterns added are valid, but the Hyperscan database
+    /// could not be created. This is likely due to a platform-level issue (e.g. out of memory).
+    #[error("can't compile Hyperscan: {message}")]
+    Compilation { message: String },
+}
+
+impl HyperscanBuilder {
+    pub fn new(matcher_id: MatcherId) -> Self {
+        Self(PatternSetBuilder::new(matcher_id))
+    }
+
+    /// Adds a [PCRE2 syntax] regex to the set, returning the pattern ID if it has valid syntax.
+    ///
+    /// [PCRE2 syntax]: https://www.pcre.org/current/doc/html/pcre2syntax.html
+    pub fn add_regex(
+        &mut self,
+        pattern: impl Into<String>,
+    ) -> Result<PatternId, HyperscanBuilderError> {
+        let pattern = pattern.into();
+
+        Self::check_pattern(&pattern)?;
+
+        let pattern = vectorscan::Pattern::new(&pattern)
+            .try_build()
+            .expect("check_pattern should have ensured pattern will compile");
+        Ok(self.0.add_pattern(pattern))
+    }
+
+    /// Attempts to compile all the patterns in the set.
+    ///
+    /// In practice, this should always succeed unless Hyperscan cannot properly allocate memory.
+    pub fn try_compile(self) -> Result<Hyperscan, HyperscanBuilderError> {
+        self.0
+            .try_compile()
+            .map(Hyperscan::new)
+            .map_err(|err| HyperscanBuilderError::Compilation {
+                message: err.to_string(),
+            })
+    }
+
+    /// Checks that a pattern will compile, returning an error if it will not.
+    ///
+    /// This is useful when transforming a regex pattern to determine if the transformation introduces errors.
+    pub fn check_pattern(pattern: impl Into<String>) -> Result<(), HyperscanBuilderError> {
+        let pattern = pattern.into();
+        match vectorscan::Pattern::new(&pattern).try_build() {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                let message = err.to_string();
+                // Hyperscan allows enabling support for certain patterns by using regex flags. We don't support this,
+                // and so don't want to suggest to the user that the error is fixable.
+
+                if message.contains("use HS_FLAG_ALLOWEMPTY to enable support") {
+                    Err(HyperscanBuilderError::DisallowedPattern {
+                        pattern,
+                        message: "pattern is an empty buffer".to_string(),
+                    })
+                } else {
+                    Err(HyperscanBuilderError::InvalidRegex { pattern, message })
+                }
+            }
+        }
+    }
+
+    /// Formats an escaped hex representation of the bytes of a string, which Hyperscan will treat as a literal.
+    /// # Examples
+    /// ```rust
+    /// # use secrets_core::matcher::hyperscan::HyperscanBuilder;
+    /// assert_eq!(HyperscanBuilder::format_escaped_hex(".?").as_str(), "\\x2E\\x3F")
+    /// ```
+    pub fn format_escaped_hex(input: &str) -> String {
+        vectorscan::compiler::format_escaped_hex(input)
     }
 }
 

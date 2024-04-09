@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 mod hs_matcher;
-pub use hs_matcher::Hyperscan;
+pub use hs_matcher::{Hyperscan, HyperscanBuilder, HyperscanBuilderError};
 mod pattern;
 pub use pattern::Pattern;
 pub mod pattern_set;
