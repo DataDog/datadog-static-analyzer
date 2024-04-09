@@ -125,3 +125,190 @@ pub fn build_simple_http(
         .retry_config(retry_config.clone())
         .build()
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::rule_file::validator::http::RawCfgSimpleRequest;
+    use crate::validator::http::{build_simple_http, USER_AGENT};
+    use httpmock::MockServer;
+    use secrets_core::rule::{LocatedString, RuleMatch};
+    use secrets_core::validator::http::{
+        HttpValidator, HttpValidatorError, RetryConfig, RetryPolicy,
+    };
+    use secrets_core::validator::{
+        Candidate, SecretCategory, Severity, ValidatorError, ValidatorId,
+    };
+    use secrets_core::Validator;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+    use std::time::Duration;
+
+    const VALID: &str = "121bdc4e---------valid----------49935a92";
+
+    /// A default `response-handler` to inject for tests that aren't concerned with the response.
+    const DEFAULT_RESPONSE: &str = "\
+response-handler:
+  handler-list:
+  default-result:
+    secret: INCONCLUSIVE
+    severity: NOTICE
+";
+
+    /// Builds a candidate with incorrect location data (done here for simplicity, as these tests don't need location)
+    fn to_candidate(text: &str, captures: HashMap<&'static str, &'static str>) -> Candidate {
+        let captures = captures
+            .into_iter()
+            .map(|(k, v)| {
+                let v = LocatedString {
+                    inner: v.to_string(),
+                    byte_span: Default::default(),
+                    point_span: Default::default(),
+                };
+                (k.to_string(), v)
+            })
+            .collect::<HashMap<_, _>>();
+        Candidate {
+            source: PathBuf::from("foo/bar/baz.rs"),
+            rule_match: RuleMatch {
+                rule_id: "test-rule".into(),
+                matched: LocatedString {
+                    inner: text.to_string(),
+                    byte_span: Default::default(),
+                    point_span: Default::default(),
+                },
+                captures,
+            },
+        }
+    }
+
+    fn make_validator(request_yaml: &str, response_yaml: &str) -> HttpValidator {
+        let cfg: RawCfgSimpleRequest =
+            serde_yaml::from_str(&format!("{}\n{}", request_yaml, response_yaml)).unwrap();
+        let validator_id: ValidatorId = "http-validator_test-rule".into();
+        let retry_config = RetryConfig {
+            max_attempts: 3,
+            use_jitter: false,
+            policy: RetryPolicy::Fixed {
+                duration: Duration::from_millis(1),
+            },
+        };
+        build_simple_http(cfg, validator_id, &retry_config)
+    }
+
+    /// Generates a test case that creates a validator from the provided [`RawRequest`](crate::rule_file::validator::http::RawRequest)
+    /// and asserts that it is parsed into an [`HttpValidator`] that formats an HTTP request as specified.
+    ///
+    /// Note: `<__cfg(test)_magic_url__>` is treated as a "magic" const that will transparently be replaced with the [`MockServer`] URL.
+    macro_rules! test_request {
+        (
+            $request_yaml:literal,
+            $when:ident
+            $(. $call:ident($($args:tt)*))+
+        ) => {{
+                let ms = MockServer::start();
+                let mock = ms.mock(|$when, then| {
+                    $when
+                    $(.$call($($args)*))+;
+                    then.status(200);
+                });
+                let yaml = $request_yaml.replace("<__cfg(test)_magic_url__>", &ms.base_url());
+                let validator = make_validator(&yaml, DEFAULT_RESPONSE);
+                let captures = HashMap::from([("inner_token", "49935a92")]);
+                let _ = validator.validate(to_candidate(VALID, captures)).unwrap();
+                mock.assert_hits(1);
+            }}
+    }
+
+    #[test]
+    fn parse_request_get_with_headers() {
+        test_request!(
+            "\
+request:
+  url: <__cfg(test)_magic_url__>
+  method: GET
+  headers:
+    Accept: test/test
+",
+            assert.header("Accept", "test/test").method("GET")
+        );
+    }
+
+    #[test]
+    fn parse_request_get_no_headers() {
+        test_request!(
+            "\
+request:
+  url: <__cfg(test)_magic_url__>
+  method: GET
+",
+            assert.method("GET")
+        );
+    }
+
+    #[test]
+    fn parse_request_captures() {
+        test_request!(
+            r#"
+request:
+  url: <__cfg(test)_magic_url__>/?token=abc_${{ candidate.captures.inner_token }}
+  method: GET
+  headers:
+    Authentication: Bearer ${{ candidate }}
+"#,
+            assert
+                .method("GET")
+                .query_param("token", "abc_49935a92")
+                .header("Authentication", format!("Bearer {}", VALID))
+        );
+    }
+
+    #[test]
+    fn parse_request_post_body() {
+        test_request!(
+            "\
+request:
+  url: <__cfg(test)_magic_url__>
+  method: POST
+  headers:
+    Accept: test/test
+  body:
+    data: abc
+    content-type: text/plain
+",
+            assert
+                .header("Accept", "test/test")
+                .method("POST")
+                .body("abc")
+                .header("Content-Type", "text/plain")
+        );
+    }
+
+    #[test]
+    fn parse_request_post_no_body() {
+        test_request!(
+            "\
+request:
+  url: <__cfg(test)_magic_url__>
+  method: POST
+  headers:
+    Accept: test/test
+",
+            assert.header("Accept", "test/test").method("POST")
+        );
+    }
+
+    /// The User-Agent header cannot be overridden
+    #[test]
+    fn parse_request_restricted_headers() {
+        test_request!(
+            "\
+request:
+  url: <__cfg(test)_magic_url__>
+  method: GET
+  headers:
+    User-Agent: FooBot
+",
+            assert.method("GET").header("User-Agent", USER_AGENT)
+        );
+    }
+}
