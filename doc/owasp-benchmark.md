@@ -6,6 +6,14 @@
  - [Maven](https://maven.apache.org/install.html)
  - [Rust toolchain](https://rustup.rs/)
 
+
+### Benchmark results
+
+These are the results of the OWASP Benchmark for the Datadog Static Analyzer as of 04/09/2024.
+
+![Datadog Static Analysis OWASP Benchmark](imgs/owasp.png)
+
+
 ### Step 1: Clone and install the BenchmarkUtils repository
 The [BenchmarkUtils](https://github.com/juli1/BenchmarkUtils) repository has utility methods to parse SARIF files from our static analyzer and associate CWE. We updated it to support our SARIF format.
 
