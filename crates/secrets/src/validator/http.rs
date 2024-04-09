@@ -154,6 +154,13 @@ response-handler:
     severity: NOTICE
 ";
 
+    /// A default `request` to inject for tests that aren't concerned with the request.
+    const DEFAULT_REQUEST: &str = "\
+request:
+  url: <__cfg(test)_magic_url__>
+  method: GET
+";
+
     /// Builds a candidate with incorrect location data (done here for simplicity, as these tests don't need location)
     fn to_candidate(text: &str, captures: HashMap<&'static str, &'static str>) -> Candidate {
         let captures = captures
@@ -193,6 +200,26 @@ response-handler:
             },
         };
         build_simple_http(cfg, validator_id, &retry_config)
+    }
+
+    /// Generates a test case that configures a [`MockServer`] to return the specified HTTP response
+    /// and creates a default [`HttpValidator`] that attempts a validation and returns the result.
+    macro_rules! test_response {
+        (
+            $response_yaml:expr,
+            $then:ident
+            $(. $call:ident($($args:tt)*))+
+        ) => {{
+                let ms = MockServer::start();
+                ms.mock(|when, $then| {
+                    when.any_request();
+                    $then
+                    $(.$call($($args)*))+;
+                });
+                let yaml = DEFAULT_REQUEST.replace("<__cfg(test)_magic_url__>", &ms.base_url());
+                let validator = make_validator($response_yaml, &yaml);
+                validator.validate(to_candidate(VALID, HashMap::new()))
+            }}
     }
 
     /// Generates a test case that creates a validator from the provided [`RawRequest`](crate::rule_file::validator::http::RawRequest)
@@ -310,5 +337,211 @@ request:
 ",
             assert.method("GET").header("User-Agent", USER_AGENT)
         );
+    }
+
+    #[test]
+    fn parse_response_default_result() {
+        let response_yaml = "\
+response-handler:
+  handler-list:
+    # empty
+  default-result:
+    secret: INVALID
+    severity: NOTICE
+";
+        let result = test_response!(response_yaml, respond.status(200));
+        assert_eq!(result.unwrap(), SecretCategory::Invalid(Severity::Notice));
+    }
+
+    #[test]
+    fn parse_response_code() {
+        let response_yaml = "\
+response-handler:
+  handler-list:
+    - on-match:
+        equals:
+          input: ${{ http.response.code }}
+          value: 403
+      action:
+        return:
+          secret: INVALID
+          severity: INFO
+    - on-match:
+        equals:
+          input: ${{ http.response.code }}
+          value: 200
+      action:
+        return:
+          secret: VALID
+          severity: ERROR
+  default-result:
+    secret: INCONCLUSIVE
+    severity: WARNING
+";
+        let result = test_response!(response_yaml, respond.status(403));
+        assert_eq!(result.unwrap(), SecretCategory::Invalid(Severity::Info));
+        let result = test_response!(response_yaml, respond.status(200));
+        assert_eq!(result.unwrap(), SecretCategory::Valid(Severity::Error));
+    }
+
+    #[test]
+    fn parse_response_body() {
+        let response_yaml = r#"
+response-handler:
+  handler-list:
+    - on-match:
+        contains:
+          input: ${{ http.response.body }}
+          substring: '"invalid"'
+      action:
+        return:
+          secret: INVALID
+          severity: INFO
+    - on-match:
+        contains:
+          input: ${{ http.response.body }}
+          substring: '"valid"'
+      action:
+        return:
+          secret: VALID
+          severity: ERROR
+  default-result:
+    secret: INCONCLUSIVE
+    severity: WARNING
+"#;
+        let result = test_response!(
+            response_yaml,
+            respond
+                .status(200)
+                .body(r#"{"id": 1, "status": "invalid"}"#)
+                .header("Content-Type", "application/json")
+        );
+        assert_eq!(result.unwrap(), SecretCategory::Invalid(Severity::Info));
+        let result = test_response!(
+            response_yaml,
+            respond
+                .status(200)
+                .body(r#"{"id": 2, "status": "valid"}"#)
+                .header("Content-Type", "application/json")
+        );
+        assert_eq!(result.unwrap(), SecretCategory::Valid(Severity::Error));
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn parse_response_headers() {
+        let response_yaml = "\
+response-handler:
+  handler-list:
+    - on-match:
+        contains:
+          input: ${{ http.response.header.X-Guard-Result }}
+          substring: '_FAILED'
+      action:
+        return:
+          secret: INVALID
+          severity: INFO
+    - on-match:
+        equals:
+          input: ${{ http.response.header.X-Guard-Result }}
+          value: 'OK'
+      action:
+        return:
+          secret: VALID
+          severity: ERROR
+  default-result:
+    secret: INCONCLUSIVE
+    severity: WARNING
+";
+        let result = test_response!(response_yaml, respond.status(200).header("X-Guard-Result", "OK"));
+        assert_eq!(result.unwrap(), SecretCategory::Valid(Severity::Error));
+        let result = test_response!(response_yaml, respond.status(200).header("X-Guard-Result", "AUTHENTICATED_FAILED"));
+        assert_eq!(result.unwrap(), SecretCategory::Invalid(Severity::Info));
+    }
+
+    #[test]
+    fn parse_response_control_flow_break() {
+        let response_yaml = "\
+response-handler:
+  handler-list:
+    - on-match:
+        equals:
+          input: ${{ http.response.code }}
+          value: 200
+      action:
+        validation: BREAK
+  default-result:
+    secret: INCONCLUSIVE
+    severity: WARNING
+";
+        let result = test_response!(response_yaml, respond.status(200));
+        let ValidatorError::ChildError { err, .. } = result.unwrap_err();
+        let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+        assert!(matches!(err, HttpValidatorError::RemoteError(_)));
+    }
+
+    #[test]
+    fn parse_response_control_flow_retry() {
+        let response_yaml = "\
+response-handler:
+  handler-list:
+    - on-match:
+        equals:
+          input: ${{ http.response.code }}
+          value: 200
+      action:
+        validation: RETRY
+  default-result:
+    secret: INCONCLUSIVE
+    severity: WARNING
+";
+        let result = test_response!(response_yaml, respond.status(200));
+        let ValidatorError::ChildError { err, .. } = result.unwrap_err();
+        let err = err.downcast_ref::<HttpValidatorError>().unwrap();
+        assert!(matches!(err, HttpValidatorError::TimedOut { .. }));
+    }
+
+    /// Tests that the first matching condition (top-to-bottom) is accepted, even if conflicting conditions follow
+    #[test]
+    fn parse_response_sequential_order() {
+        let error_valid = "
+      action:
+        return:
+          secret: VALID
+          severity: ERROR
+";
+        let info_invalid = "
+      action:
+        return:
+          secret: INVALID
+          severity: INFO
+";
+        let base_yaml = "\
+response-handler:
+  handler-list:
+    - on-match:
+        equals:
+          input: ${{ http.response.code }}
+          value: 200
+$$<__cfg(test)_injected_first__>
+    - on-match:
+        contains:
+          input: ${{ http.response.body }}
+          substring: 'forbidden'
+$$<__cfg(test)_injected_second__>
+  default-result:
+    secret: INCONCLUSIVE
+    severity: WARNING
+";
+        let response_yaml = base_yaml
+            .replace("$$<__cfg(test)_injected_first__>", error_valid)
+            .replace("$$<__cfg(test)_injected_second__>", info_invalid);
+        let result = test_response!(&response_yaml, respond.status(200).body("forbidden"));
+        assert_eq!(result.unwrap(), SecretCategory::Valid(Severity::Error));
+        let response_yaml = base_yaml
+            .replace("$$<__cfg(test)_injected_first__>", info_invalid)
+            .replace("$$<__cfg(test)_injected_second__>", error_valid);
+        let result = test_response!(&response_yaml, respond.status(200).body("forbidden"));
+        assert_eq!(result.unwrap(), SecretCategory::Invalid(Severity::Info));
     }
 }
