@@ -1007,7 +1007,10 @@ mod tests {
                 200,
                 NextAction::ReturnResult(SecretCategory::Valid(Severity::Error)),
             )
-            .on_status_code(401, NextAction::ReturnResult(SecretCategory::Invalid))
+            .on_status_code(
+                401,
+                NextAction::ReturnResult(SecretCategory::Invalid(Severity::Info)),
+            )
             .on_status_code(404, NextAction::Abort)
             .build()
     }
@@ -1043,7 +1046,7 @@ mod tests {
         let validator = default_validator(&ms);
         let category = validator.validate(to_candidate(INVALID)).unwrap();
         mock.assert_hits(1);
-        assert_eq!(category, SecretCategory::Invalid);
+        assert_eq!(category, SecretCategory::Invalid(Severity::Info));
     }
 
     #[test]
@@ -1283,11 +1286,11 @@ mod tests {
         let req_gen = base_request_generator(&ms);
         let fallthrough_resp_parser = ResponseParserBuilder::new()
             .on_status_code(200, NextAction::ReturnResult(SecretCategory::Valid(Severity::Error)))
-            .set_default(NextAction::ReturnResult(SecretCategory::Inconclusive))
+            .set_default(NextAction::ReturnResult(SecretCategory::Inconclusive(Severity::Info)))
             .build();
         let with_fallthrough = build_validator!(req_gen, fallthrough_resp_parser);
         let category = with_fallthrough.validate(to_candidate(VALID)).unwrap();
-        assert_eq!(category, SecretCategory::Inconclusive);
+        assert_eq!(category, SecretCategory::Inconclusive(Severity::Info));
     }
 }
 

@@ -1002,7 +1002,7 @@ fn into_val_status(
             let severity = into_rule_severity(sev);
             ValidationStatus::Valid(severity)
         }
-        SecretCategory::Invalid => ValidationStatus::Invalid,
-        SecretCategory::Inconclusive => ValidationStatus::Inconclusive,
+        SecretCategory::Invalid(_) => ValidationStatus::Invalid,
+        SecretCategory::Inconclusive(_) => ValidationStatus::Inconclusive,
     }
 }
