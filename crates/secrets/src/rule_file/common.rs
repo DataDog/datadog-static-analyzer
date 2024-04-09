@@ -105,6 +105,7 @@ impl Display for StringOrInt {
 #[rustfmt::skip]
 #[cfg(test)]
 mod tests {
+    #[allow(dead_code)]
     #[test]
     fn raw_struct_case() {
         raw_item! {
@@ -118,6 +119,7 @@ some-field: 123
         assert!(serde_yaml::from_str::<RawFile>(contents).is_ok(), "should be renamed with kebab-case");
     }
 
+    #[allow(dead_code)]
     #[test]
     fn raw_struct_reject_unexpected() {
         raw_item! {

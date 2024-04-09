@@ -3,9 +3,12 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::capture::{Capture, Captures};
+use crate::checker::CheckData;
 use crate::matcher::{Matcher, MatcherError, MatcherId, PatternId, PatternMatch};
-use crate::rule::{Expression, MatchSource, Rule, RuleId};
+use crate::rule::{Rule, RuleId};
+use crate::Checker;
 use bstr::BStr;
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -49,9 +52,9 @@ impl RuleEvaluator {
     }
 
     /// Creates a stateful [`Scanner`] that can detect [`Rule`] matches for the given data source.
-    pub fn scan<'a, 'd>(&'a self, data: &'d [u8]) -> Scanner<'a, 'd> {
+    pub fn scan<'a, 'd>(&'a self, data: CheckData<'d>) -> Scanner<'a, 'd> {
         Scanner {
-            state: RefCell::new(Default::default()),
+            state: RefCell::new(ScannerState(HashMap::new())),
             evaluator: self,
             data,
         }
@@ -62,8 +65,6 @@ impl RuleEvaluator {
 pub enum EvaluatorError {
     #[error("capture with name `{0}` does not exist")]
     UnknownCapture(String),
-    #[error("capture `{0}` cannot be re-assigned")]
-    CaptureReassignment(String),
     #[error(transparent)]
     Matcher(#[from] MatcherError),
 }
@@ -150,99 +151,77 @@ impl<'d> MatchesCache<'d> {
     }
 }
 
-#[derive(Debug, Clone)]
-struct EvalItem<'d> {
-    expr: Arc<Expression>,
-    full_data: &'d [u8],
-    data_slice: &'d [u8],
-}
-
-impl<'d> EvalItem<'d> {
-    pub fn new(expr: Arc<Expression>, full_data: &'d [u8], data_slice: &'d [u8]) -> EvalItem<'d> {
-        Self {
-            expr,
-            full_data,
-            data_slice,
-        }
-    }
-
-    pub fn from_parent(expr_rc: &Arc<Expression>, from: &Self) -> EvalItem<'d> {
-        Self {
-            expr: Arc::clone(expr_rc),
-            full_data: from.full_data,
-            data_slice: from.data_slice,
-        }
-    }
-}
-
-/// The result of a call to the recursive evaluation function.
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone)]
-enum Evaluated<'d> {
-    /// A match where the evaluated [`Expression`] is a top-level [`IsMatch`](Expression::IsMatch).
-    TopLevelMatch(PatternMatch<'d>),
-    /// A match where the evaluated [`Expression`] is a not a [`TopLevelMatch`](Evaluated::TopLevelMatch).
-    IntermediateMatch,
-    /// A failed match
-    NoMatch,
-}
-
+/// A cache to store a vector of [`PatternMatch`] from a single matcher's scan of an input data.
+/// This cache allows matchers to perform vectorized scans in a way that is abstracted
+/// away from the caller.
 #[derive(Debug, Default, Clone)]
-struct ScannerState<'d> {
-    /// A scratch space used in a stateful manner during a rule evaluation by incrementally
-    /// populating it with the captures that surface from the evaluation of each [`Expression`].
-    captures_scratch: HashMap<String, Option<&'d [u8]>>,
-    /// A scratch space for [`PatternMatch`]es while a rule evaluation is occurring. This is required
-    /// because a single rule might have multiple top-level pattern matches, and we need to preserve
-    /// them all because each can contain named captures that will go into the final `RuleMatch`.
-    p_match_scratch: Vec<PatternMatch<'d>>,
+struct ScannerState<'d>(HashMap<CacheKey, MatchesCache<'d>>);
 
-    /// A cache to store a vector of [`PatternMatch`] from a single matcher's scan of an input data.
-    /// This cache allows matchers to perform vectorized scans in a way that is abstracted
-    /// away from the caller.
-    scan_cache: HashMap<CacheKey, MatchesCache<'d>>,
+impl<'d> ScannerState<'d> {
+    /// Returns a mutable reference to the [`MatchesCache`] associated with the provided cache key.
+    ///
+    /// # Panics
+    /// Panics if the cache key does not exist in the hash map.
+    pub fn get_mut(&mut self, cache_key: &CacheKey) -> &mut MatchesCache<'d> {
+        self.0
+            .get_mut(cache_key)
+            .expect("caller should have passed in cache key that exists")
+    }
 }
 
 pub struct Scanner<'a, 'd> {
     state: RefCell<ScannerState<'d>>,
     evaluator: &'a RuleEvaluator,
-    data: &'d [u8],
+    data: CheckData<'d>,
 }
 
 impl<'a, 'd> Scanner<'a, 'd> {
-    /// Scans the given `data`,
-    pub fn rule(&'a self, rule_id: &RuleId) -> ScanIter<'a, 'd> {
-        ScanIter {
-            data: self.data,
-            rule_id: rule_id.clone(),
-            evaluator: self.evaluator,
-            next_data_slice: self.data,
-            step_index: 0,
-            s: self,
-        }
+    /// Performs a scan using the [`Matcher`] associated with the specified rule and creates an iterator
+    /// over the results.
+    ///
+    /// NOTE: Until the cache is cleared with [`Self::clear_cache`], each call to `next()` on the iterator
+    /// permanently advances the `Scanner` state for the given rule. Thus, if a duplicate call (with the same
+    /// rule) is made, the iterator returned will only yield previously un-yielded values.
+    pub fn rule(&'a self, rule_id: &RuleId) -> Result<ScanIter<'a, 'd>, EvaluatorError> {
+        let rule = self
+            .evaluator
+            .rules
+            .get(rule_id)
+            .expect("rule should exist");
+
+        let checker = rule.match_checks();
+        let pattern_id = rule.pattern_id();
+        let cache_key =
+            self.ensure_scanned(self.data.full_data().unwrap_or(&[]), rule.pattern_id())?;
+
+        Ok(ScanIter {
+            data: self.data.clone(),
+            cache_key,
+            pattern_id,
+            checker,
+            state: &self.state,
+        })
     }
 
     /// Clears the entire underlying [`PatternMatch`] cache, removing all keys and values.
     pub(crate) fn clear_cache(&mut self) {
-        self.state.borrow_mut().scan_cache.clear()
+        self.state.get_mut().0.clear()
     }
 
-    /// Given a [`Matcher`], runs and caches a scan against `data` and yields the first
-    /// match with the specified [`PatternId`].
-    ///
-    /// This function allows a caller to ignore the vectorized semantics of a single matcher
-    /// potentially returning [`PatternMatch`]es with different pattern ids.
-    fn cached_scan(
+    /// Ensures the passed in data has been completed scanned by the [`Matcher`] associated with
+    /// the passed in pattern. Returns the [`CacheKey`] calculated, so that the caller can
+    /// look up the associated [`MatchesCache`].
+    fn ensure_scanned(
         &self,
         data: &'d [u8],
         pattern_id: PatternId,
-    ) -> Result<Option<PatternMatch<'d>>, EvaluatorError> {
+    ) -> Result<CacheKey, EvaluatorError> {
         let matcher_id = pattern_id.matcher_id();
         let cache_key = CacheKey::new(matcher_id.0 as usize, data);
 
-        let scan_cache = &mut self.state.borrow_mut().scan_cache;
+        let scan_cache = &mut self.state.borrow_mut().0;
         match scan_cache.get_mut(&cache_key) {
-            Some(matches_cache) => Ok(matches_cache.take_next(pattern_id)),
+            Some(_) => {}
             None => {
                 let mut matchers = self.evaluator.matchers.borrow_mut();
                 let matcher = matchers
@@ -253,209 +232,47 @@ impl<'a, 'd> Scanner<'a, 'd> {
                 let existing = self.evaluator.bytes_scanned.take();
                 self.evaluator.bytes_scanned.set(existing + data.len());
                 // The scan succeeded and the cache key does not exist. Insert it and initialize a new vector.
-                let matches_cache = scan_cache.entry(cache_key).or_default();
+                let matches_cache = scan_cache.entry(cache_key.clone()).or_default();
 
-                let mut next: Option<PatternMatch> = None;
                 for pattern_match in cursor {
-                    // Potentially siphon off a single match and push the rest to the cache
-                    if next.is_none() && pattern_match.pattern_id() == pattern_id {
-                        next.replace(pattern_match);
-                    } else {
-                        matches_cache.push(pattern_match);
-                    }
-                }
-                Ok(next)
-            }
-        }
-    }
-
-    /// Recursively evaluates a given [`EvalItem`], performing any scanning or caching necessary.
-    fn eval(&self, item: EvalItem<'d>, depth: usize) -> Result<Evaluated<'d>, EvaluatorError> {
-        match item.expr.as_ref() {
-            Expression::IsMatch { source, pattern_id } => {
-                let data_to_scan = match source {
-                    MatchSource::Capture(name) => {
-                        // If requested, find the named capture, or return an error if it doesn't exist.
-                        self.state
-                            .borrow_mut()
-                            .captures_scratch
-                            .get(name.as_str())
-                            .copied()
-                            .flatten()
-                            .ok_or(EvaluatorError::UnknownCapture(name.to_string()))?
-                    }
-                    MatchSource::Prior => item.data_slice,
-                };
-
-                let pattern_match = self.cached_scan(data_to_scan, *pattern_id)?;
-
-                Ok(match pattern_match {
-                    Some(pm) if depth == 0 => Evaluated::TopLevelMatch(pm),
-                    Some(_) => Evaluated::IntermediateMatch,
-                    None => Evaluated::NoMatch,
-                })
-            }
-            Expression::And(lhs, rhs) => {
-                let left_child = EvalItem::from_parent(lhs, &item);
-                let left_result = self.eval(left_child, depth + 1)?;
-
-                if matches!(left_result, Evaluated::IntermediateMatch) {
-                    let right_child = EvalItem::from_parent(rhs, &item);
-                    self.eval(right_child, depth + 1)
-                } else {
-                    Ok(Evaluated::NoMatch)
-                }
-            }
-            Expression::Or(lhs, rhs) => {
-                let left_child = EvalItem::from_parent(lhs, &item);
-                let left_result = self.eval(left_child, depth + 1)?;
-
-                if matches!(left_result, Evaluated::IntermediateMatch) {
-                    Ok(Evaluated::IntermediateMatch)
-                } else {
-                    let right_child = EvalItem::from_parent(rhs, &item);
-                    self.eval(right_child, depth + 1)
-                }
-            }
-            Expression::Not(expr) => {
-                let expr = EvalItem::from_parent(expr, &item);
-                let expr_result = self.eval(expr, depth + 1)?;
-                Ok(match expr_result {
-                    Evaluated::IntermediateMatch => Evaluated::NoMatch,
-                    Evaluated::NoMatch => Evaluated::IntermediateMatch,
-                    Evaluated::TopLevelMatch(_) => unreachable!("depth is > 0"),
-                })
-            }
-        }
-    }
-
-    /// Caches the named captures from a [`PatternMatch`].
-    fn cache_captures(&self, pattern_match: &PatternMatch<'d>) -> Result<(), EvaluatorError> {
-        let captures_scratch = &mut self.state.borrow_mut().captures_scratch;
-        for captures in pattern_match.captures() {
-            if let (Some(name), Some(capture)) = captures {
-                if let Some(value) = captures_scratch.get_mut(name) {
-                    if value.replace(capture.as_bytes()).is_some() {
-                        return Err(EvaluatorError::CaptureReassignment(name.into()));
-                    }
-                } else {
-                    captures_scratch.insert(name.to_string(), Some(capture.as_bytes()));
+                    matches_cache.push(pattern_match);
                 }
             }
         }
-        Ok(())
+        Ok(cache_key)
     }
 }
 
+/// An iterator over the (mutable) state of a [`Scanner`] for a specific [`PatternId`].
 pub struct ScanIter<'a, 'd> {
-    data: &'d [u8],
-    pub rule_id: RuleId,
-    evaluator: &'a RuleEvaluator,
-
-    next_data_slice: &'d [u8],
-    step_index: usize,
-
-    s: &'a Scanner<'a, 'd>,
-}
-
-impl<'d> ScanIter<'_, 'd> {
-    /// A shorthand getter for a [`Rule`]'s matcher [`Expression`] at a given index.
-    ///
-    /// # Panics
-    /// Panics if a rule with `rule_id` is not present.
-    fn get_expression(&self, idx: usize) -> Option<&Arc<Expression>> {
-        self.evaluator
-            .rules
-            .get(&self.rule_id)
-            .expect("rule should exist")
-            .match_stages()
-            .get(idx)
-    }
+    data: CheckData<'d>,
+    cache_key: CacheKey,
+    pattern_id: PatternId,
+    checker: &'a [Box<dyn Checker>],
+    state: &'a RefCell<ScannerState<'d>>,
 }
 
 impl FusedIterator for ScanIter<'_, '_> {}
-impl<'d> Iterator for ScanIter<'_, 'd> {
-    type Item = Result<EvalMatch<'d>, EvaluatorError>;
+impl<'a, 'd> Iterator for ScanIter<'a, 'd> {
+    type Item = CheckedMatch<'d>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // The `candidate` loop cycles through each match candidate within a data source.
-        'candidate: loop {
-            let mut state = self.s.state.borrow_mut();
-            state.captures_scratch.clear();
-            state.p_match_scratch.clear();
-            drop(state);
+        let mut state = self.state.borrow_mut();
+        let matches_cache = state.get_mut(&self.cache_key);
 
-            self.step_index = 0;
-            // Start by scanning the entire `data` to get all match candidates.
-            self.next_data_slice = self.data;
-
-            // Whether to break to `'candidate` upon `NoMatch` or not.
-            let mut break_candidate = true;
-
-            // Then, for each candidate, iterate through the rule's steps.
-            while let Some(expr) = self.get_expression(self.step_index) {
-                let eval_item = EvalItem::new(Arc::clone(expr), self.data, self.next_data_slice);
-
-                let evaluated = match self.s.eval(eval_item, 0) {
-                    Ok(val) => val,
-                    Err(err) => return Some(Err(err)),
-                };
-
-                self.next_data_slice = match evaluated {
-                    Evaluated::TopLevelMatch(pattern_match) => {
-                        break_candidate = false;
-
-                        if let Err(err) = self.s.cache_captures(&pattern_match) {
-                            return Some(Err(err));
-                        }
-                        // In the case of a top level pattern match, we narrow down the scanned data so
-                        // that all subsequent executions operate on this capture.
-                        let next = pattern_match.entire().as_bytes();
-                        let mut state = self.s.state.borrow_mut();
-                        state.p_match_scratch.push(pattern_match);
-                        next
-                    }
-                    Evaluated::IntermediateMatch => {
-                        // In an IntermediateMatch, the data to scan is not narrowed, so all we do is pass
-                        // the previous slice of data along.
-                        // So, in this context, we return `next_data_slice` because it is equivalent to
-                        // the slice we just evaluated.
-                        self.next_data_slice
-                    }
-                    Evaluated::NoMatch => {
-                        if break_candidate {
-                            break 'candidate;
-                        } else {
-                            continue 'candidate;
-                        }
-                    }
-                };
-                self.step_index += 1;
+        'p_match: while let Some(pattern_match) = matches_cache.take_next(self.pattern_id) {
+            // Create an identical `CheckData` as what is currently cached, but with the new captures.
+            let data = CheckData::new(
+                self.data.full_data(),
+                Some(Cow::Borrowed(pattern_match.captures())),
+                self.data.file_path(),
+            );
+            for checker in self.checker {
+                if !checker.check(&data) {
+                    continue 'p_match;
+                }
             }
-
-            // This must be a full rule-match
-            let p_match_scratch = &mut self.s.state.borrow_mut().p_match_scratch;
-            if !p_match_scratch.is_empty() {
-                // We had a full rule match. Because of how successive matches can only be more narrow
-                // than the previous, we know the first top-level match represents the entire span.
-                let matched = p_match_scratch
-                    .first()
-                    .expect("length should have been checked")
-                    .entire();
-                let all_captures = p_match_scratch
-                    .drain(..)
-                    .map(|pm| {
-                        let (_, _, captures) = pm.into_parts();
-                        captures
-                    })
-                    .collect::<Vec<_>>();
-                let eval_match = EvalMatch {
-                    matched: Capture::new_from_data(self.data, matched.byte_span()),
-                    all_captures,
-                };
-
-                return Some(Ok(eval_match));
-            }
+            return Some(CheckedMatch(pattern_match));
         }
         None
     }
@@ -502,96 +319,42 @@ impl CacheKey {
     }
 }
 
-/// An [`EvalMatch`] represents a slice that has matched every predicate in a given rule.
-#[derive(Clone)]
-pub struct EvalMatch<'d> {
-    pub matched: Capture<'d>,
-    /// Because a rule evaluation might have multiple top-level matches that create
-    /// captures, but we only surface the first top-level match as `matched`, we need
-    /// to collect all the captures so that they can be accessed by a validator.
-    ///
-    /// A vector of [`Captures`] is used instead of merging the [`Captures`] structs together
-    /// for simplicity's sake.
-    pub all_captures: Vec<Captures<'d>>,
-}
+/// A [`PatternMatch`] that has passed a [`Checker`] and will be sent to a validator.
+#[derive(Clone, Eq, PartialEq)]
+pub struct CheckedMatch<'d>(pub PatternMatch<'d>);
 
-impl Debug for EvalMatch<'_> {
+impl Debug for CheckedMatch<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EvalMatch")
-            .field("matched", &BStr::new(self.matched.as_bytes()))
-            .field("captures", &self.all_captures)
-            .finish_non_exhaustive()
+        f.debug_struct("CheckedMatch")
+            .field("pattern_id", &self.0.pattern_id())
+            .field("full_data", &self.0.full_data().as_ptr_range())
+            .field("captures", &self.0.captures())
+            .finish()
     }
 }
 
 #[rustfmt::skip]
 #[cfg(test)]
 mod tests {
-    use crate::matcher::hyperscan::{Hyperscan, Pattern, PatternSet};
-    use crate::matcher::hyperscan::pattern_set::PatternSetBuilder;
-    use crate::matcher::{Matcher, MatcherId, PatternId};
-    use crate::rule::MatchSource;
-    use crate::rule::{Expression, Rule, RuleId};
-    use crate::rule_evaluator::{CacheKey, EvalMatch, EvaluatorError, RuleEvaluator};
-    use std::collections::HashMap;
-    use std::mem;
-    use std::rc::Rc;
     use std::sync::Arc;
+    use crate::{Checker, Matcher, Rule};
+    use crate::checker::{BooleanLogic, CheckData, Regex};
+    use crate::matcher::hyperscan::Hyperscan;
+    use crate::matcher::hyperscan::pattern_set::PatternSetBuilder;
+    use crate::matcher::MatcherId;
+    use crate::rule::RuleId;
+    use crate::rule_evaluator::{CheckedMatch, RuleEvaluator};
 
-    /// A mirror of [`Expression`] to provide ergonomic test-case construction
-    enum Source {
-        Prior(&'static str),
-        Capture(&'static str, &'static str),
-        And(Box<Source>, Box<Source>),
-        Or(Box<Source>, Box<Source>),
-        Not(Box<Source>),
-    }
-
-    /// Crawls a [`Source`] tree and reconstructs an equivalent [`Expression`] tree. Each patter
-    /// passed in is compiled into a [`Hyperscan`] matcher.
-    fn build_tree(source: &Source, psb: &mut PatternSetBuilder) -> Arc<Expression> {
-        match source {
-            Source::Prior(expr) => {
-                let p_id = psb.add_pattern(vectorscan::Pattern::new(*expr).try_build().unwrap());
-                Arc::new(Expression::IsMatch {
-                    source: MatchSource::Prior,
-                    pattern_id: p_id,
-                })
-            }
-            Source::Capture(name, expr) => {
-                let p_id = psb.add_pattern(vectorscan::Pattern::new(*expr).try_build().unwrap());
-                Arc::new(Expression::IsMatch {
-                    source: MatchSource::Capture(name.to_string()),
-                    pattern_id: p_id,
-                })
-            }
-            Source::And(lhs, rhs) => {
-                Arc::new(Expression::And(build_tree(lhs, psb), build_tree(rhs, psb)))
-            }
-            Source::Or(lhs, rhs) => {
-                Arc::new(Expression::Or(build_tree(lhs, psb), build_tree(rhs, psb)))
-            }
-            Source::Not(expr) => {
-                Arc::new(Expression::Not(build_tree(expr, psb)))
-            }
-        }
-    }
-
-    #[allow(clippy::vec_box)]
-    fn build<'d>(rules: Vec<(RuleId, Vec<Box<Source>>)>) -> RuleEvaluator {
-        // Convert the patterns into an [`Expression`], and generate the matcher, as well as the pattern-ids.
+    fn build<'d>(rules: Vec<(RuleId, &str, Vec<Box<dyn Checker>>)>) -> RuleEvaluator {
         let m_id = MatcherId(0);
         let mut psb = PatternSetBuilder::new(m_id);
 
         let rules = rules
-            .iter()
-            .map(|rule| {
-                let expressions = rule
-                    .1
-                    .iter()
-                    .map(|pattern| Arc::try_unwrap(build_tree(pattern, &mut psb)).unwrap())
-                    .collect::<Vec<_>>();
-                Arc::new(Rule::new(rule.0.clone(), vec![], expressions, "validator-1".into()))
+            .into_iter()
+            .map(|(rule, expression, checks)| {
+                let pattern = vectorscan::Pattern::new(expression).try_build().unwrap();
+                let pattern_id = psb.add_pattern(pattern);
+                Arc::new(Rule::new(rule.clone(), pattern_id, "validator-1".into(), vec![], checks))
             })
             .collect::<Vec<_>>();
 
@@ -599,31 +362,29 @@ mod tests {
         RuleEvaluator::new(vec![Matcher::Hyperscan(hs)], rules.as_slice())
     }
 
-    fn match_prior(expr: &'static str) -> Box<Source> { Box::new(Source::Prior(expr)) }
-    fn match_cap(name: &'static str, expr: &'static str) -> Box<Source> { Box::new(Source::Capture(name, expr)) }
-    fn and(lhs: Box<Source>, rhs: Box<Source>) -> Box<Source> { Box::new(Source::And(lhs, rhs)) }
-    fn or(lhs: Box<Source>, rhs: Box<Source>) -> Box<Source> { Box::new(Source::Or(lhs, rhs)) }
-    fn not(src: Box<Source>) -> Box<Source> { Box::new(Source::Not(src)) }
-
-    fn get_text(eval_match: Option<Result<EvalMatch, EvaluatorError>>) -> &str {
-        std::str::from_utf8(eval_match.unwrap().unwrap().matched.as_bytes()).unwrap()
+    /// A shorthand to allow for ergonomic test assertions
+    fn as_strs<'a>(checked_matches: &'a [CheckedMatch]) -> Vec<&'a str> {
+        checked_matches
+            .iter()
+            .map(|c| c.0.entire().as_str().unwrap())
+            .collect::<Vec<_>>()
     }
 
     /// The cache remains in place, but is drained when pattern matches are retrieved.
     #[test]
     fn scan_cache_drained_in_place() {
         let rule_id: RuleId = "rule-1".into();
-        let evaluator = build(vec![(rule_id.clone(), vec![match_prior("[a-z]+")])]);
-        let source = "---abc---abc---".as_bytes();
+        let evaluator = build(vec![(rule_id.clone(), "[a-z]+", vec![])]);
+        let source = CheckData::new(Some("---abc---abc---".as_bytes()), None, None);
         let mut scanner = evaluator.scan(source);
-        assert_eq!(scanner.rule(&rule_id).collect::<Vec<_>>().len(), 2);
+        assert_eq!(scanner.rule(&rule_id).unwrap().collect::<Vec<_>>().len(), 2);
         assert_eq!(evaluator.bytes_scanned.get(), 15);
 
-        assert_eq!(scanner.rule(&rule_id).collect::<Vec<_>>().len(), 0);
+        assert_eq!(scanner.rule(&rule_id).unwrap().collect::<Vec<_>>().len(), 0);
         assert_eq!(evaluator.bytes_scanned.get(), 15);
 
         scanner.clear_cache();
-        assert_eq!(scanner.rule(&rule_id).collect::<Vec<_>>().len(), 2);
+        assert_eq!(scanner.rule(&rule_id).unwrap().collect::<Vec<_>>().len(), 2);
         assert_eq!(evaluator.bytes_scanned.get(), 30);
     }
 
@@ -633,193 +394,66 @@ mod tests {
         let rule_1: RuleId = "rule-1".into();
         let rule_2: RuleId = "rule-2".into();
         let evaluator = build(vec![
-            (rule_1.clone(), vec![match_prior("[a-z]{3}")]),
-            (rule_2.clone(), vec![match_prior("[0-9]{3}")]),
+            (rule_1.clone(), "[a-z]{3}", vec![]),
+            (rule_2.clone(), "[0-9]{3}", vec![]),
         ]);
-        let source = "---abc---123---def---".as_bytes();
+        let source = CheckData::new(Some("---abc---123---def---".as_bytes()), None, None);
         let scanner = evaluator.scan(source);
 
-        let iter = scanner.rule(&rule_1);
+        let iter = scanner.rule(&rule_1).unwrap();
         assert_eq!(iter.collect::<Vec<_>>().len(), 2);
         assert_eq!(evaluator.bytes_scanned.get(), 21);
 
-        let iter = scanner.rule(&rule_2);
+        let iter = scanner.rule(&rule_2).unwrap();
         assert_eq!(iter.collect::<Vec<_>>().len(), 1);
         assert_eq!(evaluator.bytes_scanned.get(), 21);
     }
 
-    /// Sequential match stages are re-scanned individually.
+    /// A sequential list of checks are used to qualify or disqualify matches.
     #[test]
-    fn sequential_match_byte_scan() {
-        let rule_1: RuleId = "rule-1".into();
-        let evaluator = build(vec![
-            (rule_1.clone(), vec![
-                match_prior("[a-z]{12}"),
-                match_prior("[a-z]{6}"),
-                match_prior("[a-z]{3}"),
-                match_prior("abc"),
-            ])
-        ]);
-        let source = "abcdefghijklmno".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert_eq!(iter.evaluator.bytes_scanned.get(), 0);
-        let _ = iter.next();
-        assert_eq!(iter.evaluator.bytes_scanned.get(), 15 + 12 + 6 + 3);
-    }
-
-    #[test]
-    fn boolean_logic() {
+    fn eval_matcher_candidate_checks() {
         let rule_1: RuleId = "rule-1".into();
         let rule_2: RuleId = "rule-2".into();
+        let regex1 = Arc::new(Regex::try_new("abc").unwrap());
+        // A `Checker` that asserts the candidate doesn't contain "abc"
+        let not_regex1 = Box::new(BooleanLogic::not(&(regex1 as Arc<dyn Checker>)));
+        // A `Checker` that asserts the candidate ends with a number.
+        let regex2 = Box::new(Regex::try_new("\\d$").unwrap());
         let evaluator = build(vec![
-            (rule_1.clone(), vec![
-                match_prior("[0-9]{6}"),
-                not(match_prior("0{6}|1{6}|2{6}|3{6}|4{6}|5{6}|6{6}|7{6}|8{6}|9{6}")),
-            ]),
-            (rule_2.clone(), vec![
-                match_prior("0x([a-fA-F0-9]{8})"),
-                and(
-                    or(match_prior("A"), match_prior("B")),
-                    and(not(match_prior("C")), match_prior("D")),
-                )
-            ]),
+            (rule_1.clone(), "[[:alnum:]-]{15}", vec![]),
+            (rule_2.clone(), "[[:alnum:]-]{15}", vec![not_regex1, regex2]),
         ]);
-        let source = "123456---111111---222222---987654---123456".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert_eq!(get_text(iter.next()), "123456");
-        assert_eq!(get_text(iter.next()), "987654");
-        assert_eq!(get_text(iter.next()), "123456");
-        assert!(iter.next().is_none());
+        let data = CheckData::from_data(
+            "\
+            abc---def---ghi     fails: [`not_regex1`,`regex2`]  passes: []
+            def---abc---111     fails: [`not_regex1`]           passes: [`regex2`]
+            def---ghi---111     fails: []                       passes: [`not_regex1`,`regex2`]
+            111---222---333     fails: []                       passes: [`not_regex1`,`regex2`]
+            def---ghi---jkl     fails: [`regex2`]               passes: [`not_regex1`]
+            "
+                .as_bytes(),
+        );
+        let scanner = evaluator.scan(data);
 
-        let source = "0xAABBCCDD---0xAABB11DD---0xADDD2222---0xDDDD2222".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_2);
-        assert_eq!(get_text(iter.next()), "0xAABB11DD");
-        assert_eq!(get_text(iter.next()), "0xADDD2222");
-        assert!(iter.next().is_none());
-    }
+        let rule1_matches = scanner.rule(&rule_1).unwrap().collect::<Vec<_>>();
+        assert_eq!(
+            as_strs(&rule1_matches),
+            vec![
+                "abc---def---ghi",
+                "def---abc---111",
+                "def---ghi---111",
+                "111---222---333",
+                "def---ghi---jkl"
+            ]
+        );
 
-    /// Tests that the iterator _can't_ be consistently used to have intermediate matches as the first
-    /// expression because they will get consumed by the first top-level capture.
-    ///
-    /// (This should be expressed as a [`RuleCondition`](crate::rule::RuleCondition))
-    #[test]
-    fn intermediate_match_before_top_level() {
-        let rule_1: RuleId = "rule-1".into();
-        let evaluator = build(vec![
-            (rule_1.clone(), vec![
-                and(match_prior("key"), match_prior("word")),
-                match_prior("[0-9]{6}"),
-            ])
-        ]);
-        let source = "key---111111---222222---word---".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert_eq!(get_text(iter.next()), "111111");
-        // This will _not_ be Some("222222"), as might have been intended.
-        assert!(iter.next().is_none());
-
-        // However, if there are two "key" and two "word", then there is a second match,
-        // because the second "key" and "word" are consumed for the second number.
-        let source = "key---111111---222222---word---keyword".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert_eq!(get_text(iter.next()), "111111");
-        assert_eq!(get_text(iter.next()), "222222");
-    }
-
-    #[test]
-    fn boolean_logic_capture_name() {
-        let rule_1: RuleId = "rule-1".into();
-        let evaluator = build(vec![
-            (rule_1.clone(), vec![
-                match_prior("(?<token>(?<cap_a>[[:lower:]]{3})_(?<cap_b>[[:alpha:]]{3}))"),
-                or(
-                    match_cap("cap_a", "abc"),
-                    match_cap("cap_b", "XYZ")
-                )
-            ]),
-        ]);
-        let source = "---abc_DEF---xyz---def_ABC---xyz_XYZ---".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert_eq!(get_text(iter.next()), "abc_DEF");
-        assert_eq!(get_text(iter.next()), "xyz_XYZ");
-    }
-
-    #[test]
-    fn error_capture_reassignment() {
-        let rule_1: RuleId = "rule-1".into();
-        let evaluator = build(vec![
-            (rule_1.clone(), vec![
-                match_prior("(?<cap_a>[a-zA-Z]{3})"),
-                match_prior("(?<cap_a>[a-z]{3})"),
-            ])
-        ]);
-        let source = "---abc---".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert!(matches!(
-            iter.next().unwrap().unwrap_err(),
-            EvaluatorError::CaptureReassignment(name) if name == "cap_a".to_string()
-        ));
-    }
-
-    #[test]
-    fn error_unknown_capture() {
-        let rule_1: RuleId = "rule-1".into();
-        let evaluator = build(vec![
-            (rule_1.clone(), vec![
-                match_prior("(?<cap_a>[a-zA-Z]{3})"),
-                match_cap("cap_b", ".+"),
-            ])
-        ]);
-        let source = "---abc---".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert!(matches!(
-            iter.next().unwrap().unwrap_err(),
-            EvaluatorError::UnknownCapture(name) if name == "cap_b".to_string()
-        ));
-    }
-
-    /// Anchors operate on the sequentially-narrowed slices
-    #[test]
-    fn sequential_regex_anchors() {
-        let rule_1: RuleId = "rule-1".into();
-        let rule_2: RuleId = "rule-2".into();
-        let rule_3: RuleId = "rule-3".into();
-        let evaluator = build(vec![
-            (rule_1.clone(), vec![
-                match_prior("[a-z]{6,}"),
-                match_prior("^(abcdef)$")
-            ]),
-            (rule_2.clone(), vec![
-                match_prior("[a-z]{6,}"),
-                match_prior("^(abc)")
-            ]),
-            (rule_3.clone(), vec![
-                match_prior("[a-z]{6,}"),
-                match_prior("(def)$")
-            ]),
-        ]);
-        let source = "---abcdef---defabc---abcdefghi---".as_bytes();
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_1);
-        assert_eq!(get_text(iter.next()), "abcdef");
-        assert!(iter.next().is_none());
-
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_2);
-        assert_eq!(get_text(iter.next()), "abcdef");
-        assert_eq!(get_text(iter.next()), "abcdefghi");
-        assert!(iter.next().is_none());
-
-        let scanner = evaluator.scan(source);
-        let mut iter = scanner.rule(&rule_3);
-        assert_eq!(get_text(iter.next()), "abcdef");
-        assert!(iter.next().is_none());
+        let rule2_matches = scanner.rule(&rule_2).unwrap().collect::<Vec<_>>();
+        assert_eq!(
+            as_strs(&rule2_matches),
+            vec![
+                "def---ghi---111",
+                "111---222---333",
+            ]
+        );
     }
 }

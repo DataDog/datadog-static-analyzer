@@ -8,11 +8,15 @@
 #![allow(dead_code)]
 
 pub mod capture;
+pub mod checker;
+pub use checker::Checker;
 pub mod common;
 pub mod engine;
 pub mod location;
 pub mod matcher;
+pub use matcher::Matcher;
 pub mod rule;
+pub use rule::Rule;
 pub mod rule_evaluator;
 pub mod validator;
 pub use validator::Validator;

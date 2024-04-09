@@ -6,79 +6,58 @@ use crate::common::ByteSpan;
 use crate::location::{PointLocator, PointSpan};
 use crate::matcher::PatternId;
 use crate::validator::ValidatorId;
+use crate::Checker;
 use std::collections::HashMap;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::string::FromUtf8Error;
 use std::sync::Arc;
-
-/// A boolean logic expression supporting AND, OR, and NOT
-#[derive(Debug, Clone)]
-pub enum Expression {
-    /// A predicate stating that a pattern with the given `PatternId` must match the source.
-    IsMatch {
-        source: MatchSource,
-        pattern_id: PatternId,
-    },
-    /// Logical `AND`
-    And(Arc<Expression>, Arc<Expression>),
-    /// Logical `OR`
-    Or(Arc<Expression>, Arc<Expression>),
-    /// Logical `NOT`
-    Not(Arc<Expression>),
-}
-
-/// A data source to search when evaluating a [`Rule`]'s matchers.
-#[derive(Debug, Clone)]
-pub enum MatchSource {
-    Capture(String),
-    Prior,
-}
 
 /// A unique id that identifies a [`Rule`].
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 #[repr(transparent)]
 pub struct RuleId(pub Arc<str>);
 
-impl From<&str> for RuleId {
-    fn from(value: &str) -> Self {
-        Self(Arc::from(value))
+impl<T: AsRef<str>> From<T> for RuleId {
+    fn from(value: T) -> Self {
+        Self(Arc::from(value.as_ref()))
     }
 }
 
-impl From<String> for RuleId {
-    fn from(value: String) -> Self {
-        Self(Arc::from(value.as_str()))
-    }
-}
-
-impl AsRef<str> for RuleId {
-    fn as_ref(&self) -> &str {
+impl RuleId {
+    /// Returns the rule id as a string slice.
+    pub fn as_str(&self) -> &str {
         self.0.as_ref()
     }
 }
 
-#[derive(Debug, Clone)]
+impl Display for RuleId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 pub struct Rule {
     id: RuleId,
-    conditions: Vec<Arc<RuleCondition>>,
-    match_stages: Vec<Arc<Expression>>,
+    pattern_id: PatternId,
     validator_id: ValidatorId,
+    pre_condition: Vec<Box<dyn Checker>>,
+    match_checks: Vec<Box<dyn Checker>>,
 }
 
 impl Rule {
     pub fn new(
         id: RuleId,
-        conditions: impl Into<Vec<RuleCondition>>,
-        match_stages: impl Into<Vec<Expression>>,
+        pattern_id: PatternId,
         validator_id: ValidatorId,
+        pre_condition: Vec<Box<dyn Checker>>,
+        match_checks: Vec<Box<dyn Checker>>,
     ) -> Self {
-        let match_stages = match_stages.into().into_iter().map(Arc::new).collect();
-        let conditions = conditions.into().into_iter().map(Arc::new).collect();
         Self {
             id,
-            conditions,
-            match_stages,
+            pattern_id,
             validator_id,
+            pre_condition,
+            match_checks,
         }
     }
 
@@ -86,31 +65,24 @@ impl Rule {
         &self.id
     }
 
-    pub fn match_stages(&self) -> &[Arc<Expression>] {
-        &self.match_stages
+    pub fn pattern_id(&self) -> PatternId {
+        self.pattern_id
     }
 
     pub fn validator_id(&self) -> &ValidatorId {
         &self.validator_id
     }
+
+    pub fn pre_condition(&self) -> &[Box<dyn Checker>] {
+        self.pre_condition.as_slice()
+    }
+
+    pub fn match_checks(&self) -> &[Box<dyn Checker>] {
+        self.match_checks.as_slice()
+    }
 }
 
-/// A predicate that must hold true for a rule to be considered "active" and able to generate a [`RuleMatch`].
-#[derive(Debug)]
-pub enum RuleCondition {
-    FilePath(GlobAssertion<String>),
-}
-
-/// A Unix-style glob with either a positive or negative assertion:
-/// * `MustMatch`: A pattern must match the provided glob
-/// * `MustNotMatch`: A pattern must not match the provided glob
-#[derive(Debug, Clone)]
-pub enum GlobAssertion<T> {
-    MustMatch(T),
-    MustNotMatch(T),
-}
-
-/// A string that has passed all of a rule's matcher stages.
+/// A string that detected by a rule's [`Matcher`](crate::Matcher) that has passed the rule's [`Checker`](crate::Checker).
 #[derive(Debug, Clone)]
 pub struct RuleMatch {
     /// The id of the [`Rule`] that triggered this match.

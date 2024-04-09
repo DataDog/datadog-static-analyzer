@@ -2,7 +2,7 @@ use secrets_core::engine::{Engine, EngineBuilder};
 use secrets_core::matcher::hyperscan::pattern_set::PatternSet;
 use secrets_core::matcher::hyperscan::Hyperscan;
 use secrets_core::matcher::Matcher;
-use secrets_core::rule::{Expression, MatchSource, Rule};
+use secrets_core::rule::Rule;
 use secrets_core::{engine, ureq, vectorscan, Validator};
 
 pub use engine::ValidationResult;
@@ -28,24 +28,11 @@ fn build_test_rules() -> (
     )
     .try_build()
     .unwrap();
-    let pattern_2 = vectorscan::Pattern::new(r#"\s"#).try_build().unwrap();
 
     let mut set = PatternSet::new(0.into());
     let pid_1 = set.add_pattern(pattern_1);
-    let pid_2 = set.add_pattern(pattern_2);
     let set = set.try_compile().unwrap();
     let hyperscan = Matcher::Hyperscan(Hyperscan::new(set));
-
-    let stages_1 = vec![
-        Expression::IsMatch {
-            source: MatchSource::Prior,
-            pattern_id: pid_1,
-        },
-        Expression::IsMatch {
-            source: MatchSource::Capture("prelude".into()),
-            pattern_id: pid_2,
-        },
-    ];
 
     let val1 = build_simple_http(&rule_id_1, "https://api.datad0g.com");
     let val_id_1 = val1.id().clone();
@@ -54,7 +41,7 @@ fn build_test_rules() -> (
 
     (
         vec![hyperscan],
-        vec![Rule::new(rule_id_1, vec![], stages_1, val_id_1)],
+        vec![Rule::new(rule_id_1, pid_1, val_id_1, vec![], vec![])],
         vec![val1],
     )
 }
@@ -122,7 +109,7 @@ fn build_simple_http(rule_id: &RuleId, url: &str) -> HttpValidator {
     let response_handler = response_handler.build();
 
     HttpValidatorBuilder::new(
-        format!("validator-http_{}", rule_id.as_ref()).into(),
+        format!("validator-http_{}", rule_id).into(),
         rule_id.clone(),
         request_generator,
         response_handler,
@@ -173,11 +160,11 @@ const url = "https://github.com/DataDog/repository/blob/main/3380f4569079edec8b1
         candidates.sort_by_key(|cand| cand.rule_match.matched.byte_span.start_index);
 
         let rule_match = &candidates[0].rule_match;
-        assert_eq!(rule_match.rule_id.as_ref(), "datadog-api-key");
+        assert_eq!(rule_match.rule_id.as_str(), "datadog-api-key");
         assert_eq!(parse_capture(rule_match, "candidate"), Some("918d1aaf6e301c1aa4ff315396459906"));
 
         let rule_match = &candidates[1].rule_match;
-        assert_eq!(rule_match.rule_id.as_ref(), "datadog-api-key");
+        assert_eq!(rule_match.rule_id.as_str(), "datadog-api-key");
         assert_eq!(parse_capture(rule_match, "candidate"), Some("861fd58f910308a8d9986c81e776be59"));
 
         assert!(candidates.get(2).is_none());

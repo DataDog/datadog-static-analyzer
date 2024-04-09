@@ -20,7 +20,7 @@ use url::Url;
 ///
 /// (This is a facade for [`ValidationError`] that can be cloned).
 #[derive(Debug, Clone, thiserror::Error)]
-pub(crate) enum HttpValidatorError {
+pub enum HttpValidatorError {
     /// The validator either improperly formatted the request or received a response it should have
     /// been able to parse (but could not).
     #[error("local validator error: {0}")]
@@ -77,6 +77,7 @@ const DEFAULT_MAX_BACKOFF: Duration = Duration::from_secs(8);
 ///    * Base: [`DEFAULT_BASE`],
 ///    * Factor: [`DEFAULT_FACTOR`]
 ///    * Maximum: [`DEFAULT_MAX_BACKOFF`]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RetryConfig {
     pub max_attempts: usize,
     pub use_jitter: bool,
@@ -527,7 +528,8 @@ impl HttpResponse {
         &self.body
     }
 
-    /// The value of the first header matching the given name.
+    /// The value of the first header matching the given name. The caller does not need to convert
+    /// the header name to lowercase.
     ///
     /// NOTE: This ignores headers that may have multiple definitions for multiple values.
     pub fn first_header(&self, name: &str) -> Option<&str> {
