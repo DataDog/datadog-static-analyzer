@@ -573,7 +573,7 @@ fn main() -> Result<()> {
             (!configuration.use_debug).then(|| ProgressBar::new(files_to_analyze.len() as u64));
 
         let start_timestamp = Instant::now();
-        let engine = Arc::new(build_secrets_engine(should_validate));
+        let engine = Arc::new(build_secrets_engine());
         let candidates = files_to_analyze
             .par_iter()
             .filter_map(|path| {

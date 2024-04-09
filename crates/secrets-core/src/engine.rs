@@ -33,7 +33,6 @@ pub struct Engine {
     // Whereas `Rule` and `Matcher` are intended to be thread-local, a validator must be held
     // in an Arc because it may need to respect a rate-limit across threads.
     validators: HashMap<ValidatorId, Arc<dyn Validator + Send + Sync>>,
-    run_validation: bool,
 }
 
 thread_local! {
@@ -105,7 +104,6 @@ pub struct EngineBuilder {
     rules: Vec<Rule>,
     matchers: Vec<Matcher>,
     validators: Vec<Box<dyn Validator + Send + Sync>>,
-    run_validation: bool,
 }
 
 impl EngineBuilder {
@@ -114,7 +112,6 @@ impl EngineBuilder {
             rules: Vec::new(),
             matchers: Vec::new(),
             validators: Vec::new(),
-            run_validation: false,
         }
     }
 
@@ -151,11 +148,6 @@ impl EngineBuilder {
         self
     }
 
-    pub fn validation(mut self, enable: bool) -> Self {
-        self.run_validation = enable;
-        self
-    }
-
     pub fn build(self) -> Engine {
         let validators = self
             .validators
@@ -176,7 +168,6 @@ impl EngineBuilder {
             rules,
             matchers,
             validators,
-            run_validation: self.run_validation,
         }
     }
 }

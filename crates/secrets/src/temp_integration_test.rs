@@ -65,13 +65,12 @@ pub fn shannon_entropy(data: impl IntoIterator<Item = char>, base: usize) -> f32
 }
 
 /// Builds an [`Engine`] with hard-coded Datadog token detectors, to be used for testing.
-pub fn build_secrets_engine(validation: bool) -> Engine {
+pub fn build_secrets_engine() -> Engine {
     let (matchers, rules, validators) = build_test_rules();
     EngineBuilder::new()
         .matchers(matchers)
         .rules(rules)
         .validators(validators)
-        .validation(validation)
         .build()
 }
 
@@ -132,7 +131,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn datadog_key_detection() {
-        let engine = build_secrets_engine(false);
+        let engine = build_secrets_engine();
 
         let file_contents = r#"// Create a client for the Datadog API
 const client = await buildClient("918d1aaf6e301c1aa4ff315396459906");
