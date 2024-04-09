@@ -27,6 +27,7 @@ pub struct CliConfiguration {
     pub argument_provider: ArgumentProvider,
     pub max_file_size_kb: u64,
     pub use_staging: bool,
+    pub show_performance_statistics: bool,
 }
 
 impl CliConfiguration {
@@ -143,6 +144,7 @@ mod tests {
             argument_provider: ArgumentProvider::new(),
             max_file_size_kb: 1,
             use_staging: false,
+            show_performance_statistics: false,
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),

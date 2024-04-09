@@ -13,7 +13,7 @@ use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
-use kernel::model::common::OutputFormat;
+use kernel::model::common::{Language, OutputFormat};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 
 use anyhow::{Context, Result};
@@ -98,6 +98,58 @@ fn print_configuration(configuration: &CliConfiguration) {
         "max file size       : {} kb",
         configuration.max_file_size_kb
     );
+}
+
+/// Utility function to convert rules to rules internal.
+/// Print the time to convert if the performance statistics switch is enabled.
+fn convert_rules_to_rules_internal(
+    configuration: &CliConfiguration,
+    language: &Language,
+) -> Result<Vec<RuleInternal>> {
+    let mut rules_conversion_time_ms: u128 = 0;
+    let rules = configuration
+        .rules
+        .iter()
+        .filter(|r| r.language == *language)
+        .map(|r| {
+            let mut start_rule_conversion_time_ms: u128 = 0;
+            if configuration.show_performance_statistics {
+                start_rule_conversion_time_ms = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+            }
+
+            let res = r
+                .to_rule_internal()
+                .context("cannot convert to rule internal");
+
+            if configuration.show_performance_statistics {
+                let end_rule_conversion_time_ms = SystemTime::now()
+                    .duration_since(SystemTime::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+                let rule_conversion_time_ms =
+                    end_rule_conversion_time_ms - start_rule_conversion_time_ms;
+                println!(
+                    "Rule {} conversion to rule internal: {} ms",
+                    r.name, rule_conversion_time_ms
+                );
+                rules_conversion_time_ms += rule_conversion_time_ms;
+            }
+
+            res
+        })
+        .collect::<Result<Vec<_>>>();
+
+    if configuration.show_performance_statistics {
+        println!(
+            "Total time to convert rules to rules internal for language {}: {} ms",
+            language, rules_conversion_time_ms
+        );
+    }
+
+    rules
 }
 
 fn main() -> Result<()> {
@@ -388,6 +440,7 @@ fn main() -> Result<()> {
         output_file,
         max_file_size_kb,
         use_staging,
+        show_performance_statistics: enable_performance_statistics,
     };
 
     print_configuration(&configuration);
@@ -668,15 +721,8 @@ fn main() -> Result<()> {
         };
         total_files_analyzed += files_for_language.len();
 
-        let rules_for_language: Vec<RuleInternal> = configuration
-            .rules
-            .iter()
-            .filter(|r| r.language == *language)
-            .map(|r| {
-                r.to_rule_internal()
-                    .context("cannot convert to rule internal")
-            })
-            .collect::<Result<Vec<_>>>()?;
+        let rules_for_language: Vec<RuleInternal> =
+            convert_rules_to_rules_internal(&configuration, language)?;
 
         number_of_rules_used += rules_for_language.len();
 
@@ -767,19 +813,67 @@ fn main() -> Result<()> {
             let current_value = rules_execution_time_ms
                 .get(&rule_result.rule_name)
                 .unwrap_or(&0u128);
-            let new_value = current_value + rule_result.execution_time_ms;
+            let new_value =
+                current_value + rule_result.execution_time_ms + rule_result.query_node_time_ms;
             rules_execution_time_ms.insert(rule_result.rule_name.clone(), new_value);
         }
 
-        println!("Rule execution time");
-        println!("-------------------");
+        println!("All rules execution time");
+        println!("------------------------");
         // Show execution time, in sorted order
         for v in rules_execution_time_ms
             .iter()
             .sorted_by(|a, b| Ord::cmp(b.1, a.1))
             .as_slice()
         {
-            println!("rule {:?} execution time {:?} ms", v.0, v.1);
+            println!("rule {:?} total analysis time {:?} ms", v.0, v.1);
+        }
+
+        println!("Top 100 slowest rules breakdown");
+        println!("-------------------------------");
+        // Show execution time, in sorted order
+        for v in rules_execution_time_ms
+            .iter()
+            .sorted_by(|a, b| Ord::cmp(b.1, a.1))
+            .take(100)
+        {
+            let rule_name = v.0;
+            let mut query_node_time_ms: u128 = 0;
+            let mut execution_time_ms: u128 = 0;
+            let mut total_time_ms: u128 = 0;
+
+            for rule_result in &all_rule_results {
+                if rule_result.rule_name.eq(rule_name) {
+                    query_node_time_ms += rule_result.query_node_time_ms;
+                    execution_time_ms += rule_result.execution_time_ms;
+                    total_time_ms = total_time_ms
+                        + rule_result.query_node_time_ms
+                        + rule_result.execution_time_ms;
+                }
+            }
+            println!(
+                "rule {:?}, total time {:?} ms, query node time {:?} ms, execution time {:?} ms",
+                rule_name, total_time_ms, query_node_time_ms, execution_time_ms
+            );
+        }
+
+        println!("Top 100 slowest files to parse");
+        println!("------------------------------");
+        let mut parsing_time_ms: HashMap<String, u128> = HashMap::new();
+
+        // organize the map to have the parsing time by file
+        for rule_result in &all_rule_results {
+            if !parsing_time_ms.contains_key(&rule_result.filename) {
+                parsing_time_ms.insert(rule_result.filename.clone(), rule_result.parsing_time_ms);
+            }
+        }
+
+        for v in parsing_time_ms
+            .iter()
+            .sorted_by(|a, b| Ord::cmp(b.1, a.1))
+            .take(100)
+        {
+            println!("file {:?}, parsing time {:?} ms", v.0, v.1);
         }
 
         // show the rules that timed out

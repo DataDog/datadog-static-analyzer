@@ -285,6 +285,8 @@ pub struct RuleResult {
     pub execution_error: Option<String>,
     pub output: Option<String>,
     pub execution_time_ms: u128,
+    pub parsing_time_ms: u128,
+    pub query_node_time_ms: u128,
 }
 
 impl RuleResultBuilder {
@@ -424,6 +426,8 @@ mod tests {
                 .execution_error(None)
                 .output(None)
                 .execution_time_ms(0)
+                .parsing_time_ms(0)
+                .query_node_time_ms(0)
                 .clone()
         }
 

@@ -496,6 +496,7 @@ mod tests {
             argument_provider: ArgumentProvider::new(),
             max_file_size_kb: 1,
             use_staging: false,
+            show_performance_statistics: false,
         };
         assert_eq!(0, filter_files_by_size(&files1, &cli_configuration).len());
 

@@ -143,6 +143,8 @@ pub fn execute_rule(
                         execution_error: None,
                         output: None,
                         execution_time_ms,
+                        parsing_time_ms: 0,    // filled later in the execute step
+                        query_node_time_ms: 0, // filled later in the execute step
                     }
                 } else if let Some(res) = rx_result.try_recv().unwrap_or(None) {
                     RuleResult {
@@ -153,6 +155,8 @@ pub fn execute_rule(
                         execution_error: res.execution_error,
                         execution_time_ms,
                         output: res.output,
+                        parsing_time_ms: 0,    // filled later in the execute step
+                        query_node_time_ms: 0, // filled later in the execute step
                     }
                 } else {
                     RuleResult {
@@ -163,6 +167,8 @@ pub fn execute_rule(
                         execution_error: None,
                         output: None,
                         execution_time_ms,
+                        parsing_time_ms: 0,    // filled later in the execute step
+                        query_node_time_ms: 0, // filled later in the execute step
                     }
                 }
             }
@@ -174,6 +180,8 @@ pub fn execute_rule(
                 execution_error: None,
                 output: None,
                 execution_time_ms,
+                parsing_time_ms: 0,    // filled later in the execute step
+                query_node_time_ms: 0, // filled later in the execute step
             },
         }
     })
@@ -238,6 +246,8 @@ res
             execution_error: Some(ERROR_RULE_CODE_TOO_BIG.to_string()),
             output: None,
             execution_time_ms: 0,
+            parsing_time_ms: 0,    // filled later in the execute step
+            query_node_time_ms: 0, // filled later in the execute step
         };
     }
 
@@ -286,6 +296,8 @@ res
                                 execution_error: None,
                                 output: console_lines,
                                 execution_time_ms: 0,
+                                parsing_time_ms: 0, // filled later in the execute step
+                                query_node_time_ms: 0, // filled later in the execute step
                             }
                         }
                         Err(e) => RuleResult {
@@ -296,6 +308,8 @@ res
                             execution_error: Some(format!("error when getting violations: ${e}")),
                             output: None,
                             execution_time_ms: 0,
+                            parsing_time_ms: 0, // filled later in the execute step
+                            query_node_time_ms: 0, // filled later in the execute step
                         },
                     }
                 }
@@ -307,6 +321,8 @@ res
                     execution_error: Some(format!("error: {err}")),
                     output: None,
                     execution_time_ms: 0,
+                    parsing_time_ms: 0,    // filled later in the execute step
+                    query_node_time_ms: 0, // filled later in the execute step
                 },
             }
         }
@@ -331,6 +347,8 @@ res
                 execution_error: Some(error_message),
                 output: None,
                 execution_time_ms: 0,
+                parsing_time_ms: 0,    // filled later in the execute step
+                query_node_time_ms: 0, // filled later in the execute step
             }
         }
     }
