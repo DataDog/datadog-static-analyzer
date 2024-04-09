@@ -56,6 +56,17 @@ git config --global --add safe.directory /path/to/repository
 
 ```
 
+You can learn more about diff-aware scanning in our [dedicated documentation](doc/diff-aware.md).
+
+
+## I have a bug to report
+
+Please send us a bug report, either by [creating an issue](https://github.com/DataDog/datadog-static-analyzer/issues) 
+on this repository or by contacting your Datadog Customer Success Manager (if you are a Datadog customer).
+
+You can find complete information on how to report a bug in the
+[dedicated documentation page](doc/report-issue.md).
+
 
 ## I do not see an answer to my question
 

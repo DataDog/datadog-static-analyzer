@@ -306,6 +306,12 @@ Export rulesets from the API into a file
 cargo run --bin datadog-export-rulesets -- -r <ruleset> -o <file-to-export>
 ```
 
+## More
+
+ - [How diff-aware scanning works](doc/diff-aware.md)
+ - [Report an issue](doc/report-issue.md)
+ - [OWASP Benchmark](doc/owasp-benchmark.md)
+
 ## Contribute
 
 See file [CONTRIBUTING.md](CONTRIBUTING.md) for more information as well as [DEVELOPMENT.md](DEVELOPMENT.md)
