@@ -36,7 +36,7 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
-use std::time::SystemTime;
+use std::time::{Instant, SystemTime};
 use std::{env, fs};
 
 fn print_usage(program: &str, opts: Options) {
@@ -106,36 +106,25 @@ fn convert_rules_to_rules_internal(
     configuration: &CliConfiguration,
     language: &Language,
 ) -> Result<Vec<RuleInternal>> {
-    let mut rules_conversion_time_ms: u128 = 0;
+    let rules_conversion_time = Instant::now();
+
     let rules = configuration
         .rules
         .iter()
         .filter(|r| r.language == *language)
         .map(|r| {
-            let mut start_rule_conversion_time_ms: u128 = 0;
-            if configuration.show_performance_statistics {
-                start_rule_conversion_time_ms = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis();
-            }
+            let rule_conversion_time = Instant::now();
 
             let res = r
                 .to_rule_internal()
                 .context("cannot convert to rule internal");
 
             if configuration.show_performance_statistics {
-                let end_rule_conversion_time_ms = SystemTime::now()
-                    .duration_since(SystemTime::UNIX_EPOCH)
-                    .unwrap()
-                    .as_millis();
-                let rule_conversion_time_ms =
-                    end_rule_conversion_time_ms - start_rule_conversion_time_ms;
                 println!(
                     "Rule {} conversion to rule internal: {} ms",
-                    r.name, rule_conversion_time_ms
+                    r.name,
+                    rule_conversion_time.elapsed().as_millis()
                 );
-                rules_conversion_time_ms += rule_conversion_time_ms;
             }
 
             res
@@ -145,7 +134,8 @@ fn convert_rules_to_rules_internal(
     if configuration.show_performance_statistics {
         println!(
             "Total time to convert rules to rules internal for language {}: {} ms",
-            language, rules_conversion_time_ms
+            language,
+            rules_conversion_time.elapsed().as_millis()
         );
     }
 

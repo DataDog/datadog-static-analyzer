@@ -6,7 +6,7 @@ use crate::model::violation::Violation;
 use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::analysis::file_context::common::FileContext;
 use lazy_static::lazy_static;
@@ -45,10 +45,9 @@ pub fn execute_rule(
     let rule_name_copy_thr = rule.name.clone();
     let filename_copy_thr = filename.clone();
     let use_debug = analysis_options.use_debug;
-    let start = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+
+    let execution_start = Instant::now();
+
     // These mutexes and condition variables are used to wait on the execution
     // and have a proper timeout.
     let condvar_main = Arc::new((Mutex::new(()), Condvar::new()));
@@ -119,7 +118,7 @@ pub fn execute_rule(
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_millis();
-        let execution_time_ms = end - start;
+        let execution_time_ms = execution_start.elapsed().as_millis();
 
         // drop the thread. Note that it does not terminate the thread, it just put
         // it out of scope.

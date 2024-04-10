@@ -7,7 +7,7 @@ use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::time::SystemTime;
+use std::time::Instant;
 
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut lines_to_ignore_for_all_rules = vec![];
@@ -99,19 +99,11 @@ where
 {
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
-    let start_parsing_time_ms = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+    let parsing_time = Instant::now();
 
     let tree = get_tree(code, language);
 
-    let end_parsing_time_ms = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
-
-    let parsing_time_ms = end_parsing_time_ms - start_parsing_time_ms;
+    let parsing_time_ms = parsing_time.elapsed().as_millis();
 
     tree.map_or_else(
         || {
@@ -130,10 +122,7 @@ where
                         eprintln!("Apply rule {} file {}", rule.name, filename);
                     }
 
-                    let start_get_query_node_ms = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis();
+                    let query_node_time = Instant::now();
 
                     let nodes = get_query_nodes(
                         &tree,
@@ -143,11 +132,7 @@ where
                         &argument_provider.get_arguments(filename, &rule.name),
                     );
 
-                    let end_get_query_node_ms = SystemTime::now()
-                        .duration_since(SystemTime::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis();
-                    let query_node_time_ms = end_get_query_node_ms - start_get_query_node_ms;
+                    let query_node_time_ms = query_node_time.elapsed().as_millis();
 
                     if nodes.is_empty() {
                         RuleResult {
