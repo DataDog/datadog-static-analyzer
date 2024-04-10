@@ -3,9 +3,9 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::capture::{Capture, Captures};
-use crate::checker::CheckData;
+use crate::checker::PatternChecker;
 use crate::matcher::{Matcher, MatcherError, MatcherId, PatternId, PatternMatch};
-use crate::rule::{Rule, RuleId};
+use crate::rule::{Rule, RuleId, TargetedChecker};
 use crate::Checker;
 use bstr::BStr;
 use std::borrow::Cow;
@@ -52,7 +52,7 @@ impl RuleEvaluator {
     }
 
     /// Creates a stateful [`Scanner`] that can detect [`Rule`] matches for the given data source.
-    pub fn scan<'a, 'd>(&'a self, data: CheckData<'d>) -> Scanner<'a, 'd> {
+    pub fn scan<'a, 'd>(&'a self, data: &'d [u8]) -> Scanner<'a, 'd> {
         Scanner {
             state: RefCell::new(ScannerState(HashMap::new())),
             evaluator: self,
@@ -172,7 +172,7 @@ impl<'d> ScannerState<'d> {
 pub struct Scanner<'a, 'd> {
     state: RefCell<ScannerState<'d>>,
     evaluator: &'a RuleEvaluator,
-    data: CheckData<'d>,
+    data: &'d [u8],
 }
 
 impl<'a, 'd> Scanner<'a, 'd> {
@@ -191,14 +191,13 @@ impl<'a, 'd> Scanner<'a, 'd> {
 
         let checker = rule.match_checks();
         let pattern_id = rule.pattern_id();
-        let cache_key =
-            self.ensure_scanned(self.data.full_data().unwrap_or(&[]), rule.pattern_id())?;
+        let cache_key = self.ensure_scanned(self.data, rule.pattern_id())?;
 
         Ok(ScanIter {
-            data: self.data.clone(),
+            data: self.data,
             cache_key,
             pattern_id,
-            checker,
+            pm_checkers: checker,
             state: &self.state,
         })
     }
@@ -245,10 +244,10 @@ impl<'a, 'd> Scanner<'a, 'd> {
 
 /// An iterator over the (mutable) state of a [`Scanner`] for a specific [`PatternId`].
 pub struct ScanIter<'a, 'd> {
-    data: CheckData<'d>,
+    data: &'d [u8],
     cache_key: CacheKey,
     pattern_id: PatternId,
-    checker: &'a [Box<dyn Checker>],
+    pm_checkers: &'a [Box<dyn PatternChecker>],
     state: &'a RefCell<ScannerState<'d>>,
 }
 
@@ -261,14 +260,8 @@ impl<'a, 'd> Iterator for ScanIter<'a, 'd> {
         let matches_cache = state.get_mut(&self.cache_key);
 
         'p_match: while let Some(pattern_match) = matches_cache.take_next(self.pattern_id) {
-            // Create an identical `CheckData` as what is currently cached, but with the new captures.
-            let data = CheckData::new(
-                self.data.full_data(),
-                Some(Cow::Borrowed(pattern_match.captures())),
-                self.data.file_path(),
-            );
-            for checker in self.checker {
-                if !checker.check(&data) {
+            for pm_checker in self.pm_checkers {
+                if !pm_checker.check(&pattern_match) {
                     continue 'p_match;
                 }
             }
@@ -337,15 +330,16 @@ impl Debug for CheckedMatch<'_> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use crate::{Checker, Matcher, Rule};
-    use crate::checker::{BooleanLogic, CheckData, Regex};
+    use crate::{Checker, Matcher, PatternChecker, Rule};
+    use crate::checker::{BooleanLogic, Regex};
+    use crate::checker::boolean_logic::PmBooleanLogic;
     use crate::matcher::hyperscan::Hyperscan;
     use crate::matcher::hyperscan::pattern_set::PatternSetBuilder;
     use crate::matcher::MatcherId;
-    use crate::rule::RuleId;
+    use crate::rule::{RuleId, TargetedChecker};
     use crate::rule_evaluator::{CheckedMatch, RuleEvaluator};
 
-    fn build<'d>(rules: Vec<(RuleId, &str, Vec<Box<dyn Checker>>)>) -> RuleEvaluator {
+    fn build(rules: Vec<(RuleId, &str, Vec<Box<dyn PatternChecker>>)>) -> RuleEvaluator {
         let m_id = MatcherId(0);
         let mut psb = PatternSetBuilder::new(m_id);
 
@@ -375,8 +369,7 @@ mod tests {
     fn scan_cache_drained_in_place() {
         let rule_id: RuleId = "rule-1".into();
         let evaluator = build(vec![(rule_id.clone(), "[a-z]+", vec![])]);
-        let source = CheckData::new(Some("---abc---abc---".as_bytes()), None, None);
-        let mut scanner = evaluator.scan(source);
+        let mut scanner = evaluator.scan("---abc---abc---".as_bytes());
         assert_eq!(scanner.rule(&rule_id).unwrap().collect::<Vec<_>>().len(), 2);
         assert_eq!(evaluator.bytes_scanned.get(), 15);
 
@@ -397,8 +390,7 @@ mod tests {
             (rule_1.clone(), "[a-z]{3}", vec![]),
             (rule_2.clone(), "[0-9]{3}", vec![]),
         ]);
-        let source = CheckData::new(Some("---abc---123---def---".as_bytes()), None, None);
-        let scanner = evaluator.scan(source);
+        let scanner = evaluator.scan("---abc---123---def---".as_bytes());
 
         let iter = scanner.rule(&rule_1).unwrap();
         assert_eq!(iter.collect::<Vec<_>>().len(), 2);
@@ -414,25 +406,25 @@ mod tests {
     fn eval_matcher_candidate_checks() {
         let rule_1: RuleId = "rule-1".into();
         let rule_2: RuleId = "rule-2".into();
-        let regex1 = Arc::new(Regex::try_new("abc").unwrap());
-        // A `Checker` that asserts the candidate doesn't contain "abc"
-        let not_regex1 = Box::new(BooleanLogic::not(&(regex1 as Arc<dyn Checker>)));
-        // A `Checker` that asserts the candidate ends with a number.
-        let regex2 = Box::new(Regex::try_new("\\d$").unwrap());
+        // A `PatternChecker` that asserts the candidate contains "abc" somewhere
+        let regex1 = TargetedChecker::candidate(Regex::try_new("abc").unwrap());
+        // A `PatternChecker` that asserts the candidate ends with a number.
+        let regex2 = TargetedChecker::candidate(Regex::try_new(r#"\d$"#).unwrap());
+
         let evaluator = build(vec![
             (rule_1.clone(), "[[:alnum:]-]{15}", vec![]),
-            (rule_2.clone(), "[[:alnum:]-]{15}", vec![not_regex1, regex2]),
+            (rule_2.clone(), "[[:alnum:]-]{15}", vec![regex1, regex2]),
         ]);
-        let data = CheckData::from_data(
+        let data =
             "\
-            abc---def---ghi     fails: [`not_regex1`,`regex2`]  passes: []
-            def---abc---111     fails: [`not_regex1`]           passes: [`regex2`]
-            def---ghi---111     fails: []                       passes: [`not_regex1`,`regex2`]
-            111---222---333     fails: []                       passes: [`not_regex1`,`regex2`]
-            def---ghi---jkl     fails: [`regex2`]               passes: [`not_regex1`]
+            abc---def---ghi     fails: [regex2]                 passes: [regex1]
+            def---abc---111     fails: []                       passes: [regex1, regex2]
+            111---222---333     fails: [regex1]                 passes: [regex2]
+            def---ghi---jkl     fails: [regex1, regex2]         passes: []
+            abc---abc---222     fails: []                       passes: [regex1, regex2]
             "
-                .as_bytes(),
-        );
+                .as_bytes()
+        ;
         let scanner = evaluator.scan(data);
 
         let rule1_matches = scanner.rule(&rule_1).unwrap().collect::<Vec<_>>();
@@ -441,9 +433,9 @@ mod tests {
             vec![
                 "abc---def---ghi",
                 "def---abc---111",
-                "def---ghi---111",
                 "111---222---333",
-                "def---ghi---jkl"
+                "def---ghi---jkl",
+                "abc---abc---222"
             ]
         );
 
@@ -451,8 +443,8 @@ mod tests {
         assert_eq!(
             as_strs(&rule2_matches),
             vec![
-                "def---ghi---111",
-                "111---222---333",
+                "def---abc---111",
+                "abc---abc---222",
             ]
         );
     }

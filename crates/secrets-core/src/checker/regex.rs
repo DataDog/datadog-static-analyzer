@@ -2,7 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::checker::CheckData;
 use crate::Checker;
 
 /// A [`Checker`] that runs a [`CheckData`]'s `candidate` against the underlying PCRE2 regex.
@@ -16,12 +15,11 @@ impl Regex {
     ///
     /// ```rust
     /// # use secrets_core::Checker;
-    /// # use secrets_core::checker::CheckData;
     /// # use crate::secrets_core::checker::Regex;
     /// let regex = Regex::try_new("(?i)abc (?-i)abc").unwrap();
     ///
-    /// assert!(regex.check(&CheckData::from_data(b"ABC abc")));
-    /// assert!(!regex.check(&CheckData::from_data(b"ABC ABC")));
+    /// assert!(regex.check(b"ABC abc"));
+    /// assert!(!regex.check(b"ABC ABC"));
     /// ```
     /// [PCRE2 syntax]: https://www.pcre.org/current/doc/html/pcre2syntax.html
     pub fn try_new(pattern: &str) -> Result<Self, pcre2::Error> {
@@ -35,12 +33,8 @@ impl Regex {
 }
 
 impl Checker for Regex {
-    /// Checks the input `candidate` against the underlying regex
-    fn check(&self, input: &CheckData) -> bool {
-        input.captures.as_ref().map_or(false, |captures| {
-            self.0
-                .is_match(captures.entire().as_bytes())
-                .unwrap_or(false)
-        })
+    /// Checks the input against the underlying regex
+    fn check(&self, input: &[u8]) -> bool {
+        self.0.is_match(input).unwrap_or(false)
     }
 }
