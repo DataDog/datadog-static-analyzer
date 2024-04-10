@@ -113,7 +113,6 @@ fn build_simple_http(rule_id: &RuleId, url: &str) -> HttpValidator {
 
     HttpValidatorBuilder::new(
         format!("validator-http_{}", rule_id).into(),
-        rule_id.clone(),
         request_generator,
         response_handler,
     )

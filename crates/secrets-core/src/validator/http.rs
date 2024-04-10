@@ -262,8 +262,6 @@ pub struct HttpValidator<T: Clock = MonotonicClock> {
     validator_id: ValidatorId,
     /// The maximum time allowed for a single validation attempt, inclusive of rate-limiting and retry delay.
     max_attempt_duration: Duration,
-    /// The user-assigned [`RuleId`] of which this validator validates.
-    rule_id: RuleId,
     /// The [`Clock`] implementation used by the rate limiter.
     // NOTE: This needs to be included as part of the struct in order to override the clock for unit tests.
     clock: T,
@@ -634,7 +632,6 @@ impl Default for RateLimitQuota {
 pub struct HttpValidatorBuilder {
     validator_id: ValidatorId,
     max_attempted_duration: Duration,
-    rule_id: RuleId,
     request_generator: RequestGenerator,
     response_parser: Box<DynFnResponseParser>,
     rate_limit: RateLimitQuota,
@@ -647,14 +644,12 @@ impl HttpValidatorBuilder {
 
     pub fn new(
         validator_id: ValidatorId,
-        rule_id: RuleId,
         request_generator: RequestGenerator,
         response_parser: Box<DynFnResponseParser>,
     ) -> Self {
         Self {
             validator_id,
             max_attempted_duration: Duration::from_secs(15),
-            rule_id,
             request_generator,
             response_parser,
             rate_limit: RateLimitQuota::default(),
@@ -711,7 +706,6 @@ impl HttpValidatorBuilder {
         HttpValidator {
             validator_id: self.validator_id,
             max_attempt_duration: self.max_attempted_duration,
-            rule_id: self.rule_id,
             clock,
             rate_limiter: Arc::new(rate_limiter),
             request_generator: self.request_generator,
@@ -945,8 +939,6 @@ mod tests {
     const VALID: &str = "121bdc4e---------valid----------49935a92";
     const INVALID: &str = "7730b8f8--------invalid---------7c1fd58f";
 
-    const RULE_ID: &str = "service-key";
-
     const DEFAULT_MAX_ATTEMPTS: usize = 5;
     const DEFAULT_RETRY_DURATION: Duration = Duration::from_secs(2);
     const DEFAULT_MAX_ATTEMPT_DURATION: Duration = Duration::from_secs(15);
@@ -958,7 +950,7 @@ mod tests {
     /// Additionally, a comma-separated list of valid [`HttpValidatorBuilder`] calls will configure the validator.
     macro_rules! build_validator {
         ($req_gen:ident, $resp_parser:ident $(, $call:ident($($args:tt)*))* $(,)?) => {{
-            HttpValidatorBuilder::new("http".into(), RULE_ID.into(), $req_gen, $resp_parser)
+            HttpValidatorBuilder::new("http".into(), $req_gen, $resp_parser)
                 .retry_config(fixed_retry(DEFAULT_MAX_ATTEMPTS, DEFAULT_RETRY_DURATION))
                 .max_attempt_duration(DEFAULT_MAX_ATTEMPT_DURATION)
                 $(.$call($($args)*))*
@@ -973,7 +965,7 @@ mod tests {
         Candidate {
             source: PathBuf::from("foo/bar/baz.rs"),
             rule_match: RuleMatch {
-                rule_id: RULE_ID.into(),
+                rule_id: "rule-id".into(),
                 matched: LocatedString {
                     inner: text.to_string(),
                     byte_span,
