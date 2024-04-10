@@ -2,7 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::checker::CheckData;
 use crate::location::PointLocator;
 use crate::rule::{LocatedString, Rule, RuleId, RuleMatch};
 use crate::rule_evaluator::{EvaluatorError, RuleEvaluator};
@@ -58,8 +57,7 @@ impl Worker {
     pub fn scan_file(&mut self, path: &Path, data: &[u8]) -> Result<Vec<Candidate>, WorkerError> {
         let locator = PointLocator::new(data);
         let mut candidates = Vec::new();
-        let check_data = CheckData::new(Some(data), None, Some(path));
-        let scanner = self.rule_evaluator.scan(check_data);
+        let scanner = self.rule_evaluator.scan(data);
 
         for rule_id in &self.rules {
             let scan_iter = scanner.rule(rule_id).map_err(WorkerError::Evaluator)?;

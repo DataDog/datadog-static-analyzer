@@ -8,6 +8,7 @@ mod regex;
 pub use regex::Regex;
 
 use crate::capture::Captures;
+use crate::matcher::PatternMatch;
 use std::borrow::Cow;
 use std::path::Path;
 
@@ -20,73 +21,13 @@ use std::path::Path;
 /// * As part of a [`Validator`](crate::Validator), it pattern matches a validation result and maps it to a
 /// [`SecretCategory`](crate::validator::SecretCategory).
 pub trait Checker: Send + Sync {
-    /// Given a set of data, returns whether the check passes (`true`) or fails (`false`).
-    fn check(&self, input: &CheckData) -> bool;
+    /// Given a byte slice, returns whether the check passes (`true`) or fails (`false`).
+    fn check(&self, input: &[u8]) -> bool;
 }
 
-/// A struct containing the various data sources a [`Checker`] has access to.
-#[derive(Debug, Clone, Default)]
-pub struct CheckData<'d> {
-    /// The entire byte slice of data
-    full_data: Option<&'d [u8]>,
-    /// The captures of the candidate found by a [`Matcher`].
-    captures: Option<Cow<'d, Captures<'d>>>,
-    /// A file path to associate with the data being scanned.
-    file_path: Option<&'d Path>,
-}
-
-impl<'d> CheckData<'d> {
-    pub fn new(
-        full_data: Option<&'d [u8]>,
-        captures: Option<Cow<'d, Captures<'d>>>,
-        file_path: Option<&'d Path>,
-    ) -> CheckData<'d> {
-        Self {
-            full_data,
-            captures,
-            file_path,
-        }
-    }
-
-    /// Constructs a `CheckData` with the entire input as both the `candidate` and the `full_data`.
-    ///
-    /// # Example
-    /// ```rust
-    /// # use crate::secrets_core::checker::CheckData;
-    /// let full_data = "hello world".as_bytes().to_vec();
-    /// let check_data = CheckData::from_data(full_data.as_slice());
-    ///
-    /// let candidate = check_data.candidate().unwrap();
-    /// assert_eq!(candidate, full_data.as_slice());
-    /// ```
-    pub fn from_data(full_data: &'d [u8]) -> CheckData<'d> {
-        let captures = Captures::new_from_data(full_data);
-        CheckData {
-            full_data: Some(full_data),
-            captures: Some(Cow::Owned(captures)),
-            ..Default::default()
-        }
-    }
-
-    /// Returns a file path associated with the data, if it exists.
-    pub fn file_path(&self) -> Option<&'d Path> {
-        self.file_path
-    }
-
-    /// Returns a byte slice of the full data, if it exists.
-    pub fn full_data(&self) -> Option<&'d [u8]> {
-        self.full_data
-    }
-
-    /// Returns a byte slice of the entire candidate, if it exists.
-    pub fn candidate(&self) -> Option<&'d [u8]> {
-        self.captures.as_ref().map(|captures| {
-            match captures {
-                Cow::Owned(captures) => captures,
-                Cow::Borrowed(captures) => *captures,
-            }
-            .entire()
-            .as_bytes()
-        })
-    }
+/// A PatternChecker provides a single predicate function that parses a [`PatternMatch`] and returns
+/// either `true` or `false` to indicate whether it passes the check or not.
+pub trait PatternChecker: Send + Sync {
+    /// Given a `PatternMatch`, returns whether the check passes (`true`) or fails (`false`).
+    fn check(&self, input: &PatternMatch) -> bool;
 }

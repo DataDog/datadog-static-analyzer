@@ -66,9 +66,12 @@ impl<'a, 's> MatchIter<'a, 's> {
         pattern: &'a mut Pattern,
     ) -> MatchIter<'a, 's> {
         let (window_start, window_end) = match pattern.width() {
-            PatternWidth::Fixed(_) => {
-                // The window is not used for fixed width
-                (0_usize, 0_usize)
+            PatternWidth::Fixed(width) => {
+                let last_end = matches.last().map(|hsm| hsm.end()).unwrap_or(0);
+                // hsm.end() - width can't underflow, as Hyperscan won't send an invalid match.
+                let first_start = matches.first().map(|hsm| hsm.end() - width).unwrap_or(0);
+
+                (first_start, last_end)
             }
             PatternWidth::Variable { max, .. } => {
                 let last_end = matches.last().map(|hsm| hsm.end()).unwrap_or(0);

@@ -9,7 +9,7 @@
 
 pub mod capture;
 pub mod checker;
-pub use checker::Checker;
+pub use checker::{Checker, PatternChecker};
 pub mod common;
 pub mod engine;
 pub mod location;
