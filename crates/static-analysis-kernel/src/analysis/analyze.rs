@@ -7,6 +7,7 @@ use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::time::Instant;
 
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut lines_to_ignore_for_all_rules = vec![];
@@ -98,7 +99,13 @@ where
 {
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
-    get_tree(code, language).map_or_else(
+    let parsing_time = Instant::now();
+
+    let tree = get_tree(code, language);
+
+    let parsing_time_ms = parsing_time.elapsed().as_millis();
+
+    tree.map_or_else(
         || {
             if analysis_option.use_debug {
                 eprintln!("error when parsing source file {filename}");
@@ -115,6 +122,8 @@ where
                         eprintln!("Apply rule {} file {}", rule.name, filename);
                     }
 
+                    let query_node_time = Instant::now();
+
                     let nodes = get_query_nodes(
                         &tree,
                         &rule.tree_sitter_query,
@@ -122,6 +131,8 @@ where
                         code,
                         &argument_provider.get_arguments(filename, &rule.name),
                     );
+
+                    let query_node_time_ms = query_node_time.elapsed().as_millis();
 
                     if nodes.is_empty() {
                         RuleResult {
@@ -132,6 +143,8 @@ where
                             execution_error: None,
                             execution_time_ms: 0,
                             output: None,
+                            parsing_time_ms,
+                            query_node_time_ms,
                         }
                     } else {
                         let mut rule_result = execute_rule(
@@ -146,6 +159,9 @@ where
                         rule_result.violations.retain(|v| {
                             !lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line)
                         });
+                        rule_result.query_node_time_ms = query_node_time_ms;
+                        rule_result.parsing_time_ms = parsing_time_ms;
+
                         rule_result
                     }
                 })

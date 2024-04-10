@@ -67,6 +67,8 @@ mod tests {
             execution_error: None,
             output: None,
             execution_time_ms: 10,
+            query_node_time_ms: 0,
+            parsing_time_ms: 0,
         }]);
         assert_eq!(res_with_result, "filename,rule,category,severity,message,start_line,start_col,end_line,end_col\nfilename,myrule,performance,error,message,10,12,12,10\n");
     }

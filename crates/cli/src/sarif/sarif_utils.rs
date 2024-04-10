@@ -711,6 +711,8 @@ mod tests {
             .output(None)
             .errors(vec![])
             .execution_time_ms(42)
+            .parsing_time_ms(0)
+            .query_node_time_ms(0)
             .execution_error(None)
             .build()
             .expect("building violation");
@@ -858,6 +860,8 @@ mod tests {
             .output(None)
             .errors(vec![])
             .execution_time_ms(42)
+            .parsing_time_ms(0)
+            .query_node_time_ms(0)
             .execution_error(None)
             .build()
             .expect("building violation");
@@ -937,6 +941,8 @@ mod tests {
             .errors(vec![])
             .execution_time_ms(42)
             .execution_error(None)
+            .parsing_time_ms(0)
+            .query_node_time_ms(0)
             .build()
             .expect("building violation");
 

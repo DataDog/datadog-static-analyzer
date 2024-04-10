@@ -6,7 +6,7 @@ use crate::model::violation::Violation;
 use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use crate::analysis::file_context::common::FileContext;
 use lazy_static::lazy_static;
@@ -45,10 +45,9 @@ pub fn execute_rule(
     let rule_name_copy_thr = rule.name.clone();
     let filename_copy_thr = filename.clone();
     let use_debug = analysis_options.use_debug;
-    let start = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_millis();
+
+    let execution_start = Instant::now();
+
     // These mutexes and condition variables are used to wait on the execution
     // and have a proper timeout.
     let condvar_main = Arc::new((Mutex::new(()), Condvar::new()));
@@ -119,7 +118,7 @@ pub fn execute_rule(
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap()
             .as_millis();
-        let execution_time_ms = end - start;
+        let execution_time_ms = execution_start.elapsed().as_millis();
 
         // drop the thread. Note that it does not terminate the thread, it just put
         // it out of scope.
@@ -143,6 +142,8 @@ pub fn execute_rule(
                         execution_error: None,
                         output: None,
                         execution_time_ms,
+                        parsing_time_ms: 0,    // filled later in the execute step
+                        query_node_time_ms: 0, // filled later in the execute step
                     }
                 } else if let Some(res) = rx_result.try_recv().unwrap_or(None) {
                     RuleResult {
@@ -153,6 +154,8 @@ pub fn execute_rule(
                         execution_error: res.execution_error,
                         execution_time_ms,
                         output: res.output,
+                        parsing_time_ms: 0,    // filled later in the execute step
+                        query_node_time_ms: 0, // filled later in the execute step
                     }
                 } else {
                     RuleResult {
@@ -163,6 +166,8 @@ pub fn execute_rule(
                         execution_error: None,
                         output: None,
                         execution_time_ms,
+                        parsing_time_ms: 0,    // filled later in the execute step
+                        query_node_time_ms: 0, // filled later in the execute step
                     }
                 }
             }
@@ -174,6 +179,8 @@ pub fn execute_rule(
                 execution_error: None,
                 output: None,
                 execution_time_ms,
+                parsing_time_ms: 0,    // filled later in the execute step
+                query_node_time_ms: 0, // filled later in the execute step
             },
         }
     })
@@ -238,6 +245,8 @@ res
             execution_error: Some(ERROR_RULE_CODE_TOO_BIG.to_string()),
             output: None,
             execution_time_ms: 0,
+            parsing_time_ms: 0,    // filled later in the execute step
+            query_node_time_ms: 0, // filled later in the execute step
         };
     }
 
@@ -286,6 +295,8 @@ res
                                 execution_error: None,
                                 output: console_lines,
                                 execution_time_ms: 0,
+                                parsing_time_ms: 0, // filled later in the execute step
+                                query_node_time_ms: 0, // filled later in the execute step
                             }
                         }
                         Err(e) => RuleResult {
@@ -296,6 +307,8 @@ res
                             execution_error: Some(format!("error when getting violations: ${e}")),
                             output: None,
                             execution_time_ms: 0,
+                            parsing_time_ms: 0, // filled later in the execute step
+                            query_node_time_ms: 0, // filled later in the execute step
                         },
                     }
                 }
@@ -307,6 +320,8 @@ res
                     execution_error: Some(format!("error: {err}")),
                     output: None,
                     execution_time_ms: 0,
+                    parsing_time_ms: 0,    // filled later in the execute step
+                    query_node_time_ms: 0, // filled later in the execute step
                 },
             }
         }
@@ -331,6 +346,8 @@ res
                 execution_error: Some(error_message),
                 output: None,
                 execution_time_ms: 0,
+                parsing_time_ms: 0,    // filled later in the execute step
+                query_node_time_ms: 0, // filled later in the execute step
             }
         }
     }

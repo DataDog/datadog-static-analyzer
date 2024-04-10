@@ -82,6 +82,8 @@ mod tests {
             execution_error: None,
             output: None,
             execution_time_ms: 0,
+            parsing_time_ms: 0,
+            query_node_time_ms: 0,
         };
 
         let rule_results = [rr];
