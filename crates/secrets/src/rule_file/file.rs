@@ -5,6 +5,7 @@
 use crate::rule_file::matcher::RawMatcher;
 use crate::rule_file::validator::RawValidator;
 use crate::rule_file::{raw_item, SingletonMap};
+use std::collections::BTreeMap;
 
 raw_item! {
     /// The intermediate representation of a rule, deserialized directly from a file format.
@@ -23,6 +24,15 @@ raw_item! {
         pub matcher: SingletonMap<RawMatcher>,
         pub validator: SingletonMap<RawValidator>,
     }
+}
+
+raw_item! {
+    /// An aggregation of [`RawRuleFile`]s that is represented as a top-level map with each key being
+    /// a rule-id mapped to the rule file's content.
+    ///
+    /// This conceptually functions like a ruleset, although there is no extra metadata associated
+    /// with the grouping that would describe or name the set of rules.
+    pub struct RawMultiRuleFile(pub BTreeMap<String, RawRuleFile>);
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash, serde::Deserialize)]
