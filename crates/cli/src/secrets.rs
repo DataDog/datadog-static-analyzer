@@ -8,21 +8,16 @@ use kernel::model::violation::Violation;
 use serde::Serialize;
 use std::fmt::{Display, Formatter};
 
-// This file contains structs that will allow us to test the secrets scanner while also
-// allowing operation when the `secrets` feature is disabled.
-
-/// This struct is used to test the secrets scanner by allowing the main binary
-/// to serialize secrets scan information if it exists, but skip it if it doesn't.
+/// A span of text that was detected as a potential secret, along with the validation result, if any.
 #[derive(Debug, Clone)]
-pub struct DetectedSecret {
-    // Note: Rule information is only denormalized for the integration test.
+pub struct SecretResult {
     pub rule_id: String,
     pub file_path: String,
     pub status: ValidationStatus,
     pub violation: Violation,
 }
 
-impl DetectedSecret {
+impl SecretResult {
     pub fn new(
         rule_id: impl Into<String>,
         file_path: impl Into<String>,
@@ -30,19 +25,17 @@ impl DetectedSecret {
         start: Position,
         end: Position,
     ) -> Self {
-        let message = match status {
-            ValidationStatus::Unvalidated => {
-                "A potential secret where validation was not attempted"
-            }
-            ValidationStatus::Valid(_) => "A validated and confirmed active secret",
-            ValidationStatus::Invalid => "A validated candidate that was not active",
-            ValidationStatus::Inconclusive => {
-                "A candidate where the validation result was inconclusive"
-            }
-        };
-        let severity = match status {
-            ValidationStatus::Valid(severity) => severity,
-            _ => RuleSeverity::Notice,
+        let (message, severity) = match status {
+            ValidationStatus::Unvalidated => (
+                "A potential secret where validation was not attempted",
+                RuleSeverity::None,
+            ),
+            ValidationStatus::Valid(sev) => ("A validated and confirmed active secret", sev),
+            ValidationStatus::Invalid(sev) => ("A validated candidate that was not active", sev),
+            ValidationStatus::Inconclusive(sev) => (
+                "A candidate where the validation result was inconclusive",
+                sev,
+            ),
         };
 
         let violation = Violation {
@@ -63,6 +56,7 @@ impl DetectedSecret {
     }
 }
 
+/// Metadata about a secret detection rule.
 #[derive(Debug, Clone)]
 pub struct SecretRule {
     pub rule_id: String,
@@ -84,13 +78,24 @@ impl SecretRule {
     }
 }
 
+#[cfg(feature = "secrets")]
+impl From<secrets::scanner::RuleInfo> for SecretRule {
+    fn from(value: secrets::scanner::RuleInfo) -> Self {
+        Self {
+            rule_id: value.rule_id,
+            description: value.description,
+            short_description: value.short_description,
+        }
+    }
+}
+
 /// The validation status of a secret.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum ValidationStatus {
     Valid(RuleSeverity),
-    Invalid,
-    Inconclusive,
+    Invalid(RuleSeverity),
+    Inconclusive(RuleSeverity),
     Unvalidated,
 }
 
@@ -101,10 +106,44 @@ impl Display for ValidationStatus {
             "{}",
             match self {
                 ValidationStatus::Valid(_) => "Valid",
-                ValidationStatus::Invalid => "Invalid",
-                ValidationStatus::Inconclusive => "Inconclusive",
+                ValidationStatus::Invalid(_) => "Invalid",
+                ValidationStatus::Inconclusive(_) => "Inconclusive",
                 ValidationStatus::Unvalidated => "Unvalidated",
             }
         )
+    }
+}
+
+#[cfg(feature = "secrets")]
+impl From<secrets::core::validator::SecretCategory> for ValidationStatus {
+    fn from(value: secrets::core::validator::SecretCategory) -> Self {
+        use secrets::core::validator::SecretCategory;
+        match value {
+            SecretCategory::Valid(sev) => Self::Valid(as_rule_severity(sev)),
+            SecretCategory::Invalid(sev) => Self::Invalid(as_rule_severity(sev)),
+            SecretCategory::Inconclusive(sev) => Self::Inconclusive(as_rule_severity(sev)),
+        }
+    }
+}
+
+// The following `as_*` functions work as pseudo "From" impls.
+// We use this strategy to avoid adding the `secrets`crate as a dependency of the static-analysis-kernel crate.
+
+#[cfg(feature = "secrets")]
+fn as_rule_severity(severity: secrets::core::validator::Severity) -> RuleSeverity {
+    use secrets::core::validator::Severity;
+    match severity {
+        Severity::Error => RuleSeverity::Error,
+        Severity::Warning => RuleSeverity::Warning,
+        Severity::Notice => RuleSeverity::Notice,
+        Severity::Info => RuleSeverity::None,
+    }
+}
+
+#[cfg(feature = "secrets")]
+pub fn as_position(point: secrets::core::location::Point) -> Position {
+    Position {
+        line: point.line.get(),
+        col: point.col.get(),
     }
 }

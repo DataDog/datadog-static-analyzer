@@ -25,7 +25,7 @@ use kernel::model::{
 
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::datadog_api::DiffAwareData;
-use crate::secrets::{DetectedSecret, SecretRule};
+use crate::secrets::{SecretResult, SecretRule};
 
 trait IntoSarif {
     type SarifType;
@@ -110,7 +110,7 @@ impl From<SecretRule> for SarifRule {
 #[derive(Debug, Clone)]
 pub enum SarifRuleResult {
     StaticAnalysis(RuleResult),
-    Secret(DetectedSecret),
+    Secret(SecretResult),
 }
 
 impl SarifRuleResult {
@@ -148,10 +148,10 @@ impl TryFrom<RuleResult> for SarifRuleResult {
     }
 }
 
-impl TryFrom<DetectedSecret> for SarifRuleResult {
+impl TryFrom<SecretResult> for SarifRuleResult {
     type Error = String;
 
-    fn try_from(value: DetectedSecret) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: SecretResult) -> std::result::Result<Self, Self::Error> {
         if Path::new(&value.file_path).is_absolute() {
             Err(format!("path `{}` must be relative", &value.file_path))
         } else {
@@ -748,7 +748,7 @@ mod tests {
             "Long description about detecting a Datadog secret...",
             "Short description",
         );
-        let detected = DetectedSecret::new(
+        let detected = SecretResult::new(
             "datadog-app-key",
             "folder/file.txt",
             ValidationStatus::Unvalidated,

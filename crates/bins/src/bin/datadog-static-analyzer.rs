@@ -24,7 +24,7 @@ use cli::model::datadog_api::DiffAwareData;
 use cli::sarif::sarif_utils::{
     generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
-use cli::secrets::{DetectedSecret, SecretRule};
+use cli::secrets::{SecretResult, SecretRule};
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
@@ -82,6 +82,11 @@ fn print_configuration(configuration: &CliConfiguration) {
         "subdirectories      : {}",
         configuration.source_subdirectories.clone().join(",")
     );
+    #[cfg(feature = "secrets")]
+    println!("scan for secrets    : {}", configuration.scan_for_secrets);
+    #[cfg(feature = "secrets")]
+    println!("validate secrets    : {}", configuration.validate_secrets);
+
     println!("output file         : {}", configuration.output_file);
     println!("output format       : {}", output_format_str);
     println!("ignore paths        : {}", ignore_paths_str);
@@ -220,8 +225,14 @@ fn main() -> Result<()> {
     );
     #[cfg(feature = "secrets")]
     {
-        opts.optflag("", "test-secrets", "run the secret scanner in test mode");
-        opts.optflag("", "validate-secrets", "attempt to validate secrets");
+        opts.optflag("", "secrets-scan", "run the secret scanner");
+        opts.optflag("", "secrets-validate", "attempt to validate secrets");
+        opts.optopt(
+            "",
+            "secrets-rules",
+            "path to a YAML file containing secrets scanner rules",
+            "/path/to/secrets-rules.yml",
+        );
     }
 
     let matches = match opts.parse(&args[1..]) {
@@ -263,6 +274,14 @@ fn main() -> Result<()> {
         None => {
             vec![]
         }
+    };
+    let scan_for_secrets = cfg!(feature = "secrets") && matches.opt_present("secrets-scan");
+    let validate_secrets = cfg!(feature = "secrets") && matches.opt_present("secrets-validate");
+    let secrets_rule_file = if cfg!(feature = "secrets") {
+        use std::path::PathBuf;
+        matches.opt_str("secrets-rules").map(PathBuf::from)
+    } else {
+        None
     };
 
     let output_format = match matches.opt_str("f") {
@@ -431,6 +450,9 @@ fn main() -> Result<()> {
         max_file_size_kb,
         use_staging,
         show_performance_statistics: enable_performance_statistics,
+        scan_for_secrets,
+        validate_secrets,
+        secrets_rule_file: secrets_rule_file.clone(),
     };
 
     print_configuration(&configuration);
@@ -549,141 +571,127 @@ fn main() -> Result<()> {
     ////////////////////////////////////////////////////////////////////////////////////////
     // Secrets Test
     #[allow(unused_mut)]
-    let mut detected_secrets = Vec::<DetectedSecret>::new();
+    let mut detected_secrets = Vec::<SecretResult>::new();
     #[allow(unused_mut)]
     let mut secrets_rules = Vec::<SecretRule>::new();
     #[cfg(feature = "secrets")]
-    if matches.opt_present("test-secrets") {
-        use cli::secrets::ValidationStatus;
-        use secrets::temp_integration_test::{build_secrets_engine, shannon_entropy};
+    if scan_for_secrets && secrets_rule_file.is_some() {
+        use cli::secrets::{as_position, ValidationStatus};
+        use secrets::core::validator::Candidate;
+        use secrets::ScannerBuilder;
         use std::sync::mpsc;
-        use std::sync::mpsc::RecvTimeoutError;
         use std::sync::Arc;
         use std::time::Duration;
+        use threadpool::ThreadPool;
 
-        secrets_rules.push(SecretRule::new(
-            "datadog-api-key",
-            "An API key unique to a Datadog organization that is required to submit metrics and events",
-            "A Datadog API key",
-        ));
-        let should_validate = matches.opt_present("validate-secrets");
+        let rule_file = secrets_rule_file.expect("should have been checked");
+        let scanner = ScannerBuilder::new()
+            .yaml_file_multi_rule(rule_file)
+            .try_build()
+            .context("failed to initialize secrets scanner")?;
 
+        for rule_info in scanner.rules() {
+            secrets_rules.push(rule_info.clone().into());
+        }
+
+        let scanner = Arc::new(scanner);
         println!("scanning {} files for secrets", files_to_analyze.len());
         let progress_bar =
             (!configuration.use_debug).then(|| ProgressBar::new(files_to_analyze.len() as u64));
 
         let start_timestamp = Instant::now();
-        let engine = Arc::new(build_secrets_engine());
         let candidates = files_to_analyze
             .par_iter()
             .filter_map(|path| {
-                let file_contents = fs::read(path).ok()?;
-                let scan_result = engine.scan(path, &file_contents);
+                let scan_result = scanner.scan_file(path);
                 if let Some(pb) = &progress_bar {
                     pb.inc(1);
                 }
-                // Temporary: swallow errors
+                // Silently drop files that can't be read, or that caused scan errors.
                 scan_result.map_err(drop).ok()
             })
-            .filter(|candidates| !candidates.is_empty())
-            // Temporary: implement this here, but conceptually this is a Matcher
             .flatten()
-            .filter(|cand| {
-                // For this test, we know all regexes have a capture named "candidate".
-                let captured = cand.rule_match.captures.get("candidate").unwrap().as_str();
-                // Included for this test, even though entropy will eventually be implemented as a Matcher.
-                shannon_entropy(captured.chars().map(|ch| ch.to_ascii_lowercase()), 16) > 0.5
-            })
             .collect::<Vec<_>>();
 
         let elapsed = start_timestamp.elapsed();
         println!(
-            "secrets scan found {} candidates in {:.1}s",
+            "Secrets scan found {} candidates in {} file(s) in {:.1}s",
             candidates.len(),
+            files_to_analyze.len(),
             elapsed.as_secs_f32()
         );
+
+        let mut final_results =
+            Vec::<(Candidate, ValidationStatus)>::with_capacity(candidates.len());
+
         let start_timestamp = Instant::now();
+        if validate_secrets && !candidates.is_empty() {
+            let num_validations = candidates.len();
+            println!("Starting validation for {} candidates", num_validations);
+            if let Some(pb) = &progress_bar {
+                pb.inc_length(num_validations as u64)
+            }
 
-        // Temporary limit validation count to 100 to sidestep not having a threadpool to limit thread spawning
-        let empty = vec![];
-        let (with_validation, sans_validation) = match (candidates.len(), should_validate) {
-            (_, false) => (empty.as_slice(), candidates.as_slice()),
-            (0..=100, true) => (candidates.as_slice(), empty.as_slice()),
-            (_, true) => candidates.split_at(100),
-        };
+            let workers_count = 50;
+            let pool = ThreadPool::new(workers_count);
 
-        let (tx, rx) = mpsc::channel();
-        for candidate in with_validation {
-            let clone_tx = tx.clone();
-            let engine = Arc::clone(&engine);
-            let candidate = candidate.clone();
-            let _ = std::thread::spawn(move || {
-                let res = engine.validate_candidate(candidate.clone());
-                clone_tx.send(res).unwrap();
-            });
+            let (tx, rx) = mpsc::channel();
+            for candidate in candidates {
+                let clone_tx = tx.clone();
+                let scanner = Arc::clone(&scanner);
+                pool.execute(move || {
+                    let res = scanner.validate_candidate(&candidate);
+                    clone_tx.send((candidate, res)).unwrap();
+                });
+            }
+
+            while let Ok((candidate, attempt)) = rx.recv_timeout(Duration::from_secs(30)) {
+                if let Some(pb) = &progress_bar {
+                    pb.inc(1);
+                }
+                // If a validation error was encountered, mark the secret as if the validation wasn't performed.
+                let status =
+                    attempt.map_or(ValidationStatus::Unvalidated, |vr| vr.category().into());
+                final_results.push((candidate, status));
+                if final_results.len() == num_validations {
+                    break;
+                }
+            }
+            // Handle progress-bar if there was a channel timeout
+            if let Some(pb) = &progress_bar {
+                pb.inc((num_validations - final_results.len()) as u64);
+            }
+        } else {
+            for candidate in candidates {
+                final_results.push((candidate, ValidationStatus::Unvalidated))
+            }
         }
 
-        for candidate in sans_validation {
-            let relative_path = candidate
+        let mut valid_count = 0;
+        for (candidate, status) in final_results {
+            if matches!(status, ValidationStatus::Valid(_)) {
+                valid_count += 1;
+            }
+            let rel_path = candidate
                 .source
                 .strip_prefix(directory_path)
-                // Temporary: panic here until we can refactor how `main` propagates errors
-                .expect("path should under `directory_path`");
-            // Access the hardcoded capture name "candidate"
-            let captured = candidate.rule_match.captures.get("candidate").unwrap();
-            let (start, end) = into_positions(captured.point_span);
-            detected_secrets.push(DetectedSecret::new(
+                .expect("should be child path");
+            detected_secrets.push(SecretResult::new(
                 candidate.rule_match.rule_id.to_string(),
-                relative_path.to_string_lossy().to_string(),
-                ValidationStatus::Unvalidated,
-                start,
-                end,
+                rel_path.to_string_lossy(),
+                status,
+                as_position(candidate.rule_match.matched.point_span.start()),
+                as_position(candidate.rule_match.matched.point_span.end()),
             ));
         }
 
-        if !with_validation.is_empty() {
-            let mut attempts = Vec::with_capacity(with_validation.len());
-            loop {
-                match rx.recv_timeout(Duration::from_secs(30)) {
-                    Ok(val_attempt) => {
-                        attempts.push(val_attempt);
-                        if attempts.len() == with_validation.len() {
-                            break;
-                        }
-                    }
-                    Err(RecvTimeoutError::Timeout) => break,
-                    Err(RecvTimeoutError::Disconnected) => panic!("channel should not disconnect"),
-                }
-            }
-            let mut completed = 0;
-            for attempt in &attempts {
-                // Temporary: swallow errors
-                let Ok(result) = attempt else {
-                    continue;
-                };
-                completed += 1;
-                let (start, end) = into_positions(result.point_span());
-                let relative_path = result
-                    .source()
-                    .strip_prefix(directory_path)
-                    // Temporary: panic here until we can refactor how `main` propagates errors
-                    .expect("path should under `directory_path`");
-                detected_secrets.push(DetectedSecret::new(
-                    result.rule_id().to_string(),
-                    relative_path.to_string_lossy().to_string(),
-                    into_val_status(result.category()),
-                    start,
-                    end,
-                ));
-            }
-
-            let elapsed = start_timestamp.elapsed();
-            let timed_out = with_validation.len() - completed;
+        if validate_secrets {
             println!(
-                "secrets validation performed in {:.1}s ({} completed, {} timed out)",
-                elapsed.as_secs_f32(),
-                completed,
-                timed_out,
+                "Secrets validation detected {} valid secret(s) in {} file(s) using {} rule(s) in {:.1}s",
+                valid_count,
+                files_to_analyze.len(),
+                scanner.rule_count(),
+                start_timestamp.elapsed().as_secs_f32()
             );
         }
 
@@ -959,51 +967,4 @@ fn choose_cpu_count(user_input: Option<usize>) -> usize {
     let logical_cores = num_cpus::get();
     let cores = user_input.unwrap_or(DEFAULT_MAX_CPUS);
     usize::min(logical_cores, cores)
-}
-
-// Temporary to sidestep that we can't impl these across crates.
-// When fully-integrated, these will be standard From impls
-#[cfg(feature = "secrets")]
-fn into_rule_severity(sev: secrets::temp_integration_test::Severity) -> RuleSeverity {
-    use secrets::temp_integration_test::Severity;
-    match sev {
-        Severity::Error => RuleSeverity::Error,
-        Severity::Warning => RuleSeverity::Warning,
-        Severity::Notice => RuleSeverity::Notice,
-        Severity::Info => RuleSeverity::None,
-    }
-}
-#[cfg(feature = "secrets")]
-fn into_positions(
-    span: secrets::temp_integration_test::PointSpan,
-) -> (
-    kernel::model::common::Position,
-    kernel::model::common::Position,
-) {
-    use kernel::model::common::Position;
-    let start = Position {
-        line: span.start().line.get(),
-        col: span.start().col.get(),
-    };
-    let end = Position {
-        line: span.end().line.get(),
-        col: span.end().col.get(),
-    };
-    (start, end)
-}
-
-#[cfg(feature = "secrets")]
-fn into_val_status(
-    category: secrets::temp_integration_test::SecretCategory,
-) -> cli::secrets::ValidationStatus {
-    use cli::secrets::ValidationStatus;
-    use secrets::temp_integration_test::SecretCategory;
-    match category {
-        SecretCategory::Valid(sev) => {
-            let severity = into_rule_severity(sev);
-            ValidationStatus::Valid(severity)
-        }
-        SecretCategory::Invalid(_) => ValidationStatus::Invalid,
-        SecretCategory::Inconclusive(_) => ValidationStatus::Inconclusive,
-    }
 }

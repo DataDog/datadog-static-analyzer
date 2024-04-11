@@ -33,6 +33,7 @@ serde_yaml,https://github.com/dtolnay/serde-yaml,Apache-2.0,2016 David Tolnay
 sha2,https://crates.io/crates/sha2,Apache-2.0,Copyright (c) 2006-2009 Graydon Hoare 2009-2013 Mozilla Foundation 2016 Artyom Pavlov
 tempfile,https://crates.io/crates/tempfile,Apache-2.0,Copyright (c) 2015 Steven Allen
 thiserror,https://github.com/dtolnay/thiserror,MIT,Copyright (c) 2019 David Tolnay
+threadpool,https://github.com/rust-threadpool/rust-threadpool,MIT,Copyright (c) 2014 The Rust Project Developers
 tracing,https://crates.io/crates/tracing,MIT,Copyright (c) 2019 Tokio Contributors
 tracing-subscriber,https://crates.io/crates/tracing-subscriber,MIT,Copyright (c) 2019 Tokio Contributors
 ureq,https://github.com/algesten/ureq,MIT,Copyright (c) 2019 Martin Algesten

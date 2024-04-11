@@ -27,7 +27,7 @@ features = [
 
 [features]
 default = []
-secrets = ["dep:secrets"]
+secrets = ["dep:secrets", "threadpool", "cli/secrets"]
 
 [dependencies]
 # local
@@ -51,8 +51,9 @@ rayon = "1.7.0"
 rocket = { version = "=0.5.0", features = ["json"] }
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
 thiserror = "1"
-# Temporary integration test
+# Secret Scanning
 secrets = { path = "../secrets", optional = true, default-features = false }
+threadpool = { version = "1.8.1", optional = true }
 
 
 # For linux and macos, we need the vendored ssl
