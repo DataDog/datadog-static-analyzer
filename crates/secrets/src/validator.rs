@@ -7,7 +7,7 @@ use crate::rule_file::{RawSecretStatus, RawSeverity};
 use secrets_core::validator::http::NextAction;
 use secrets_core::validator::{SecretCategory, Severity};
 
-mod http;
+pub mod http;
 
 impl From<RawAction> for NextAction {
     fn from(value: RawAction) -> Self {

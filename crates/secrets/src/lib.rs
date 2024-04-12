@@ -6,6 +6,8 @@ pub mod temp_integration_test;
 
 mod check;
 pub mod rule_file;
+pub mod scanner;
+pub use scanner::{Scanner, ScannerBuilder};
 mod validator;
 
 pub use secrets_core as core;
