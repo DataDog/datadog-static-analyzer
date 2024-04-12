@@ -2,13 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::capture::{Capture, Captures};
 use crate::checker::PatternChecker;
 use crate::matcher::{Matcher, MatcherError, MatcherId, PatternId, PatternMatch};
-use crate::rule::{Rule, RuleId, TargetedChecker};
-use crate::Checker;
-use bstr::BStr;
-use std::borrow::Cow;
+use crate::rule::{Rule, RuleId};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
@@ -330,9 +326,8 @@ impl Debug for CheckedMatch<'_> {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
-    use crate::{Checker, Matcher, PatternChecker, Rule};
-    use crate::checker::{BooleanLogic, Regex};
-    use crate::checker::boolean_logic::PmBooleanLogic;
+    use crate::{Matcher, PatternChecker, Rule};
+    use crate::checker::Regex;
     use crate::matcher::hyperscan::Hyperscan;
     use crate::matcher::hyperscan::pattern_set::PatternSetBuilder;
     use crate::matcher::MatcherId;

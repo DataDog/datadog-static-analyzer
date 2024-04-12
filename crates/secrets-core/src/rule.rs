@@ -178,7 +178,6 @@ impl AsRef<str> for LocatedString {
 mod tests {
     use crate::checker::Regex;
     use crate::matcher::hyperscan::{Hyperscan, HyperscanBuilder};
-    use crate::matcher::PatternMatch;
     use crate::rule::TargetedChecker;
 
     fn make_hyperscan() -> Hyperscan {
@@ -187,7 +186,7 @@ mod tests {
         hsb.try_compile().unwrap()
     }
 
-    /// From a `Checker`, we can generate a `PatternChecker` that uses a [`PatternMatch`] candidate.
+    /// From a `Checker`, we can generate a `PatternChecker` that uses a [`PatternMatch`](crate::matcher::PatternMatch) candidate.
     #[test]
     fn pm_targeted_candidate() {
         let mut hs = make_hyperscan();

@@ -8,7 +8,6 @@ use crate::rule_evaluator::{EvaluatorError, RuleEvaluator};
 use crate::validator::Candidate;
 use crate::Matcher;
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 use std::string::FromUtf8Error;
 use std::sync::Arc;

@@ -2,9 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-// NOTE: Because this crate still has some scaffolding, these ignores are added
-// to (temporarily) silence clippy while iterating on the `pub` interface to expose.
-#![allow(unused_imports)]
 #![allow(dead_code)]
 
 pub mod capture;
@@ -22,8 +19,5 @@ pub mod validator;
 pub use validator::Validator;
 
 pub extern crate ureq;
-
-// TODO: Remove re-export once a `Hyperscan` builder is implemented
-pub use vectorscan;
 
 mod worker;
