@@ -65,13 +65,12 @@ pub fn shannon_entropy(data: impl IntoIterator<Item = char>, base: usize) -> f32
 }
 
 /// Builds an [`Engine`] with hard-coded Datadog token detectors, to be used for testing.
-pub fn build_secrets_engine(validation: bool) -> Engine {
+pub fn build_secrets_engine() -> Engine {
     let (matchers, rules, validators) = build_test_rules();
     EngineBuilder::new()
         .matchers(matchers)
         .rules(rules)
         .validators(validators)
-        .validation(validation)
         .build()
 }
 
@@ -123,8 +122,7 @@ fn build_simple_http(rule_id: &RuleId, url: &str) -> HttpValidator {
 mod tests {
     use crate::temp_integration_test::build_secrets_engine;
     use secrets_core::rule::RuleMatch;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
+    use std::path::PathBuf;
 
     fn parse_capture<'a>(rule_match: &'a RuleMatch, name: &str) -> Option<&'a str> {
         rule_match.captures.get(name).map(|cap| cap.as_str())
@@ -133,7 +131,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn datadog_key_detection() {
-        let engine = build_secrets_engine(false);
+        let engine = build_secrets_engine();
 
         let file_contents = r#"// Create a client for the Datadog API
 const client = await buildClient("918d1aaf6e301c1aa4ff315396459906");
@@ -155,10 +153,8 @@ const APP_KEY = "b5aec3083c1a1114efdaaa2416e70012a65a5ac0";
 const url = "https://github.com/DataDog/repository/blob/main/3380f4569079edec8b16bbd2bfd882ebe7b3ec30/file.txt";
 //////////////////////////////////////////////////////////////////////
 "#;
-        let mut file = NamedTempFile::new().unwrap();
-        file.write(file_contents.as_bytes()).unwrap();
 
-        let mut candidates = engine.scan_file(file.path()).unwrap();
+        let mut candidates = engine.scan(&PathBuf::new(), file_contents.as_bytes()).unwrap();
         candidates.sort_by_key(|cand| cand.rule_match.matched.byte_span.start_index);
 
         let rule_match = &candidates[0].rule_match;

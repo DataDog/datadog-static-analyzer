@@ -559,7 +559,7 @@ fn main() -> Result<()> {
         use std::sync::mpsc;
         use std::sync::mpsc::RecvTimeoutError;
         use std::sync::Arc;
-        use std::time::{Duration, Instant};
+        use std::time::Duration;
 
         secrets_rules.push(SecretRule::new(
             "datadog-api-key",
@@ -573,11 +573,12 @@ fn main() -> Result<()> {
             (!configuration.use_debug).then(|| ProgressBar::new(files_to_analyze.len() as u64));
 
         let start_timestamp = Instant::now();
-        let engine = Arc::new(build_secrets_engine(should_validate));
+        let engine = Arc::new(build_secrets_engine());
         let candidates = files_to_analyze
             .par_iter()
             .filter_map(|path| {
-                let scan_result = engine.scan_file(path);
+                let file_contents = fs::read(path).ok()?;
+                let scan_result = engine.scan(path, &file_contents);
                 if let Some(pb) = &progress_bar {
                     pb.inc(1);
                 }

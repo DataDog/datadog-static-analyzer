@@ -54,7 +54,7 @@ impl TargetedChecker {
         Box::new(Self(Box::new(pm_checker)))
     }
 
-    /// Creates a `TargetedChecker` that operates on a named capture.
+    /// Creates a boxed and casted `PatternChecker` that operates on a named capture.
     pub fn named_capture<T: Checker + 'static>(
         capture_name: impl Into<String>,
         checker: T,

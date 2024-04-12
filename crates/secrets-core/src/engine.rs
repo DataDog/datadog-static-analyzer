@@ -24,8 +24,6 @@ pub enum EngineError {
     #[error(transparent)]
     Validator(#[from] ValidatorError),
     #[error(transparent)]
-    Io(#[from] io::Error),
-    #[error(transparent)]
     Worker(#[from] WorkerError),
 }
 
@@ -35,14 +33,16 @@ pub struct Engine {
     // Whereas `Rule` and `Matcher` are intended to be thread-local, a validator must be held
     // in an Arc because it may need to respect a rate-limit across threads.
     validators: HashMap<ValidatorId, Arc<dyn Validator + Send + Sync>>,
-    run_validation: bool,
 }
 
 thread_local! {
     static WORKER: RefCell<Option<Worker>> = const { RefCell::new(None) };
 }
 impl Engine {
-    pub fn scan_file(&self, file_path: &Path) -> Result<Vec<Candidate>, EngineError> {
+    /// Scans the `file_contents` against every rule.
+    ///
+    /// NOTE: No I/O is performed -- `path` is only used for metadata.
+    pub fn scan(&self, path: &Path, file_contents: &[u8]) -> Result<Vec<Candidate>, EngineError> {
         WORKER.with(|ref_cell| {
             let mut ref_mut = ref_cell.borrow_mut();
             if ref_mut.is_none() {
@@ -52,7 +52,9 @@ impl Engine {
                 .as_mut()
                 .expect("worker should have been initialized");
 
-            worker.analyze_file(file_path).map_err(EngineError::Worker)
+            worker
+                .scan(path, file_contents)
+                .map_err(EngineError::Worker)
         })
     }
 
@@ -102,7 +104,6 @@ pub struct EngineBuilder {
     rules: Vec<Rule>,
     matchers: Vec<Matcher>,
     validators: Vec<Box<dyn Validator + Send + Sync>>,
-    run_validation: bool,
 }
 
 impl EngineBuilder {
@@ -111,7 +112,6 @@ impl EngineBuilder {
             rules: Vec::new(),
             matchers: Vec::new(),
             validators: Vec::new(),
-            run_validation: false,
         }
     }
 
@@ -148,11 +148,6 @@ impl EngineBuilder {
         self
     }
 
-    pub fn validation(mut self, enable: bool) -> Self {
-        self.run_validation = enable;
-        self
-    }
-
     pub fn build(self) -> Engine {
         let validators = self
             .validators
@@ -173,7 +168,6 @@ impl EngineBuilder {
             rules,
             matchers,
             validators,
-            run_validation: self.run_validation,
         }
     }
 }
