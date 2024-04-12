@@ -42,19 +42,8 @@ impl Worker {
         }
     }
 
-    /// Performs an IO operation to read the specified rule and run all rules against the content.
-    pub fn analyze_file(&mut self, path: &Path) -> Result<Vec<Candidate>, WorkerError> {
-        let data = self.read_file(path)?;
-
-        self.scan_file(path, &data)
-    }
-
-    /// Performs I/O to read a file at the given path into a byte vector.
-    pub fn read_file(&self, path: &Path) -> Result<Vec<u8>, WorkerError> {
-        fs::read(path).map_err(WorkerError::Io)
-    }
-
-    pub fn scan_file(&mut self, path: &Path, data: &[u8]) -> Result<Vec<Candidate>, WorkerError> {
+    /// Scans the given bytes with every rule the worker implements.
+    pub fn scan(&mut self, path: &Path, data: &[u8]) -> Result<Vec<Candidate>, WorkerError> {
         let locator = PointLocator::new(data);
         let mut candidates = Vec::new();
         let scanner = self.rule_evaluator.scan(data);

@@ -123,8 +123,7 @@ fn build_simple_http(rule_id: &RuleId, url: &str) -> HttpValidator {
 mod tests {
     use crate::temp_integration_test::build_secrets_engine;
     use secrets_core::rule::RuleMatch;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
+    use std::path::PathBuf;
 
     fn parse_capture<'a>(rule_match: &'a RuleMatch, name: &str) -> Option<&'a str> {
         rule_match.captures.get(name).map(|cap| cap.as_str())
@@ -155,10 +154,8 @@ const APP_KEY = "b5aec3083c1a1114efdaaa2416e70012a65a5ac0";
 const url = "https://github.com/DataDog/repository/blob/main/3380f4569079edec8b16bbd2bfd882ebe7b3ec30/file.txt";
 //////////////////////////////////////////////////////////////////////
 "#;
-        let mut file = NamedTempFile::new().unwrap();
-        file.write(file_contents.as_bytes()).unwrap();
 
-        let mut candidates = engine.scan_file(file.path()).unwrap();
+        let mut candidates = engine.scan(&PathBuf::new(), file_contents.as_bytes()).unwrap();
         candidates.sort_by_key(|cand| cand.rule_match.matched.byte_span.start_index);
 
         let rule_match = &candidates[0].rule_match;

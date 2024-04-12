@@ -577,7 +577,8 @@ fn main() -> Result<()> {
         let candidates = files_to_analyze
             .par_iter()
             .filter_map(|path| {
-                let scan_result = engine.scan_file(path);
+                let file_contents = fs::read(path).ok()?;
+                let scan_result = engine.scan(path, &file_contents);
                 if let Some(pb) = &progress_bar {
                     pb.inc(1);
                 }
