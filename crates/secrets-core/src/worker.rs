@@ -3,11 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::location::PointLocator;
-use crate::rule::{LocatedString, Rule, RuleId, RuleMatch};
+use crate::rule::{Rule, RuleId, RuleMatch};
 use crate::rule_evaluator::{EvaluatorError, RuleEvaluator};
 use crate::validator::Candidate;
 use crate::Matcher;
-use std::collections::HashMap;
 use std::path::Path;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
@@ -50,21 +49,9 @@ impl Worker {
         for rule_id in &self.rules {
             let scan_iter = scanner.rule(rule_id).map_err(WorkerError::Evaluator)?;
             for checked_match in scan_iter {
-                let mut captures = HashMap::<String, LocatedString>::with_capacity(
-                    checked_match.0.captures().captures_len(),
-                );
-                let captures_iter = checked_match.0.captures().into_iter();
-                for (name, capture) in captures_iter {
-                    if let (Some(name), Some(capture)) = (name, capture) {
-                        let located = LocatedString::from_locator(&locator, capture.byte_span())
-                            .map_err(WorkerError::Utf8)?;
-                        captures.insert(name.to_string(), located);
-                    }
-                }
-                let matched =
-                    LocatedString::from_locator(&locator, checked_match.0.entire().byte_span())
-                        .map_err(WorkerError::Utf8)?;
-
+                let (matched, captures) = checked_match
+                    .try_into_owned_components(&locator)
+                    .map_err(WorkerError::Utf8)?;
                 let candidate = Candidate {
                     source: path.to_path_buf(),
                     rule_match: RuleMatch {
