@@ -4,4 +4,6 @@
 
 pub mod temp_integration_test;
 
+mod check;
 pub mod rule_file;
+mod validator;

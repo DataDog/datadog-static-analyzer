@@ -51,8 +51,8 @@ pub struct Candidate {
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub enum SecretCategory {
     Valid(Severity),
-    Invalid,
-    Inconclusive,
+    Invalid(Severity),
+    Inconclusive(Severity),
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]

@@ -102,15 +102,17 @@ fn build_simple_http(rule_id: &RuleId, url: &str) -> HttpValidator {
         200,
         NextAction::ReturnResult(SecretCategory::Valid(Severity::Error)),
     );
-    response_handler =
-        response_handler.on_status_code(403, NextAction::ReturnResult(SecretCategory::Invalid));
-    response_handler =
-        response_handler.set_default(NextAction::ReturnResult(SecretCategory::Inconclusive));
+    response_handler = response_handler.on_status_code(
+        403,
+        NextAction::ReturnResult(SecretCategory::Invalid(Severity::Info)),
+    );
+    response_handler = response_handler.set_default(NextAction::ReturnResult(
+        SecretCategory::Inconclusive(Severity::Info),
+    ));
     let response_handler = response_handler.build();
 
     HttpValidatorBuilder::new(
         format!("validator-http_{}", rule_id).into(),
-        rule_id.clone(),
         request_generator,
         response_handler,
     )
