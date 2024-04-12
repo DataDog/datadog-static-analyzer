@@ -27,7 +27,7 @@ features = [
 
 [features]
 default = []
-secrets = ["dep:secrets", "threadpool", "cli/secrets"]
+secrets = ["dep:secrets", "cli/secrets"]
 
 [dependencies]
 # local
@@ -53,7 +53,6 @@ tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
 thiserror = "1"
 # Secret Scanning
 secrets = { path = "../secrets", optional = true, default-features = false }
-threadpool = { version = "1.8.1", optional = true }
 
 
 # For linux and macos, we need the vendored ssl

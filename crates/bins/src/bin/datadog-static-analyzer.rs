@@ -579,10 +579,9 @@ fn main() -> Result<()> {
         use cli::secrets::{as_position, ValidationStatus};
         use secrets::core::validator::Candidate;
         use secrets::ScannerBuilder;
-        use std::sync::mpsc;
+        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
         use std::time::Duration;
-        use threadpool::ThreadPool;
 
         let rule_file = secrets_rule_file.expect("should have been checked");
         let scanner = ScannerBuilder::new()
@@ -632,34 +631,36 @@ fn main() -> Result<()> {
                 pb.inc_length(num_validations as u64)
             }
 
-            let workers_count = 50;
-            let pool = ThreadPool::new(workers_count);
+            let timed_out = Arc::new(AtomicBool::new(false));
+            let timed_out_clone = Arc::clone(&timed_out);
+            std::thread::spawn(move || {
+                // Set a target time out. Note that this is only a suggestion, as it only prevents new jobs from
+                // being spawned (a currently-active HTTP job can halt overall execution).
+                std::thread::sleep(Duration::from_secs(30));
+                timed_out_clone.store(true, Ordering::Relaxed);
+            });
 
-            let (tx, rx) = mpsc::channel();
-            for candidate in candidates {
-                let clone_tx = tx.clone();
-                let scanner = Arc::clone(&scanner);
-                pool.execute(move || {
-                    let res = scanner.validate_candidate(&candidate);
-                    clone_tx.send((candidate, res)).unwrap();
-                });
-            }
-
-            while let Ok((candidate, attempt)) = rx.recv_timeout(Duration::from_secs(30)) {
-                if let Some(pb) = &progress_bar {
-                    pb.inc(1);
-                }
-                // If a validation error was encountered, mark the secret as if the validation wasn't performed.
-                let status =
-                    attempt.map_or(ValidationStatus::Unvalidated, |vr| vr.category().into());
-                final_results.push((candidate, status));
-                if final_results.len() == num_validations {
-                    break;
-                }
-            }
-            // Handle progress-bar if there was a channel timeout
-            if let Some(pb) = &progress_bar {
-                pb.inc((num_validations - final_results.len()) as u64);
+            // Although this job is I/O bound, we use `rayon` to reduce 3rd-party dependencies
+            let val_results = candidates
+                .into_par_iter()
+                .map(|candidate| {
+                    let attempt = if timed_out.load(Ordering::Relaxed) {
+                        None
+                    } else {
+                        Some(scanner.validate_candidate(&candidate))
+                    };
+                    if let Some(pb) = &progress_bar {
+                        pb.inc(1);
+                    }
+                    // If we either timed out, or the attempt resulted in an Err, mark candidate as Unvalidated.
+                    let status = attempt.map_or(ValidationStatus::Unvalidated, |res| {
+                        res.map_or(ValidationStatus::Unvalidated, |vr| vr.category().into())
+                    });
+                    (candidate, status)
+                })
+                .collect::<Vec<_>>();
+            for val_result in val_results {
+                final_results.push(val_result);
             }
         } else {
             for candidate in candidates {
