@@ -30,11 +30,15 @@ pub enum ScannerError {
 }
 
 pub struct Scanner {
+    rule_map: HashMap<String, RuleInfo>,
     engine: Engine,
 }
 
 impl Scanner {
     pub fn scan_file(&self, file_path: &Path) -> Result<Vec<Candidate>, ScannerError> {
+        if self.rule_count() == 0 {
+            return Ok(vec![]);
+        }
         let file_contents = fs::read(file_path).map_err(ScannerError::Io)?;
         self.engine
             .scan(file_path, &file_contents)
@@ -52,6 +56,21 @@ impl Scanner {
             .map_err(|err| ScannerError::Engine {
                 message: err.to_string(),
             })
+    }
+
+    /// Returns information about a rule, if it exists
+    pub fn rule(&self, id: &str) -> Option<&RuleInfo> {
+        self.rule_map.get(id)
+    }
+
+    /// Returns all of the rules used by the scanner.
+    pub fn rules(&self) -> impl IntoIterator<Item = &RuleInfo> {
+        self.rule_map.values()
+    }
+
+    /// Returns the number of rules used by the scanner.
+    pub fn rule_count(&self) -> usize {
+        self.rule_map.len()
     }
 }
 
@@ -91,6 +110,7 @@ pub struct ScannerBuilder {
     hs_builder: HyperscanBuilder,
     built_validators: Vec<Box<dyn Validator + Send + Sync>>,
     built_rules: Vec<Rule>,
+    rule_infos: Vec<RuleInfo>,
 }
 
 impl ScannerBuilder {
@@ -143,7 +163,12 @@ impl ScannerBuilder {
             .validators(self.built_validators)
             .rules(self.built_rules)
             .build();
-        Ok(Scanner { engine })
+        let rule_map = self
+            .rule_infos
+            .into_iter()
+            .map(|info| (info.rule_id.clone(), info))
+            .collect::<HashMap<_, _>>();
+        Ok(Scanner { engine, rule_map })
     }
 
     /// Compiles a rule, mutating all inner data as necessary.
@@ -167,6 +192,12 @@ impl ScannerBuilder {
             }
             Entry::Vacant(entry) => entry,
         };
+
+        self.rule_infos.push(RuleInfo {
+            rule_id: rule_id.to_string(),
+            description: raw_rule.description.unwrap_or_default(),
+            short_description: raw_rule.short_description.unwrap_or_default(),
+        });
 
         let mut checks = Vec::new();
         let pattern_id = match raw_rule.matcher.deref() {
@@ -221,6 +252,14 @@ impl ScannerBuilder {
 
         Ok(())
     }
+}
+
+/// Metadata about a Rule that isn't related to its functionality
+#[derive(Debug, Clone)]
+pub struct RuleInfo {
+    pub rule_id: String,
+    pub description: String,
+    pub short_description: String,
 }
 
 #[cfg(test)]
