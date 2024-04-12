@@ -559,7 +559,7 @@ fn main() -> Result<()> {
         use std::sync::mpsc;
         use std::sync::mpsc::RecvTimeoutError;
         use std::sync::Arc;
-        use std::time::{Duration, Instant};
+        use std::time::Duration;
 
         secrets_rules.push(SecretRule::new(
             "datadog-api-key",
