@@ -2,8 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::rule::RuleId;
-use crate::validator::http;
 use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, ValidatorId};
 use governor::clock::{Clock, DefaultClock, MonotonicClock};
 use governor::middleware::NoOpMiddleware;
@@ -12,7 +10,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::io::Read;
 use std::num::NonZeroU32;
 use std::ops::Add;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
@@ -327,10 +325,10 @@ impl<T: Clock> Validator for HttpValidator<T> {
     }
 
     fn validate(&self, candidate: Candidate) -> Result<SecretCategory, ValidatorError> {
-        #[cfg(test)]
-        use http::time::Instant;
         #[cfg(not(test))]
         use std::time::Instant;
+        #[cfg(test)]
+        use time::Instant;
 
         let start_time = Instant::now();
 

@@ -10,10 +10,8 @@ use crate::validator::{Candidate, SecretCategory, Validator, ValidatorError, Val
 use crate::worker::{Worker, WorkerError};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::io;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {

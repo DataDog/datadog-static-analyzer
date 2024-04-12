@@ -70,7 +70,7 @@ pub enum PatternKind {
 
 impl PatternKind {
     /// Returns a reference to the [`InnerRegex`] if it exists.
-    pub(crate) fn regex(&self) -> Option<&InnerRegex> {
+    pub fn regex(&self) -> Option<&InnerRegex> {
         match &self {
             PatternKind::Regex(inner) => Some(inner),
             PatternKind::Literal => None,
@@ -78,7 +78,7 @@ impl PatternKind {
     }
 
     /// Returns a mutable reference to the [`InnerRegex`] if it exists.
-    pub(crate) fn regex_mut(&mut self) -> Option<&mut InnerRegex> {
+    pub fn regex_mut(&mut self) -> Option<&mut InnerRegex> {
         match self {
             PatternKind::Regex(inner) => Some(inner),
             PatternKind::Literal => None,

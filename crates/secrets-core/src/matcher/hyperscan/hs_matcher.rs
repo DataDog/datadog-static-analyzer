@@ -319,11 +319,10 @@ impl HyperscanBuilder {
 #[rustfmt::skip]
 #[cfg(test)]
 mod tests {
-    use super::{MatchCursor, Scratch};
+    use super::MatchCursor;
     use crate::matcher::hyperscan::{Hyperscan, PatternSet};
     use crate::matcher::{MatcherId, PatternId};
     use std::borrow::Cow;
-    use std::sync::Arc;
     use vectorscan::HsMatch;
 
     /// Creates a Vec of [`HsMatch`] from tuples of (pattern_id, end_byte)
@@ -344,7 +343,7 @@ mod tests {
     }
 
     /// Converts a flat vector of [`HsMatch`] into the jagged array that [`MatchCursor`] requires.
-    /// This is done on-the-fly by [`Scratch`], but we need to replicate this behavior in test.
+    /// This is done on-the-fly by [`Scratch`](super::Scratch), but we need to replicate this behavior in test.
     fn as_jagged(mut hs_matches: Vec<HsMatch>) -> Vec<Vec<HsMatch>> {
         hs_matches.sort_by_key(|hs_match| (hs_match.pattern_id().0, hs_match.end()));
         let mut chunked = Vec::<Vec<HsMatch>>::new();

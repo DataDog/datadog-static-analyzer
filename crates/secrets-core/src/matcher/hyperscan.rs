@@ -4,7 +4,7 @@
 
 mod hs_matcher;
 pub use hs_matcher::{Hyperscan, HyperscanBuilder, HyperscanBuilderError};
-mod pattern;
+pub(crate) mod pattern;
 pub use pattern::Pattern;
 pub mod pattern_set;
 pub(crate) use pattern_set::PatternSet;

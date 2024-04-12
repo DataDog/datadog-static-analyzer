@@ -7,10 +7,7 @@ pub use boolean_logic::BooleanLogic;
 mod regex;
 pub use regex::Regex;
 
-use crate::capture::Captures;
 use crate::matcher::PatternMatch;
-use std::borrow::Cow;
-use std::path::Path;
 
 /// A Checker provides a single predicate function that parses an input byte slice and returns
 /// either `true` or `false` to indicate whether it passes the check or not.

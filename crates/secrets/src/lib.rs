@@ -2,8 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-pub mod temp_integration_test;
-
 mod check;
 pub mod rule_file;
 pub mod scanner;

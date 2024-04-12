@@ -6,7 +6,9 @@ use crate::check::Check;
 use crate::rule_file::matcher::RawMatcher;
 use crate::rule_file::validator::http::RawExtension;
 use crate::rule_file::validator::RawValidator;
-use crate::rule_file::{parse_candidate_variable, CandidateVariable, RawRuleFile};
+use crate::rule_file::{
+    parse_candidate_variable, CandidateVariable, RawMultiRuleFile, RawRuleFile,
+};
 use crate::validator::http;
 use secrets_core::engine::{Engine, EngineBuilder, ValidationResult};
 use secrets_core::matcher::hyperscan::HyperscanBuilder;
@@ -90,7 +92,9 @@ pub enum ScannerBuilderError {
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum RuleSource {
-    /// A file to be read
+    /// A file containing multiple YAML-defined rules.
+    YamlFileMultiRule(PathBuf),
+    /// A file containing a single YAML-defined rule.
     YamlFile(PathBuf),
     /// A string that will be parsed as YAML.
     YamlLiteral(String),
@@ -129,6 +133,13 @@ impl ScannerBuilder {
         }
     }
 
+    /// Adds a file path to be read and parsed as a file containing multiple YAML-defined rules.
+    pub fn yaml_file_multi_rule(mut self, file_path: impl Into<PathBuf>) -> Self {
+        self.rule_sources
+            .push(RuleSource::YamlFileMultiRule(file_path.into()));
+        self
+    }
+
     /// Adds a file path to be read and parsed as a YAML-defined rule.
     pub fn yaml_file(mut self, file_path: impl Into<PathBuf>) -> Self {
         self.rule_sources
@@ -152,7 +163,10 @@ impl ScannerBuilder {
     pub fn try_build(mut self) -> Result<Scanner, ScannerBuilderError> {
         let rule_sources = std::mem::take(&mut self.rule_sources);
         for rule_source in rule_sources {
-            self.compile_rule_mut(rule_source)?;
+            let raw_rules = Self::extract_raw_rules(rule_source)?;
+            for raw in raw_rules {
+                self.compile_rule_mut(raw)?;
+            }
         }
         let hs = self
             .hs_builder
@@ -171,20 +185,45 @@ impl ScannerBuilder {
         Ok(Scanner { engine, rule_map })
     }
 
-    /// Compiles a rule, mutating all inner data as necessary.
-    fn compile_rule_mut(&mut self, rule_source: RuleSource) -> Result<(), ScannerBuilderError> {
+    fn extract_raw_rules(rule_source: RuleSource) -> Result<Vec<RawRuleFile>, ScannerBuilderError> {
+        enum Kind {
+            Multi(String),
+            Single(String),
+        }
+
         let yaml_contents = match rule_source {
             RuleSource::YamlFile(path) => {
-                fs::read_to_string(path).map_err(ScannerBuilderError::Io)?
+                Kind::Single(fs::read_to_string(path).map_err(ScannerBuilderError::Io)?)
             }
-            RuleSource::YamlLiteral(literal) => literal,
+            RuleSource::YamlFileMultiRule(path) => {
+                Kind::Multi(fs::read_to_string(path).map_err(ScannerBuilderError::Io)?)
+            }
+            RuleSource::YamlLiteral(literal) => Kind::Single(literal),
         };
-        let raw_rule = serde_yaml::from_str::<RawRuleFile>(&yaml_contents).map_err(|err| {
-            ScannerBuilderError::InvalidYamlSyntax {
-                message: err.to_string(),
-            }
-        })?;
 
+        let raw_rules = match yaml_contents {
+            Kind::Multi(contents) => {
+                let raw = serde_yaml::from_str::<RawMultiRuleFile>(&contents).map_err(|err| {
+                    ScannerBuilderError::InvalidYamlSyntax {
+                        message: err.to_string(),
+                    }
+                })?;
+                raw.0.into_values().collect::<Vec<_>>()
+            }
+            Kind::Single(contents) => {
+                let raw = serde_yaml::from_str::<RawRuleFile>(&contents).map_err(|err| {
+                    ScannerBuilderError::InvalidYamlSyntax {
+                        message: err.to_string(),
+                    }
+                })?;
+                vec![raw]
+            }
+        };
+        Ok(raw_rules)
+    }
+
+    /// Compiles a rule, mutating all inner data as necessary.
+    fn compile_rule_mut(&mut self, raw_rule: RawRuleFile) -> Result<(), ScannerBuilderError> {
         let rule_id: RuleId = raw_rule.id.into();
         let entry = match self.rule_mapping.entry(rule_id.clone()) {
             Entry::Occupied(_) => {

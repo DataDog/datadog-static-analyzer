@@ -497,6 +497,9 @@ mod tests {
             max_file_size_kb: 1,
             use_staging: false,
             show_performance_statistics: false,
+            scan_for_secrets: false,
+            validate_secrets: false,
+            secrets_rule_file: None,
         };
         assert_eq!(0, filter_files_by_size(&files1, &cli_configuration).len());
 

@@ -27,7 +27,7 @@ features = [
 
 [features]
 default = []
-secrets = ["dep:secrets"]
+secrets = ["dep:secrets", "cli/secrets"]
 
 [dependencies]
 # local
@@ -51,7 +51,7 @@ rayon = "1.7.0"
 rocket = { version = "=0.5.0", features = ["json"] }
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
 thiserror = "1"
-# Temporary integration test
+# Secret Scanning
 secrets = { path = "../secrets", optional = true, default-features = false }
 
 

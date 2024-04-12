@@ -156,11 +156,11 @@ impl PatternSetBuilder {
 #[rustfmt::skip]
 #[cfg(test)]
 mod tests {
-    use super::{PatternSet, PatternSetBuilder};
+    use super::PatternSet;
     use crate::matcher::{MatcherId, PatternId};
     use vectorscan::Pattern as HsPattern;
 
-    /// The [`PatternSetBuilder`] should assign [`vectorscan::scan::PatternId`] ids from 0 to n.
+    /// The [`PatternSetBuilder`](super::PatternSetBuilder) should assign [`vectorscan::scan::PatternId`] ids from 0 to n.
     #[test]
     fn builder_incrementing_hs_pattern_ids() {
         // Patterns without default ids (0)

@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::matcher::{PatternId, PatternMatch};
+use crate::matcher::PatternMatch;
 use crate::{Checker, PatternChecker};
 use std::sync::Arc;
 
