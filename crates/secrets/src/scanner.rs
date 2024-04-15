@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::check::Check;
+use crate::proximity::{build_proximity_pattern, restore_rule_match_mut, PROXIMITY_MAGIC};
 use crate::rule_file::matcher::RawMatcher;
 use crate::rule_file::validator::http::RawExtension;
 use crate::rule_file::validator::RawValidator;
@@ -44,6 +45,12 @@ impl Scanner {
         let file_contents = fs::read(file_path).map_err(ScannerError::Io)?;
         self.engine
             .scan(file_path, &file_contents)
+            .map(|mut candidates| {
+                for candidate in candidates.iter_mut() {
+                    restore_rule_match_mut(&mut candidate.rule_match);
+                }
+                candidates
+            })
             .map_err(|err| ScannerError::Engine {
                 message: err.to_string(),
             })
@@ -224,6 +231,14 @@ impl ScannerBuilder {
 
     /// Compiles a rule, mutating all inner data as necessary.
     fn compile_rule_mut(&mut self, raw_rule: RawRuleFile) -> Result<(), ScannerBuilderError> {
+        /// A transformation of the user's Hyperscan pattern.
+        /// When we modify the user's Regex, we need to restore the original semantic so their `PatternMatch` logic
+        /// and `Candidate` logic act as if our transformation never occurred in the first place.
+        enum Transformation {
+            Proximity,
+            None,
+        }
+
         let rule_id: RuleId = raw_rule.id.into();
         let entry = match self.rule_mapping.entry(rule_id.clone()) {
             Entry::Occupied(_) => {
@@ -241,8 +256,24 @@ impl ScannerBuilder {
         let mut checks = Vec::new();
         let pattern_id = match raw_rule.matcher.deref() {
             RawMatcher::Hyperscan(raw) => {
-                // Convert the user input into a Hyperscan pattern
-                let pattern_id = self.hs_builder.add_regex(&raw.pattern).map_err(|err| {
+                // Transform the user's regex, if needed
+                let (pattern, transformation) = if let Some(proximity) = &raw.proximity {
+                    const DEFAULT_MAX_DISTANCE: usize = 40;
+                    let max_distance = proximity.max_distance.unwrap_or(DEFAULT_MAX_DISTANCE);
+                    let proximity_keywords = proximity.keywords.iter().map(String::as_str);
+
+                    let proximity_pattern =
+                        build_proximity_pattern(&raw.pattern, proximity_keywords, max_distance)
+                            .map_err(|err| ScannerBuilderError::RuleCompilationError {
+                                rule: rule_id.to_string(),
+                                message: err.to_string(),
+                            })?;
+                    (proximity_pattern, Transformation::Proximity)
+                } else {
+                    (raw.pattern.clone(), Transformation::None)
+                };
+
+                let pattern_id = self.hs_builder.add_regex(pattern).map_err(|err| {
                     ScannerBuilderError::RuleCompilationError {
                         rule: rule_id.to_string(),
                         message: err.to_string(),
@@ -260,7 +291,17 @@ impl ScannerBuilder {
                             None => {
                                 return Err(ScannerBuilderError::RuleCompilationError { rule: rule_id.to_string(), message: format!("`{}` is not a valid variable: expecting either \"candidate\" or a capture name prepended by \"candidate.captures.\"", raw_check.input_variable()) });
                             }
-                            Some(CandidateVariable::Entire) => TargetedChecker::candidate(check),
+                            Some(CandidateVariable::Entire) => {
+                                match transformation {
+                                    // If we transformed the user's regex into a Proximity pattern, whenever a
+                                    // `PatternChecker` requests the entire candidate, we need to transparently
+                                    // substitute what would've been the result of their unmodified pattern.
+                                    Transformation::Proximity => {
+                                        TargetedChecker::named_capture(PROXIMITY_MAGIC, check)
+                                    }
+                                    Transformation::None => TargetedChecker::candidate(check),
+                                }
+                            }
                             Some(CandidateVariable::Capture(name)) => {
                                 TargetedChecker::named_capture(name, check)
                             }

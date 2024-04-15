@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 mod check;
+mod proximity;
 pub mod rule_file;
 pub mod scanner;
 pub use scanner::{Scanner, ScannerBuilder};

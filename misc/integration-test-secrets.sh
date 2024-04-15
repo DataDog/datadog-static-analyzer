@@ -9,7 +9,7 @@ cargo build -r --features datadog-static-analyzer/secrets --bin datadog-static-a
 
 TEMP_DIR=$(mktemp -d)
 TEMP_FILE=$(mktemp "$TEMP_DIR"/tmp-file.XXXXXXXX)
-echo 'The quick brown fox jumps over the "deadbeef00002b66248e3bceeb15334c" dog' > "$TEMP_FILE"
+echo 'The quick DD_API_KEY fox jumps over the "deadbeef00002b66248e3bceeb15334c" dog' > "$TEMP_FILE"
 # Use a stub config with an (arbitrary) small ruleset
 echo $'rulesets:\n  - typescript-common-security' > "$TEMP_DIR/static-analysis.datadog.yml"
 
@@ -23,6 +23,8 @@ echo $'datadog-api-key:
         matcher:
           hyperscan:
             pattern: "[[:xdigit:]]{32}"
+            proximity:
+              keywords: ["dd", "datadog"]
         validator:
           http:
             extension: simple-request

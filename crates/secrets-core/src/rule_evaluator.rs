@@ -3,12 +3,14 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::checker::PatternChecker;
+use crate::location::PointLocator;
 use crate::matcher::{Matcher, MatcherError, MatcherId, PatternId, PatternMatch};
-use crate::rule::{Rule, RuleId};
+use crate::rule::{LocatedString, Rule, RuleId};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 use std::iter::FusedIterator;
+use std::string::FromUtf8Error;
 use std::sync::Arc;
 
 pub struct RuleEvaluator {
@@ -319,6 +321,27 @@ impl Debug for CheckedMatch<'_> {
             .field("full_data", &self.0.full_data().as_ptr_range())
             .field("captures", &self.0.captures())
             .finish()
+    }
+}
+
+impl CheckedMatch<'_> {
+    /// Attempts a conversion of the [`CheckedMatch`] into a [`LocatedString`] representing the entire match and
+    /// a HashMap of `LocatedString` containing its captures.
+    pub fn try_into_owned_components(
+        self,
+        locator: &PointLocator,
+    ) -> Result<(LocatedString, HashMap<String, LocatedString>), FromUtf8Error> {
+        let mut captures =
+            HashMap::<String, LocatedString>::with_capacity(self.0.captures().captures_len());
+        let captures_iter = self.0.captures().into_iter();
+        for (name, capture) in captures_iter {
+            if let (Some(name), Some(capture)) = (name, capture) {
+                let located = LocatedString::from_locator(&locator, capture.byte_span())?;
+                captures.insert(name.to_string(), located);
+            }
+        }
+        let matched = LocatedString::from_locator(&locator, self.0.entire().byte_span())?;
+        Ok((matched, captures))
     }
 }
 

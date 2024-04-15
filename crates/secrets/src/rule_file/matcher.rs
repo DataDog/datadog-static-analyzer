@@ -15,6 +15,13 @@ raw_item! {
     pub struct RawHyperscan {
         pub id: Option<String>,
         pub pattern: String,
+        pub proximity: Option<RawProximity>,
         pub checks: Option<Vec<RawCheck>>,
+    }
+
+    /// The proximity keywords configuration for matcher `hyperscan`
+    pub struct RawProximity {
+        pub keywords: Vec<String>,
+        pub max_distance: Option<usize>,
     }
 }
