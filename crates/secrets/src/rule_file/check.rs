@@ -10,6 +10,7 @@ raw_item! {
         Equals(RawEquals),
         AnyOf(RawAnyOf),
         Contains(RawContains),
+        NormalizedEntropy(RawNormalizedEntropy),
     }
 
     /// The configuration for check `equals`
@@ -35,6 +36,16 @@ raw_item! {
         /// The substring to search for
         pub substring: String,
     }
+
+    /// The configuration for check `normalized-entropy`
+    pub struct RawNormalizedEntropy {
+        /// The variable to measure the entropy of.
+        pub input: TemplateVar,
+        /// The threshold at which this check will return true.
+        pub over_threshold: f32,
+        /// The number of possible characters, used to normalize the entropy calculation.
+        pub base: Option<u8>,
+    }
 }
 
 impl RawCheck {
@@ -44,6 +55,7 @@ impl RawCheck {
             RawCheck::Equals(raw) => raw.input.name(),
             RawCheck::AnyOf(raw) => raw.input.name(),
             RawCheck::Contains(raw) => raw.input.name(),
+            RawCheck::NormalizedEntropy(raw) => raw.input.name(),
         }
     }
 }

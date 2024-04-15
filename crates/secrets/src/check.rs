@@ -2,11 +2,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::check::entropy::NormalizedEntropy;
 use crate::check::simple::{AnyOf, Contains, Equals};
 use crate::rule_file::check::RawCheck;
 use crate::rule_file::StringsOrInts;
 use secrets_core::Checker;
 
+pub(crate) mod entropy;
 pub(crate) mod simple;
 
 #[derive(Debug, Clone)]
@@ -14,6 +16,7 @@ pub(crate) enum Check {
     Equals(Equals),
     AnyOf(AnyOf),
     Contains(Contains),
+    Entropy(NormalizedEntropy),
 }
 
 impl Checker for Check {
@@ -22,6 +25,7 @@ impl Checker for Check {
             Check::Equals(ch) => ch.check(input),
             Check::AnyOf(ch) => ch.check(input),
             Check::Contains(ch) => ch.check(input),
+            Check::Entropy(ch) => ch.check(input),
         }
     }
 }
@@ -38,6 +42,9 @@ impl Check {
                 kind.into()
             }
             RawCheck::Contains(raw) => Contains::new(&raw.substring).into(),
+            RawCheck::NormalizedEntropy(raw) => {
+                NormalizedEntropy::new(raw.over_threshold, raw.base).into()
+            }
         }
     }
 }
