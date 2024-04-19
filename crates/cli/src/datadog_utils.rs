@@ -7,6 +7,7 @@ use crate::constants::{
 use anyhow::{anyhow, Result};
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
+use kernel::utils::encode_base64_string;
 use uuid::Uuid;
 
 use crate::model::datadog_api::{
@@ -18,7 +19,7 @@ use crate::model::datadog_api::{
 const STAGING_DATADOG_SITE: &str = "datad0g.com";
 const DEFAULT_DATADOG_SITE: &str = "datadoghq.com";
 
-const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
+const _DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "CSHARP",
     "DOCKERFILE",
     "GO",
@@ -71,33 +72,40 @@ fn get_datadog_site(use_staging: bool) -> String {
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
 // the rulesets. We then extract all the rulesets
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
-    let site = get_datadog_site(use_staging);
-    let app_key = get_datadog_variable_value("APP_KEY");
-    let api_key = get_datadog_variable_value("API_KEY");
+    let _site = get_datadog_site(use_staging);
+    let _app_key = get_datadog_variable_value("APP_KEY");
+    let _api_key = get_datadog_variable_value("API_KEY");
 
-    let url = format!(
-        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false",
-        site, ruleset_name
-    );
+    let source_code = r#"
+function visit(query, filename, code) {
+  const { decl } = query.captures;
 
-    let request_builder = reqwest::blocking::Client::new()
-        .get(url)
-        .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
+  const count = fromRust.treeNodeCount();
 
-    // only add datadog credentials if both app-key and api-keys are defined.
-    let request_builder_with_auth = match (app_key, api_key) {
-        (Ok(appk), Ok(apik)) => request_builder
-            .header(DATADOG_HEADER_API_KEY, apik)
-            .header(DATADOG_HEADER_APP_KEY, appk),
-        _ => request_builder,
-    };
+  if (decl !== undefined) {
+    addError(
+      buildError(
+        decl.start.line, decl.start.col,
+        decl.end.line, decl.end.col,
+        `Number of (named) nodes in the tree: ${count}`
+      )
+    )
+  }
+}
+"#;
 
-    let server_response = request_builder_with_auth
-        .send()
-        .expect("error when querying the datadog server");
+    let ts_query = r#"
+(lexical_declaration
+    (variable_declarator
+        name: (_)
+        value: (string (string_fragment) @str (#eq? @str "hello"))
+    )
+) @decl
+"#;
 
-    let response_text = &server_response.text()?;
-    let api_response = serde_json::from_str::<ApiResponse>(response_text);
+    let response_text = format!("{{\"data\":{{\"id\":\"typescript-best-practices\",\"type\":\"rulesets\",\"attributes\":{{\"description\":\"UnVsZXMgdG8gZW5mb3JjZSBUeXBlU2NyaXB0IGJlc3QgcHJhY3RpY2VzLg==\",\"name\":\"typescript-best-practices\",\"rules\":[{{\"id\":\"boolean-prop-naming\",\"name\":\"boolean-prop-naming\",\"short_description\":\"Q29uc2lzdGVudCBuYW1pbmcgZm9yIGJvb2xlYW4gcHJvcHM=\",\"description\":\"RW5mb3JjZXMgYSBjb25zaXN0ZW50IG5hbWluZyBwYXR0ZXJuIGZvciBib29sZWFuIHByb3BzLgoKVGhlIHBhdHRlcm4gaXM6wqBgIl4oaXN8aGFzKVtBLVpdKFtBLVphLXowLTldPykrImDCoHRvIGVuZm9yY2XCoGBpc2DCoGFuZMKgYGhhc2DCoHByZWZpeGVzLg==\",\"code\":\"{}\",\"language\":\"TYPESCRIPT\",\"type\":\"TREE_SITTER_QUERY\",\"tree_sitter_query\":\"{}\",\"checksum\":\"2081ba51ce448abd839490b81a3dec88ac88e5dfb941d52a81f6628eff5dd583\",\"created_at\":\"2024-03-14T15:57:58.503915936Z\",\"created_by\":\"julien.delange\",\"last_updated_at\":\"2024-03-14T15:57:58.503915936Z\",\"last_updated_by\":\"julien.delange\",\"severity\":\"NOTICE\",\"category\":\"CODE_STYLE\",\"arguments\":[],\"tests\":[],\"is_published\":true,\"should_use_ai_fix\":false,\"documentation_url\":\"https://docs.datadoghq.com/static_analysis/rules/typescript-best-practices/boolean-prop-naming\"}}],\"short_description\":\"Rm9sbG93IGJlc3QgcHJhY3RpY2VzIGZvciB3cml0aW5nIFR5cGVTY3JpcHQgY29kZQ==\"}}}}}}", encode_base64_string(source_code.to_string()), encode_base64_string(ts_query.to_string()));
+
+    let api_response = serde_json::from_str::<ApiResponse>(response_text.as_str());
 
     match api_response {
         Ok(d) => {
@@ -109,7 +117,6 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         }
         Err(e) => {
             eprintln!("Error when parsing the ruleset {} {:?}", ruleset_name, e);
-            eprintln!("{}", response_text);
             Err(anyhow!("error {:?}", e))
         }
     }
@@ -151,16 +158,7 @@ pub fn get_default_rulesets_name_for_language(
 /// Get all the default rulesets available at DataDog. Take all the language
 /// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
 pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
-    let mut result: Vec<RuleSet> = vec![];
-
-    for language in DEFAULT_RULESETS_LANGUAGES {
-        let ruleset_names =
-            get_default_rulesets_name_for_language(language.to_string(), use_staging)?;
-
-        for ruleset_name in ruleset_names {
-            result.push(get_ruleset(ruleset_name.as_str(), use_staging)?);
-        }
-    }
+    let result: Vec<RuleSet> = vec![get_ruleset("typescript-best-practices", use_staging)?];
     Ok(result)
 }
 

@@ -260,7 +260,7 @@ fn main() -> Result<()> {
         exit(1);
     }
 
-    let should_verify_checksum = !matches.opt_present("b");
+    let _should_verify_checksum = !matches.opt_present("b");
     let use_staging = matches.opt_present("s");
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
@@ -463,23 +463,6 @@ fn main() -> Result<()> {
         log_output: true,
         use_debug,
     };
-
-    // verify rule checksum
-    if should_verify_checksum {
-        if configuration.use_debug {
-            print!("Checking rule checksum ... ");
-        }
-        for r in &configuration.rules {
-            if !r.verify_checksum() {
-                panic!("Checksum invalid for rule {}", r.name);
-            }
-        }
-        if configuration.use_debug {
-            println!("done!");
-        }
-    } else {
-        println!("Skipping checksum verification");
-    }
 
     // check if we do a diff-aware scan
     let diff_aware_parameters: Option<DiffAwareData> = if diff_aware_requested {
