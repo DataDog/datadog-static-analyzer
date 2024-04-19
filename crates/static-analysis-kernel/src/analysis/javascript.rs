@@ -3,7 +3,7 @@ use crate::model::analysis::{
 };
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
-use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
+use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -18,7 +18,7 @@ const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
 lazy_static! {
     static ref STARTUP_DATA: Vec<u8> = {
         let code: FastString = FastString::from_static(include_str!("./js/stella.js"));
-        let mut rt = JsRuntimeForSnapshot::new(Default::default(), Default::default());
+        let mut rt = JsRuntimeForSnapshot::new(Default::default());
         rt.execute_script("common_js", code).unwrap();
         rt.snapshot().to_vec()
     };
@@ -64,7 +64,7 @@ pub fn execute_rule(
     thread::scope(|scope| {
         scope.spawn(|| {
             let mut runtime = JsRuntime::new(RuntimeOptions {
-                startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
+                startup_snapshot: Some(&STARTUP_DATA),
                 ..Default::default()
             });
 
@@ -261,7 +261,8 @@ res
             let local = v8::Local::new(scope, res);
             // Deserialize a `v8` object into a Rust type using `serde_v8`,
             // in this case deserialize to a JSON `Value`.
-            let deserialized_value = serde_v8::from_v8::<serde_json::Value>(scope, local);
+            let deserialized_value =
+                deno_core::serde_v8::from_v8::<serde_json::Value>(scope, local);
 
             match deserialized_value {
                 Ok(value) => {
