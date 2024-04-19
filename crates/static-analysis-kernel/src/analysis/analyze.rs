@@ -1,5 +1,5 @@
 use crate::analysis::file_context::common::get_file_context;
-use crate::analysis::javascript::execute_rule;
+use crate::analysis::javascript::{execute_rule, ResourceTree};
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::config_file::ArgumentProvider;
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
@@ -7,6 +7,7 @@ use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::Instant;
 
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
@@ -113,6 +114,7 @@ where
             vec![]
         },
         |tree| {
+            let tree = Arc::new(tree);
             let file_context = get_file_context(&tree, language, &code.to_string());
             rules
                 .into_iter()
@@ -153,6 +155,7 @@ where
                             filename.to_string(),
                             analysis_option.clone(),
                             &file_context,
+                            ResourceTree::new(Arc::clone(&tree)),
                         );
 
                         // filter violations that have been ignored

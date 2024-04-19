@@ -3,7 +3,7 @@ use crate::model::analysis::{
 };
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
-use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions};
+use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, OpState, RuntimeOptions};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -15,10 +15,65 @@ use serde::{Deserialize, Serialize};
 // how long a rule can execute before it's a timeout.
 const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
 
+#[deno_core::op2(fast)]
+fn op_tree_node_count(state: &OpState) -> Result<u32, deno_core::error::AnyError> {
+    // TODO: Use the dynamically-tracked resource ID.
+    let res_tree = &state.resource_table.get::<ResourceTree>(0)?;
+    let mut cursor = res_tree.tree().walk();
+    let mut node_count = 0_u32;
+    // Simple tree traversal that counts named nodes
+    'outer: loop {
+        if cursor.node().is_named() {
+            node_count += 1;
+        }
+        // Go as deep as possible
+        if cursor.goto_first_child() {
+            continue;
+        }
+        // Visit the next sibling and continue going down
+        if cursor.goto_next_sibling() {
+            continue;
+        }
+
+        // Travel back up the tree
+        'inner: loop {
+            if !cursor.goto_parent() {
+                // We're at the root
+                break 'outer;
+            }
+            if cursor.goto_next_sibling() {
+                // Travel down the sibling
+                break 'inner;
+            }
+        }
+    }
+
+    Ok(node_count)
+}
+
+deno_core::extension!(
+    poc_math,
+    ops = [op_tree_node_count],
+    esm_entry_point = "ext:poc_math/bootstrap.js",
+    esm = [dir "src/analysis/js", "bootstrap.js"],
+    options = {
+        res_tree: ResourceTree,
+    },
+    state = |state, options| {
+        let rid = state.resource_table.add(options.res_tree);
+        // We assert this only because this is a prototype.
+        // TODO: Actually track this key and use it during the `op` resource_table lookup.
+        assert_eq!(rid, 0);
+    }
+);
+
 lazy_static! {
     static ref STARTUP_DATA: Vec<u8> = {
         let code: FastString = FastString::from_static(include_str!("./js/stella.js"));
-        let mut rt = JsRuntimeForSnapshot::new(Default::default());
+        let mut rt = JsRuntimeForSnapshot::new(RuntimeOptions {
+            extensions: vec![poc_math::ext()],
+            ..Default::default()
+        });
         rt.execute_script("common_js", code).unwrap();
         rt.snapshot().to_vec()
     };
@@ -31,6 +86,25 @@ struct StellaExecution {
     console: Vec<String>,       // the log lines from console.log
 }
 
+/// A wrapper around a [`tree_sitter::Tree`] that can be used as a [`deno_core::Resource`].
+///
+/// This allows a Deno `op` to access a tree-sitter tree.
+#[repr(transparent)]
+pub struct ResourceTree(Arc<tree_sitter::Tree>);
+
+impl ResourceTree {
+    pub fn new(tree: Arc<tree_sitter::Tree>) -> Self {
+        Self(tree)
+    }
+
+    pub fn tree(&self) -> &tree_sitter::Tree {
+        use std::borrow::Borrow;
+        self.0.borrow()
+    }
+}
+
+impl deno_core::Resource for ResourceTree {}
+
 // execute a rule. It is the exposed function to execute a rule and start the underlying
 // JS runtime.
 pub fn execute_rule(
@@ -39,6 +113,7 @@ pub fn execute_rule(
     filename: String,
     analysis_options: AnalysisOptions,
     file_context: &FileContext,
+    tree: ResourceTree,
 ) -> RuleResult {
     let rule_name_copy = rule.name.clone();
     let filename_copy = filename.clone();
@@ -61,10 +136,11 @@ pub fn execute_rule(
 
     let started = lock.lock().expect("should lock mutex");
 
-    thread::scope(|scope| {
-        scope.spawn(|| {
+    thread::scope(move |scope| {
+        scope.spawn(move || {
             let mut runtime = JsRuntime::new(RuntimeOptions {
                 startup_snapshot: Some(&STARTUP_DATA),
+                extensions: vec![poc_math::init_ops(tree)],
                 ..Default::default()
             });
 
@@ -146,6 +222,16 @@ pub fn execute_rule(
                         query_node_time_ms: 0, // filled later in the execute step
                     }
                 } else if let Some(res) = rx_result.try_recv().unwrap_or(None) {
+                    if let Some(violation) = res.violations.first() {
+                        println!("---------");
+                        println!("{}", violation.message);
+                        println!("---------");
+                    }
+                    if let Some(err) = &res.execution_error {
+                        println!("~~~~~~~~~");
+                        println!("[ERR]: {}", err);
+                        println!("~~~~~~~~~");
+                    }
                     RuleResult {
                         rule_name: res.rule_name,
                         filename: res.filename,
@@ -384,7 +470,7 @@ mod tests {
     def __init__(self):
         pass
         "#;
-        let tree = get_tree(c, &Language::Python).unwrap();
+        let tree = Arc::new(get_tree(c, &Language::Python).unwrap());
         let query = get_query(q, &Language::Python).unwrap();
         let rule = RuleInternal {
             name: "myrule".to_string(),
@@ -414,6 +500,7 @@ mod tests {
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(tree),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_none());
@@ -444,7 +531,7 @@ function visit(node, filename, code) {
 def foo(arg1):
     pass
         "#;
-        let tree = get_tree(c, &Language::Python).unwrap();
+        let tree = Arc::new(get_tree(c, &Language::Python).unwrap());
         let query = get_query(q, &Language::Python).unwrap();
         let rule = RuleInternal {
             name: "myrule".to_string(),
@@ -474,6 +561,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(tree),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_none());
@@ -513,7 +601,7 @@ function visit(node, filename, code) {
 def foo(arg1):
     pass
         "#;
-        let tree = get_tree(c, &Language::Python).unwrap();
+        let tree = Arc::new(get_tree(c, &Language::Python).unwrap());
         let query = get_query(q, &Language::Python).unwrap();
         let rule = RuleInternal {
             name: "myrule".to_string(),
@@ -536,6 +624,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(tree),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_none());
@@ -605,7 +694,7 @@ function visit(node, filename, code) {
 def foo(arg1):
     pass
         "#;
-        let tree = get_tree(c, &Language::Python).unwrap();
+        let tree = Arc::new(get_tree(c, &Language::Python).unwrap());
         let query = get_query(q, &Language::Python).unwrap();
         let mut rule = RuleInternal {
             name: "myrule".to_string(),
@@ -635,6 +724,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(Arc::clone(&tree)),
         );
 
         // execute for string
@@ -652,6 +742,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(Arc::clone(&tree)),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -668,6 +759,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(Arc::clone(&tree)),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -684,6 +776,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(Arc::clone(&tree)),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -700,6 +793,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(Arc::clone(&tree)),
         );
 
         assert!(rule_execution.execution_error.is_none());
@@ -735,7 +829,7 @@ function visit(node, filename, code) {
 def foo(arg1):
     pass
         "#;
-        let tree = get_tree(c, &Language::Python).unwrap();
+        let tree = Arc::new(get_tree(c, &Language::Python).unwrap());
         let query = get_query(q, &Language::Python).unwrap();
         let rule = RuleInternal {
             name: "myrule".to_string(),
@@ -765,6 +859,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(tree),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         println!("error: {:?}", rule_execution);
@@ -794,7 +889,7 @@ function visit(node, filena
 def foo(arg1):
     pass
         "#;
-        let tree = get_tree(c, &Language::Python).unwrap();
+        let tree = Arc::new(get_tree(c, &Language::Python).unwrap());
         let query = get_query(q, &Language::Python).unwrap();
         let rule = RuleInternal {
             name: "myrule".to_string(),
@@ -824,6 +919,7 @@ def foo(arg1):
                 log_output: true,
             },
             &get_empty_file_context(),
+            ResourceTree::new(tree),
         );
         assert_eq!("myrule", rule_execution.rule_name);
         assert!(rule_execution.execution_error.is_some());
