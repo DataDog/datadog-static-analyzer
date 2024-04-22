@@ -80,14 +80,14 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
 function visit(query, filename, code) {
   const { decl } = query.captures;
 
-  const count = fromRust.treeNodeCount();
+  const count = fromRust.treeNodeCount("string_fragment");
 
   if (decl !== undefined) {
     addError(
       buildError(
         decl.start.line, decl.start.col,
         decl.end.line, decl.end.col,
-        `Number of (named) nodes in the tree: ${count}`
+        `Number of (string_fragment) nodes in the tree: ${count}`
       )
     )
   }

@@ -16,14 +16,19 @@ use serde::{Deserialize, Serialize};
 const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
 
 #[deno_core::op2(fast)]
-fn op_tree_node_count(state: &OpState) -> Result<u32, deno_core::error::AnyError> {
+fn op_tree_node_count(
+    state: &OpState,
+    #[string] node_name: &str,
+) -> Result<u32, deno_core::error::AnyError> {
     // TODO: Use the dynamically-tracked resource ID.
     let res_tree = &state.resource_table.get::<ResourceTree>(0)?;
     let mut cursor = res_tree.tree().walk();
     let mut node_count = 0_u32;
     // Simple tree traversal that counts named nodes
     'outer: loop {
-        if cursor.node().is_named() {
+        // TODO: For ergonomics, this should probably throw an error if the user's passed in node_name
+        // isn't defined in the grammar
+        if cursor.node().grammar_name() == node_name {
             node_count += 1;
         }
         // Go as deep as possible
