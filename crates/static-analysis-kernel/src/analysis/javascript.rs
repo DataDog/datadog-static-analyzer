@@ -24,6 +24,28 @@ lazy_static! {
     };
 }
 
+/// A successful execution of a rule's JavaScript code.
+#[derive(Debug, Clone)]
+pub struct CompletedExecution {
+    /// The violations reported by the rule execution.
+    pub violations: Vec<Violation>,
+    /// A vector of the JSON-serialized console.log output from the rule.
+    pub output: Vec<String>,
+}
+
+/// An error when attempting to call into the JavaScript runtime.
+#[derive(Debug, thiserror::Error)]
+pub enum ExecutionError {
+    #[error("JavaScript code is too large: {byte_len} bytes")]
+    CodeTooBig { byte_len: usize },
+    #[error("error executing JavaScript: {reason}")]
+    Execution { reason: String },
+    #[error("execution timed out at {:.2}s", .0.as_secs_f32())]
+    ExecutionTimeout(Duration),
+    #[error("expected value returned from JavaScript execution: `{reason}`")]
+    UnexpectedReturnValue { reason: String },
+}
+
 // This structure is what is returned by the JavaScript code
 #[derive(Deserialize, Debug, Serialize, Clone)]
 struct StellaExecution {
@@ -40,10 +62,6 @@ pub fn execute_rule(
     analysis_options: AnalysisOptions,
     file_context: &FileContext,
 ) -> RuleResult {
-    let rule_name_copy = rule.name.clone();
-    let filename_copy = filename.clone();
-    let rule_name_copy_thr = rule.name.clone();
-    let filename_copy_thr = filename.clone();
     let use_debug = analysis_options.use_debug;
 
     let execution_start = Instant::now();
@@ -61,7 +79,7 @@ pub fn execute_rule(
 
     let started = lock.lock().expect("should lock mutex");
 
-    thread::scope(|scope| {
+    let res = thread::scope(|scope| {
         scope.spawn(|| {
             let mut runtime = JsRuntime::new(RuntimeOptions {
                 startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
@@ -78,22 +96,15 @@ pub fn execute_rule(
             let (mutex, cvar) = &*condvar_thread;
 
             // execute the rule and return
-            let res = execute_rule_internal(
-                &mut runtime,
-                rule,
-                &match_nodes,
-                filename,
-                &analysis_options,
-                file_context,
-            );
+            let res =
+                execute_rule_internal(&mut runtime, rule, &match_nodes, &filename, file_context);
 
             // send the result back
-            let send_result_result = tx_result.send(Some(res));
+            let send_result_result = tx_result.send(res);
             if use_debug && send_result_result.is_err() {
                 eprintln!(
                     "rule {}:{} - error when sending results",
-                    rule_name_copy_thr.clone(),
-                    filename_copy_thr.clone()
+                    rule.name, filename
                 );
             }
 
@@ -128,62 +139,62 @@ pub fn execute_rule(
                     if use_debug {
                         eprintln!(
                             "[{}] rule:file {}:{} TIMED OUT, execution time: {} ms",
-                            end,
-                            rule_name_copy.as_str(),
-                            filename_copy.as_str(),
-                            execution_time_ms
+                            end, rule.name, filename, execution_time_ms
                         );
                     }
-                    RuleResult {
-                        rule_name: rule_name_copy,
-                        filename: filename_copy,
-                        violations: vec![],
-                        errors: vec![ERROR_RULE_TIMEOUT.to_string()],
-                        execution_error: None,
-                        output: None,
-                        execution_time_ms,
-                        parsing_time_ms: 0,    // filled later in the execute step
-                        query_node_time_ms: 0, // filled later in the execute step
-                    }
-                } else if let Some(res) = rx_result.try_recv().unwrap_or(None) {
-                    RuleResult {
-                        rule_name: res.rule_name,
-                        filename: res.filename,
-                        violations: res.violations,
-                        errors: res.errors,
-                        execution_error: res.execution_error,
-                        execution_time_ms,
-                        output: res.output,
-                        parsing_time_ms: 0,    // filled later in the execute step
-                        query_node_time_ms: 0, // filled later in the execute step
-                    }
+                    Err(ExecutionError::ExecutionTimeout(Duration::from_millis(
+                        execution_time_ms as u64,
+                    )))
+                } else if let Ok(res) = rx_result.try_recv() {
+                    res
                 } else {
-                    RuleResult {
-                        rule_name: rule_name_copy,
-                        filename: filename_copy,
-                        violations: vec![],
-                        errors: vec![ERROR_RULE_EXECUTION.to_string()],
-                        execution_error: None,
-                        output: None,
-                        execution_time_ms,
-                        parsing_time_ms: 0,    // filled later in the execute step
-                        query_node_time_ms: 0, // filled later in the execute step
-                    }
+                    Err(ExecutionError::Execution {
+                        reason: "unable to receive runtime result".to_string(),
+                    })
                 }
             }
-            Err(_) => RuleResult {
-                rule_name: rule_name_copy,
-                filename: filename_copy,
-                violations: vec![],
-                errors: vec![ERROR_RULE_EXECUTION.to_string()],
-                execution_error: None,
-                output: None,
-                execution_time_ms,
-                parsing_time_ms: 0,    // filled later in the execute step
-                query_node_time_ms: 0, // filled later in the execute step
-            },
+            Err(_) => panic!("mutex should not be poisoned"),
         }
-    })
+    });
+    let execution_time_ms = execution_start.elapsed().as_millis();
+
+    // NOTE: This is a translation layer to map Result<T, E> to a `RuleResult` struct.
+    // Eventually, `execute_rule` should be refactored to also use a `Result`, and then this will no longer be required.
+    let (violations, errors, execution_error, output) = match res {
+        Ok(completed) => {
+            let output = (!completed.output.is_empty() && analysis_options.log_output)
+                .then_some(completed.output.join("\n"));
+            (completed.violations, vec![], None, output)
+        }
+        Err(err) => {
+            let r_f = format!("{}:{}", rule.name, filename);
+            let (err_kind, execution_error) = match err {
+                ExecutionError::ExecutionTimeout(_) => (ERROR_RULE_TIMEOUT, None),
+                ExecutionError::Execution { reason } => {
+                    if analysis_options.use_debug {
+                        eprintln!("rule:file {} execution error, message: {}", r_f, reason);
+                    }
+                    (ERROR_RULE_EXECUTION, Some(reason))
+                }
+                ExecutionError::CodeTooBig { .. } => (ERROR_RULE_CODE_TOO_BIG, None),
+                ExecutionError::UnexpectedReturnValue { reason } => {
+                    (ERROR_RULE_EXECUTION, Some(reason))
+                }
+            };
+            (vec![], vec![err_kind.to_string()], execution_error, None)
+        }
+    };
+    RuleResult {
+        rule_name: rule.name.clone(),
+        filename,
+        violations,
+        errors,
+        execution_error,
+        output,
+        execution_time_ms,
+        parsing_time_ms: 0,    // filled later in the execute step
+        query_node_time_ms: 0, // filled later in the execute step
+    }
 }
 
 // execute a rule with deno. It creates the JavaScript runtimes and execute
@@ -192,17 +203,13 @@ pub fn execute_rule(
 //
 // This is the internal code only, the rule used by the code uses
 // `execute_rule`.
-//
-// # Errors
-// Errors are reported in the `RuleResult` structure, in the executionError.
-pub fn execute_rule_internal(
+fn execute_rule_internal(
     runtime: &mut JsRuntime,
     rule: &RuleInternal,
     match_nodes: &[MatchNode],
-    filename: String,
-    analysis_options: &AnalysisOptions,
+    filename: &str,
     file_context: &FileContext,
-) -> RuleResult {
+) -> Result<CompletedExecution, ExecutionError> {
     let nodes_json: String = serde_json::to_string(match_nodes).unwrap();
 
     let file_context_string = serde_json::to_string(file_context).unwrap_or("{}".to_string());
@@ -235,19 +242,10 @@ res
     // JS engine crashes. So for now, we just return an error if the code is too big/large.
     //
     // See https://github.com/denoland/deno/issues/19638 for more details. Once the issue
-    // is resolved, we can remove it and errors will be detected in runtime.execute_script()
-    if js_code.len() >= v8::String::max_length() {
-        return RuleResult {
-            rule_name: rule.name.clone(),
-            filename,
-            violations: vec![],
-            errors: vec![ERROR_RULE_CODE_TOO_BIG.to_string()],
-            execution_error: Some(ERROR_RULE_CODE_TOO_BIG.to_string()),
-            output: None,
-            execution_time_ms: 0,
-            parsing_time_ms: 0,    // filled later in the execute step
-            query_node_time_ms: 0, // filled later in the execute step
-        };
+    // is resolved, we can remove it and errors will be detected in runtime.execute_script()\
+    let byte_len = js_code.len();
+    if byte_len >= v8::String::max_length() {
+        return Err(ExecutionError::CodeTooBig { byte_len });
     }
 
     let code: FastString = js_code.into();
@@ -267,13 +265,6 @@ res
                 Ok(value) => {
                     match serde_json::from_value::<StellaExecution>(value) {
                         Ok(stella_execution) => {
-                            let console_lines = if stella_execution.console.is_empty()
-                                || !analysis_options.log_output
-                            {
-                                None
-                            } else {
-                                Some(stella_execution.console.join("\n"))
-                            };
                             // update the violation with the category and severity of the rule
                             let updated_violations: Vec<Violation> = stella_execution
                                 .violations
@@ -287,68 +278,28 @@ res
                                     fixes: v.fixes,
                                 })
                                 .collect();
-                            RuleResult {
-                                rule_name: rule.name.clone(),
-                                filename,
+
+                            Ok(CompletedExecution {
                                 violations: updated_violations,
-                                errors: vec![],
-                                execution_error: None,
-                                output: console_lines,
-                                execution_time_ms: 0,
-                                parsing_time_ms: 0, // filled later in the execute step
-                                query_node_time_ms: 0, // filled later in the execute step
-                            }
+                                output: stella_execution.console,
+                            })
                         }
-                        Err(e) => RuleResult {
-                            rule_name: rule.name.clone(),
-                            filename,
-                            violations: vec![],
-                            errors: vec![],
-                            execution_error: Some(format!("error when getting violations: ${e}")),
-                            output: None,
-                            execution_time_ms: 0,
-                            parsing_time_ms: 0, // filled later in the execute step
-                            query_node_time_ms: 0, // filled later in the execute step
-                        },
+                        Err(err) => Err(ExecutionError::UnexpectedReturnValue {
+                            reason: err.to_string(),
+                        }),
                     }
                 }
-                Err(err) => RuleResult {
-                    rule_name: rule.name.clone(),
-                    filename,
-                    violations: vec![],
-                    errors: vec![ERROR_RULE_EXECUTION.to_string()],
-                    execution_error: Some(format!("error: {err}")),
-                    output: None,
-                    execution_time_ms: 0,
-                    parsing_time_ms: 0,    // filled later in the execute step
-                    query_node_time_ms: 0, // filled later in the execute step
-                },
+                Err(err) => Err(ExecutionError::UnexpectedReturnValue {
+                    reason: err.to_string(),
+                }),
             }
         }
         Err(e) => {
-            if analysis_options.use_debug {
-                println!(
-                    "error when executing the rule {} on file {}, message: {}",
-                    rule.name, filename, e
-                );
-            }
-
             let err_str = e.to_string();
-            let error_message = err_str
+            let reason = err_str
                 .find("at rule_code")
                 .map_or_else(|| err_str.clone(), |pos| err_str[..pos].to_string());
-
-            RuleResult {
-                rule_name: rule.name.clone(),
-                filename,
-                violations: vec![],
-                errors: vec![ERROR_RULE_EXECUTION.to_string()],
-                execution_error: Some(error_message),
-                output: None,
-                execution_time_ms: 0,
-                parsing_time_ms: 0,    // filled later in the execute step
-                query_node_time_ms: 0, // filled later in the execute step
-            }
+            Err(ExecutionError::Execution { reason })
         }
     }
 }
