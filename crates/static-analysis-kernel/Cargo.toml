@@ -17,7 +17,6 @@ indexmap = { workspace = true }
 # other
 deno_core = "0.196.0"
 globset = "0.4.14"
-lazy_static = "1.4.0"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
 serde_v8 = "0.107.0"
