@@ -85,7 +85,7 @@ test-and-build-amd64:
 trigger_internal_image:
   stage: release
   only:
-    - main
+    - jf/STAL-1210
   trigger:
     project: DataDog/images
     branch: ${DD_IMAGES_BRANCH}
