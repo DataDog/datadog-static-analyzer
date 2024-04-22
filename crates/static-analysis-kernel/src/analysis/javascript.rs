@@ -57,9 +57,9 @@ fn op_tree_node_count(
 }
 
 deno_core::extension!(
-    poc_math,
+    ddsa_stdlib,
     ops = [op_tree_node_count],
-    esm_entry_point = "ext:poc_math/bootstrap.js",
+    esm_entry_point = "ext:ddsa_stdlib/bootstrap.js",
     esm = [dir "src/analysis/js", "bootstrap.js"],
     options = {
         res_tree: ResourceTree,
@@ -76,7 +76,7 @@ lazy_static! {
     static ref STARTUP_DATA: Vec<u8> = {
         let code: FastString = FastString::from_static(include_str!("./js/stella.js"));
         let mut rt = JsRuntimeForSnapshot::new(RuntimeOptions {
-            extensions: vec![poc_math::ext()],
+            extensions: vec![ddsa_stdlib::ext()],
             ..Default::default()
         });
         rt.execute_script("common_js", code).unwrap();
@@ -145,7 +145,7 @@ pub fn execute_rule(
         scope.spawn(move || {
             let mut runtime = JsRuntime::new(RuntimeOptions {
                 startup_snapshot: Some(&STARTUP_DATA),
-                extensions: vec![poc_math::init_ops(tree)],
+                extensions: vec![ddsa_stdlib::init_ops(tree)],
                 ..Default::default()
             });
 
