@@ -153,20 +153,11 @@ fn main() {
         TreeSitterProject {
             name: "tree-sitter-yaml".to_string(),
             compilation_unit: "tree-sitter-yaml-parser".to_string(),
-            repository: "https://github.com/ikatyang/tree-sitter-yaml.git".to_string(),
+            repository: "https://github.com/tree-sitter-grammars/tree-sitter-yaml.git".to_string(),
             build_dir: "src".into(),
-            commit_hash: "0e36bed171768908f331ff7dff9d956bae016efb".to_string(),
-            files: vec!["parser.c".to_string()],
+            commit_hash: "ee093118211be521742b9866a8ed8ce6d87c7a94".to_string(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
-        },
-        TreeSitterProject {
-            name: "tree-sitter-yaml".to_string(),
-            compilation_unit: "tree-sitter-yaml-scanner".to_string(),
-            repository: "https://github.com/ikatyang/tree-sitter-yaml.git".to_string(),
-            build_dir: "src".into(),
-            commit_hash: "0e36bed171768908f331ff7dff9d956bae016efb".to_string(),
-            files: vec!["scanner.cc".to_string()],
-            cpp: true,
         },
         TreeSitterProject {
             name: "tree-sitter-ruby".to_string(),
