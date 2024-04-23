@@ -73,7 +73,15 @@ impl CliConfiguration {
     pub fn generate_diff_aware_request_data(&self) -> anyhow::Result<DiffAwareRequestArguments> {
         let config_hash = self.generate_diff_aware_digest();
 
-        let repository = Repository::init(&self.source_directory)?;
+        let repository_opt = Repository::init(&self.source_directory);
+
+        if repository_opt.is_err() {
+            eprintln!("Fail to get repository information");
+            eprintln!("If the user running the analyzer is different than the user running the analysis, use: git config --global --add safe.directory /path/to/repository");
+            eprintln!("In some systems you need to disable the worktreeConfig extension with: git config --unset extensions.worktreeConfig")
+        }
+
+        let repository = repository_opt?;
 
         let repository_url = repository
             .find_remote("origin")?
