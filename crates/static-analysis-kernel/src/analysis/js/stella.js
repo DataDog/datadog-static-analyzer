@@ -115,3 +115,11 @@ function getCode(start, end, code) {
 function getCodeForNode(node, code) {
   return getCode(node.start, node.end, code);
 }
+
+// We re-use the same v8 isolate across multiple rule executions. Because the user's JavaScript can mutate variables
+// external to its scope, this function allows us to ensure that a closure is executed in a "clean", non-mutated context.
+function _cleanExecute(closure) {
+  stellaAllErrors.length = 0;
+  console.lines.length = 0
+  return closure();
+}

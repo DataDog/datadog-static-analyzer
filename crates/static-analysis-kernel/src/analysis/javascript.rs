@@ -134,11 +134,7 @@ fn execute_rule_internal(
     // node context with the file-context we calculated for each file.
     let js_code = format!(
         r#"
-(() => {{
-// Clear arrays that might've been populated by a prior node's execution.
-// NOTE: These variables exist in the scope immediately outside of this IIFE.
-stellaAllErrors.length = 0;
-console.lines.length = 0;
+_cleanExecute(() => {{
 
 const filename = "{}";
 const file_context = {};
@@ -154,8 +150,7 @@ return {{
     violations: stellaAllErrors,
     console: console.lines,
 }};
-
-}})();
+}});
 "#,
         filename, file_context_string, rule.code, nodes_json
     );
