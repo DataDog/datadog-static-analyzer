@@ -184,6 +184,7 @@ return {{
                 iso_handle_clone.terminate_execution();
                 break true;
             } else if done_flag_clone.load(Ordering::Relaxed) {
+                // The main thread that was executing the JavaScript has toggled this atomic flag, indicating that it's done.
                 break false;
             }
             // This was a spurious wakeup. Adjust the timeout for the next call to `park_timeout`.
