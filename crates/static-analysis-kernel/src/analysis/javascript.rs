@@ -3,24 +3,24 @@ use crate::model::analysis::{
 };
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
-use deno_core::{v8, FastString, JsRuntime, JsRuntimeForSnapshot, RuntimeOptions, Snapshot};
-use std::sync::{mpsc, Arc, Condvar, Mutex};
-use std::thread;
-use std::time::{Duration, Instant, SystemTime};
+use deno_core::{v8, JsRuntime};
+use std::cell::RefCell;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use crate::analysis::file_context::common::FileContext;
-use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 
-// how long a rule can execute before it's a timeout.
-const JAVASCRIPT_EXECUTION_TIMEOUT_MS: u64 = 5000;
+/// The duration an individual execution of `v8` may run before it will be forcefully halted.
+const JAVASCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_millis(5000);
 
-lazy_static! {
-    static ref STARTUP_DATA: Vec<u8> = {
-        let code: FastString = FastString::from_static(include_str!("./js/stella.js"));
-        let mut rt = JsRuntimeForSnapshot::new(Default::default(), Default::default());
-        rt.execute_script("common_js", code).unwrap();
-        rt.snapshot().to_vec()
+thread_local! {
+    static JS_RUNTIME: RefCell<JsRuntime> = {
+        let code = deno_core::FastString::from_static(include_str!("./js/stella.js"));
+        let mut runtime = JsRuntime::new(Default::default());
+        runtime.execute_script("<stella>", code).expect("stella.js should not throw error");
+        RefCell::new(runtime)
     };
 }
 
@@ -62,99 +62,10 @@ pub fn execute_rule(
     analysis_options: AnalysisOptions,
     file_context: &FileContext,
 ) -> RuleResult {
-    let use_debug = analysis_options.use_debug;
-
     let execution_start = Instant::now();
 
-    // These mutexes and condition variables are used to wait on the execution
-    // and have a proper timeout.
-    let condvar_main = Arc::new((Mutex::new(()), Condvar::new()));
-    let condvar_thread = Arc::clone(&condvar_main);
-
-    // to send the handle of the JS runtime to terminate the runtime
-    let (tx_runtime, rx_runtime) = mpsc::channel();
-    // To send the result once the execution is complete.
-    let (tx_result, rx_result) = mpsc::channel();
-    let (lock, cvar) = &*condvar_main;
-
-    let started = lock.lock().expect("should lock mutex");
-
-    let res = thread::scope(|scope| {
-        scope.spawn(|| {
-            let mut runtime = JsRuntime::new(RuntimeOptions {
-                startup_snapshot: Some(Snapshot::Static(&STARTUP_DATA)),
-                ..Default::default()
-            });
-
-            let handle = runtime.v8_isolate().thread_safe_handle();
-
-            assert!(
-                tx_runtime.send(handle).is_ok(),
-                "we should be able to send the handle to the main thread"
-            );
-
-            let (mutex, cvar) = &*condvar_thread;
-
-            // execute the rule and return
-            let res =
-                execute_rule_internal(&mut runtime, rule, &match_nodes, &filename, file_context);
-
-            // send the result back
-            let send_result_result = tx_result.send(res);
-            if use_debug && send_result_result.is_err() {
-                eprintln!(
-                    "rule {}:{} - error when sending results",
-                    rule.name, filename
-                );
-            }
-
-            let _unused = mutex.lock();
-            // notify the main thread we are done with the execution
-            cvar.notify_one();
-        });
-
-        let handle = rx_runtime.recv();
-
-        // Wait for the rule to execute. If the rule times out, we return a specific RuleResult
-        let cond_result = cvar.wait_timeout(
-            started,
-            Duration::from_millis(JAVASCRIPT_EXECUTION_TIMEOUT_MS),
-        );
-
-        // terminate javascript execution so that the thread we started is stopping
-        handle
-            .expect("should have a javascript handler")
-            .terminate_execution();
-        let end = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        let execution_time_ms = execution_start.elapsed().as_millis();
-
-        // drop the thread. Note that it does not terminate the thread, it just put
-        // it out of scope.
-        match cond_result {
-            Ok(v) => {
-                if v.1.timed_out() {
-                    if use_debug {
-                        eprintln!(
-                            "[{}] rule:file {}:{} TIMED OUT, execution time: {} ms",
-                            end, rule.name, filename, execution_time_ms
-                        );
-                    }
-                    Err(ExecutionError::ExecutionTimeout(Duration::from_millis(
-                        execution_time_ms as u64,
-                    )))
-                } else if let Ok(res) = rx_result.try_recv() {
-                    res
-                } else {
-                    Err(ExecutionError::Execution {
-                        reason: "unable to receive runtime result".to_string(),
-                    })
-                }
-            }
-            Err(_) => panic!("mutex should not be poisoned"),
-        }
+    let res = JS_RUNTIME.with_borrow_mut(|runtime| {
+        execute_rule_internal(runtime, rule, &match_nodes, &filename, file_context)
     });
     let execution_time_ms = execution_start.elapsed().as_millis();
 
@@ -169,7 +80,12 @@ pub fn execute_rule(
         Err(err) => {
             let r_f = format!("{}:{}", rule.name, filename);
             let (err_kind, execution_error) = match err {
-                ExecutionError::ExecutionTimeout(_) => (ERROR_RULE_TIMEOUT, None),
+                ExecutionError::ExecutionTimeout(elapsed) => {
+                    if analysis_options.use_debug {
+                        eprintln!("rule:file {} TIMED OUT ({} ms)", r_f, elapsed.as_millis());
+                    }
+                    (ERROR_RULE_TIMEOUT, None)
+                }
                 ExecutionError::Execution { reason } => {
                     if analysis_options.use_debug {
                         eprintln!("rule:file {} execution error, message: {}", r_f, reason);
@@ -218,6 +134,8 @@ fn execute_rule_internal(
     // node context with the file-context we calculated for each file.
     let js_code = format!(
         r#"
+_cleanExecute(() => {{
+
 const filename = "{}";
 const file_context = {};
 
@@ -228,12 +146,11 @@ const file_context = {};
     visit(n, filename, n.context.code);
 }});
 
-const res = {{
+return {{
     violations: stellaAllErrors,
     console: console.lines,
-}}
-
-res
+}};
+}});
 "#,
         filename, file_context_string, rule.code, nodes_json
     );
@@ -248,9 +165,45 @@ res
         return Err(ExecutionError::CodeTooBig { byte_len });
     }
 
-    let code: FastString = js_code.into();
+    let code: deno_core::FastString = js_code.into();
 
+    let done_flag = Arc::new(AtomicBool::new(false));
+    let iso_handle = runtime.v8_isolate().thread_safe_handle();
+
+    let done_flag_clone = Arc::clone(&done_flag);
+    let iso_handle_clone = iso_handle.clone();
+    // Spawn a watchdog thread to call into `v8` and terminate the runtime's execution if it exceeds our timeout.
+    let timed_out = std::thread::spawn(move || {
+        let start = Instant::now();
+        let timeout = JAVASCRIPT_EXECUTION_TIMEOUT;
+        let mut timeout_remaining = timeout;
+        loop {
+            std::thread::park_timeout(timeout_remaining);
+            let elapsed = start.elapsed();
+            if elapsed > timeout {
+                iso_handle_clone.terminate_execution();
+                break true;
+            } else if done_flag_clone.load(Ordering::Relaxed) {
+                // The main thread that was executing the JavaScript has toggled this atomic flag, indicating that it's done.
+                break false;
+            }
+            // This was a spurious wakeup. Adjust the timeout for the next call to `park_timeout`.
+            timeout_remaining = timeout - elapsed;
+        }
+    });
+
+    let execution_start = Instant::now();
     let execution_result = runtime.execute_script("rule_code", code);
+    done_flag.store(true, Ordering::Relaxed);
+    // This can't deadlock because even if a race causes the atomic bool to be set after the `unpark`,
+    // the watchdog thread's call to `park_timeout` will return immediately.
+    timed_out.thread().unpark();
+
+    let timed_out = timed_out.join().expect("thread should not panic");
+    if timed_out {
+        iso_handle.cancel_terminate_execution();
+        return Err(ExecutionError::ExecutionTimeout(execution_start.elapsed()));
+    }
 
     match execution_result {
         Ok(res) => {
