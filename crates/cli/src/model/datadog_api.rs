@@ -121,6 +121,7 @@ pub struct ApiResponseRule {
     pub severity: RuleSeverity,
     pub category: RuleCategory,
     pub tests: Vec<ApiResponseRuleTest>,
+    pub is_testing: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -180,6 +181,7 @@ impl ApiResponseRuleset {
                             annotation_count: t.annotation_count,
                         })
                         .collect(),
+                    is_testing: rule_from_api.is_testing,
                 })
                 .collect(),
             None => Vec::new(),

@@ -112,6 +112,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             tree_sitter_query_base64: r.tree_sitter_query_base64.clone(),
             arguments: r.arguments.clone(),
             tests: vec![],
+            is_testing: r.is_testing,
         })
         .collect();
 
