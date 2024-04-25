@@ -82,6 +82,13 @@ impl SarifRule {
     fn rule_type_tag(kind: &'static str) -> String {
         format!("DATADOG_RULE_TYPE:{}", kind)
     }
+
+    fn is_testing(&self) -> Option<bool> {
+        match self {
+            SarifRule::StaticAnalysis(r) => r.is_testing,
+            SarifRule::Secret(_) => None,
+        }
+    }
 }
 
 impl IntoSarif for &SarifRule {
@@ -210,6 +217,9 @@ impl IntoSarif for &Rule {
         let mut tags = vec![SarifRule::rule_type_tag("STATIC_ANALYSIS")];
         if let Some(cwe) = self.cwe.as_ref() {
             tags.push(format!("CWE:{}", cwe));
+        }
+        if let Some(is_testing) = self.is_testing {
+            tags.push("DATADOG_TESTING:true".to_string());  
         }
         let props = PropertyBagBuilder::default().tags(tags).build().unwrap();
         builder.properties(props);
@@ -477,6 +487,13 @@ fn generate_results(
                 // If there is a CWE, add it
                 if let Some(cwe) = rule.cwe() {
                     tags.push(format!("CWE:{}", cwe));
+                }
+
+                // If the rule is a test, add a tag
+                if let Some(is_testing) = rule.is_testing() {
+                    if is_testing {
+                        tags.push("DATADOG_TESTING:true".to_string());
+                    }
                 }
             }
 

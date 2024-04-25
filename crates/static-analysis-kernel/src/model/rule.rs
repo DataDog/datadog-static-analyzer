@@ -143,6 +143,7 @@ pub struct Rule {
     pub language: Language,
     pub rule_type: RuleType,
     pub entity_checked: Option<EntityChecked>,
+    pub is_testing: Option<bool>,
     #[serde(rename = "code")]
     pub code_base64: String,
     pub cwe: Option<String>,
