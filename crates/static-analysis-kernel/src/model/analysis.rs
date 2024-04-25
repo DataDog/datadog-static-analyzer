@@ -6,7 +6,6 @@ use std::collections::HashMap;
 
 pub const ERROR_RULE_TIMEOUT: &str = "rule-timeout";
 pub const ERROR_RULE_EXECUTION: &str = "error-execution";
-pub const ERROR_RULE_CODE_TOO_BIG: &str = "error-code-too-big";
 pub const ERROR_INVALID_QUERY: &str = "error-invalid-query";
 
 // Used internally to pass options to the analysis
