@@ -1,8 +1,9 @@
 use crate::model::analysis::{
-    AnalysisOptions, MatchNode, ERROR_RULE_CODE_TOO_BIG, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
+    AnalysisOptions, MatchNode, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
 };
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
+use deno_core::v8::NewStringType::Internalized;
 use deno_core::{v8, JsRuntime};
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -36,12 +37,12 @@ pub struct CompletedExecution {
 /// An error when attempting to call into the JavaScript runtime.
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
-    #[error("JavaScript code is too large: {byte_len} bytes")]
-    CodeTooBig { byte_len: usize },
     #[error("error executing JavaScript: {reason}")]
     Execution { reason: String },
     #[error("execution timed out at {:.2}s", .0.as_secs_f32())]
     ExecutionTimeout(Duration),
+    #[error("unable to interpret JavaScript: `{reason}`")]
+    Interpreter { reason: String },
     #[error("expected value returned from JavaScript execution: `{reason}`")]
     UnexpectedReturnValue { reason: String },
 }
@@ -92,10 +93,10 @@ pub fn execute_rule(
                     }
                     (ERROR_RULE_EXECUTION, Some(reason))
                 }
-                ExecutionError::CodeTooBig { .. } => (ERROR_RULE_CODE_TOO_BIG, None),
                 ExecutionError::UnexpectedReturnValue { reason } => {
                     (ERROR_RULE_EXECUTION, Some(reason))
                 }
+                ExecutionError::Interpreter { reason } => (ERROR_RULE_EXECUTION, Some(reason)),
             };
             (vec![], vec![err_kind.to_string()], execution_error, None)
         }
@@ -126,25 +127,24 @@ fn execute_rule_internal(
     filename: &str,
     file_context: &FileContext,
 ) -> Result<CompletedExecution, ExecutionError> {
-    let nodes_json: String = serde_json::to_string(match_nodes).unwrap();
-
-    let file_context_string = serde_json::to_string(file_context).unwrap_or("{}".to_string());
-
-    // format the JavaScript code that will be executed. Note that we are merging the existing
-    // node context with the file-context we calculated for each file.
+    // NOTE: We merge the existing node context with the file context and resolve key collisions
+    // by using the file context's value.
     let js_code = format!(
         r#"
 _cleanExecute(() => {{
+// Note: variables prefixed with "GLOBAL_" are defined by the static analysis kernel directly via the v8 API.
 
-const filename = "{}";
-const file_context = {};
-
+// The rule's JavaScript code
+//////////////////////////////
 {}
+//////////////////////////////
 
-{}.forEach(n => {{
-    n.context = {{...n.context, ...file_context}};
-    visit(n, filename, n.context.code);
-}});
+for (const n of GLOBAL_nodes) {{
+    if (Object.keys(GLOBAL_fileContext).length > 0) {{
+        n.context = {{...n.context, ...GLOBAL_fileContext}};
+    }}
+    visit(n, GLOBAL_filename, n.context.code);
+}}
 
 return {{
     violations: stellaAllErrors,
@@ -152,24 +152,57 @@ return {{
 }};
 }});
 "#,
-        filename, file_context_string, rule.code, nodes_json
+        rule.code
     );
 
-    // We cannot have strings that are  too long. Otherwise, the underlying
-    // JS engine crashes. So for now, we just return an error if the code is too big/large.
-    //
-    // See https://github.com/denoland/deno/issues/19638 for more details. Once the issue
-    // is resolved, we can remove it and errors will be detected in runtime.execute_script()\
-    let byte_len = js_code.len();
-    if byte_len >= v8::String::max_length() {
-        return Err(ExecutionError::CodeTooBig { byte_len });
-    }
-
-    let code: deno_core::FastString = js_code.into();
-
-    let done_flag = Arc::new(AtomicBool::new(false));
     let iso_handle = runtime.v8_isolate().thread_safe_handle();
 
+    let handle_scope = &mut runtime.handle_scope();
+    let ctx = handle_scope.get_current_context();
+    let scope = &mut v8::ContextScope::new(handle_scope, ctx);
+    let global = ctx.global(scope);
+
+    // The v8 API uses `Option` for fallible calls, with `None` indicating a v8 execution error.
+    // We need to use a `TryCatch` scope to actually be able to inspect the error type/contents.
+    let tc_scope = &mut v8::TryCatch::new(scope);
+
+    // Serialize each Rust value into a v8 value and send it directly to the v8 isolate (i.e. Rust -> C++).
+    // Then have v8 expose these values as global variables within the rule's JavaScript execution context.
+    //
+    // This is functionally equivalent to assigning a value to JavaScript's `globalThis`.
+    // See: https://262.ecma-international.org/13.0/#sec-global-object
+
+    let key_nodes =
+        v8::String::new_from_utf8(tc_scope, "GLOBAL_nodes".as_bytes(), Internalized).unwrap();
+    let v8_nodes =
+        serde_v8::to_v8(tc_scope, match_nodes).expect("MatchNode should be serializable");
+    global.set(tc_scope, key_nodes.into(), v8_nodes);
+
+    let key_file_context =
+        v8::String::new_from_utf8(tc_scope, "GLOBAL_fileContext".as_bytes(), Internalized).unwrap();
+    let v8_file_context =
+        serde_v8::to_v8(tc_scope, file_context).expect("FileContext should be serializable");
+    global.set(tc_scope, key_file_context.into(), v8_file_context);
+
+    let key_filename =
+        v8::String::new_from_utf8(tc_scope, "GLOBAL_filename".as_bytes(), Internalized).unwrap();
+    let v8_filename =
+        serde_v8::to_v8(tc_scope, filename).expect("filename should be valid v8 string");
+    global.set(tc_scope, key_filename.into(), v8_filename);
+
+    let code = v8::String::new(tc_scope, &js_code)
+        .expect("dynamically generated JavaScript code should be valid v8 string");
+
+    let compiled_script = v8::Script::compile(tc_scope, code, None).ok_or_else(|| {
+        let exception = tc_scope
+            .exception()
+            .expect("return value should only be `None` if an error was caught");
+        let reason = exception.to_rust_string_lossy(tc_scope);
+        tc_scope.reset();
+        ExecutionError::Interpreter { reason }
+    })?;
+
+    let done_flag = Arc::new(AtomicBool::new(false));
     let done_flag_clone = Arc::clone(&done_flag);
     let iso_handle_clone = iso_handle.clone();
     // Spawn a watchdog thread to call into `v8` and terminate the runtime's execution if it exceeds our timeout.
@@ -193,7 +226,7 @@ return {{
     });
 
     let execution_start = Instant::now();
-    let execution_result = runtime.execute_script("rule_code", code);
+    let execution_result = compiled_script.run(tc_scope);
     done_flag.store(true, Ordering::Relaxed);
     // This can't deadlock because even if a race causes the atomic bool to be set after the `unpark`,
     // the watchdog thread's call to `park_timeout` will return immediately.
@@ -205,56 +238,34 @@ return {{
         return Err(ExecutionError::ExecutionTimeout(execution_start.elapsed()));
     }
 
-    match execution_result {
-        Ok(res) => {
-            let scope = &mut runtime.handle_scope();
+    let execution_result = execution_result.ok_or_else(|| {
+        let exception = tc_scope
+            .exception()
+            .expect("return value should only be `None` if an error was caught");
+        let reason = exception.to_rust_string_lossy(tc_scope);
+        tc_scope.reset();
+        ExecutionError::Execution { reason }
+    })?;
 
-            let local = v8::Local::new(scope, res);
-            // Deserialize a `v8` object into a Rust type using `serde_v8`,
-            // in this case deserialize to a JSON `Value`.
-            let deserialized_value = serde_v8::from_v8::<serde_json::Value>(scope, local);
+    let StellaExecution {
+        mut violations,
+        console: output,
+    } = serde_v8::from_v8(tc_scope, execution_result).map_err(|err| {
+        let reason = err.to_string();
+        ExecutionError::UnexpectedReturnValue { reason }
+    })?;
 
-            match deserialized_value {
-                Ok(value) => {
-                    match serde_json::from_value::<StellaExecution>(value) {
-                        Ok(stella_execution) => {
-                            // update the violation with the category and severity of the rule
-                            let updated_violations: Vec<Violation> = stella_execution
-                                .violations
-                                .into_iter()
-                                .map(|v| Violation {
-                                    start: v.start,
-                                    end: v.end,
-                                    message: v.message,
-                                    category: rule.category,
-                                    severity: rule.severity,
-                                    fixes: v.fixes,
-                                })
-                                .collect();
+    // Drop the objects we created. Because we are re-using the context, it won't happen automatically.
+    global.delete(tc_scope, key_nodes.into());
+    global.delete(tc_scope, key_file_context.into());
+    global.delete(tc_scope, key_filename.into());
 
-                            Ok(CompletedExecution {
-                                violations: updated_violations,
-                                output: stella_execution.console,
-                            })
-                        }
-                        Err(err) => Err(ExecutionError::UnexpectedReturnValue {
-                            reason: err.to_string(),
-                        }),
-                    }
-                }
-                Err(err) => Err(ExecutionError::UnexpectedReturnValue {
-                    reason: err.to_string(),
-                }),
-            }
-        }
-        Err(e) => {
-            let err_str = e.to_string();
-            let reason = err_str
-                .find("at rule_code")
-                .map_or_else(|| err_str.clone(), |pos| err_str[..pos].to_string());
-            Err(ExecutionError::Execution { reason })
-        }
+    // Override the violation's category and severity with that from the rule.
+    for v in violations.iter_mut() {
+        v.category = rule.category;
+        v.severity = rule.severity;
     }
+    Ok(CompletedExecution { violations, output })
 }
 
 #[cfg(test)]
@@ -735,7 +746,7 @@ def foo(arg1):
             rule_execution.execution_error.clone().unwrap()
         );
         assert_eq!(
-            "Uncaught SyntaxError: Unexpected token '}'\n    ",
+            "SyntaxError: Unexpected token '}'",
             rule_execution.execution_error.unwrap()
         );
         assert_eq!(1, rule_execution.errors.len());
