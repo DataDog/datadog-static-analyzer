@@ -15,7 +15,7 @@ pub struct ServerRule {
     pub category: Option<RuleCategory>,
     pub severity: Option<RuleSeverity>,
     pub language: Language,
-    pub is_testing: bool,
+    pub is_testing: Option<bool>,
     #[serde(rename = "type")]
     pub rule_type: RuleType,
     #[serde(rename = "entity_checked")]

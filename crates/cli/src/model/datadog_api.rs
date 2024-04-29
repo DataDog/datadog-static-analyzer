@@ -121,7 +121,7 @@ pub struct ApiResponseRule {
     pub severity: RuleSeverity,
     pub category: RuleCategory,
     pub tests: Vec<ApiResponseRuleTest>,
-    pub is_testing: bool,
+    pub is_testing: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
