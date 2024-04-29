@@ -15,6 +15,7 @@ pub struct ServerRule {
     pub category: Option<RuleCategory>,
     pub severity: Option<RuleSeverity>,
     pub language: Language,
+    pub is_testing: bool,
     #[serde(rename = "type")]
     pub rule_type: RuleType,
     #[serde(rename = "entity_checked")]
@@ -27,7 +28,6 @@ pub struct ServerRule {
     pub tree_sitter_query_base64: Option<String>,
     #[serde(default)]
     pub arguments: Vec<Argument>,
-    pub is_testing: bool,
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]

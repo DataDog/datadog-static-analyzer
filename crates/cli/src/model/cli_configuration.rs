@@ -150,7 +150,6 @@ mod tests {
                 tree_sitter_query_base64: None,
                 arguments: vec![],
                 tests: vec![],
-                is_testing: false,
             }],
             path_restrictions: PathRestrictions::default(),
             argument_provider: ArgumentProvider::new(),
