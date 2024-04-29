@@ -324,6 +324,7 @@ mod tests {
             tree_sitter_query_base64: None,
             arguments: vec![],
             tests: vec![],
+            is_testing: false,
         };
         let rule_valid_checksum = Rule {
             name: "myrule".to_string(),
@@ -342,6 +343,7 @@ mod tests {
             tree_sitter_query_base64: None,
             arguments: vec![],
             tests: vec![],
+            is_testing: false,
         };
         assert!(!rule_invalid_checksum.verify_checksum());
         assert!(rule_valid_checksum.verify_checksum());
@@ -365,6 +367,7 @@ mod tests {
             tree_sitter_query_base64: None,
             arguments: vec![],
             tests: vec![],
+            is_testing: false,
         };
         let fixed_ruled = rule.fix_cwe();
         assert!(fixed_ruled.cwe.is_none());
@@ -388,6 +391,7 @@ mod tests {
             tree_sitter_query_base64: None,
             arguments: vec![],
             tests: vec![],
+            is_testing: false,
         };
         let fixed_ruled = rule.fix_cwe();
         assert!(fixed_ruled.cwe.is_none());
@@ -411,6 +415,7 @@ mod tests {
             tree_sitter_query_base64: None,
             arguments: vec![],
             tests: vec![],
+            is_testing: false,
         };
         let fixed_ruled = rule.fix_cwe();
         assert!(fixed_ruled.cwe.is_some());
