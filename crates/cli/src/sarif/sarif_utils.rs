@@ -218,8 +218,8 @@ impl IntoSarif for &Rule {
         if let Some(cwe) = self.cwe.as_ref() {
             tags.push(format!("CWE:{}", cwe));
         }
-        if self.is_testing{
-            tags.push("DATADOG_TESTING:true".to_string());  
+        if self.is_testing {
+            tags.push("DATADOG_TESTING:true".to_string());
         }
         let props = PropertyBagBuilder::default().tags(tags).build().unwrap();
         builder.properties(props);
