@@ -252,7 +252,8 @@ mod tests {
                                     "annotation_count": 0
                                 }
                             ],
-                            "is_published": false
+                            "is_published": false,
+                            "is_testing": false
                         }
                     ]
                 }
