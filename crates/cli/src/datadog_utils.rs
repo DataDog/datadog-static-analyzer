@@ -75,15 +75,13 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool, include_testing_rules:
     let app_key = get_datadog_variable_value("APP_KEY");
     let api_key = get_datadog_variable_value("API_KEY");
 
-    let include_testing_rules_query_param_val;
-    if include_testing_rules { 
-        include_testing_rules_query_param_val = "true";
-     } else { 
-        include_testing_rules_query_param_val = "false";
-      }
+    let include_testing_rules_query_param_val = match include_testing_rules {
+        true => "true",
+        false => "false"
+      };
 
     let url = format!(
-        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false&include_testing_rules={}",
+        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false&include_testing_rules={:?}",
         site, ruleset_name, include_testing_rules_query_param_val
     );
 
