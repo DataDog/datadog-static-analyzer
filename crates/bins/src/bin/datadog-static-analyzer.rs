@@ -386,8 +386,8 @@ fn main() -> Result<()> {
                 " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
             );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
-            let rulesets_from_api =
-                get_all_default_rulesets(use_staging, include_testing_rules).expect("cannot get default rules");
+            let rulesets_from_api = get_all_default_rulesets(use_staging, include_testing_rules)
+                .expect("cannot get default rules");
 
             rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
         } else {

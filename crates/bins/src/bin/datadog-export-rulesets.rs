@@ -62,7 +62,8 @@ fn main() {
     let rulesets: Vec<RuleSet> = rulesets_names
         .iter()
         .map(|ruleset_name| {
-            get_ruleset(ruleset_name, use_staging, include_testing_rules).expect("error when reading ruleset")
+            get_ruleset(ruleset_name, use_staging, include_testing_rules)
+                .expect("error when reading ruleset")
         })
         .collect();
 
