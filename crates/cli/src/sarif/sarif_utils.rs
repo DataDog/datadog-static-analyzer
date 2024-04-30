@@ -698,6 +698,7 @@ mod tests {
             .cwe(Some("1234".to_string()))
             .arguments(vec![])
             .tests(vec![])
+            .is_testing(None)
             .build()
             .unwrap();
 
@@ -847,6 +848,7 @@ mod tests {
             .cwe(Some("1234".to_string()))
             .arguments(vec![])
             .tests(vec![])
+            .is_testing(None)
             .build()
             .unwrap();
 
@@ -927,6 +929,7 @@ mod tests {
             .arguments(vec![])
             .cwe(None)
             .tests(vec![])
+            .is_testing(None)
             .build()
             .unwrap();
 
