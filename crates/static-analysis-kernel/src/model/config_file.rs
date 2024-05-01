@@ -8,8 +8,7 @@ use std::path::{Path, PathBuf};
 
 use crate::config_file::{
     deserialize_category, deserialize_rule_configs, deserialize_ruleset_configs,
-    deserialize_schema_version, get_default_schema_version, serialize_arguments,
-    serialize_ruleset_configs,
+    deserialize_schema_version, get_default_schema_version, serialize_ruleset_configs,
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
@@ -33,22 +32,18 @@ pub struct PathConfig {
     pub ignore: Vec<PathPattern>,
 }
 
-#[derive(Serialize, Debug, PartialEq, Default)]
+#[derive(Debug, PartialEq, Default, Clone)]
 pub struct ArgumentValues {
     pub by_subtree: IndexMap<String, String>,
 }
 
 // Configuration for a single rule.
-#[derive(Deserialize, Serialize, Debug, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]
 pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     #[serde(flatten)]
     pub paths: PathConfig,
-    #[serde(
-        default,
-        skip_serializing_if = "IndexMap::is_empty",
-        serialize_with = "serialize_arguments"
-    )]
+    #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub arguments: IndexMap<String, ArgumentValues>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<RuleSeverity>,
@@ -61,7 +56,7 @@ pub struct RuleConfig {
 }
 
 // Configuration for a ruleset.
-#[derive(Deserialize, Serialize, Debug, PartialEq, Default)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Default, Clone)]
 pub struct RulesetConfig {
     // Paths to include/exclude for all rules in this ruleset.
     #[serde(flatten)]
