@@ -4,7 +4,7 @@
 # If you want to try this locally
 # 1. Build the binary locally (e.g. cargo run -r)
 # 2. Bootstrap a Python environment with requests (e.g python -mvenv venv && source venv/bin/activate && pip install requests)
-# 3. Execute the script: misc/test-production-rules.py -r <RULSET-NAME> -c target/release/datadog-static-analyzer -s target/release/datadog-static-analyzer-server 
+# 3. Execute the script: python misc/test-production-rules.py -r <RULSET-NAME> -c target/release/datadog-static-analyzer -s target/release/datadog-static-analyzer-server 
 
 import base64
 import json
