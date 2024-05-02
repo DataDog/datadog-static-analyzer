@@ -109,7 +109,7 @@ fn main() {
             name: "tree-sitter-javascript".to_string(),
             compilation_unit: "tree-sitter-javascript".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-javascript.git".to_string(),
-            commit_hash: "f1e5a09b8d02f8209a68249c93f0ad647b228e6e".to_string(),
+            commit_hash: "c0027460e8f9629afeeb27f7949ecf961c82d707".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
