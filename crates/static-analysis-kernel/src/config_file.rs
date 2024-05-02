@@ -200,11 +200,11 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
                 A: MapAccess<'de>,
             {
                 let m = Fields::deserialize(MapAccessDeserializer::new(map))?;
-                let name = match m.remaining_fields.into_iter().next() {
-                    Some((name, Value::Null)) => name,
-                    Some((name, _)) => return Err(Error::custom(format!("invalid configuration for ruleset \"{}\" (check if it is indented under the ruleset name)", name))),
-                    _ => return Err(Error::custom("expected a ruleset configuration")) };
-                Ok(NamedRulesetConfig { name, cfg: m.cfg })
+                match m.remaining_fields.into_iter().next() {
+                    Some((name, Value::Null)) => Ok(NamedRulesetConfig { name, cfg: m.cfg }),
+                    Some((name, _)) => Err(Error::custom(format!("invalid configuration for ruleset \"{}\" (check if it is indented under the ruleset name)", name))),
+                    _ => Err(Error::custom("expected a ruleset configuration")),
+                }
             }
         }
 
