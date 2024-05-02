@@ -1,12 +1,13 @@
 use anyhow::Result;
 use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
-use serde::de::{Error, MapAccess, SeqAccess, Unexpected, Visitor};
-use serde::ser::{SerializeMap, SerializeSeq};
+use serde::de::value::MapAccessDeserializer;
+use serde::de::{Error, MapAccess, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde_yaml::Value;
 use std::collections::HashMap;
 use std::fmt;
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 
 use crate::model::config_file::{
     ArgumentValues, ConfigFile, PathPattern, RuleConfig, RulesetConfig,
@@ -23,26 +24,15 @@ pub fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<String, D::
 where
     D: Deserializer<'de>,
 {
-    struct SchemaVersionVisitor {}
-    impl<'de> Visitor<'de> for SchemaVersionVisitor {
-        type Value = String;
-
-        fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-            formatter.write_fmt(format_args!("a \"{}\" string", SCHEMA_VERSION))
-        }
-
-        fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            if v != SCHEMA_VERSION {
-                Err(Error::invalid_value(Unexpected::Str(v), &self))
-            } else {
-                Ok(v.to_string())
-            }
-        }
+    let v = String::deserialize(deserializer)?;
+    if v != SCHEMA_VERSION {
+        Err(Error::invalid_value(
+            Unexpected::Str(&v),
+            &format!("\"{}\"", SCHEMA_VERSION).as_str(),
+        ))
+    } else {
+        Ok(v.to_string())
     }
-    deserializer.deserialize_string(SchemaVersionVisitor {})
 }
 
 pub fn get_default_schema_version() -> String {
@@ -124,10 +114,6 @@ impl Default for ArgumentProvider {
 }
 
 /// Special deserializer for a `RulesetConfig` map.
-///
-/// For backwards compatibility, we want to support lists of strings and maps from name to ruleset
-/// config.
-/// Lists of strings produce maps of empty `RulesetConfig`s.
 /// Duplicate rulesets are rejected.
 pub fn deserialize_ruleset_configs<'de, D>(
     deserializer: D,
@@ -135,110 +121,31 @@ pub fn deserialize_ruleset_configs<'de, D>(
 where
     D: Deserializer<'de>,
 {
-    struct RulesetConfigsVisitor {}
-    impl<'de> Visitor<'de> for RulesetConfigsVisitor {
-        type Value = IndexMap<String, RulesetConfig>;
-
-        fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-            formatter.write_str("a list of ruleset configurations")
-        }
-
-        /// Deserializes a list of strings.
-        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-        where
-            A: SeqAccess<'de>,
-        {
-            let mut out = IndexMap::new();
-            while let Some(nrc) = seq.next_element::<NamedRulesetConfig>()? {
-                if out.insert(nrc.name.clone(), nrc.cfg).is_some() {
-                    return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
-                }
-            }
-            if out.is_empty() {
-                return Err(Error::custom("no rulesets were specified"));
-            }
-            Ok(out)
+    let mut out = IndexMap::new();
+    let cfgs: Vec<NamedRulesetConfig> = Vec::deserialize(deserializer)?;
+    for nrc in cfgs {
+        if out.insert(nrc.name.clone(), nrc.cfg).is_some() {
+            return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
         }
     }
-    deserializer.deserialize_any(RulesetConfigsVisitor {})
-}
-
-pub enum CompatMapValue<'a> {
-    Null,
-    Rules(&'a IndexMap<String, RuleConfig>),
-    Only(&'a Option<Vec<PathPattern>>),
-    Ignore(&'a Vec<PathPattern>),
-}
-
-impl<'a> Serialize for CompatMapValue<'a> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match self {
-            Self::Null => serializer.serialize_none(),
-            Self::Rules(rules) => rules.serialize(serializer),
-            Self::Only(only) => only.serialize(serializer),
-            Self::Ignore(ignore) => ignore.serialize(serializer),
-        }
+    if out.is_empty() {
+        return Err(Error::custom("no rulesets were specified"));
     }
+    Ok(out)
 }
 
 pub fn serialize_ruleset_configs<S: Serializer>(
     rulesets: &IndexMap<String, RulesetConfig>,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    let mut seq = serializer.serialize_seq(Some(rulesets.len()))?;
-
-    for (key, value) in rulesets {
-        if !value.rules.is_empty() || value.paths.only.is_some() || !value.paths.ignore.is_empty() {
-            // we must ensure that this is the first being serialized, so we'll use an IndexMap
-            let mut map = IndexMap::new();
-            map.insert(key.as_str(), CompatMapValue::Null);
-            // manually adding elements
-            if !value.paths.ignore.is_empty() {
-                map.insert("ignore", CompatMapValue::Ignore(&value.paths.ignore));
-            }
-
-            if value.paths.only.is_some() {
-                map.insert("only", CompatMapValue::Only(&value.paths.only));
-            }
-
-            if !value.rules.is_empty() {
-                map.insert("rules", CompatMapValue::Rules(&value.rules));
-            }
-
-            seq.serialize_element(&map)?;
-        } else {
-            seq.serialize_element(key)?;
-        }
-    }
-    seq.end()
-}
-
-pub fn serialize_arguments<S: Serializer>(
-    arguments: &IndexMap<String, ArgumentValues>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    let mut map = serializer.serialize_map(Some(arguments.len()))?;
-    for (key, value) in arguments {
-        if let (1, Some(val)) = (value.by_subtree.len(), value.by_subtree.get("")) {
-            map.serialize_entry(key, val)?
-        } else {
-            map.serialize_entry(
-                key,
-                &value
-                    .by_subtree
-                    .iter()
-                    .map(|(k, v)| {
-                        if k.is_empty() {
-                            ("/", v.as_str())
-                        } else {
-                            (k.as_str(), v.as_str())
-                        }
-                    })
-                    .collect::<IndexMap<_, _>>(),
-            )?
-        }
-    }
-    map.end()
+    rulesets
+        .iter()
+        .map(|(key, value)| NamedRulesetConfig {
+            name: key.clone(),
+            cfg: value.clone(),
+        })
+        .collect::<Vec<_>>()
+        .serialize(serializer)
 }
 
 /// Holder for ruleset configurations specified in lists.
@@ -249,115 +156,91 @@ struct NamedRulesetConfig {
 
 /// Special deserializer for ruleset list items.
 ///
-/// As we've changed the format, we are going to get a mixture of old format configurations,
-/// new format configurations, and configurations that have been converted but have syntax errors.
-///
-/// To be friendly, we try extra hard to parse the configuration file the user intended, even in
-/// the face of syntax errors:
-///
-/// This is the modern syntax:
-/// ```yaml
-/// rulesets:
-///   ruleset1:
-///   ruleset2:
-///     ignore:
-///       - "foo"
-///   ruleset3:
-/// ```
-/// This is the old syntax:
-/// ```yaml
-/// rulesets:
-///   - ruleset1
-///   - ruleset2
-///   - ruleset3
-/// ```
-/// This is an invalid syntax that we try to parse here:
 /// ```yaml
 /// rulesets:
 ///   - ruleset1
 ///   - ruleset2:
-///       ignore:
-///         - "foo"
 ///   - ruleset3:
 ///     ignore:
 ///       - "foo"
 /// ```
-/// (Note the indentation for the difference between the last two rulesets.)
 impl<'de> Deserialize<'de> for NamedRulesetConfig {
     fn deserialize<D>(deserializer: D) -> Result<NamedRulesetConfig, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct NamedRulesetConfigVisitor {}
-        impl<'de> Visitor<'de> for NamedRulesetConfigVisitor {
+        #[derive(Deserialize)]
+        struct Fields {
+            #[serde(flatten)]
+            cfg: RulesetConfig,
+            #[serde(flatten)]
+            #[serde(default)]
+            remaining_fields: IndexMap<String, Value>,
+        }
+        struct StringOrStruct {}
+        impl<'de> Visitor<'de> for StringOrStruct {
             type Value = NamedRulesetConfig;
+
             fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                formatter.write_str("a string or ruleset configuration")
+                formatter.write_str("string or ruleset configuration")
             }
 
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: Error,
             {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
                 Ok(NamedRulesetConfig {
-                    name: v,
+                    name: v.to_string(),
                     cfg: RulesetConfig::default(),
                 })
             }
 
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
             where
                 A: MapAccess<'de>,
             {
-                let mut out = match map.next_entry::<String, ()>()? {
-                    None => {
-                        return Err(Error::missing_field("name"));
-                    }
-                    Some((k, _)) => NamedRulesetConfig {
-                        name: k,
-                        cfg: RulesetConfig::default(),
-                    },
-                };
-                // Populate the object field by field.
-                while let Some(x) = map.next_key::<String>()? {
-                    match x.as_str() {
-                        "only" => {
-                            if out.cfg.paths.only.is_some() {
-                                return Err(Error::duplicate_field("only"));
-                            } else {
-                                out.cfg.paths.only = Some(map.next_value()?);
-                            }
-                        }
-                        "ignore" => {
-                            if !out.cfg.paths.ignore.is_empty() {
-                                return Err(Error::duplicate_field("ignore"));
-                            } else {
-                                out.cfg.paths.ignore = map.next_value()?;
-                            }
-                        }
-                        "rules" => {
-                            if !out.cfg.rules.is_empty() {
-                                return Err(Error::duplicate_field("rules"));
-                            } else {
-                                out.cfg.rules = map.next_value()?;
-                            }
-                        }
-                        _ => {
-                            // Ignore empty and other fields
-                        }
-                    }
+                let m = Fields::deserialize(MapAccessDeserializer::new(map))?;
+                match m.remaining_fields.into_iter().next() {
+                    Some((name, Value::Null)) => Ok(NamedRulesetConfig { name, cfg: m.cfg }),
+                    Some((name, _)) => Err(Error::custom(format!("invalid configuration for ruleset \"{}\" (check if it is indented under the ruleset name)", name))),
+                    _ => Err(Error::custom("expected a ruleset configuration")),
                 }
-                Ok(out)
             }
         }
-        deserializer.deserialize_any(NamedRulesetConfigVisitor {})
+
+        deserializer.deserialize_any(StringOrStruct {})
+    }
+}
+
+impl Serialize for NamedRulesetConfig {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if self.cfg == RulesetConfig::default() {
+            self.name.serialize(serializer)
+        } else {
+            #[derive(Serialize)]
+            #[serde(untagged)]
+            enum CfgMapValue<'a> {
+                Null,
+                Rules(&'a IndexMap<String, RuleConfig>),
+                Paths(&'a Vec<PathPattern>),
+            }
+
+            let mut map = IndexMap::new();
+            map.insert(self.name.as_str(), CfgMapValue::Null);
+            if !self.cfg.paths.ignore.is_empty() {
+                map.insert("ignore", CfgMapValue::Paths(&self.cfg.paths.ignore));
+            }
+            if let Some(only) = &self.cfg.paths.only {
+                map.insert("only", CfgMapValue::Paths(only));
+            }
+            if !self.cfg.rules.is_empty() {
+                map.insert("rules", CfgMapValue::Rules(&self.cfg.rules));
+            }
+            map.serialize(serializer)
+        }
     }
 }
 
@@ -393,100 +276,96 @@ where
     deserializer.deserialize_any(RuleConfigVisitor {})
 }
 
+/// Deserializer for argument values:
+/// ```yaml
+/// arguments:
+///   foo: abc
+///   bar: 1234
+///   baz:
+///     /: abc
+///     uno/dos: 1234
+/// ```
 impl<'de> Deserialize<'de> for ArgumentValues {
-    fn deserialize<D>(deserializer: D) -> Result<ArgumentValues, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct ArgumentValuesVisitor {}
-        impl<'de> Visitor<'de> for ArgumentValuesVisitor {
-            type Value = ArgumentValues;
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum AnyToString {
+            Bool(bool),
+            I64(i64),
+            U64(u64),
+            I128(i128),
+            U128(u128),
+            F64(f64),
+            Str(String),
+        }
 
-            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                formatter.write_str("a string or map from subtree to string")
-            }
-
-            // Cast pretty much every primitive type to a string.
-            fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_u128<E>(self, v: u128) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_i128<E>(self, v: i128) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_unit<E>(self) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string("".to_string())
-            }
-
-            fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                self.visit_string(v.to_string())
-            }
-
-            fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
-            where
-                E: Error,
-            {
-                Ok(ArgumentValues {
-                    by_subtree: IndexMap::from([("".to_string(), v)]),
-                })
-            }
-
-            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-            where
-                A: MapAccess<'de>,
-            {
-                let mut by_subtree = IndexMap::new();
-                while let Some((key, value)) = map.next_entry::<String, String>()? {
-                    let prefix = if key == "/" || key == "**" { "" } else { &key };
-                    if by_subtree.insert(prefix.to_string(), value).is_some() {
-                        return Err(Error::custom(format!("repeated key: {}", key)));
-                    }
+        impl Display for AnyToString {
+            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+                match self {
+                    AnyToString::Bool(v) => f.write_fmt(format_args!("{}", v)),
+                    AnyToString::I64(v) => f.write_fmt(format_args!("{}", v)),
+                    AnyToString::U64(v) => f.write_fmt(format_args!("{}", v)),
+                    AnyToString::I128(v) => f.write_fmt(format_args!("{}", v)),
+                    AnyToString::U128(v) => f.write_fmt(format_args!("{}", v)),
+                    AnyToString::F64(v) => f.write_fmt(format_args!("{}", v)),
+                    AnyToString::Str(v) => f.write_str(v),
                 }
-                Ok(ArgumentValues { by_subtree })
             }
         }
-        deserializer.deserialize_any(ArgumentValuesVisitor {})
+
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum StringOrMap {
+            Str(AnyToString),
+            Map(IndexMap<String, AnyToString>),
+        }
+
+        match StringOrMap::deserialize(deserializer) {
+            Err(_) => Err(Error::custom(
+                "expected a string or a map from path to string",
+            )),
+            Ok(StringOrMap::Str(s)) => Ok(ArgumentValues {
+                by_subtree: IndexMap::from([("".to_string(), s.to_string())]),
+            }),
+            Ok(StringOrMap::Map(m)) => Ok(ArgumentValues {
+                by_subtree: m
+                    .into_iter()
+                    .map(|(k, v)| {
+                        if k == "/" || k == "**" {
+                            ("".to_string(), v.to_string())
+                        } else {
+                            (k, v.to_string())
+                        }
+                    })
+                    .collect(),
+            }),
+        }
+    }
+}
+
+impl Serialize for ArgumentValues {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if let (1, Some(val)) = (self.by_subtree.len(), self.by_subtree.get("")) {
+            val.serialize(serializer)
+        } else {
+            self.by_subtree
+                .iter()
+                .map(|(k, v)| {
+                    if k.is_empty() {
+                        ("/", v.as_str())
+                    } else {
+                        (k.as_str(), v.as_str())
+                    }
+                })
+                .collect::<IndexMap<_, _>>()
+                .serialize(serializer)
+        }
     }
 }
 
