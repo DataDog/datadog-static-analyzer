@@ -30,8 +30,6 @@ fn main() {
         build_dir: PathBuf,
         /// The files to pass to the `cc::Build` instance
         files: Vec<String>,
-        /// Whether compilation of this project requires C++ support or not
-        cpp: bool,
     }
 
     fn compile_project(tree_sitter_project: &TreeSitterProject) {
@@ -41,12 +39,10 @@ fn main() {
             .iter()
             .map(|x| dir.join(x))
             .collect();
-        let cpp = tree_sitter_project.cpp;
         cc::Build::new()
             .include(dir)
             .files(files)
             .warnings(false)
-            .cpp(cpp)
             .compile(tree_sitter_project.compilation_unit.as_str());
     }
 
@@ -58,7 +54,6 @@ fn main() {
             commit_hash: "dd5e59721a5f8dae34604060833902b882023aaf".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-dockerfile".to_string(),
@@ -67,7 +62,6 @@ fn main() {
             commit_hash: "33e22c33bcdbfc33d42806ee84cfd0b1248cc392".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-go".to_string(),
@@ -76,7 +70,6 @@ fn main() {
             commit_hash: "ff86c7f1734873c8c4874ca4dd95603695686d7a".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-hcl".to_string(),
@@ -85,7 +78,6 @@ fn main() {
             commit_hash: "e135399cb31b95fac0760b094556d1d5ce84acf0".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-kotlin".to_string(),
@@ -94,7 +86,6 @@ fn main() {
             commit_hash: "4e909d6cc9ac96b4eaecb3fb538eaca48e9e9ee9".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-java".to_string(),
@@ -103,7 +94,6 @@ fn main() {
             commit_hash: "5e62fbb519b608dfd856000fdc66536304c414de".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-javascript".to_string(),
@@ -112,7 +102,6 @@ fn main() {
             commit_hash: "c0027460e8f9629afeeb27f7949ecf961c82d707".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-json".to_string(),
@@ -121,7 +110,6 @@ fn main() {
             commit_hash: "3fef30de8aee74600f25ec2e319b62a1a870d51e".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-python".to_string(),
@@ -130,7 +118,6 @@ fn main() {
             commit_hash: "4bfdd9033a2225cc95032ce77066b7aeca9e2efc".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-rust".to_string(),
@@ -139,7 +126,6 @@ fn main() {
             build_dir: "src".into(),
             commit_hash: "79456e6080f50fc1ca7c21845794308fa5d35a51".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-typescript".to_string(),
@@ -148,7 +134,6 @@ fn main() {
             build_dir: "tsx/src".into(),
             commit_hash: "d847898fec3fe596798c9fda55cb8c05a799001a".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-yaml".to_string(),
@@ -157,7 +142,6 @@ fn main() {
             build_dir: "src".into(),
             commit_hash: "ee093118211be521742b9866a8ed8ce6d87c7a94".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-ruby".to_string(),
@@ -166,7 +150,6 @@ fn main() {
             build_dir: "src".into(),
             commit_hash: "7a010836b74351855148818d5cb8170dc4df8e6a".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-swift".to_string(),
@@ -175,7 +158,6 @@ fn main() {
             build_dir: "src".into(),
             commit_hash: "b1b66955d420d5cf5ff268ae552f0d6e43ff66e1".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
         },
     ];
 
