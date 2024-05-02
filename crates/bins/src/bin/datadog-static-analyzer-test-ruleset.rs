@@ -64,6 +64,7 @@ fn main() {
     opts.optmulti("r", "ruleset", "rules to test", "python-security");
     opts.optflag("h", "help", "print this help");
     opts.optflag("s", "staging", "use staging");
+    opts.optflag("t", "include-testing-rules", "include testing rules");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -79,9 +80,10 @@ fn main() {
 
     let use_staging = matches.opt_present("s");
     let rulesets = matches.opt_strs("r");
+    let include_testing_rules = matches.opt_present("t");
     let mut num_failures = 0;
     for ruleset in rulesets {
-        match get_ruleset(ruleset.as_str(), use_staging) {
+        match get_ruleset(ruleset.as_str(), use_staging, include_testing_rules) {
             Ok(r) => {
                 println!("Testing ruleset {}", r.name);
                 for rule in r.rules.clone() {

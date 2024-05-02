@@ -82,6 +82,13 @@ impl SarifRule {
     fn rule_type_tag(kind: &'static str) -> String {
         format!("DATADOG_RULE_TYPE:{}", kind)
     }
+
+    fn is_testing(&self) -> bool {
+        match self {
+            SarifRule::StaticAnalysis(r) => r.is_testing,
+            SarifRule::Secret(_) => false,
+        }
+    }
 }
 
 impl IntoSarif for &SarifRule {
@@ -210,6 +217,9 @@ impl IntoSarif for &Rule {
         let mut tags = vec![SarifRule::rule_type_tag("STATIC_ANALYSIS")];
         if let Some(cwe) = self.cwe.as_ref() {
             tags.push(format!("CWE:{}", cwe));
+        }
+        if self.is_testing {
+            tags.push("DATADOG_TESTING:true".to_string());
         }
         let props = PropertyBagBuilder::default().tags(tags).build().unwrap();
         builder.properties(props);
@@ -478,6 +488,11 @@ fn generate_results(
                 if let Some(cwe) = rule.cwe() {
                     tags.push(format!("CWE:{}", cwe));
                 }
+
+                // If the rule is a test, add a tag
+                if rule.is_testing() {
+                    tags.push("DATADOG_TESTING:true".to_string());
+                }
             }
 
             if let SarifRuleResult::Secret(detected) = rule_result {
@@ -681,6 +696,7 @@ mod tests {
             .cwe(Some("1234".to_string()))
             .arguments(vec![])
             .tests(vec![])
+            .is_testing(false)
             .build()
             .unwrap();
 
@@ -830,6 +846,7 @@ mod tests {
             .cwe(Some("1234".to_string()))
             .arguments(vec![])
             .tests(vec![])
+            .is_testing(false)
             .build()
             .unwrap();
 
@@ -910,6 +927,7 @@ mod tests {
             .arguments(vec![])
             .cwe(None)
             .tests(vec![])
+            .is_testing(false)
             .build()
             .unwrap();
 
