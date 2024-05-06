@@ -486,33 +486,39 @@ fn main() -> Result<()> {
     // check if we do a diff-aware scan
     let diff_aware_parameters: Option<DiffAwareData> = if diff_aware_requested {
         match configuration.generate_diff_aware_request_data() {
-            Ok(params) => match get_diff_aware_information(&params) {
-                Ok(d) => {
-                    if configuration.use_debug {
-                        println!(
-                            "diff aware enabled, base sha: {}, files to scan {}",
-                            d.base_sha,
-                            d.files.join(",")
-                        );
-                    } else {
-                        println!(
-                            "diff-aware enabled, based sha {}, scanning only {}/{} files",
-                            d.base_sha,
-                            d.files.len(),
-                            files_in_repository.len()
-                        )
-                    }
-                    Some(d)
+            Ok(params) => {
+                if configuration.use_debug {
+                    println!("Diff-aware request with repository url {}, sha {}, branch {}, config hash {}", params.repository_url, params.sha, params.branch, params.config_hash);
                 }
-                Err(e) => {
-                    eprintln!("diff aware not enabled (error when receiving diff-aware data from Datadog with config hash {}, sha {}), proceeding with full scan.", &params.config_hash, &params.sha);
-                    if configuration.use_debug {
-                        eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
-                    }
 
-                    None
+                match get_diff_aware_information(&params) {
+                    Ok(d) => {
+                        if configuration.use_debug {
+                            println!(
+                                "diff aware enabled, base sha: {}, files to scan {}",
+                                d.base_sha,
+                                d.files.join(",")
+                            );
+                        } else {
+                            println!(
+                                "diff-aware enabled, based sha {}, scanning only {}/{} files",
+                                d.base_sha,
+                                d.files.len(),
+                                files_in_repository.len()
+                            )
+                        }
+                        Some(d)
+                    }
+                    Err(e) => {
+                        eprintln!("diff aware not enabled (error when receiving diff-aware data from Datadog with config hash {}, sha {}), proceeding with full scan.", &params.config_hash, &params.sha);
+                        if configuration.use_debug {
+                            eprintln!("error when trying to enabled diff-aware scanning: {:?}", e);
+                        }
+
+                        None
+                    }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!("diff aware not enabled (unable to generate diff-aware request data), proceeding with full scan.");
                 eprintln!("Make sure the user running the scan owns the repository (use git config --global --add safe.directory <repo-path> if needed)");

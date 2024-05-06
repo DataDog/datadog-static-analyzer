@@ -8,6 +8,7 @@ in `kernel` for the analysis to work. The `build` process will take care of this
 cargo build
 ```
 
+**NOTE**: you may need extra dependencies to install. Read [these instructions](crates/vectorscan-sys/README.md).
 
 ## Analyze a directory
 

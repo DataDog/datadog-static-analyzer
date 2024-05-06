@@ -1,13 +1,14 @@
-use crate::model::datadog_api::DiffAwareRequestArguments;
-
 use anyhow::anyhow;
 use git2::Repository;
+use sha2::{Digest, Sha256};
+
 use kernel::config_file::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
 use kernel::model::rule::Rule;
 use kernel::path_restrictions::PathRestrictions;
-use sha2::{Digest, Sha256};
+
+use crate::model::datadog_api::DiffAwareRequestArguments;
 
 /// represents the CLI configuration
 #[derive(Clone)]
@@ -91,16 +92,23 @@ impl CliConfiguration {
 
         // let's get the latest commit
         let head = repository.head()?;
-
         let oid = head.target();
+        let head_name = head.shorthand();
+        match (oid, head_name) {
+            (Some(o), Some(h)) => {
+                if h == "HEAD" {
+                    return Err(anyhow!(
+                        "branch is HEAD, cannot generate diff-aware scanning"
+                    ));
+                }
 
-        match (oid, head.name()) {
-            (Some(o), Some(h)) => Ok(DiffAwareRequestArguments {
-                repository_url,
-                config_hash,
-                sha: o.to_string(),
-                branch: h.to_string(),
-            }),
+                Ok(DiffAwareRequestArguments {
+                    repository_url,
+                    config_hash,
+                    sha: o.to_string(),
+                    branch: h.to_string(),
+                })
+            }
             _ => {
                 if self.use_debug {
                     println!(
@@ -116,10 +124,11 @@ impl CliConfiguration {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use kernel::model::common::Language;
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
+
+    use super::*;
 
     #[test]
     fn test_generate_diff_aware_hash() {
