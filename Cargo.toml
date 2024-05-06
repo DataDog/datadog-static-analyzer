@@ -16,7 +16,7 @@ lto = true
 
 [workspace.dependencies]
 anyhow = "1"
-base64 = "0.21.2"
+base64 = "0.22.1"
 indexmap = { version = "2.2", features = ["serde"] }
 itertools = "0.12.1"
 derive_builder = "0.12"
