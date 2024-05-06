@@ -89,7 +89,7 @@ pub fn get_query_nodes(
                 captures.insert(capture_name.to_string(), node.clone());
                 captures_list.entry(capture_name.to_string()).or_default();
                 captures_list
-                    .get_mut(&capture_name.to_string())
+                    .get_mut(&capture_name)
                     .unwrap()
                     .push(node.clone());
             }
