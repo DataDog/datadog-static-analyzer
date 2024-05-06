@@ -1,7 +1,8 @@
+use std::any::Any;
 use crate::model::datadog_api::DiffAwareRequestArguments;
 
 use anyhow::anyhow;
-use git2::Repository;
+use git2::{Repository};
 use kernel::config_file::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
@@ -91,16 +92,21 @@ impl CliConfiguration {
 
         // let's get the latest commit
         let head = repository.head()?;
-
         let oid = head.target();
+        let head_name = head.shorthand();
+        match (oid, head_name) {
+            (Some(o), Some(h)) => {
+                if h == "HEAD" {
+                    return Err(anyhow!("branch is HEAD, cannot generate diff-aware scanning"))
+                }
 
-        match (oid, head.name()) {
-            (Some(o), Some(h)) => Ok(DiffAwareRequestArguments {
-                repository_url,
-                config_hash,
-                sha: o.to_string(),
-                branch: h.to_string(),
-            }),
+                Ok(DiffAwareRequestArguments {
+                    repository_url,
+                    config_hash,
+                    sha: o.to_string(),
+                    branch:h.to_string(),
+                })
+            },
             _ => {
                 if self.use_debug {
                     println!(
