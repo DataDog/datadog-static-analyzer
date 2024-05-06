@@ -151,7 +151,6 @@ def transform_rule(rule):
         'code': rule['code'],
         'variables': {},
         'checksum': rule['checksum'],
-        'is_testing': rule['is_testing']
     }
 
 def test_ruleset_cli(ruleset):
