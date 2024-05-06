@@ -55,7 +55,7 @@ fn main() {
             name: "tree-sitter-c-sharp".to_string(),
             compilation_unit: "tree-sitter-c-sharp".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-c-sharp.git".to_string(),
-            commit_hash: "dd5e59721a5f8dae34604060833902b882023aaf".to_string(),
+            commit_hash: "82fa8f05f41a33e9bc830f85d74a9548f0291738".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
