@@ -204,7 +204,7 @@ def test_ruleset_cli(ruleset):
 
             # Invoke the tool, do not print anything
             cmd = f"{options.clibin} -r {test_rules_file} -i {ruledir} -o {test_results_file} -f json"
-            subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
 
             # check that the number of violations match the number of expected annotations
             with open(test_results_file) as results_file:
