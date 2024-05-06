@@ -1,18 +1,4 @@
-use std::{env, fs};
-use std::collections::HashMap;
-use std::io::prelude::*;
-use std::process::exit;
-use std::time::{Instant, SystemTime};
-
-use anyhow::{Context, Result};
-use getopts::Options;
-use indicatif::ProgressBar;
-use itertools::Itertools;
-use rayon::prelude::*;
-
 use cli::config_file::read_config_file;
-use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
-use cli::csv;
 use cli::datadog_utils::{
     get_all_default_rulesets, get_diff_aware_information, get_rules_from_rulesets,
 };
@@ -20,25 +6,38 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::model::cli_configuration::CliConfiguration;
-use cli::model::datadog_api::DiffAwareData;
 use cli::rule_utils::{
     count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
 };
+use itertools::Itertools;
+use kernel::analysis::analyze::analyze;
+use kernel::constants::{CARGO_VERSION, VERSION};
+use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
+use kernel::model::common::{Language, OutputFormat};
+use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
+
+use anyhow::{Context, Result};
+use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
+use cli::csv;
+use cli::model::cli_configuration::CliConfiguration;
+use cli::model::datadog_api::DiffAwareData;
 use cli::sarif::sarif_utils::{
     generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
 use cli::secrets::{SecretResult, SecretRule};
 use cli::violations_table;
-use kernel::analysis::analyze::analyze;
+use getopts::Options;
+use indicatif::ProgressBar;
 use kernel::config_file::ArgumentProvider;
-use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
-use kernel::model::common::{Language, OutputFormat};
 use kernel::model::config_file::{ConfigFile, PathConfig};
-use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::io::prelude::*;
+use std::process::exit;
+use std::time::{Instant, SystemTime};
+use std::{env, fs};
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
