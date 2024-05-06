@@ -88,8 +88,9 @@ pub fn get_query_nodes(
             if let (Some(capture_name), Some(node)) = (capture_name_opt, node_opt) {
                 captures.insert(capture_name.to_string(), node.clone());
                 captures_list.entry(capture_name.to_string()).or_default();
+
                 captures_list
-                    .get_mut(&capture_name.to_string())
+                    .get_mut(&capture_name.to_string().clone())
                     .unwrap()
                     .push(node.clone());
             }
