@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use git2::Repository;
 use sha2::{Digest, Sha256};
 
+use crate::git_utils::get_branch;
 use kernel::config_file::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
@@ -71,7 +72,10 @@ impl CliConfiguration {
     /// the repository from the directory, get the repository information to get
     /// diff-aware data. If we are not in a repository or cannot get the data
     /// we need, we return an error.
-    pub fn generate_diff_aware_request_data(&self) -> anyhow::Result<DiffAwareRequestArguments> {
+    pub fn generate_diff_aware_request_data(
+        &self,
+        use_debug: bool,
+    ) -> anyhow::Result<DiffAwareRequestArguments> {
         let config_hash = self.generate_diff_aware_digest();
 
         let repository_opt = Repository::init(&self.source_directory);
@@ -93,22 +97,14 @@ impl CliConfiguration {
         // let's get the latest commit
         let head = repository.head()?;
         let oid = head.target();
-        let head_name = head.shorthand();
-        match (oid, head_name) {
-            (Some(o), Some(h)) => {
-                if h == "HEAD" {
-                    return Err(anyhow!(
-                        "branch is HEAD, cannot generate diff-aware scanning"
-                    ));
-                }
-
-                Ok(DiffAwareRequestArguments {
-                    repository_url,
-                    config_hash,
-                    sha: o.to_string(),
-                    branch: h.to_string(),
-                })
-            }
+        let branch_option = get_branch(&repository, use_debug);
+        match (oid, branch_option) {
+            (Some(o), Some(b)) => Ok(DiffAwareRequestArguments {
+                repository_url,
+                config_hash,
+                sha: o.to_string(),
+                branch: b,
+            }),
             _ => {
                 if self.use_debug {
                     println!(

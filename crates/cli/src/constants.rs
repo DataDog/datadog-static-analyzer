@@ -8,3 +8,6 @@ pub static SARIF_PROPERTY_DATADOG_FINGERPRINT: &str = "DATADOG_FINGERPRINT";
 pub static SARIF_PROPERTY_SHA: &str = "SHA";
 
 pub static DEFAULT_MAX_FILE_SIZE_KB: u64 = 200;
+// See https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
+pub static GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH: &str = "CI_COMMIT_BRANCH";
+pub static GIT_HEAD: &str = "HEAD";

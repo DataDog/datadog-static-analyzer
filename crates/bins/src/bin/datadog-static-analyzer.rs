@@ -485,7 +485,7 @@ fn main() -> Result<()> {
 
     // check if we do a diff-aware scan
     let diff_aware_parameters: Option<DiffAwareData> = if diff_aware_requested {
-        match configuration.generate_diff_aware_request_data() {
+        match configuration.generate_diff_aware_request_data(configuration.use_debug) {
             Ok(params) => {
                 if configuration.use_debug {
                     println!("Diff-aware request with repository url {}, sha {}, branch {}, config hash {}", params.repository_url, params.sha, params.branch, params.config_hash);
