@@ -27,7 +27,3 @@ serde_yaml = "0.9.21"
 sha2 = "0.10.7"
 tracing = "0.1.40"
 uuid = { version = "1.6.1", features = ["v4"] }
-
-# We're getting instability in macOS CI with cc 1.0.85, so pin to 1.0.83 until we can investigate further
-[patch.crates-io]
-cc = { git = "https://github.com/rust-lang/cc-rs", tag = "1.0.83" }
