@@ -488,7 +488,10 @@ fn main() -> Result<()> {
         match configuration.generate_diff_aware_request_data(configuration.use_debug) {
             Ok(params) => {
                 if configuration.use_debug {
-                    println!("Diff-aware request with repository url {}, sha {}, branch {}, config hash {}", params.repository_url, params.sha, params.branch, params.config_hash);
+                    println!(
+                        "Diff-aware request with sha {}, branch {}, config hash {}",
+                        params.sha, params.branch, params.config_hash
+                    );
                 }
 
                 match get_diff_aware_information(&params) {
