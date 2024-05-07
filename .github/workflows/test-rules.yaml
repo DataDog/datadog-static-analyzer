@@ -72,7 +72,7 @@ jobs:
             csharp-best-practices csharp-inclusive csharp-security csharp-code-style \
             go-best-practices go-security go-inclusive \
             rails-best-practices ruby-best-practices ruby-code-style ruby-inclusive ruby-security \
-            docker-best-practices \
+            docker-best-practices; \
             do \
             python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
           done
