@@ -23,6 +23,12 @@ First, clone the repository
 git clone https://github.com/juli1/BenchmarkUtils
 ```
 
+Switch to the branch `juli1/add-datadog-support`
+
+```
+(cd BenchmarkUtils && git checkout juli1/add-datadog-support)
+```
+
 Then, compile and install the library. It will install it in your local maven repository.
 
 ```
