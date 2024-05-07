@@ -27,8 +27,6 @@ pub struct ServerRule {
     pub tree_sitter_query_base64: Option<String>,
     #[serde(default)]
     pub arguments: Vec<Argument>,
-    #[serde(default)]
-    pub is_testing: bool,
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize)]

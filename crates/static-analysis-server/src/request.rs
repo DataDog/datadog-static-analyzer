@@ -112,7 +112,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             tree_sitter_query_base64: r.tree_sitter_query_base64.clone(),
             arguments: r.arguments.clone(),
             tests: vec![],
-            is_testing: r.is_testing,
+            is_testing: false,
         })
         .collect();
 
@@ -252,7 +252,6 @@ mod tests {
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
-                    is_testing: false,
                 }
             ]
         };
@@ -286,7 +285,6 @@ mod tests {
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
-                    is_testing: false,
                 }
             ]
         };
@@ -322,7 +320,6 @@ mod tests {
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
-                    is_testing: false,
                 }
             ]
         };
@@ -358,7 +355,6 @@ mod tests {
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
-                    is_testing: false,
                 }
             ]
         };
@@ -394,7 +390,6 @@ mod tests {
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
-                    is_testing: false,
                 }
             ]
         };
@@ -422,7 +417,6 @@ mod tests {
             pattern: None,
             tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
             arguments: vec![],
-            is_testing: false,
         };
         let mut request = AnalysisRequest {
             filename: "path/to/myfile.py".to_string(),
@@ -594,7 +588,6 @@ rulesets:
                 pattern: None,
                 tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                 arguments: vec![],
-                is_testing: false,
             }],
         };
         let response = process_analysis_request(request.clone());
@@ -651,7 +644,6 @@ function visit(node, filename, code) {
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
-                    is_testing: false,
                 }
             ]
         };
@@ -693,7 +685,6 @@ function visit(node, filename, code) {
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
-                    is_testing: false,
                 }
             ]
         };
