@@ -143,7 +143,6 @@ pub struct Rule {
     pub language: Language,
     pub rule_type: RuleType,
     pub entity_checked: Option<EntityChecked>,
-    pub is_testing: bool,
     #[serde(rename = "code")]
     pub code_base64: String,
     pub cwe: Option<String>,
@@ -154,6 +153,8 @@ pub struct Rule {
     #[serde(default)]
     pub arguments: Vec<Argument>,
     pub tests: Vec<RuleTest>,
+    #[serde(default)]
+    pub is_testing: bool,
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize, Builder)]
