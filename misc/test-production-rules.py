@@ -151,7 +151,6 @@ def transform_rule(rule):
         'code': rule['code'],
         'variables': {},
         'checksum': rule['checksum'],
-        'is_testing': rule['is_testing']
     }
 
 def test_ruleset_cli(ruleset):
@@ -205,8 +204,12 @@ def test_ruleset_cli(ruleset):
 
             # Invoke the tool, do not print anything
             cmd = f"{options.clibin} -r {test_rules_file} -i {ruledir} -o {test_results_file} -f json"
-            subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
+            # TODO: There should be a cleaner way to be able to parse the output of the error
+            try:
+                subprocess.run(shlex.split(cmd), check=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            except subprocess.CalledProcessError as e:
+                raise RuntimeError("command '{}' return with error (code {}): {}".format(e.cmd, e.returncode, e.output))
+            
             # check that the number of violations match the number of expected annotations
             with open(test_results_file) as results_file:
                 results = results_file.read()
