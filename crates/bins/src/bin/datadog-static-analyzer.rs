@@ -122,7 +122,7 @@ fn convert_rules_to_rules_internal(
 
             let res = r
                 .to_rule_internal()
-                .context("cannot convert to rule internal");
+                .context(format!("cannot convert {} to rule internal", r.name));
 
             if configuration.show_performance_statistics {
                 println!(
