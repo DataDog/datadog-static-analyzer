@@ -263,7 +263,6 @@ fn main() -> Result<()> {
 
     let should_verify_checksum = !matches.opt_present("b");
     let use_staging = matches.opt_present("s");
-    let include_testing_rules = matches.opt_present("t");
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
     let print_violations = matches.opt_present("print-violations");
@@ -360,7 +359,7 @@ fn main() -> Result<()> {
         let overrides = RuleOverrides::from_config_file(&conf);
 
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
-        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, include_testing_rules)
+        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging)
             .context("error when reading rules from API")?;
         rules.extend(rules_from_api.into_iter().map(|rule| Rule {
             severity: overrides.severity(&rule.name, rule.severity),
@@ -386,7 +385,7 @@ fn main() -> Result<()> {
                 " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
             );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
-            let rulesets_from_api = get_all_default_rulesets(use_staging, include_testing_rules)
+            let rulesets_from_api = get_all_default_rulesets(use_staging)
                 .expect("cannot get default rules");
 
             rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));

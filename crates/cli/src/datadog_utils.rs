@@ -34,11 +34,10 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
 pub fn get_rules_from_rulesets(
     rulesets_name: &[String],
     use_staging: bool,
-    include_testing_rules: bool,
 ) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = Vec::new();
     for ruleset_name in rulesets_name {
-        rules.extend(get_ruleset(ruleset_name, use_staging, include_testing_rules)?.rules);
+        rules.extend(get_ruleset(ruleset_name, use_staging)?.rules);
     }
     Ok(rules)
 }
@@ -77,15 +76,14 @@ fn get_datadog_site(use_staging: bool) -> String {
 pub fn get_ruleset(
     ruleset_name: &str,
     use_staging: bool,
-    include_testing_rules: bool,
 ) -> Result<RuleSet> {
     let site = get_datadog_site(use_staging);
     let app_key = get_datadog_variable_value("APP_KEY");
     let api_key = get_datadog_variable_value("API_KEY");
 
     let url = format!(
-        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false&include_testing_rules={}",
-        site, ruleset_name, include_testing_rules
+        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false&include_testing_rules=true",
+        site, ruleset_name
     );
 
     let request_builder = reqwest::blocking::Client::new()
@@ -160,7 +158,6 @@ pub fn get_default_rulesets_name_for_language(
 /// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
 pub fn get_all_default_rulesets(
     use_staging: bool,
-    include_testing_rules: bool,
 ) -> Result<Vec<RuleSet>> {
     let mut result: Vec<RuleSet> = vec![];
 
@@ -172,7 +169,6 @@ pub fn get_all_default_rulesets(
             result.push(get_ruleset(
                 ruleset_name.as_str(),
                 use_staging,
-                include_testing_rules,
             )?);
         }
     }
