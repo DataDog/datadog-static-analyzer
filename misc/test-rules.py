@@ -4,12 +4,13 @@
 # If you want to try this locally
 # 1. Build the binary locally (e.g. cargo run -r)
 # 2. Bootstrap a Python environment with requests (e.g python -mvenv venv && source venv/bin/activate && pip install requests)
-# 3. Execute the script: python misc/test-production-rules.py -r <RULSET-NAME> -c target/release/datadog-static-analyzer -s target/release/datadog-static-analyzer-server 
+# 3. Execute the script: python misc/test-rules.py -r <RULSET-NAME> -c target/release/datadog-static-analyzer -s target/release/datadog-static-analyzer-server
 
 import base64
 import json
 import optparse
 import os.path
+import os
 import random
 import shlex
 import shutil
@@ -61,8 +62,13 @@ def fetch_ruleset(ruleset_name: str):
     :param site:
     :return:
     """
-    url: str = f"https://api.datadoghq.com/api/v2/static-analysis/rulesets/{ruleset_name}"
 
+    dd_site = os.environ["DD_SITE"]
+    if dd_site is None:
+        print("DD_SITE environment variable not set")
+        sys.exit(0)
+
+    url: str = f"https://api.{dd_site}/api/v2/static-analysis/rulesets/{ruleset_name}"
 
     response = requests.get(url, timeout=10)
 
