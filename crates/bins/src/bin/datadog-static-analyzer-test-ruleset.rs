@@ -80,10 +80,9 @@ fn main() {
 
     let use_staging = matches.opt_present("s");
     let rulesets = matches.opt_strs("r");
-    let include_testing_rules = matches.opt_present("t");
     let mut num_failures = 0;
     for ruleset in rulesets {
-        match get_ruleset(ruleset.as_str(), use_staging, include_testing_rules) {
+        match get_ruleset(ruleset.as_str(), use_staging) {
             Ok(r) => {
                 println!("Testing ruleset {}", r.name);
                 for rule in r.rules.clone() {

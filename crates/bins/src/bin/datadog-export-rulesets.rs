@@ -22,7 +22,6 @@ fn main() {
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the version");
     opts.optflag("s", "staging", "use staging");
-    opts.optflag("t", "include-testing-rules", "include testing rules");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -54,7 +53,6 @@ fn main() {
     }
 
     let use_staging = matches.opt_present("s");
-    let include_testing_rules = matches.opt_present("t");
     let rulesets_names = matches.opt_strs("r");
     let file_to_write = matches.opt_str("o").expect("output file");
 
@@ -62,8 +60,7 @@ fn main() {
     let rulesets: Vec<RuleSet> = rulesets_names
         .iter()
         .map(|ruleset_name| {
-            get_ruleset(ruleset_name, use_staging, include_testing_rules)
-                .expect("error when reading ruleset")
+            get_ruleset(ruleset_name, use_staging).expect("error when reading ruleset")
         })
         .collect();
 

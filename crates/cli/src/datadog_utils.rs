@@ -31,14 +31,10 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
 ];
 
 // Get all the rules from different rulesets from Datadog
-pub fn get_rules_from_rulesets(
-    rulesets_name: &[String],
-    use_staging: bool,
-    include_testing_rules: bool,
-) -> Result<Vec<Rule>> {
+pub fn get_rules_from_rulesets(rulesets_name: &[String], use_staging: bool) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = Vec::new();
     for ruleset_name in rulesets_name {
-        rules.extend(get_ruleset(ruleset_name, use_staging, include_testing_rules)?.rules);
+        rules.extend(get_ruleset(ruleset_name, use_staging)?.rules);
     }
     Ok(rules)
 }
@@ -74,18 +70,14 @@ fn get_datadog_site(use_staging: bool) -> String {
 // get rules from one ruleset at datadog
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
 // the rulesets. We then extract all the rulesets
-pub fn get_ruleset(
-    ruleset_name: &str,
-    use_staging: bool,
-    include_testing_rules: bool,
-) -> Result<RuleSet> {
+pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
     let site = get_datadog_site(use_staging);
     let app_key = get_datadog_variable_value("APP_KEY");
     let api_key = get_datadog_variable_value("API_KEY");
 
     let url = format!(
-        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false&include_testing_rules={}",
-        site, ruleset_name, include_testing_rules
+        "https://api.{}/api/v2/static-analysis/rulesets/{}?include_tests=false&include_testing_rules=true",
+        site, ruleset_name
     );
 
     let request_builder = reqwest::blocking::Client::new()
@@ -158,10 +150,7 @@ pub fn get_default_rulesets_name_for_language(
 
 /// Get all the default rulesets available at DataDog. Take all the language
 /// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
-pub fn get_all_default_rulesets(
-    use_staging: bool,
-    include_testing_rules: bool,
-) -> Result<Vec<RuleSet>> {
+pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
     let mut result: Vec<RuleSet> = vec![];
 
     for language in DEFAULT_RULESETS_LANGUAGES {
@@ -169,11 +158,7 @@ pub fn get_all_default_rulesets(
             get_default_rulesets_name_for_language(language.to_string(), use_staging)?;
 
         for ruleset_name in ruleset_names {
-            result.push(get_ruleset(
-                ruleset_name.as_str(),
-                use_staging,
-                include_testing_rules,
-            )?);
+            result.push(get_ruleset(ruleset_name.as_str(), use_staging)?);
         }
     }
     Ok(result)
