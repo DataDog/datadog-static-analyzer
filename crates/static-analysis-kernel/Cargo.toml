@@ -24,4 +24,4 @@ thiserror = "1.0.59"
 tree-sitter = "0.22.6"
 
 [build-dependencies]
-cc = "*"
+cc = "1.0.97"
