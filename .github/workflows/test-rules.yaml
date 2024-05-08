@@ -59,7 +59,7 @@ jobs:
         with:
           cargo-target: x86_64-unknown-linux-gnu
           cargo-cache-key: release
-      - name: Test all production rules
+      - name: Test all staging rules
         run: |
           cargo build -r --bin datadog-static-analyzer && \
           cargo build -r --bin datadog-static-analyzer-server && \
