@@ -1,0 +1,96 @@
+on:
+  push:
+
+name: Check for regressions in static analysis kernel
+
+jobs:
+  check_regressions:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repo:
+          - golang/go
+          - numpy/numpy
+          - npm/cli
+          - JamesNK/Newtonsoft.Json
+          - google/guava
+          - reduxjs/redux
+          - ruby/spec
+          - muh-nee/BenchmarkJava
+          - muh-nee/NodeGoat
+          - muh-nee/WebGoat
+          - muh-nee/WebGoat.NET
+          - muh-nee/FlowBlot.NET
+          - muh-nee/Damn-Vulnerable-GraphQL-Application
+          - muh-nee/SecurityShepherd
+          - muh-nee/DSVW
+          - muh-nee/NIST-Juliet-CSharp-1.3
+    env:
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
+      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_SITE: ${{ vars.DD_SITE }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: ./.github/actions/setup-build-env
+
+      - uses: ./.github/actions/rust-cache
+        with:
+          cargo-target: x86_64-unknown-linux-gnu
+          cargo-cache-key: release
+
+      - name: Checkout test repositories
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          path: ${{ matrix.repo }}
+
+      - name: Obtain results before changes
+        run: |
+          cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo }} -o result-pre.json -b -f sarif
+
+      - name: Fetch all branches and checkout PR
+        run: |
+          git fetch --all
+          git checkout ${{ github.sha }}
+          echo 'checked out ${{ github.sha }}'
+
+      - name: Obtain results after changes
+        run: |
+          cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo }} -o result-post.json -b -f sarif
+
+      - name: Install Node.js dependencies
+        run: npm install
+        working-directory: .github/scripts
+
+      - name: Run Unit Tests
+        run: npm test
+        working-directory: .github/scripts
+
+      - name: Run Regression Checks
+        id: regression
+        run: node ./.github/scripts/check-regressions.js ${{ matrix.repo }} result-pre.json result-post.json
+
+      - name: Upload unique changes from before
+        uses: actions/upload-artifact@v4
+        if: steps.regression.outputs.diff1files != ''
+        with:
+          name: failures-before
+          path: ${{ steps.regression.outputs.diff1files }}
+
+      - name: Upload unique changes from after
+        uses: actions/upload-artifact@v4
+        if: steps.regression.outputs.diff2files != ''
+        with:
+          name: failures-after
+          path: ${{ steps.regression.outputs.diff2files }}
+
+      - name: Fail
+        if: steps.regression.outputs.diff1files != '' || steps.regression.outputs.diff2files != ''
+        run: exit 1
