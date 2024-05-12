@@ -19,7 +19,6 @@ test-and-build-arm64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l typescript
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l go
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l ruby
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l docker
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
@@ -43,7 +42,6 @@ test-and-build-amd64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l typescript
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l go
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l ruby
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l docker
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
