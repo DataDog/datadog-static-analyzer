@@ -29,17 +29,8 @@ jobs:
           cargo build -r --bin datadog-static-analyzer && \
           cargo build -r --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
-          for ruleset in \
-            python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
-            tsx-react typescript-aws typescript-best-practices typescript-browser-security typescript-code-style typescript-common-security typescript-express typescript-inclusive typescript-node-security \
-            jsx-react javascript-aws javascript-best-practices javascript-browser-security javascript-code-style javascript-common-security javascript-express javascript-inclusive javascript-node-security \
-            java-best-practices java-code-style java-security java-inclusive \
-            csharp-best-practices csharp-inclusive csharp-security csharp-code-style \
-            go-best-practices go-security go-inclusive \
-            rails-best-practices ruby-best-practices ruby-code-style ruby-inclusive ruby-security \
-            docker-best-practices; \
-            do \
-            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
+          for language in go python typescript javascript csharp java ruby; do \
+            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l language ; \
           done
   staging_rules:
     runs-on: ubuntu-latest
@@ -64,15 +55,6 @@ jobs:
           cargo build -r --bin datadog-static-analyzer && \
           cargo build -r --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
-          for ruleset in \
-            python-best-practices python-security python-code-style python-design python-django python-flask python-inclusive python-pandas python-security \
-            tsx-react typescript-aws typescript-best-practices typescript-browser-security typescript-code-style typescript-common-security typescript-express typescript-inclusive typescript-node-security \
-            jsx-react javascript-aws javascript-best-practices javascript-browser-security javascript-code-style javascript-common-security javascript-express javascript-inclusive javascript-node-security \
-            java-best-practices java-code-style java-security java-inclusive \
-            csharp-best-practices csharp-inclusive csharp-security csharp-code-style \
-            go-best-practices go-security go-inclusive \
-            rails-best-practices ruby-best-practices ruby-code-style ruby-inclusive ruby-security \
-            docker-best-practices; \
-            do \
-            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -r $ruleset ; \
+          for language in go python typescript javascript csharp java ruby; do \
+            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l language ; \
           done

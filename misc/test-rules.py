@@ -24,7 +24,7 @@ import sys
 
 parser = optparse.OptionParser()
 parser.add_option(
-    "-r", "--ruleset", dest="ruleset", help="ruleset to test",
+    "-l", "--language", dest="language", help="language to test",
 )
 parser.add_option(
     "-c", "--cli-bin", dest="clibin", help="path to cli binary",
@@ -35,8 +35,8 @@ parser.add_option(
 
 (options, args) = parser.parse_args()
 
-if not options.ruleset:
-    print("please specify a rule to test with option -r ")
+if not options.language:
+    print("please specify a language to test with option -l")
     sys.exit(1)
 
 if not options.clibin:
@@ -59,7 +59,6 @@ def fetch_ruleset(ruleset_name: str):
     """
     Fetch a ruleset from the datadog public API
     :param ruleset_name:
-    :param site:
     :return:
     """
 
@@ -74,6 +73,29 @@ def fetch_ruleset(ruleset_name: str):
 
     if response.status_code != 200:
         print(f"ruleset {ruleset_name} not found")
+        sys.exit(1)
+
+    return response.json()
+
+
+def fetch_default_ruleset(language: str):
+    """
+    Fetch the default rulesets for a language
+    :param language:
+    :return:
+    """
+
+    dd_site = os.environ["DD_SITE"]
+    if dd_site is None:
+        print("DD_SITE environment variable not set")
+        sys.exit(0)
+
+    url: str = f"https://api.{dd_site}/api/v2/static-analysis/default-rulesets/{language}"
+
+    response = requests.get(url, timeout=10)
+
+    if response.status_code != 200:
+        print(f"language {language} not found")
         sys.exit(1)
 
     return response.json()
@@ -238,33 +260,42 @@ def test_ruleset_cli(ruleset):
     # remove directory to test
     shutil.rmtree(testdir)
 
+rulesets_response = fetch_default_ruleset(options.language)
 
-ruleset = fetch_ruleset(options.ruleset)
+if not rulesets_response:
+    print(f"cannot fetch default rulesets for language {options.language}")
 
-if ruleset is None:
-    print("ruleset not found")
-    sys.exit(1)
+rulesets = rulesets_response['data']['attributes']['rulesets']
 
+for ruleset_name in rulesets:
+    print(f"==== Starting testing ruleset {ruleset_name} ====")
+    ruleset = fetch_ruleset(ruleset_name)
 
-# First, get all the tests running on the CLI
-test_ruleset_cli(ruleset)
-
-# Then, get all the tests running on the server
-# Get a post to run the server
-port = random.randint(4000, 9000)
-print(f"testing server on port {port}")
-
-# Start the server
-server_pid = start_server(port)
-
-# Execute all tests
-test_ruleset_server(ruleset, port)
+    if ruleset is None:
+        print("ruleset not found")
+        sys.exit(1)
 
 
-# The server should still be running and respond to ping requests
-if not ping_server(port):
-    print("server not active after testing")
-    sys.exit(1)
+    # First, get all the tests running on the CLI
+    test_ruleset_cli(ruleset)
+
+    # Then, get all the tests running on the server
+    # Get a post to run the server
+    port = random.randint(4000, 9000)
+    print(f"testing server on port {port}")
+
+    # Start the server
+    server_pid = start_server(port)
+
+    # Execute all tests
+    test_ruleset_server(ruleset, port)
+
+
+    # The server should still be running and respond to ping requests
+    if not ping_server(port):
+        print("server not active after testing")
+        sys.exit(1)
+    print(f"==== Done testing ruleset {ruleset_name} ====")
 
 stop_server(server_pid)
 
