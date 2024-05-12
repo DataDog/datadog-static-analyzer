@@ -30,7 +30,7 @@ jobs:
           cargo build -r --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
           for language in go python typescript javascript csharp java ruby; do \
-            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l language ; \
+            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l $language ; \
           done
   staging_rules:
     runs-on: ubuntu-latest
@@ -56,5 +56,5 @@ jobs:
           cargo build -r --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
           for language in go python typescript javascript csharp java ruby; do \
-            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l language ; \
+            python misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l $language ; \
           done
