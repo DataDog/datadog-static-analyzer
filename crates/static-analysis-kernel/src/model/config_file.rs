@@ -120,6 +120,8 @@ struct RawConfigFile {
     // Analyze only files up to this size.
     #[serde(rename = "max-file-size-kb")]
     max_file_size_kb: Option<u64>,
+    #[serde(rename = "ignored-generated-files")]
+    ignored_generated_files: Option<bool>,
 }
 
 impl From<RawConfigFile> for ConfigFile {
@@ -136,6 +138,7 @@ impl From<RawConfigFile> for ConfigFile {
             },
             ignore_gitignore: value.ignore_gitignore,
             max_file_size_kb: value.max_file_size_kb,
+            ignored_generated_files: value.ignored_generated_files,
         }
     }
 }
