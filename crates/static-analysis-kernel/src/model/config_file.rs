@@ -89,10 +89,10 @@ pub struct ConfigFile {
     #[serde(rename = "max-file-size-kb", skip_serializing_if = "Option::is_none")]
     pub max_file_size_kb: Option<u64>,
     #[serde(
-        rename = "ignored-generated-files",
+        rename = "ignore-generated-files",
         skip_serializing_if = "Option::is_none"
     )]
-    pub ignored_generated_files: Option<bool>,
+    pub ignore_generated_files: Option<bool>,
 }
 
 // The raw configuration file format with legacy fields and other quirks.
@@ -120,8 +120,8 @@ struct RawConfigFile {
     // Analyze only files up to this size.
     #[serde(rename = "max-file-size-kb")]
     max_file_size_kb: Option<u64>,
-    #[serde(rename = "ignored-generated-files")]
-    ignored_generated_files: Option<bool>,
+    #[serde(rename = "ignore-generated-files")]
+    ignore_generated_files: Option<bool>,
 }
 
 impl From<RawConfigFile> for ConfigFile {
@@ -138,7 +138,7 @@ impl From<RawConfigFile> for ConfigFile {
             },
             ignore_gitignore: value.ignore_gitignore,
             max_file_size_kb: value.max_file_size_kb,
-            ignored_generated_files: value.ignored_generated_files,
+            ignore_generated_files: value.ignore_generated_files,
         }
     }
 }

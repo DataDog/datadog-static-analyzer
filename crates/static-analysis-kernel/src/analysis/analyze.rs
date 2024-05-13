@@ -107,6 +107,9 @@ where
     let parsing_time_ms = parsing_time.elapsed().as_millis();
 
     if analysis_option.ignore_generated_files && is_generated_file(code, language) {
+        if analysis_option.use_debug {
+            eprintln!("Skipping generated file {}", filename);
+        }
         return vec![];
     }
 

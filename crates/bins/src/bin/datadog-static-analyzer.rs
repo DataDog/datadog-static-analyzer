@@ -380,7 +380,7 @@ fn main() -> Result<()> {
 
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
-        ignore_generated_files = conf.ignored_generated_files.unwrap_or(true);
+        ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
     } else {
         use_configuration_file = false;
         // if there is no config file, we take the default rules from our APIs.
@@ -470,7 +470,7 @@ fn main() -> Result<()> {
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug,
-        ignore_generated_files: configuration.ignore_generated_files,
+        ignore_generated_files,
     };
 
     // verify rule checksum
@@ -778,18 +778,20 @@ fn main() -> Result<()> {
                     .peekable();
                 let res = if selected_rules.peek().is_none() {
                     vec![]
-                } else if let Ok(file_content) = fs::read_to_string(&path) {
-                    analyze(
-                        language,
-                        selected_rules,
-                        relative_path,
-                        &file_content,
-                        &configuration.argument_provider,
-                        &analysis_options,
-                    )
                 } else {
-                    eprintln!("error when getting content of path {}", &path.display());
-                    vec![]
+                    if let Ok(file_content) = fs::read_to_string(&path) {
+                        analyze(
+                            language,
+                            selected_rules,
+                            relative_path,
+                            &file_content,
+                            &configuration.argument_provider,
+                            &analysis_options,
+                        )
+                    } else {
+                        eprintln!("error when getting content of path {}", &path.display());
+                        vec![]
+                    }
                 };
                 if let Some(pb) = &progress_bar {
                     pb.inc(1);

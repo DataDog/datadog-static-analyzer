@@ -22,6 +22,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug: true,
+        ignore_generated_files: false,
     };
     let rules = vec![rule_internal];
     let analyze_result = analyze(

@@ -786,7 +786,7 @@ max-file-size-kb: 512
             },
             ignore_gitignore: Some(false),
             max_file_size_kb: Some(512),
-            ignored_generated_files: Some(false),
+            ignored_generated_files: None,
         };
 
         let res = parse_config_file(data);

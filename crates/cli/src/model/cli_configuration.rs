@@ -166,6 +166,7 @@ mod tests {
             scan_for_secrets: false,
             validate_secrets: false,
             secrets_rule_file: None,
+            ignore_generated_files: false,
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
