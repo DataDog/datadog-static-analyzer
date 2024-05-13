@@ -778,21 +778,20 @@ fn main() -> Result<()> {
                     .peekable();
                 let res = if selected_rules.peek().is_none() {
                     vec![]
+                } else if let Ok(file_content) = fs::read_to_string(&path) {
+                    analyze(
+                        language,
+                        selected_rules,
+                        relative_path,
+                        &file_content,
+                        &configuration.argument_provider,
+                        &analysis_options,
+                    )
                 } else {
-                    if let Ok(file_content) = fs::read_to_string(&path) {
-                        analyze(
-                            language,
-                            selected_rules,
-                            relative_path,
-                            &file_content,
-                            &configuration.argument_provider,
-                            &analysis_options,
-                        )
-                    } else {
-                        eprintln!("error when getting content of path {}", &path.display());
-                        vec![]
-                    }
+                    eprintln!("error when getting content of path {}", &path.display());
+                    vec![]
                 };
+
                 if let Some(pb) = &progress_bar {
                     pb.inc(1);
                 }
