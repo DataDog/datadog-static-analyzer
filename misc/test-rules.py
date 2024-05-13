@@ -66,7 +66,7 @@ def fetch_ruleset(ruleset_name: str):
     dd_site = os.environ["DD_SITE"]
     if dd_site is None:
         print("DD_SITE environment variable not set")
-        sys.exit(0)
+        sys.exit(1)
 
     url: str = f"https://api.{dd_site}/api/v2/static-analysis/rulesets/{ruleset_name}"
 
@@ -265,6 +265,7 @@ rulesets_response = fetch_default_ruleset(options.language)
 
 if not rulesets_response:
     print(f"cannot fetch default rulesets for language {options.language}")
+    sys.exit(1)
 
 rulesets = rulesets_response['data']['attributes']['rulesets']
 
