@@ -45,7 +45,7 @@ pub fn is_generated_file(content: &str, language: &Language) -> bool {
             if content.contains(THRIFT_HEADER) {
                 return true;
             }
-            return false;
+            false
         }
         Language::Python => {
             if content.contains("Generated protocol buffer code") {
@@ -81,7 +81,7 @@ pub fn is_generated_file(content: &str, language: &Language) -> bool {
             if content.contains(THRIFT_HEADER) {
                 return true;
             }
-            return false;
+            false
         }
         _ => false,
     }
