@@ -33,6 +33,7 @@ pub struct CliConfiguration {
     pub scan_for_secrets: bool,
     pub validate_secrets: bool,
     pub secrets_rule_file: Option<std::path::PathBuf>,
+    pub ignore_generated_files: bool,
 }
 
 impl CliConfiguration {

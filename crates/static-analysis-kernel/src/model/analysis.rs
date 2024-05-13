@@ -13,6 +13,7 @@ pub const ERROR_INVALID_QUERY: &str = "error-invalid-query";
 pub struct AnalysisOptions {
     pub log_output: bool,
     pub use_debug: bool,
+    pub ignore_generated_files: bool,
 }
 
 // Represent the lines to ignores for a file. If we need to ignore all rules on a file, it's in the

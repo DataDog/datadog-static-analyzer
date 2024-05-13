@@ -1,4 +1,5 @@
 use crate::analysis::file_context::common::get_file_context;
+use crate::analysis::generated_content::is_generated_file;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::config_file::ArgumentProvider;
@@ -104,6 +105,10 @@ where
     let tree = get_tree(code, language);
 
     let parsing_time_ms = parsing_time.elapsed().as_millis();
+
+    if analysis_option.ignore_generated_files && is_generated_file(code, language) {
+        return vec![];
+    }
 
     tree.map_or_else(
         || {
@@ -224,6 +229,7 @@ function visit(node, filename, code) {
         let analysis_options = AnalysisOptions {
             log_output: true,
             use_debug: false,
+            ignore_generated_files: false,
         };
         let results = analyze(
             &Language::Python,
@@ -299,6 +305,7 @@ function visit(node, filename, code) {
         let analysis_options = AnalysisOptions {
             log_output: true,
             use_debug: false,
+            ignore_generated_files: false,
         };
         let results = analyze(
             &Language::Python,
@@ -399,6 +406,7 @@ for(var i = 0; i <= 10; i--){}
         let analysis_options = AnalysisOptions {
             log_output: true,
             use_debug: false,
+            ignore_generated_files: false,
         };
         let results = analyze(
             &Language::JavaScript,
@@ -453,6 +461,7 @@ def foo():
         let analysis_options = AnalysisOptions {
             log_output: true,
             use_debug: false,
+            ignore_generated_files: false,
         };
         let results = analyze(
             &Language::Python,
@@ -507,6 +516,7 @@ def foo(arg1):
         let analysis_options = AnalysisOptions {
             log_output: true,
             use_debug: false,
+            ignore_generated_files: false,
         };
         let results = analyze(
             &Language::Python,
@@ -597,6 +607,7 @@ function visit(node, filename, code) {
         let analysis_options = AnalysisOptions {
             log_output: true,
             use_debug: false,
+            ignore_generated_files: false,
         };
         let results = analyze(
             &Language::Go,
@@ -763,6 +774,7 @@ function visit(node, filename, code) {
         let analysis_options = AnalysisOptions {
             log_output: true,
             use_debug: false,
+            ignore_generated_files: false,
         };
         let mut argument_provider = ArgumentProvider::new();
         argument_provider.add_argument("rule1", "myfile.py", "my-argument", "101");

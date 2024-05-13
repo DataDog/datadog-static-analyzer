@@ -88,6 +88,11 @@ pub struct ConfigFile {
     // Analyze only files up to this size.
     #[serde(rename = "max-file-size-kb", skip_serializing_if = "Option::is_none")]
     pub max_file_size_kb: Option<u64>,
+    #[serde(
+        rename = "ignored-generated-files",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub ignored_generated_files: Option<bool>,
 }
 
 // The raw configuration file format with legacy fields and other quirks.
