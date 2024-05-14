@@ -99,7 +99,7 @@ fn print_configuration(configuration: &CliConfiguration) {
     println!("use debug           : {}", configuration.use_debug);
     println!("use staging         : {}", configuration.use_staging);
     println!(
-        "ignored gen files   : {}",
+        "ignore gen files    : {}",
         configuration.ignore_generated_files
     );
     println!("rules languages     : {}", languages_string.join(","));
