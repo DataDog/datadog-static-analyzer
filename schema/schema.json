@@ -34,6 +34,9 @@
     "ignore-gitignore": {
       "type": "boolean"
     },
+    "ignore-generated-files": {
+      "type": "boolean"
+    },
     "max-file-size-kb": {
       "type": "number"
     }

@@ -98,6 +98,10 @@ fn print_configuration(configuration: &CliConfiguration) {
     );
     println!("use debug           : {}", configuration.use_debug);
     println!("use staging         : {}", configuration.use_staging);
+    println!(
+        "ignore gen files    : {}",
+        configuration.ignore_generated_files
+    );
     println!("rules languages     : {}", languages_string.join(","));
     println!(
         "max file size       : {} kb",
@@ -155,6 +159,7 @@ fn main() -> Result<()> {
     let mut use_configuration_file = false;
     let mut ignore_gitignore = false;
     let mut max_file_size_kb = DEFAULT_MAX_FILE_SIZE_KB;
+    let mut ignore_generated_files = true;
 
     opts.optopt(
         "i",
@@ -374,7 +379,8 @@ fn main() -> Result<()> {
         path_config.only = conf.paths.only;
 
         // Get the max file size from the configuration or default to the default constant.
-        max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB)
+        max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
+        ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
     } else {
         use_configuration_file = false;
         // if there is no config file, we take the default rules from our APIs.
@@ -454,6 +460,7 @@ fn main() -> Result<()> {
         scan_for_secrets,
         validate_secrets,
         secrets_rule_file: secrets_rule_file.clone(),
+        ignore_generated_files,
     };
 
     print_configuration(&configuration);
@@ -463,6 +470,7 @@ fn main() -> Result<()> {
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug,
+        ignore_generated_files,
     };
 
     // verify rule checksum
@@ -783,6 +791,7 @@ fn main() -> Result<()> {
                     eprintln!("error when getting content of path {}", &path.display());
                     vec![]
                 };
+
                 if let Some(pb) = &progress_bar {
                     pb.inc(1);
                 }

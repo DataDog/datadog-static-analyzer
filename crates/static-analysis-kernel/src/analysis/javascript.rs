@@ -326,6 +326,7 @@ mod tests {
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -386,6 +387,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -448,6 +450,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -547,6 +550,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -564,6 +568,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -580,6 +585,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -596,6 +602,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -612,6 +619,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -677,6 +685,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
@@ -736,6 +745,7 @@ def foo(arg1):
             AnalysisOptions {
                 use_debug: true,
                 log_output: true,
+                ignore_generated_files: false,
             },
             &get_empty_file_context(),
         );
