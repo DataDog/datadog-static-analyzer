@@ -98,6 +98,7 @@ where
     I: IntoIterator,
     I::Item: Borrow<RuleInternal>,
 {
+    // check if we should ignore the file before doing any more expensive work.
     if analysis_option.ignore_generated_files && is_generated_file(code, language) {
         if analysis_option.use_debug {
             eprintln!("Skipping generated file {}", filename);
