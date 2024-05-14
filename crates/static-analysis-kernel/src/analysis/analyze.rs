@@ -98,6 +98,13 @@ where
     I: IntoIterator,
     I::Item: Borrow<RuleInternal>,
 {
+    if analysis_option.ignore_generated_files && is_generated_file(code, language) {
+        if analysis_option.use_debug {
+            eprintln!("Skipping generated file {}", filename);
+        }
+        return vec![];
+    }
+
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
     let parsing_time = Instant::now();
@@ -105,13 +112,6 @@ where
     let tree = get_tree(code, language);
 
     let parsing_time_ms = parsing_time.elapsed().as_millis();
-
-    if analysis_option.ignore_generated_files && is_generated_file(code, language) {
-        if analysis_option.use_debug {
-            eprintln!("Skipping generated file {}", filename);
-        }
-        return vec![];
-    }
 
     tree.map_or_else(
         || {
