@@ -5,7 +5,6 @@ use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tree_sitter::CaptureQuantifier;
-use tree_sitter::QueryCursor;
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
@@ -55,9 +54,9 @@ pub fn get_tree(code: &str, language: &Language) -> Option<tree_sitter::Tree> {
 }
 
 // build the query from tree-sitter
-pub fn get_query(query_code: &str, language: &Language) -> Result<tree_sitter::Query> {
+pub fn get_query(query_code: &str, language: &Language) -> Result<TSQuery> {
     let tree_sitter_language = get_tree_sitter_language(language);
-    Ok(tree_sitter::Query::new(&tree_sitter_language, query_code)?)
+    TSQuery::try_new(&tree_sitter_language, query_code).map_err(anyhow::Error::new)
 }
 
 /// A wrapper around a [`tree_sitter::Query`].
@@ -240,33 +239,31 @@ pub enum TSCaptureContent<T> {
 // Note that we also add the context to the node that consists of the code and variables.
 pub fn get_query_nodes(
     tree: &tree_sitter::Tree,
-    query: &tree_sitter::Query,
+    query: &TSQuery,
     filename: &str,
     code: &str,
     arguments: &HashMap<String, String>,
 ) -> Vec<MatchNode> {
-    let mut query_cursor = QueryCursor::new();
     let mut match_nodes: Vec<MatchNode> = vec![];
 
-    let query_result = query_cursor.matches(query, tree.root_node(), code.as_bytes());
-
-    for query_match in query_result {
+    for query_match in query.cursor().matches(tree.root_node(), code) {
         let mut captures: HashMap<String, TreeSitterNode> = HashMap::new();
         let mut captures_list: HashMap<String, Vec<TreeSitterNode>> = HashMap::new();
-        for capture in query_match.captures.iter() {
-            let capture_name_opt = query
-                .capture_names()
-                .get(usize::try_from(capture.index).unwrap());
-            let node_opt = map_node(capture.node);
-
-            if let (Some(capture_name), Some(node)) = (capture_name_opt, node_opt) {
-                captures.insert(capture_name.to_string(), node.clone());
-                captures_list.entry(capture_name.to_string()).or_default();
-
-                captures_list
-                    .get_mut(&capture_name.to_string().clone())
-                    .unwrap()
-                    .push(node.clone());
+        for capture in query_match {
+            let list = match capture.contents {
+                TSCaptureContent::Single(node) => {
+                    map_node(node).map(|n| vec![n]).unwrap_or_default()
+                }
+                TSCaptureContent::Multi(nodes) => {
+                    nodes.into_iter().filter_map(map_node).collect::<Vec<_>>()
+                }
+            };
+            // All captures are inserted into `captures_list`. However, the prior implementation continually
+            // called `insert` on the `captures` map, which ended up re-writing the value every time.
+            // Thus, to match this behavior, we take the `last` element of the list to insert into `captures`.
+            if let Some(last) = list.last() {
+                captures.insert(capture.name.to_string(), last.clone());
+                captures_list.insert(capture.name.to_string(), list);
             }
         }
 
