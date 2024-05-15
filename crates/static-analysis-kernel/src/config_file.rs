@@ -939,6 +939,52 @@ rulesets:
         assert_eq!(expected, res.unwrap());
     }
 
+    // Argument values
+    #[test]
+    fn test_parse_severities() {
+        let data = r#"
+rulesets:
+  - python-security:
+    rules:
+      no-eval:
+        severity: WARNING
+      yes-eval:
+        severity: NOTICE
+        "#;
+
+        let expected = ConfigFile {
+            rulesets: IndexMap::from([(
+                "python-security".to_string(),
+                RulesetConfig {
+                    paths: PathConfig::default(),
+                    rules: IndexMap::from([
+                        (
+                            "no-eval".to_string(),
+                            RuleConfig {
+                                paths: PathConfig::default(),
+                                arguments: IndexMap::new(),
+                                severity: Some(RuleSeverity::Warning),
+                                category: None,
+                            },
+                        ),
+                        (
+                            "yes-eval".to_string(),
+                            RuleConfig {
+                                paths: PathConfig::default(),
+                                arguments: IndexMap::new(),
+                                severity: Some(RuleSeverity::Notice),
+                                category: None,
+                            },
+                        ),
+                    ]),
+                },
+            )]),
+            ..ConfigFile::default()
+        };
+        let res = crate::config_file::parse_config_file(data);
+        assert_eq!(expected, res.unwrap());
+    }
+
     // test with everything
     #[test]
     fn test_parse_all_other_options() {
@@ -1233,7 +1279,7 @@ rulesets:
 
         assert_eq!(serialized, expected);
     }
-    
+
     #[test]
     fn test_serialize_severities() {
         let mut rulesets = IndexMap::new();
@@ -1271,7 +1317,7 @@ rulesets:
     rule-number-1:
       severity: WARNING
 "
-            .trim();
+        .trim();
 
         assert_eq!(serialized, expected);
     }
