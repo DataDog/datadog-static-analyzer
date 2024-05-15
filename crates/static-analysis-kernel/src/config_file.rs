@@ -1,182 +1,200 @@
+use crate::model::config_file::{
+    ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig,
+};
+use crate::model::rule::{RuleCategory, RuleSeverity};
 use anyhow::Result;
 use indexmap::IndexMap;
-use sequence_trie::SequenceTrie;
 use serde::de::value::MapAccessDeserializer;
 use serde::de::{Error, MapAccess, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml::Value;
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::hash::Hash;
+use std::marker::PhantomData;
 
-use crate::model::config_file::{
-    ArgumentValues, ConfigFile, PathPattern, RuleConfig, RulesetConfig,
-};
-use crate::model::rule::RuleCategory;
-
+// Parses the provided YAML text, returning a ConfigFile.
 pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
-    Ok(serde_yaml::from_str(config_contents)?)
+    let yaml_config: YamlConfigFile = serde_yaml::from_str(config_contents)?;
+    Ok(yaml_config.into())
+}
+
+// Generates a YAML for the provided ConfigFile.
+pub fn config_file_to_yaml(config: &ConfigFile) -> Result<String> {
+    let yaml_config: YamlConfigFile = config.clone().into();
+    Ok(serde_yaml::to_string(&yaml_config)?)
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+struct YamlConfigFile {
+    #[serde(default)]
+    schema_version: SchemaVersion,
+    rulesets: YamlRulesetList,
+    #[serde(flatten)]
+    paths: YamlPathConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore_paths: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore_gitignore: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_file_size_kb: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore_generated_files: Option<bool>,
+}
+
+// A marker for the schema version.
+// No content because it's only deserialized if the schema version is correct.
+#[derive(Default)]
+struct SchemaVersion {}
+
+// A list of configured rulesets. When deserialized, it gives an error if a ruleset is duplicated.
+struct YamlRulesetList(Vec<NamedRulesetConfig>);
+
+// A ruleset name with its configuration. It can be deserialized as a single string (populating
+// the name only) or as a map (populating the name and configuration in a special way.)
+struct NamedRulesetConfig {
+    name: String,
+    cfg: YamlRulesetConfig,
+}
+
+// A ruleset configuration.
+#[derive(Deserialize, Serialize, Default, PartialEq)]
+struct YamlRulesetConfig {
+    #[serde(flatten)]
+    pub paths: YamlPathConfig,
+    #[serde(default)]
+    pub rules: UniqueKeyMap<String, YamlRuleConfig>,
+}
+
+// An 'only'/'ignore' configuration.
+#[derive(Deserialize, Serialize, Default, PartialEq)]
+pub struct YamlPathConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub only: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ignore: Vec<String>,
+}
+
+// A configuration for a rule.
+#[derive(Deserialize, Serialize, Default, PartialEq)]
+struct YamlRuleConfig {
+    #[serde(flatten)]
+    pub paths: YamlPathConfig,
+    #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
+    pub arguments: UniqueKeyMap<String, ValuesBySubtree<AnyAsString>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub severity: Option<RuleSeverity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<YamlRuleCategory>,
+}
+
+// An object that can hold several values that depend on a subtree prefix.
+#[derive(Default, PartialEq)]
+struct ValuesBySubtree<T>(IndexMap<String, T>);
+
+// A restricted version of RuleCategory, which doesn't deserialize the 'unknown' value.
+#[derive(Serialize, PartialEq)]
+struct YamlRuleCategory {
+    #[serde(flatten)]
+    category: RuleCategory,
+}
+
+// A holder for a value of any primitive type that will be interpreted as a string.
+#[derive(Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+enum AnyAsString {
+    Bool(bool),
+    I64(i64),
+    U64(u64),
+    I128(i128),
+    U128(u128),
+    F64(f64),
+    Str(String),
+}
+
+// A map that, when deserialized, gives an error if a key is duplicated.
+#[derive(Default, PartialEq)]
+struct UniqueKeyMap<K, V>(IndexMap<K, V>)
+where
+    K: Hash + Eq;
+
+impl<K, V> UniqueKeyMap<K, V>
+where
+    K: Hash + Eq,
+{
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
 }
 
 const SCHEMA_VERSION: &str = "v1";
 
-pub fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let v = String::deserialize(deserializer)?;
-    if v != SCHEMA_VERSION {
-        Err(Error::invalid_value(
-            Unexpected::Str(&v),
-            &format!("\"{}\"", SCHEMA_VERSION).as_str(),
-        ))
-    } else {
-        Ok(v.to_string())
-    }
-}
-
-pub fn get_default_schema_version() -> String {
-    SCHEMA_VERSION.to_string()
-}
-
-type Argument = (String, String);
-
-type ArgumentsByPrefix = SequenceTrie<String, Vec<Argument>>;
-
-#[derive(Clone)]
-// Used to extract rule arguments in the analyzer.
-pub struct ArgumentProvider {
-    by_rule: HashMap<String, ArgumentsByPrefix>,
-}
-
-impl ArgumentProvider {
-    pub fn new() -> ArgumentProvider {
-        ArgumentProvider {
-            by_rule: HashMap::new(),
-        }
-    }
-
-    pub fn from(config: &ConfigFile) -> Self {
-        let mut provider = ArgumentProvider::new();
-        for (ruleset_name, ruleset_cfg) in &config.rulesets {
-            for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
-                for (arg_name, arg_values) in &rule_cfg.arguments {
-                    let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
-                    for (prefix, value) in &arg_values.by_subtree {
-                        provider.add_argument(&rule_name, prefix, arg_name, value);
-                    }
-                }
-            }
-        }
-        provider
-    }
-
-    pub fn add_argument(&mut self, rule_name: &str, path: &str, argument: &str, value: &str) {
-        let prefix: Vec<String> = path
-            .split('/')
-            .filter(|c| !c.is_empty())
-            .map(|c| c.to_string())
-            .collect();
-        let trie = self.by_rule.entry(rule_name.to_string()).or_default();
-        match trie.get_mut(prefix.iter()) {
-            None => {
-                trie.insert(
-                    prefix.iter(),
-                    vec![(argument.to_string(), value.to_string())],
-                );
-            }
-            Some(v) => {
-                v.push((argument.to_string(), value.to_string()));
-            }
-        };
-    }
-
-    /// Returns the arguments that apply to the given file and the given rule.
-    pub fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
-        let mut out = HashMap::new();
-        if let Some(by_prefix) = self.by_rule.get(rulename) {
-            for args in by_prefix
-                .prefix_iter(filename.split('/').filter(|c| !c.is_empty()))
-                .filter_map(|x| x.value())
-            {
-                // Longer prefixes appear last, so they'll override arguments from shorter prefixes.
-                out.extend(args.clone());
-            }
-        }
-        out
-    }
-}
-
-impl Default for ArgumentProvider {
-    fn default() -> Self {
-        ArgumentProvider::new()
-    }
-}
-
-/// Special deserializer for a `RulesetConfig` map.
-/// Duplicate rulesets are rejected.
-pub fn deserialize_ruleset_configs<'de, D>(
-    deserializer: D,
-) -> Result<IndexMap<String, RulesetConfig>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let mut out = IndexMap::new();
-    let cfgs: Vec<NamedRulesetConfig> = Vec::deserialize(deserializer)?;
-    for nrc in cfgs {
-        if out.insert(nrc.name.clone(), nrc.cfg).is_some() {
-            return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
-        }
-    }
-    if out.is_empty() {
-        return Err(Error::custom("no rulesets were specified"));
-    }
-    Ok(out)
-}
-
-pub fn serialize_ruleset_configs<S: Serializer>(
-    rulesets: &IndexMap<String, RulesetConfig>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    rulesets
-        .iter()
-        .map(|(key, value)| NamedRulesetConfig {
-            name: key.clone(),
-            cfg: value.clone(),
-        })
-        .collect::<Vec<_>>()
-        .serialize(serializer)
-}
-
-/// Holder for ruleset configurations specified in lists.
-struct NamedRulesetConfig {
-    name: String,
-    cfg: RulesetConfig,
-}
-
-/// Special deserializer for ruleset list items.
-///
-/// ```yaml
-/// rulesets:
-///   - ruleset1
-///   - ruleset2:
-///   - ruleset3:
-///     ignore:
-///       - "foo"
-/// ```
-impl<'de> Deserialize<'de> for NamedRulesetConfig {
-    fn deserialize<D>(deserializer: D) -> Result<NamedRulesetConfig, D::Error>
+// Deserializer for the schema version.
+// It requires the field to contain the SCHEMA_VERSION string and returns a marker if so.
+impl<'de> Deserialize<'de> for SchemaVersion {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        struct Fields {
-            #[serde(flatten)]
-            cfg: RulesetConfig,
-            #[serde(flatten)]
-            #[serde(default)]
-            remaining_fields: IndexMap<String, Value>,
+        match String::deserialize(deserializer)?.as_str() {
+            SCHEMA_VERSION => Ok(SchemaVersion {}),
+            v => Err(Error::invalid_value(
+                Unexpected::Str(v),
+                &format!("\"{}\"", SCHEMA_VERSION).as_str(),
+            )),
         }
+    }
+}
+
+// Serializer for the schema version. Outputs the SCHEMA_VERSION string.
+impl Serialize for SchemaVersion {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SCHEMA_VERSION.serialize(serializer)
+    }
+}
+
+// Deserializer for a ruleset list.
+impl<'de> Deserialize<'de> for YamlRulesetList {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let mut names = HashSet::new();
+        let list = Vec::<NamedRulesetConfig>::deserialize(deserializer)?;
+        if list.is_empty() {
+            return Err(Error::custom("no rulesets were specified"));
+        }
+        for nrc in &list {
+            if !names.insert(nrc.name.clone()) {
+                return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
+            }
+        }
+        Ok(YamlRulesetList(list))
+    }
+}
+
+impl Serialize for YamlRulesetList {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+// Deserializer for a (named) ruleset config. It takes either a string (signifying a ruleset with
+// a default configuration) or a map whose first key is the name and the remaining items are the
+// ruleset configuration.
+impl<'de> Deserialize<'de> for NamedRulesetConfig {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         struct StringOrStruct {}
         impl<'de> Visitor<'de> for StringOrStruct {
             type Value = NamedRulesetConfig;
@@ -191,7 +209,7 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
             {
                 Ok(NamedRulesetConfig {
                     name: v.to_string(),
-                    cfg: RulesetConfig::default(),
+                    cfg: YamlRulesetConfig::default(),
                 })
             }
 
@@ -199,7 +217,15 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
             where
                 A: MapAccess<'de>,
             {
-                let m = Fields::deserialize(MapAccessDeserializer::new(map))?;
+                #[derive(Deserialize)]
+                struct Holder {
+                    #[serde(flatten)]
+                    cfg: YamlRulesetConfig,
+                    #[serde(flatten)]
+                    #[serde(default)]
+                    remaining_fields: IndexMap<String, Value>,
+                }
+                let m = Holder::deserialize(MapAccessDeserializer::new(map))?;
                 match m.remaining_fields.into_iter().next() {
                     Some((name, Value::Null)) => Ok(NamedRulesetConfig { name, cfg: m.cfg }),
                     Some((name, _)) => Err(Error::custom(format!("invalid configuration for ruleset \"{}\" (check if it is indented under the ruleset name)", name))),
@@ -212,155 +238,88 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
     }
 }
 
+// Serializer for a (named) ruleset configuration. If the ruleset configuration is the default,
+// it outputs just the name.
 impl Serialize for NamedRulesetConfig {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        if self.cfg == RulesetConfig::default() {
+        if self.cfg == YamlRulesetConfig::default() {
             self.name.serialize(serializer)
         } else {
             #[derive(Serialize)]
-            #[serde(untagged)]
-            enum CfgMapValue<'a> {
-                Null,
-                Rules(&'a IndexMap<String, RuleConfig>),
-                Paths(&'a Vec<PathPattern>),
+            struct Holder<'a> {
+                #[serde(flatten)]
+                name: IndexMap<&'a str, ()>,
+                #[serde(flatten)]
+                cfg: &'a YamlRulesetConfig,
             }
 
-            let mut map = IndexMap::new();
-            map.insert(self.name.as_str(), CfgMapValue::Null);
-            if !self.cfg.paths.ignore.is_empty() {
-                map.insert("ignore", CfgMapValue::Paths(&self.cfg.paths.ignore));
-            }
-            if let Some(only) = &self.cfg.paths.only {
-                map.insert("only", CfgMapValue::Paths(only));
-            }
-            if !self.cfg.rules.is_empty() {
-                map.insert("rules", CfgMapValue::Rules(&self.cfg.rules));
-            }
-            map.serialize(serializer)
+            let out = Holder {
+                name: IndexMap::from([(self.name.as_str(), ())]),
+                cfg: &self.cfg,
+            };
+            out.serialize(serializer)
         }
     }
 }
 
-/// Deserializer for a `RuleConfig` map which rejects duplicate rules.
-pub fn deserialize_rule_configs<'de, D>(
-    deserializer: D,
-) -> Result<IndexMap<String, RuleConfig>, D::Error>
+// Deserializer for a value that can vary depending on the subtree. It takes either a single value,
+// which takes effect everywhere, or a map from a path prefix to the value that will take effect
+// within that path prefix.
+impl<'de, T> Deserialize<'de> for ValuesBySubtree<T>
 where
-    D: Deserializer<'de>,
+    T: Deserialize<'de>,
 {
-    struct RuleConfigVisitor {}
-    impl<'de> Visitor<'de> for RuleConfigVisitor {
-        type Value = IndexMap<String, RuleConfig>;
-
-        fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-            formatter.write_str("an optional map from string to rule configuration")
-        }
-
-        /// Deserializes a map of string to `RuleConfig`.
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: MapAccess<'de>,
-        {
-            let mut out = IndexMap::new();
-            while let Some((k, v)) = map.next_entry::<String, RuleConfig>()? {
-                if out.insert(k.clone(), v).is_some() {
-                    return Err(Error::custom(format!("found duplicate rule: {}", k)));
-                }
-            }
-            Ok(out)
-        }
-    }
-    deserializer.deserialize_any(RuleConfigVisitor {})
-}
-
-/// Deserializer for argument values:
-/// ```yaml
-/// arguments:
-///   foo: abc
-///   bar: 1234
-///   baz:
-///     /: abc
-///     uno/dos: 1234
-/// ```
-impl<'de> Deserialize<'de> for ArgumentValues {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         #[serde(untagged)]
-        enum AnyToString {
-            Bool(bool),
-            I64(i64),
-            U64(u64),
-            I128(i128),
-            U128(u128),
-            F64(f64),
-            Str(String),
+        enum Holder<V> {
+            Single(V),
+            Map(UniqueKeyMap<String, V>),
         }
-
-        impl Display for AnyToString {
-            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                match self {
-                    AnyToString::Bool(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::I64(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::U64(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::I128(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::U128(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::F64(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::Str(v) => f.write_str(v),
-                }
-            }
-        }
-
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum StringOrMap {
-            Str(AnyToString),
-            Map(IndexMap<String, AnyToString>),
-        }
-
-        match StringOrMap::deserialize(deserializer) {
-            Err(_) => Err(Error::custom(
-                "expected a string or a map from path to string",
-            )),
-            Ok(StringOrMap::Str(s)) => Ok(ArgumentValues {
-                by_subtree: IndexMap::from([("".to_string(), s.to_string())]),
-            }),
-            Ok(StringOrMap::Map(m)) => Ok(ArgumentValues {
-                by_subtree: m
+        match Holder::<T>::deserialize(deserializer)? {
+            Holder::Single(value) => Ok(ValuesBySubtree(IndexMap::from([("".to_string(), value)]))),
+            Holder::Map(map) => Ok(ValuesBySubtree(
+                map.0
                     .into_iter()
-                    .map(|(k, v)| {
-                        if k == "/" || k == "**" {
-                            ("".to_string(), v.to_string())
+                    .map(|(path, value)| {
+                        if path == "/" || path == "**" {
+                            ("".to_string(), value)
                         } else {
-                            (k, v.to_string())
+                            (path, value)
                         }
                     })
                     .collect(),
-            }),
+            )),
         }
     }
 }
 
-impl Serialize for ArgumentValues {
+// Serializer for a value that can vary depending on the subtree. If the map only contains a global
+// value, it is serialized as the value itself; otherwise, it is serialized as a map.
+impl<T> Serialize for ValuesBySubtree<T>
+where
+    T: Serialize,
+{
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        if let (1, Some(val)) = (self.by_subtree.len(), self.by_subtree.get("")) {
-            val.serialize(serializer)
+        if let (1, Some(value)) = (self.0.len(), self.0.get("")) {
+            value.serialize(serializer)
         } else {
-            self.by_subtree
+            self.0
                 .iter()
-                .map(|(k, v)| {
-                    if k.is_empty() {
-                        ("/", v.as_str())
+                .map(|(path, value)| {
+                    if path == "" {
+                        ("/", value)
                     } else {
-                        (k.as_str(), v.as_str())
+                        (path.as_str(), value)
                     }
                 })
                 .collect::<IndexMap<_, _>>()
@@ -369,19 +328,248 @@ impl Serialize for ArgumentValues {
     }
 }
 
-/// Deserializer for a `RuleCategory` which rejects the 'unknown' option.
-pub fn deserialize_category<'de, D>(deserializer: D) -> Result<Option<RuleCategory>, D::Error>
+// A deserializer for a RuleCategory that rejects the "unknown" category.
+impl<'de> Deserialize<'de> for YamlRuleCategory {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        match RuleCategory::deserialize(deserializer)? {
+            RuleCategory::Unknown => Err(Error::invalid_value(
+                Unexpected::Str("unknown"),
+                &"a rule category",
+            )),
+            category => Ok(YamlRuleCategory { category }),
+        }
+    }
+}
+
+// A deserializer for a UniqueKeyMap that rejects the input when a key appears twice.
+impl<'de, K, V> Deserialize<'de> for UniqueKeyMap<K, V>
 where
-    D: Deserializer<'de>,
+    K: Deserialize<'de> + Hash + Eq + Display,
+    V: Deserialize<'de>,
 {
-    let category = RuleCategory::deserialize(deserializer)?;
-    if category == RuleCategory::Unknown {
-        Err(Error::invalid_value(
-            Unexpected::Str("unknown"),
-            &"a rule category",
-        ))
-    } else {
-        Ok(Some(category))
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UniqueKeyMapVisitor<Q, U>(PhantomData<fn() -> (Q, U)>);
+        impl<'de, Q, U> Visitor<'de> for UniqueKeyMapVisitor<Q, U>
+        where
+            Q: Deserialize<'de> + Hash + Eq + Display,
+            U: Deserialize<'de>,
+        {
+            type Value = UniqueKeyMap<Q, U>;
+
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a map with unique keys")
+            }
+
+            fn visit_map<A>(self, mut map_access: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut map = IndexMap::new();
+                while let Some((key, value)) = map_access.next_entry::<Q, U>()? {
+                    if let (i, Some(_)) = map.insert_full(key, value) {
+                        return Err(Error::custom(format!(
+                            "found a duplicate key '{}'",
+                            map.get_index(i).unwrap().0
+                        )));
+                    }
+                }
+                Ok(UniqueKeyMap(map))
+            }
+        }
+        deserializer.deserialize_any(UniqueKeyMapVisitor(PhantomData))
+    }
+}
+
+// Serializer for UniqueKeyMap; nothing special.
+impl<K, V> Serialize for UniqueKeyMap<K, V>
+where
+    K: Serialize + Hash + Eq,
+    V: Serialize,
+{
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.0.serialize(serializer)
+    }
+}
+
+impl Into<ConfigFile> for YamlConfigFile {
+    fn into(self) -> ConfigFile {
+        ConfigFile {
+            rulesets: self.rulesets.into(),
+            paths: {
+                let mut paths = self.paths;
+                if let Some(ip) = self.ignore_paths {
+                    paths.ignore.extend(ip);
+                }
+                paths.into()
+            },
+            ignore_gitignore: self.ignore_gitignore,
+            max_file_size_kb: self.max_file_size_kb,
+            ignore_generated_files: self.ignore_generated_files,
+        }
+    }
+}
+
+impl Into<YamlConfigFile> for ConfigFile {
+    fn into(self) -> YamlConfigFile {
+        YamlConfigFile {
+            schema_version: SchemaVersion {},
+            rulesets: self.rulesets.into(),
+            paths: self.paths.into(),
+            ignore_paths: None,
+            ignore_gitignore: self.ignore_gitignore,
+            max_file_size_kb: self.max_file_size_kb,
+            ignore_generated_files: self.ignore_generated_files,
+        }
+    }
+}
+
+impl Into<PathConfig> for YamlPathConfig {
+    fn into(self) -> PathConfig {
+        PathConfig {
+            only: self.only.map(|v| v.into_iter().map(|p| p.into()).collect()),
+            ignore: self.ignore.into_iter().map(|p| p.into()).collect(),
+        }
+    }
+}
+
+impl Into<YamlPathConfig> for PathConfig {
+    fn into(self) -> YamlPathConfig {
+        YamlPathConfig {
+            only: self.only.map(|v| v.into_iter().map(|p| p.into()).collect()),
+            ignore: self.ignore.into_iter().map(|p| p.into()).collect(),
+        }
+    }
+}
+
+impl Into<IndexMap<String, RulesetConfig>> for YamlRulesetList {
+    fn into(self) -> IndexMap<String, RulesetConfig> {
+        self.0
+            .into_iter()
+            .map(|elem| (elem.name, elem.cfg.into()))
+            .collect()
+    }
+}
+
+impl Into<YamlRulesetList> for IndexMap<String, RulesetConfig> {
+    fn into(self) -> YamlRulesetList {
+        YamlRulesetList(
+            self.into_iter()
+                .map(|(name, cfg)| NamedRulesetConfig {
+                    name,
+                    cfg: cfg.into(),
+                })
+                .collect(),
+        )
+    }
+}
+
+impl Into<RulesetConfig> for YamlRulesetConfig {
+    fn into(self) -> RulesetConfig {
+        RulesetConfig {
+            paths: self.paths.into(),
+            rules: self
+                .rules
+                .0
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+        }
+    }
+}
+
+impl Into<YamlRulesetConfig> for RulesetConfig {
+    fn into(self) -> YamlRulesetConfig {
+        YamlRulesetConfig {
+            paths: self.paths.into(),
+            rules: UniqueKeyMap(self.rules.into_iter().map(|(k, v)| (k, v.into())).collect()),
+        }
+    }
+}
+
+impl Into<RuleConfig> for YamlRuleConfig {
+    fn into(self) -> RuleConfig {
+        RuleConfig {
+            paths: self.paths.into(),
+            arguments: self
+                .arguments
+                .0
+                .into_iter()
+                .map(|(k, v)| {
+                    (
+                        k,
+                        ArgumentValues {
+                            by_subtree: v.into(),
+                        },
+                    )
+                })
+                .collect(),
+            severity: self.severity,
+            category: self.category.map(|v| v.category),
+        }
+    }
+}
+
+impl Into<YamlRuleConfig> for RuleConfig {
+    fn into(self) -> YamlRuleConfig {
+        YamlRuleConfig {
+            paths: self.paths.into(),
+            arguments: UniqueKeyMap(
+                self.arguments
+                    .into_iter()
+                    .map(|(k, v)| (k, v.by_subtree.into()))
+                    .collect(),
+            ),
+            severity: self.severity,
+            category: self.category.map(|category| YamlRuleCategory { category }),
+        }
+    }
+}
+
+impl Into<IndexMap<String, String>> for ValuesBySubtree<AnyAsString> {
+    fn into(self) -> IndexMap<String, String> {
+        self.0
+            .into_iter()
+            .map(|(k, v)| (k, v.to_string()))
+            .collect()
+    }
+}
+
+impl Into<ValuesBySubtree<AnyAsString>> for IndexMap<String, String> {
+    fn into(self) -> ValuesBySubtree<AnyAsString> {
+        ValuesBySubtree(
+            self.into_iter()
+                .map(|(k, v)| (k, AnyAsString::Str(v)))
+                .collect(),
+        )
+    }
+}
+
+impl Default for AnyAsString {
+    fn default() -> Self {
+        AnyAsString::Str("".to_string())
+    }
+}
+
+impl Display for AnyAsString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            AnyAsString::Bool(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::I64(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::U64(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::I128(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::U128(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::F64(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::Str(v) => f.write_str(v),
+        }
     }
 }
 
@@ -391,7 +579,6 @@ mod tests {
     use crate::model::config_file::{
         ArgumentValues, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
-    use std::collections::HashMap;
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -415,7 +602,7 @@ mod tests {
     #[test]
     fn test_valid_examples_can_be_parsed() {
         for (path, cfg) in get_example_configs("valid") {
-            let result = parse_config_file(&cfg);
+            let result = crate::config_file::parse_config_file(&cfg);
             assert!(
                 result.is_ok(),
                 "expected a valid configuration in {}: {}",
@@ -429,7 +616,7 @@ mod tests {
     #[test]
     fn test_invalid_examples_cannot_be_parsed() {
         for (path, cfg) in get_example_configs("invalid") {
-            let result = parse_config_file(&cfg);
+            let result = crate::config_file::parse_config_file(&cfg);
             assert!(
                 result.is_err(),
                 "expected an invalid configuration in {}",
@@ -447,7 +634,6 @@ rulesets:
   - go-best-practices
     "#;
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 ("go-best-practices".to_string(), RulesetConfig::default()),
@@ -455,7 +641,7 @@ rulesets:
             ..ConfigFile::default()
         };
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -477,7 +663,7 @@ rulesets:
       random-iv:
     "#;
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -498,7 +684,6 @@ rulesets:
     "#;
 
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([
                 ("c-best-practices".to_string(), RulesetConfig::default()),
                 ("rust-best-practices".to_string(), RulesetConfig::default()),
@@ -526,7 +711,7 @@ rulesets:
             ..ConfigFile::default()
         };
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -546,7 +731,7 @@ rulesets:
         - "bar"
     "#;
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -560,7 +745,7 @@ rulesets:
   - go-best-practices
     "#;
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
         let data = r#"
 rulesets:
@@ -569,7 +754,7 @@ rulesets:
   go-best-practices:
     "#;
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -587,7 +772,6 @@ rulesets:
           - "py/insecure/**"
     "#;
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -609,7 +793,7 @@ rulesets:
             ..ConfigFile::default()
         };
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -623,7 +807,7 @@ rulesets:
       - no-eval
     "#;
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
 
         let data = r#"
@@ -637,7 +821,7 @@ rulesets:
             - "py/insecure/**"
     "#;
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -656,7 +840,7 @@ rulesets:
           - "bar"
     "#;
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -683,7 +867,6 @@ rulesets:
         "#;
 
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -752,7 +935,7 @@ rulesets:
             )]),
             ..ConfigFile::default()
         };
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -774,7 +957,6 @@ max-file-size-kb: 512
     "#;
 
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
                 only: Some(vec!["py/**/foo/*.py".to_string().into()]),
@@ -789,7 +971,7 @@ max-file-size-kb: 512
             ignore_generated_files: None,
         };
 
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -799,130 +981,18 @@ max-file-size-kb: 512
     fn test_parse_no_rulesets() {
         let data = r#"
     "#;
-        let res = parse_config_file(data);
+        let res = crate::config_file::parse_config_file(data);
         assert!(res.is_err());
-    }
-
-    #[test]
-    fn test_argument_provider_returns_arg_for_default_prefix() {
-        let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "/", "arg", "value");
-
-        let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
-        assert_eq!(argument_provider.get_arguments("a", "rule"), expected);
-        assert_eq!(argument_provider.get_arguments("b/c", "rule"), expected);
-    }
-
-    #[test]
-    fn test_argument_provider_returns_arg_for_path_prefix() {
-        let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a/b/c", "arg", "value");
-
-        let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
-        assert!(argument_provider.get_arguments("a", "rule").is_empty());
-        assert!(argument_provider.get_arguments("a/b", "rule").is_empty());
-        assert_eq!(argument_provider.get_arguments("a/b/c", "rule"), expected);
-        assert_eq!(argument_provider.get_arguments("a/b/c/d", "rule"), expected);
-    }
-
-    #[test]
-    fn test_argument_provider_returns_arg_for_longest_path_prefix() {
-        let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a/b", "arg", "first");
-        argument_provider.add_argument("rule", "a/b/c", "arg", "second");
-
-        let expected_first = HashMap::from([("arg".to_string(), "first".to_string())]);
-        let expected_second = HashMap::from([("arg".to_string(), "second".to_string())]);
-        assert!(argument_provider.get_arguments("a", "rule").is_empty());
-        assert_eq!(
-            argument_provider.get_arguments("a/b", "rule"),
-            expected_first
-        );
-        assert_eq!(
-            argument_provider.get_arguments("a/b/c", "rule"),
-            expected_second
-        );
-        assert_eq!(
-            argument_provider.get_arguments("a/b/c/d", "rule"),
-            expected_second
-        );
-    }
-
-    #[test]
-    fn test_argument_provider_returns_multiple_args_in_path() {
-        let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a", "arg1", "first_1");
-        argument_provider.add_argument("rule", "a", "arg2", "first_2");
-        argument_provider.add_argument("rule", "a/b", "arg3", "first_3");
-        argument_provider.add_argument("rule", "a/b/c", "arg1", "second_1");
-
-        assert_eq!(
-            argument_provider.get_arguments("a", "rule"),
-            HashMap::from([
-                ("arg1".to_string(), "first_1".to_string()),
-                ("arg2".to_string(), "first_2".to_string())
-            ])
-        );
-        assert_eq!(
-            argument_provider.get_arguments("a/b", "rule"),
-            HashMap::from([
-                ("arg1".to_string(), "first_1".to_string()),
-                ("arg2".to_string(), "first_2".to_string()),
-                ("arg3".to_string(), "first_3".to_string())
-            ])
-        );
-        assert_eq!(
-            argument_provider.get_arguments("a/b/c", "rule"),
-            HashMap::from([
-                ("arg1".to_string(), "second_1".to_string()),
-                ("arg2".to_string(), "first_2".to_string()),
-                ("arg3".to_string(), "first_3".to_string())
-            ])
-        );
-    }
-
-    #[test]
-    fn test_argument_provider_is_independent_from_insertion_order() {
-        let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a/b/c", "arg1", "second_1");
-        argument_provider.add_argument("rule", "a", "arg2", "first_2");
-        argument_provider.add_argument("rule", "a/b", "arg3", "first_3");
-        argument_provider.add_argument("rule", "a", "arg1", "first_1");
-
-        assert_eq!(
-            argument_provider.get_arguments("a", "rule"),
-            HashMap::from([
-                ("arg1".to_string(), "first_1".to_string()),
-                ("arg2".to_string(), "first_2".to_string())
-            ])
-        );
-        assert_eq!(
-            argument_provider.get_arguments("a/b", "rule"),
-            HashMap::from([
-                ("arg1".to_string(), "first_1".to_string()),
-                ("arg2".to_string(), "first_2".to_string()),
-                ("arg3".to_string(), "first_3".to_string())
-            ])
-        );
-        assert_eq!(
-            argument_provider.get_arguments("a/b/c", "rule"),
-            HashMap::from([
-                ("arg1".to_string(), "second_1".to_string()),
-                ("arg2".to_string(), "first_2".to_string()),
-                ("arg3".to_string(), "first_3".to_string())
-            ])
-        );
     }
 
     #[test]
     fn test_serialize_ruleset_configs_empty() {
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::new(),
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         assert_eq!(
             serialized.trim(),
             r#"schema-version: v1
@@ -936,12 +1006,11 @@ rulesets: []"#
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         assert_eq!(
             serialized.trim(),
             r#"schema-version: v1
@@ -986,12 +1055,11 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r#"
 schema-version: v1
@@ -1046,12 +1114,11 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r#"
 schema-version: v1
@@ -1097,12 +1164,11 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r"
 schema-version: v1
@@ -1146,12 +1212,11 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r"
 schema-version: v1
@@ -1165,6 +1230,48 @@ rulesets:
           my-path/to-file: '4'
 "
         .trim();
+
+        assert_eq!(serialized, expected);
+    }
+    
+    #[test]
+    fn test_serialize_severities() {
+        let mut rulesets = IndexMap::new();
+
+        let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
+
+        rules.insert(
+            "rule-number-1".into(),
+            RuleConfig {
+                severity: Some(RuleSeverity::Warning),
+                ..Default::default()
+            },
+        );
+
+        rulesets.insert(
+            "java-1".to_string(),
+            RulesetConfig {
+                rules,
+                ..Default::default()
+            },
+        );
+
+        let config = ConfigFile {
+            rulesets,
+            ..Default::default()
+        };
+
+        let serialized = config_file_to_yaml(&config).unwrap();
+        let serialized = serialized.trim();
+        let expected = r"
+schema-version: v1
+rulesets:
+- java-1: null
+  rules:
+    rule-number-1:
+      severity: WARNING
+"
+            .trim();
 
         assert_eq!(serialized, expected);
     }

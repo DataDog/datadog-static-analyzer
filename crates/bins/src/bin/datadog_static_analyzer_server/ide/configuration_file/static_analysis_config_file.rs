@@ -1,5 +1,6 @@
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
+use kernel::config_file::config_file_to_yaml;
 use kernel::{
     config_file::parse_config_file,
     model::config_file::{ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig},
@@ -171,11 +172,7 @@ impl StaticAnalysisConfigFile {
                 e
             })
         } else {
-            let mut inner = ConfigFile::default();
-            if inner.schema_version.is_empty() {
-                inner.schema_version = LATEST_SUPPORTED_CONFIG_VERSION.to_string();
-            }
-            Ok(Self(inner))
+            Ok(Self(ConfigFile::default()))
         }?;
 
         config.add_rulesets(rulesets);
@@ -235,7 +232,7 @@ impl StaticAnalysisConfigFile {
 
     /// Serializes the `StaticAnalysisConfigFile` into a YAML string.
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
-        let str = serde_yaml::to_string(&**self)?;
+        let str = config_file_to_yaml(&**self)?;
         // fix null maps
         let fixed = str.replace(": null", ":");
         Ok(fixed)
