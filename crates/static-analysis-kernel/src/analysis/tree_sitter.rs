@@ -1,7 +1,10 @@
 use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
 use crate::model::common::{Language, Position};
 use anyhow::Result;
+use indexmap::IndexMap;
 use std::collections::HashMap;
+use std::sync::Arc;
+use tree_sitter::CaptureQuantifier;
 use tree_sitter::QueryCursor;
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
@@ -55,6 +58,177 @@ pub fn get_tree(code: &str, language: &Language) -> Option<tree_sitter::Tree> {
 pub fn get_query(query_code: &str, language: &Language) -> Result<tree_sitter::Query> {
     let tree_sitter_language = get_tree_sitter_language(language);
     Ok(tree_sitter::Query::new(&tree_sitter_language, query_code)?)
+}
+
+/// A wrapper around a [`tree_sitter::Query`].
+#[derive(Debug)]
+pub struct TSQuery {
+    query: tree_sitter::Query,
+    capture_names: Vec<Arc<str>>,
+}
+
+impl TSQuery {
+    pub fn try_new(
+        language: &tree_sitter::Language,
+        source: &str,
+    ) -> std::result::Result<Self, tree_sitter::QueryError> {
+        let query = tree_sitter::Query::new(language, source)?;
+        let capture_names = Self::build_cache(&query);
+        Ok(Self {
+            query,
+            capture_names,
+        })
+    }
+
+    /// Returns a [`TSQueryCursor`] bound to the provided cursor.
+    pub fn with_cursor<'a>(&'a self, cursor: &'a mut tree_sitter::QueryCursor) -> TSQueryCursor {
+        TSQueryCursor {
+            query: &self.query,
+            capture_names: self.capture_names.as_slice(),
+            cursor: MutCow::Borrowed(cursor),
+            captures_scratch: IndexMap::new(),
+        }
+    }
+
+    /// A convenience function to return a [`TSQueryCursor`].
+    ///
+    /// This is relatively slow, as it allocates a new [`tree_sitter::QueryCursor`] and drops it after
+    /// performing the query. Consider using [`TSQuery::with_cursor`] where possible.
+    pub fn cursor(&self) -> TSQueryCursor {
+        let cursor = MutCow::Owned(tree_sitter::QueryCursor::new());
+        TSQueryCursor {
+            query: &self.query,
+            capture_names: self.capture_names.as_slice(),
+            cursor,
+            captures_scratch: IndexMap::new(),
+        }
+    }
+
+    /// Generates a cache of the capture names as an [`Arc<str>`].
+    fn build_cache(query: &tree_sitter::Query) -> Vec<Arc<str>> {
+        query
+            .capture_names()
+            .iter()
+            .map(|&name| Arc::from(name))
+            .collect::<Vec<_>>()
+    }
+}
+
+impl From<tree_sitter::Query> for TSQuery {
+    fn from(value: tree_sitter::Query) -> Self {
+        let capture_names = TSQuery::build_cache(&value);
+        Self {
+            query: value,
+            capture_names,
+        }
+    }
+}
+
+/// A collection of [`TSQueryCapture`]s from a [`tree_sitter::QueryMatch`].
+pub type QueryMatch<T> = Vec<TSQueryCapture<T>>;
+
+/// A stateful struct for iterating over a tree-sitter query's matches.
+pub struct TSQueryCursor<'a, 'tree>
+where
+    'a: 'tree,
+{
+    query: &'a tree_sitter::Query,
+    capture_names: &'a [Arc<str>],
+    cursor: MutCow<'a, tree_sitter::QueryCursor>,
+    // A scratch IndexMap used to group captures with the same name.
+    captures_scratch: IndexMap<u32, TSQueryCapture<tree_sitter::Node<'tree>>>,
+}
+
+enum MutCow<'a, T> {
+    Borrowed(&'a mut T),
+    Owned(T),
+}
+
+impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
+    /// Iterate over all the tree-sitter query matches in the order that they were found.
+    ///
+    /// ***Note:*** Because multiple patterns can match the same set of nodes, one match may contain captures
+    /// that appear before _(i.e. the source text location)_ some of the captures from a previous match.
+    pub fn matches(
+        &'a mut self,
+        node: tree_sitter::Node<'tree>,
+        text: &'tree str,
+    ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> {
+        let cursor = match &mut self.cursor {
+            MutCow::Borrowed(cursor) => cursor,
+            MutCow::Owned(cursor) => cursor,
+        };
+        let matches = cursor.matches(self.query, node, text.as_bytes());
+        matches.map(|q_match| {
+            for capture in q_match.captures {
+                self.captures_scratch
+                    .entry(capture.index)
+                    .and_modify(|qc| qc.push(capture.node))
+                    .or_insert_with(|| {
+                        let name = Arc::clone(&self.capture_names[capture.index as usize]);
+                        // --- If the quantifier is either `+` or `*`, start with an array:
+                        // (comment)+ @cap              TSCaptureContent::Multi
+                        //
+                        // Otherwise, use a scalar:
+                        // (comment)  @cap              TSCaptureContent::Single
+                        let quantifiers = self.query.capture_quantifiers(q_match.pattern_index);
+                        let contents = if matches!(
+                            quantifiers[capture.index as usize],
+                            CaptureQuantifier::OneOrMore | CaptureQuantifier::ZeroOrMore
+                        ) {
+                            TSCaptureContent::Multi(vec![capture.node])
+                        } else {
+                            TSCaptureContent::Single(capture.node)
+                        };
+                        TSQueryCapture::<tree_sitter::Node> { name, contents }
+                    });
+            }
+            self.captures_scratch
+                .drain(..)
+                .map(|(_, query_capture)| query_capture)
+                .collect::<Vec<_>>()
+        })
+    }
+}
+
+/// An intermediate struct that normalizes a result from a [`tree_sitter::QueryMatch`].
+/// It contains the `name` of the capture, as well as data for either:
+/// * a single node ([`tree_sitter::QueryCapture`])
+/// * multiple nodes ([`tree_sitter::QueryCaptures`])
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct TSQueryCapture<T> {
+    pub name: Arc<str>,
+    pub contents: TSCaptureContent<T>,
+}
+
+impl<T> TSQueryCapture<T> {
+    /// Adds a [`T`] as a capture.
+    pub fn push(&mut self, value: T) {
+        if let TSCaptureContent::Multi(caps) = &mut self.contents {
+            caps.push(value);
+            return;
+        }
+        // Otherwise, we need to upgrade the `Single` to a `Multi`.
+        let single = std::mem::replace(
+            &mut self.contents,
+            TSCaptureContent::Multi(Vec::with_capacity(2)),
+        );
+        let TSCaptureContent::Single(prior_value) = single else {
+            unreachable!()
+        };
+        let TSCaptureContent::Multi(vec) = &mut self.contents else {
+            unreachable!()
+        };
+        vec.push(prior_value);
+        vec.push(value);
+    }
+}
+
+/// An enum describing whether a named capture has one or many captured nodes.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub enum TSCaptureContent<T> {
+    Single(T),
+    Multi(Vec<T>),
 }
 
 // Get all the match nodes based on a query. For each match, we build a `MatchNode`
