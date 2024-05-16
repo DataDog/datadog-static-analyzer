@@ -129,7 +129,7 @@ pub type QueryMatch<T> = Vec<TSQueryCapture<T>>;
 /// A stateful struct for iterating over a tree-sitter query's matches.
 pub struct TSQueryCursor<'a, 'tree>
 where
-    'a: 'tree,
+    'tree: 'a,
 {
     query: &'a tree_sitter::Query,
     capture_names: &'a [Arc<str>],
@@ -152,7 +152,7 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
         &'a mut self,
         node: tree_sitter::Node<'tree>,
         text: &'tree str,
-    ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> {
+    ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> + 'a {
         let cursor = match &mut self.cursor {
             MutCow::Borrowed(cursor) => cursor,
             MutCow::Owned(cursor) => cursor,
