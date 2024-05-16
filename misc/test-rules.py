@@ -111,14 +111,45 @@ def ping_server(port):
     except requests.exceptions.ConnectionError:
         return False
 
-def start_server(port):
-    pid = os.spawnl(os.P_NOWAIT, options.serverbin, options.serverbin, "-p", str(port))
-    while True:
+
+# Gets a currently free port. (note: this is subject to race conditions, and so isn't guaranteed)
+def get_free_port():
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("", 0))
+            port = s.getsockname()[1]
+            return port
+    except:
+        return None
+
+
+def start_server():
+    # The maximum number of times to try to find a port
+    MAX_STARTS = 10
+    # The maximum number of times to try to ping a server
+    MAX_PINGS = 5
+    port = -1
+    pid = -1
+    for start_attempt in range(MAX_STARTS):
+        port = get_free_port()
+        if port is None:
+            continue
+        try:
+            pid = os.spawnl(
+                os.P_NOWAIT, options.serverbin, options.serverbin, "-p", str(port)
+            )
+        except:
+            continue
+        time.sleep(0.1)
+    for ping_attempt in range(MAX_PINGS):
         if ping_server(port):
-            break
+            return port, pid
         time.sleep(1.0)
         print(f"waiting for server to start on port {port}")
-    return pid
+    print(f"Error: unable start a server after {MAX_STARTS} attempts")
+    sys.exit(1)
 
 def stop_server(server_pid):
     os.kill(server_pid, signal.SIGKILL)
@@ -281,13 +312,9 @@ for ruleset_name in rulesets:
     # First, get all the tests running on the CLI
     test_ruleset_cli(ruleset)
 
-    # Then, get all the tests running on the server
-    # Get a post to run the server
-    port = random.randint(4000, 9000)
-    print(f"testing server on port {port}")
-
     # Start the server
-    server_pid = start_server(port)
+    port, server_pid = start_server()
+    print(f"testing server on port {port}")
 
     # Execute all tests
     test_ruleset_server(ruleset, port)
@@ -298,7 +325,6 @@ for ruleset_name in rulesets:
         print("server not active after testing")
         sys.exit(1)
     print(f"==== Done testing ruleset {ruleset_name} ====")
-
-stop_server(server_pid)
+    stop_server(server_pid)
 
 sys.exit(0)
