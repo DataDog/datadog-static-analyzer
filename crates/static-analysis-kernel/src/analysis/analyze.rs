@@ -2,10 +2,10 @@ use crate::analysis::file_context::common::get_file_context;
 use crate::analysis::generated_content::is_generated_file;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
-use crate::arguments::ArgumentProvider;
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
+use crate::rule_config::{RulesConfig, RulesConfigProvider};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::time::Instant;
@@ -91,7 +91,7 @@ pub fn analyze<I>(
     rules: I,
     filename: &str,
     code: &str,
-    argument_provider: &ArgumentProvider,
+    rules_config: &RulesConfig,
     analysis_option: &AnalysisOptions,
 ) -> Vec<RuleResult>
 where
@@ -125,6 +125,7 @@ where
             let file_context = get_file_context(&tree, language, &code.to_string());
             rules
                 .into_iter()
+                .filter(|rule| rules_config.is_rule_enabled(&rule.borrow().name))
                 .map(|rule| {
                     let rule = rule.borrow();
                     if analysis_option.use_debug {
@@ -138,7 +139,7 @@ where
                         &rule.tree_sitter_query,
                         filename,
                         code,
-                        &argument_provider.get_arguments(filename, &rule.name),
+                        &rules_config.arguments(&rule.name),
                     );
 
                     let query_node_time_ms = query_node_time.elapsed().as_millis();
@@ -168,6 +169,17 @@ where
                         rule_result.violations.retain(|v| {
                             !lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line)
                         });
+                        // change severity and category of violations if overridden in configuration
+                        if let Some(severity) = rules_config.severity(&rule.name) {
+                            for v in &mut rule_result.violations {
+                                v.severity = severity
+                            }
+                        }
+                        if let Some(category) = rules_config.category(&rule.name) {
+                            for v in &mut rule_result.violations {
+                                v.category = category;
+                            }
+                        }
                         rule_result.query_node_time_ms = query_node_time_ms;
                         rule_result.parsing_time_ms = parsing_time_ms;
 
@@ -185,6 +197,7 @@ mod tests {
     use crate::analysis::tree_sitter::get_query;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
+    use crate::rule_config::RulesConfigProvider;
 
     const QUERY_CODE: &str = r#"
 (function_definition
@@ -240,7 +253,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.py",
             PYTHON_CODE,
-            &ArgumentProvider::new(),
+            &RulesConfig::default(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -316,7 +329,7 @@ function visit(node, filename, code) {
             &vec![rule1, rule2],
             "myfile.py",
             PYTHON_CODE,
-            &ArgumentProvider::new(),
+            &RulesConfig::default(),
             &analysis_options,
         );
         assert_eq!(2, results.len());
@@ -417,7 +430,7 @@ for(var i = 0; i <= 10; i--){}
             &vec![rule1],
             "myfile.js",
             js_code,
-            &ArgumentProvider::new(),
+            &RulesConfig::default(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -472,7 +485,7 @@ def foo():
             &vec![rule1],
             "myfile.py",
             python_code,
-            &ArgumentProvider::new(),
+            &RulesConfig::default(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -527,7 +540,7 @@ def foo(arg1):
             &vec![rule],
             "myfile.py",
             c,
-            &ArgumentProvider::new(),
+            &RulesConfig::default(),
             &analysis_options,
         );
         assert_eq!(1, results.len());
@@ -618,7 +631,7 @@ function visit(node, filename, code) {
             &vec![rule],
             "myfile.go",
             code,
-            &ArgumentProvider::new(),
+            &RulesConfig::default(),
             &analysis_options,
         );
 
@@ -780,16 +793,16 @@ function visit(node, filename, code) {
             use_debug: false,
             ignore_generated_files: false,
         };
-        let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule1", "myfile.py", "my-argument", "101");
-        argument_provider.add_argument("rule1", "myfile.py", "another-arg", "101");
+        let mut rcp = RulesConfigProvider::default();
+        rcp.add_argument("rule1", "myfile.py", "my-argument", "101");
+        rcp.add_argument("rule1", "myfile.py", "another-arg", "101");
 
         let results = analyze(
             &Language::Python,
             &vec![rule1, rule2],
             "myfile.py",
             PYTHON_CODE,
-            &argument_provider,
+            &rcp.for_file("myfile.py"),
             &analysis_options,
         );
 

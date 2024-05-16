@@ -11,6 +11,7 @@ use kernel::config_file::parse_config_file;
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::{is_allowed_by_path_config, PathRestrictions};
+use kernel::rule_config::{RulesConfig, RulesConfigProvider};
 use kernel::rule_overrides::RuleOverrides;
 use kernel::utils::decode_base64_string;
 
@@ -53,23 +54,12 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         };
     }
 
-    // Extract the path restrictions from the configuration file.
-    let path_restrictions = configuration
+    // Extract the rule configurations from the configuration file.
+    let rules_config_provider = configuration
         .as_ref()
-        .map(|cfg_file| PathRestrictions::from_ruleset_configs(&cfg_file.rulesets))
+        .map(RulesConfigProvider::from_config)
         .unwrap_or_default();
-
-    // Extract the overrides from the configuration file.
-    let overrides = configuration
-        .as_ref()
-        .map(RuleOverrides::from_config_file)
-        .unwrap_or_default();
-
-    // Build an argument provider from the configuration file.
-    let argument_provider = configuration
-        .as_ref()
-        .map(ArgumentProvider::from)
-        .unwrap_or_default();
+    let rules_config = rules_config_provider.for_file(&request.filename);
 
     let rules_with_invalid_language: Vec<ServerRule> = request
         .rules
@@ -95,14 +85,13 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     let server_rules_to_rules: Vec<Rule> = request
         .rules
         .iter()
-        .filter(|r| path_restrictions.rule_applies(&r.name, &request.filename))
+        .filter(|r| rules_config.is_rule_enabled(&r.name))
         .map(|r| Rule {
             name: r.name.clone(),
             short_description_base64: r.short_description_base64.clone(),
             description_base64: r.description_base64.clone(),
-            category: overrides
-                .category(&r.name, r.category.unwrap_or(RuleCategory::BestPractices)),
-            severity: overrides.severity(&r.name, r.severity.unwrap_or(RuleSeverity::Warning)),
+            category: r.category.unwrap_or(RuleCategory::BestPractices),
+            severity: r.severity.unwrap_or(RuleSeverity::Warning),
             language: r.language,
             rule_type: r.rule_type,
             cwe: None,
@@ -184,7 +173,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         &rules,
         &request.filename,
         code_decoded_attempt.unwrap().as_str(),
-        &argument_provider,
+        &rules_config,
         &AnalysisOptions {
             use_debug: false,
             log_output: request

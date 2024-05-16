@@ -350,6 +350,7 @@ mod tests {
     use kernel::model::common::Position;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
     use kernel::path_restrictions::PathRestrictions;
+    use kernel::rule_config::RulesConfigProvider;
 
     use super::*;
 
@@ -492,8 +493,7 @@ mod tests {
             output_file: "foo".to_string(),
             num_cpus: 2, // of cpus to use for parallelism
             rules: vec![],
-            path_restrictions: PathRestrictions::default(),
-            argument_provider: ArgumentProvider::new(),
+            rules_config_provider: RulesConfigProvider::default(),
             max_file_size_kb: 1,
             use_staging: false,
             show_performance_statistics: false,

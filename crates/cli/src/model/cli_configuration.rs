@@ -3,11 +3,10 @@ use git2::Repository;
 use sha2::{Digest, Sha256};
 
 use crate::git_utils::get_branch;
-use kernel::arguments::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
 use kernel::model::rule::Rule;
-use kernel::path_restrictions::PathRestrictions;
+use kernel::rule_config::RulesConfigProvider;
 
 use crate::model::datadog_api::DiffAwareRequestArguments;
 
@@ -25,8 +24,7 @@ pub struct CliConfiguration {
     pub output_file: String,
     pub num_cpus: usize, // of cpus to use for parallelism
     pub rules: Vec<Rule>,
-    pub path_restrictions: PathRestrictions,
-    pub argument_provider: ArgumentProvider,
+    pub rules_config_provider: RulesConfigProvider,
     pub max_file_size_kb: u64,
     pub use_staging: bool,
     pub show_performance_statistics: bool,
@@ -158,8 +156,7 @@ mod tests {
                 tests: vec![],
                 is_testing: false,
             }],
-            path_restrictions: PathRestrictions::default(),
-            argument_provider: ArgumentProvider::new(),
+            rules_config_provider: RulesConfigProvider::default(),
             max_file_size_kb: 1,
             use_staging: false,
             show_performance_statistics: false,

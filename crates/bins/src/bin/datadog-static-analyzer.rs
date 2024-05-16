@@ -31,6 +31,7 @@ use indicatif::ProgressBar;
 use kernel::arguments::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::path_restrictions::PathRestrictions;
+use kernel::rule_config::RulesConfigProvider;
 use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
 use std::collections::HashMap;
@@ -347,9 +348,11 @@ fn main() -> Result<()> {
                 exit(1)
             }
         };
+    let rules_config_provider = configuration_file
+        .as_ref()
+        .map(RulesConfigProvider::from_config)
+        .unwrap_or_default();
     let mut rules: Vec<Rule> = Vec::new();
-    let mut path_restrictions = PathRestrictions::default();
-    let mut argument_provider = ArgumentProvider::new();
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
@@ -366,13 +369,7 @@ fn main() -> Result<()> {
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging)
             .context("error when reading rules from API")?;
-        rules.extend(rules_from_api.into_iter().map(|rule| Rule {
-            severity: overrides.severity(&rule.name, rule.severity),
-            category: overrides.category(&rule.name, rule.category),
-            ..rule
-        }));
-        path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
-        argument_provider = ArgumentProvider::from(&conf);
+        rules.extend(rules_from_api);
 
         // copy the only and ignore paths from the configuration file
         path_config.ignore.extend(conf.paths.ignore);
@@ -451,8 +448,7 @@ fn main() -> Result<()> {
         output_format,
         num_cpus,
         rules,
-        path_restrictions,
-        argument_provider,
+        rules_config_provider,
         output_file,
         max_file_size_kb,
         use_staging,
@@ -768,23 +764,14 @@ fn main() -> Result<()> {
                     .unwrap()
                     .to_str()
                     .expect("path contains non-Unicode characters");
-                let mut selected_rules = rules_for_language
-                    .iter()
-                    .filter(|r| {
-                        configuration
-                            .path_restrictions
-                            .rule_applies(&r.name, relative_path)
-                    })
-                    .peekable();
-                let res = if selected_rules.peek().is_none() {
-                    vec![]
-                } else if let Ok(file_content) = fs::read_to_string(&path) {
+                let rules_config = configuration.rules_config_provider.for_file(&relative_path);
+                let res = if let Ok(file_content) = fs::read_to_string(&path) {
                     analyze(
                         language,
-                        selected_rules,
+                        &rules_for_language,
                         relative_path,
                         &file_content,
-                        &configuration.argument_provider,
+                        &rules_config,
                         &analysis_options,
                     )
                 } else {
