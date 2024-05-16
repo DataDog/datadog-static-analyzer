@@ -5,7 +5,7 @@ use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
-use crate::rule_config::{RulesConfig, RulesConfigProvider};
+use crate::rule_config::RulesConfig;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::time::Instant;

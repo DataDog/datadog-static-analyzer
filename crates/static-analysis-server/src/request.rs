@@ -6,13 +6,11 @@ use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use crate::model::violation::violation_to_server;
 use kernel::analysis::analyze::analyze;
-use kernel::arguments::ArgumentProvider;
 use kernel::config_file::parse_config_file;
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
-use kernel::path_restrictions::{is_allowed_by_path_config, PathRestrictions};
-use kernel::rule_config::{RulesConfig, RulesConfigProvider};
-use kernel::rule_overrides::RuleOverrides;
+use kernel::path_restrictions::is_allowed_by_path_config;
+use kernel::rule_config::RulesConfigProvider;
 use kernel::utils::decode_base64_string;
 
 #[tracing::instrument(skip_all)]

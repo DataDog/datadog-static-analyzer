@@ -78,24 +78,24 @@ impl PathPattern {
     }
 }
 
-impl Into<PathPattern> for String {
-    fn into(self) -> PathPattern {
+impl From<String> for PathPattern {
+    fn from(value: String) -> Self {
         PathPattern {
-            glob: GlobBuilder::new(&self)
+            glob: GlobBuilder::new(&value)
                 .literal_separator(true)
                 .empty_alternates(true)
                 .backslash_escape(true)
                 .build()
                 .map(|g| g.compile_matcher())
                 .ok(),
-            prefix: PathBuf::from(self),
+            prefix: PathBuf::from(value),
         }
     }
 }
 
-impl Into<String> for PathPattern {
-    fn into(self) -> String {
-        self.prefix.to_str().unwrap_or("").to_string()
+impl From<PathPattern> for String {
+    fn from(value: PathPattern) -> Self {
+        value.prefix.to_str().unwrap_or("").to_string()
     }
 }
 

@@ -9,8 +9,6 @@ use kernel::{
 use std::{borrow::Cow, fmt::Debug, ops::Deref};
 use tracing::instrument;
 
-pub const LATEST_SUPPORTED_CONFIG_VERSION: &str = "v1";
-
 pub struct StaticAnalysisConfigFile(ConfigFile);
 
 impl From<ConfigFile> for StaticAnalysisConfigFile {
@@ -232,7 +230,7 @@ impl StaticAnalysisConfigFile {
 
     /// Serializes the `StaticAnalysisConfigFile` into a YAML string.
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
-        let str = config_file_to_yaml(&**self)?;
+        let str = config_file_to_yaml(self)?;
         // fix null maps
         let fixed = str.replace(": null", ":");
         Ok(fixed)
@@ -338,7 +336,7 @@ rulesets:
             .unwrap();
             let expected = format!(
                 r"
-schema-version: {LATEST_SUPPORTED_CONFIG_VERSION}
+schema-version: v1
 rulesets:
 - ruleset1
 - ruleset2

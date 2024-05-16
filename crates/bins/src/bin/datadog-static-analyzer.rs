@@ -28,11 +28,8 @@ use cli::secrets::{SecretResult, SecretRule};
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
-use kernel::arguments::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
-use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_config::RulesConfigProvider;
-use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;
@@ -363,8 +360,6 @@ fn main() -> Result<()> {
             eprintln!("a rule file cannot be specified when a configuration file is present.");
             exit(1);
         }
-
-        let overrides = RuleOverrides::from_config_file(&conf);
 
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging)
@@ -764,7 +759,7 @@ fn main() -> Result<()> {
                     .unwrap()
                     .to_str()
                     .expect("path contains non-Unicode characters");
-                let rules_config = configuration.rules_config_provider.for_file(&relative_path);
+                let rules_config = configuration.rules_config_provider.for_file(relative_path);
                 let res = if let Ok(file_content) = fs::read_to_string(&path) {
                     analyze(
                         language,

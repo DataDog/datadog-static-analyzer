@@ -343,13 +343,11 @@ mod tests {
     use std::env;
     use std::path::Path;
 
-    use kernel::arguments::ArgumentProvider;
     use tempfile::{tempdir, TempDir};
 
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::common::Position;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
-    use kernel::path_restrictions::PathRestrictions;
     use kernel::rule_config::RulesConfigProvider;
 
     use super::*;

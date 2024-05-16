@@ -316,7 +316,7 @@ where
             self.0
                 .iter()
                 .map(|(path, value)| {
-                    if path == "" {
+                    if path.is_empty() {
                         ("/", value)
                     } else {
                         (path.as_str(), value)
@@ -400,69 +400,75 @@ where
     }
 }
 
-impl Into<ConfigFile> for YamlConfigFile {
-    fn into(self) -> ConfigFile {
+impl From<YamlConfigFile> for ConfigFile {
+    fn from(value: YamlConfigFile) -> Self {
         ConfigFile {
-            rulesets: self.rulesets.into(),
+            rulesets: value.rulesets.into(),
             paths: {
-                let mut paths = self.paths;
-                if let Some(ip) = self.ignore_paths {
+                let mut paths = value.paths;
+                if let Some(ip) = value.ignore_paths {
                     paths.ignore.extend(ip);
                 }
                 paths.into()
             },
-            ignore_gitignore: self.ignore_gitignore,
-            max_file_size_kb: self.max_file_size_kb,
-            ignore_generated_files: self.ignore_generated_files,
+            ignore_gitignore: value.ignore_gitignore,
+            max_file_size_kb: value.max_file_size_kb,
+            ignore_generated_files: value.ignore_generated_files,
         }
     }
 }
 
-impl Into<YamlConfigFile> for ConfigFile {
-    fn into(self) -> YamlConfigFile {
+impl From<ConfigFile> for YamlConfigFile {
+    fn from(value: ConfigFile) -> Self {
         YamlConfigFile {
             schema_version: SchemaVersion {},
-            rulesets: self.rulesets.into(),
-            paths: self.paths.into(),
+            rulesets: value.rulesets.into(),
+            paths: value.paths.into(),
             ignore_paths: None,
-            ignore_gitignore: self.ignore_gitignore,
-            max_file_size_kb: self.max_file_size_kb,
-            ignore_generated_files: self.ignore_generated_files,
+            ignore_gitignore: value.ignore_gitignore,
+            max_file_size_kb: value.max_file_size_kb,
+            ignore_generated_files: value.ignore_generated_files,
         }
     }
 }
 
-impl Into<PathConfig> for YamlPathConfig {
-    fn into(self) -> PathConfig {
+impl From<YamlPathConfig> for PathConfig {
+    fn from(value: YamlPathConfig) -> Self {
         PathConfig {
-            only: self.only.map(|v| v.into_iter().map(|p| p.into()).collect()),
-            ignore: self.ignore.into_iter().map(|p| p.into()).collect(),
+            only: value
+                .only
+                .map(|v| v.into_iter().map(|p| p.into()).collect()),
+            ignore: value.ignore.into_iter().map(|p| p.into()).collect(),
         }
     }
 }
 
-impl Into<YamlPathConfig> for PathConfig {
-    fn into(self) -> YamlPathConfig {
+impl From<PathConfig> for YamlPathConfig {
+    fn from(value: PathConfig) -> Self {
         YamlPathConfig {
-            only: self.only.map(|v| v.into_iter().map(|p| p.into()).collect()),
-            ignore: self.ignore.into_iter().map(|p| p.into()).collect(),
+            only: value
+                .only
+                .map(|v| v.into_iter().map(|p| p.into()).collect()),
+            ignore: value.ignore.into_iter().map(|p| p.into()).collect(),
         }
     }
 }
 
-impl Into<IndexMap<String, RulesetConfig>> for YamlRulesetList {
-    fn into(self) -> IndexMap<String, RulesetConfig> {
-        self.0
+impl From<YamlRulesetList> for IndexMap<String, RulesetConfig> {
+    fn from(value: YamlRulesetList) -> Self {
+        value
+            .0
             .into_iter()
             .map(|elem| (elem.name, elem.cfg.into()))
             .collect()
     }
 }
 
-impl Into<YamlRulesetList> for IndexMap<String, RulesetConfig> {
-    fn into(self) -> YamlRulesetList {
+impl From<IndexMap<String, RulesetConfig>> for YamlRulesetList {
+    fn from(value: IndexMap<String, RulesetConfig>) -> Self {
         YamlRulesetList(
-            self.into_iter()
+            value
+                .into_iter()
                 .map(|(name, cfg)| NamedRulesetConfig {
                     name,
                     cfg: cfg.into(),
@@ -472,11 +478,11 @@ impl Into<YamlRulesetList> for IndexMap<String, RulesetConfig> {
     }
 }
 
-impl Into<RulesetConfig> for YamlRulesetConfig {
-    fn into(self) -> RulesetConfig {
+impl From<YamlRulesetConfig> for RulesetConfig {
+    fn from(value: YamlRulesetConfig) -> Self {
         RulesetConfig {
-            paths: self.paths.into(),
-            rules: self
+            paths: value.paths.into(),
+            rules: value
                 .rules
                 .0
                 .into_iter()
@@ -486,20 +492,26 @@ impl Into<RulesetConfig> for YamlRulesetConfig {
     }
 }
 
-impl Into<YamlRulesetConfig> for RulesetConfig {
-    fn into(self) -> YamlRulesetConfig {
+impl From<RulesetConfig> for YamlRulesetConfig {
+    fn from(value: RulesetConfig) -> Self {
         YamlRulesetConfig {
-            paths: self.paths.into(),
-            rules: UniqueKeyMap(self.rules.into_iter().map(|(k, v)| (k, v.into())).collect()),
+            paths: value.paths.into(),
+            rules: UniqueKeyMap(
+                value
+                    .rules
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into()))
+                    .collect(),
+            ),
         }
     }
 }
 
-impl Into<RuleConfig> for YamlRuleConfig {
-    fn into(self) -> RuleConfig {
+impl From<YamlRuleConfig> for RuleConfig {
+    fn from(value: YamlRuleConfig) -> Self {
         RuleConfig {
-            paths: self.paths.into(),
-            arguments: self
+            paths: value.paths.into(),
+            arguments: value
                 .arguments
                 .0
                 .into_iter()
@@ -512,41 +524,44 @@ impl Into<RuleConfig> for YamlRuleConfig {
                     )
                 })
                 .collect(),
-            severity: self.severity,
-            category: self.category.map(|v| v.category),
+            severity: value.severity,
+            category: value.category.map(|v| v.category),
         }
     }
 }
 
-impl Into<YamlRuleConfig> for RuleConfig {
-    fn into(self) -> YamlRuleConfig {
+impl From<RuleConfig> for YamlRuleConfig {
+    fn from(value: RuleConfig) -> Self {
         YamlRuleConfig {
-            paths: self.paths.into(),
+            paths: value.paths.into(),
             arguments: UniqueKeyMap(
-                self.arguments
+                value
+                    .arguments
                     .into_iter()
                     .map(|(k, v)| (k, v.by_subtree.into()))
                     .collect(),
             ),
-            severity: self.severity,
-            category: self.category.map(|category| YamlRuleCategory { category }),
+            severity: value.severity,
+            category: value.category.map(|category| YamlRuleCategory { category }),
         }
     }
 }
 
-impl Into<IndexMap<String, String>> for ValuesBySubtree<AnyAsString> {
-    fn into(self) -> IndexMap<String, String> {
-        self.0
+impl From<ValuesBySubtree<AnyAsString>> for IndexMap<String, String> {
+    fn from(value: ValuesBySubtree<AnyAsString>) -> Self {
+        value
+            .0
             .into_iter()
             .map(|(k, v)| (k, v.to_string()))
             .collect()
     }
 }
 
-impl Into<ValuesBySubtree<AnyAsString>> for IndexMap<String, String> {
-    fn into(self) -> ValuesBySubtree<AnyAsString> {
+impl From<IndexMap<String, String>> for ValuesBySubtree<AnyAsString> {
+    fn from(value: IndexMap<String, String>) -> Self {
         ValuesBySubtree(
-            self.into_iter()
+            value
+                .into_iter()
                 .map(|(k, v)| (k, AnyAsString::Str(v)))
                 .collect(),
         )

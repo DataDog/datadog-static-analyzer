@@ -25,7 +25,7 @@ impl RulesConfigProvider {
     pub fn for_file(&self, file_path: &str) -> RulesConfig {
         RulesConfig {
             file_name: file_path.to_string(),
-            provider: &self,
+            provider: self,
         }
     }
 
