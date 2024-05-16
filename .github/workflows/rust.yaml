@@ -30,20 +30,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: default
+        uses: dtolnay/rust-toolchain@stable
       - uses: ./.github/actions/setup-build-env
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: ${{ matrix.config.target }}
           cargo-cache-key: debug
       - name: Run cargo ${{ matrix.cargo_cmd.cmd_name }} ${{ matrix.cargo_cmd.args }}
-        uses: actions-rs/cargo@v1
-        with:
-          command: ${{ matrix.cargo_cmd.cmd_name }}
-          args: ${{ matrix.cargo_cmd.args }}
+        run: cargo ${{ matrix.cargo_cmd.cmd_name }} ${{ matrix.cargo_cmd.args }}
       - name: Check python rulesets - part1
         run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
       - name: Check python rulesets - part2

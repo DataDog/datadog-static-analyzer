@@ -25,10 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
-          profile: default
+        uses: dtolnay/rust-toolchain@stable
       - uses: ./.github/actions/setup-build-env
       - uses: ./.github/actions/rust-cache
         with:

@@ -39,10 +39,8 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ./.github/actions/setup-build-env
       - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
-          override: true
           components: rustfmt, clippy
         # Set the current SHA as the version so that it's exposed on the server.
       - name: Install cross-compilation tools

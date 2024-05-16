@@ -8,13 +8,8 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v3
-    - name: Install Stable + Rustfmt + Clippy
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        components: clippy
-        override: true
-        default: true
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
     - name: cargo install sbom
       run: cargo install --version 0.8.4 cargo-sbom
     - name: cargo generate sbom

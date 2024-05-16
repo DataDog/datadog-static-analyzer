@@ -11,14 +11,11 @@ jobs:
     env:
       DD_SITE: datadoghq.com
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - name: Install Stable + Clippy
+        uses: dtolnay/rust-toolchain@stable
         with:
-            toolchain: stable
-            components: clippy
-            override: true
-            default: true
+          components: clippy
       - uses: ./.github/actions/setup-build-env
       - uses: ./.github/actions/rust-cache
         with:
@@ -37,14 +34,11 @@ jobs:
     env:
       DD_SITE: datad0g.com
     steps:
-      - uses: actions/checkout@v1
-      - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v4
+      - name: Install Stable + Clippy
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: stable
           components: clippy
-          override: true
-          default: true
       - uses: ./.github/actions/setup-build-env
       - uses: ./.github/actions/rust-cache
         with:
