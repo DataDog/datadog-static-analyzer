@@ -9,7 +9,6 @@ use kernel::analysis::analyze::analyze;
 use kernel::config_file::parse_config_file;
 use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
-use kernel::path_restrictions::is_allowed_by_path_config;
 use kernel::rule_config::RulesConfigProvider;
 use kernel::utils::decode_base64_string;
 
@@ -42,7 +41,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     // If the file is excluded by the global configuration, stop early.
     let file_is_excluded_by_cfg = configuration
         .as_ref()
-        .map(|cfg_file| !is_allowed_by_path_config(&cfg_file.paths, &request.filename))
+        .map(|cfg_file| !cfg_file.paths.allows(&request.filename))
         .unwrap_or_default();
     if file_is_excluded_by_cfg {
         tracing::debug!("Skipped excluded file: {}", request.filename);

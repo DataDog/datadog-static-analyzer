@@ -78,6 +78,16 @@ impl PathPattern {
     }
 }
 
+impl PathConfig {
+    pub fn allows(&self, file_name: &str) -> bool {
+        !self.ignore.iter().any(|pattern| pattern.matches(file_name))
+            && match &self.only {
+                None => true,
+                Some(only) => only.iter().any(|pattern| pattern.matches(file_name)),
+            }
+    }
+}
+
 impl From<String> for PathPattern {
     fn from(value: String) -> Self {
         PathPattern {

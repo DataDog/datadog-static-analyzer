@@ -43,10 +43,10 @@ impl PathRestrictions {
         match self.rulesets.get(ruleset) {
             None => true,
             Some(restrictions) => {
-                is_allowed_by_path_config(&restrictions.paths, file_path)
+                restrictions.paths.allows(file_path)
                     && match restrictions.rules.get(short_name) {
                         None => true,
-                        Some(paths) => is_allowed_by_path_config(paths, file_path),
+                        Some(paths) => paths.allows(file_path),
                     }
             }
         }
@@ -57,20 +57,6 @@ fn split_rule_name(name: &str) -> (&str, &str) {
     match name.split_once('/') {
         None => ("", name),
         Some((ruleset, short_name)) => (ruleset, short_name),
-    }
-}
-
-pub fn is_allowed_by_path_config(paths: &PathConfig, file_name: &str) -> bool {
-    if paths
-        .ignore
-        .iter()
-        .any(|pattern| pattern.matches(file_name))
-    {
-        return false;
-    }
-    match &paths.only {
-        None => true,
-        Some(only) => only.iter().any(|pattern| pattern.matches(file_name)),
     }
 }
 
