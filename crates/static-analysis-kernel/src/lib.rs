@@ -1,9 +1,9 @@
 pub mod analysis;
-pub mod arguments;
+mod arguments;
 pub mod config_file;
 pub mod constants;
 pub mod model;
-pub mod path_restrictions;
+mod path_restrictions;
 pub mod rule_config;
-pub mod rule_overrides;
+mod rule_overrides;
 pub mod utils;
