@@ -5,7 +5,7 @@ use kernel::model::rule::Rule;
 
 use anyhow::{Error, Result};
 use getopts::Options;
-use kernel::config_file::ArgumentProvider;
+use kernel::arguments::ArgumentProvider;
 use kernel::model::rule_test::RuleTest;
 use kernel::utils::decode_base64_string;
 use std::env;

@@ -3,7 +3,7 @@ use git2::Repository;
 use sha2::{Digest, Sha256};
 
 use crate::git_utils::get_branch;
-use kernel::config_file::ArgumentProvider;
+use kernel::arguments::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
 use kernel::model::rule::Rule;
