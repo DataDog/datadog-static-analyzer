@@ -1,5 +1,5 @@
 use crate::model::config_file::{
-    ArgumentValues, ConfigFile, PathConfig, RuleConfig, RulesetConfig,
+    BySubtree, ConfigFile, PathConfig, RuleConfig, RulesetConfig, SplitPath,
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use anyhow::Result;
@@ -83,7 +83,7 @@ struct YamlRuleConfig {
     #[serde(flatten)]
     pub paths: YamlPathConfig,
     #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
-    pub arguments: UniqueKeyMap<String, ValuesBySubtree<AnyAsString>>,
+    pub arguments: UniqueKeyMap<String, YamlBySubtree<AnyAsString>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub severity: Option<RuleSeverity>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -92,7 +92,7 @@ struct YamlRuleConfig {
 
 // An object that can hold several values that depend on a subtree prefix.
 #[derive(Default, PartialEq)]
-struct ValuesBySubtree<T>(IndexMap<String, T>);
+struct YamlBySubtree<T>(IndexMap<String, T>);
 
 // A restricted version of RuleCategory, which doesn't deserialize the 'unknown' value.
 #[derive(Serialize, PartialEq)]
@@ -268,7 +268,7 @@ impl Serialize for NamedRulesetConfig {
 // Deserializer for a value that can vary depending on the subtree. It takes either a single value,
 // which takes effect everywhere, or a map from a path prefix to the value that will take effect
 // within that path prefix.
-impl<'de, T> Deserialize<'de> for ValuesBySubtree<T>
+impl<'de, T> Deserialize<'de> for YamlBySubtree<T>
 where
     T: Deserialize<'de>,
 {
@@ -283,26 +283,15 @@ where
             Map(UniqueKeyMap<String, V>),
         }
         match Holder::<T>::deserialize(deserializer)? {
-            Holder::Single(value) => Ok(ValuesBySubtree(IndexMap::from([("".to_string(), value)]))),
-            Holder::Map(map) => Ok(ValuesBySubtree(
-                map.0
-                    .into_iter()
-                    .map(|(path, value)| {
-                        if path == "/" || path == "**" {
-                            ("".to_string(), value)
-                        } else {
-                            (path, value)
-                        }
-                    })
-                    .collect(),
-            )),
+            Holder::Single(value) => Ok(YamlBySubtree(IndexMap::from([("".to_string(), value)]))),
+            Holder::Map(map) => Ok(YamlBySubtree(map.0)),
         }
     }
 }
 
 // Serializer for a value that can vary depending on the subtree. If the map only contains a global
 // value, it is serialized as the value itself; otherwise, it is serialized as a map.
-impl<T> Serialize for ValuesBySubtree<T>
+impl<T> Serialize for YamlBySubtree<T>
 where
     T: Serialize,
 {
@@ -310,20 +299,10 @@ where
     where
         S: Serializer,
     {
-        if let (1, Some(value)) = (self.0.len(), self.0.get("")) {
+        if let (1, Some(value)) = (self.0.len(), self.0.get("/")) {
             value.serialize(serializer)
         } else {
-            self.0
-                .iter()
-                .map(|(path, value)| {
-                    if path.is_empty() {
-                        ("/", value)
-                    } else {
-                        (path.as_str(), value)
-                    }
-                })
-                .collect::<IndexMap<_, _>>()
-                .serialize(serializer)
+            self.0.serialize(serializer)
         }
     }
 }
@@ -515,14 +494,7 @@ impl From<YamlRuleConfig> for RuleConfig {
                 .arguments
                 .0
                 .into_iter()
-                .map(|(k, v)| {
-                    (
-                        k,
-                        ArgumentValues {
-                            by_subtree: v.into(),
-                        },
-                    )
-                })
+                .map(|(k, v)| (k, v.into()))
                 .collect(),
             severity: value.severity,
             category: value.category.map(|v| v.category),
@@ -538,7 +510,7 @@ impl From<RuleConfig> for YamlRuleConfig {
                 value
                     .arguments
                     .into_iter()
-                    .map(|(k, v)| (k, v.by_subtree.into()))
+                    .map(|(k, v)| (k, v.into()))
                     .collect(),
             ),
             severity: value.severity,
@@ -547,22 +519,22 @@ impl From<RuleConfig> for YamlRuleConfig {
     }
 }
 
-impl From<ValuesBySubtree<AnyAsString>> for IndexMap<String, String> {
-    fn from(value: ValuesBySubtree<AnyAsString>) -> Self {
+impl From<YamlBySubtree<AnyAsString>> for BySubtree<String> {
+    fn from(value: YamlBySubtree<AnyAsString>) -> Self {
         value
             .0
             .into_iter()
-            .map(|(k, v)| (k, v.to_string()))
+            .map(|(k, v)| (SplitPath::from_string(k.as_str()), v.to_string()))
             .collect()
     }
 }
 
-impl From<IndexMap<String, String>> for ValuesBySubtree<AnyAsString> {
-    fn from(value: IndexMap<String, String>) -> Self {
-        ValuesBySubtree(
+impl From<BySubtree<String>> for YamlBySubtree<AnyAsString> {
+    fn from(value: BySubtree<String>) -> Self {
+        YamlBySubtree(
             value
-                .into_iter()
-                .map(|(k, v)| (k, AnyAsString::Str(v)))
+                .iter()
+                .map(|(k, v)| (k.to_string(), AnyAsString::Str(v.clone())))
                 .collect(),
         )
     }
@@ -592,7 +564,7 @@ impl Display for AnyAsString {
 mod tests {
     use super::*;
     use crate::model::config_file::{
-        ArgumentValues, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+        ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -894,23 +866,16 @@ rulesets:
                                 arguments: IndexMap::from([
                                     (
                                         "arg1".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([(
-                                                "".to_string(),
-                                                "100".to_string(),
-                                            )]),
-                                        },
+                                        BySubtree::from([("", "100".to_string())]),
                                     ),
                                     (
                                         "arg2".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([
-                                                ("".to_string(), "200".to_string()),
-                                                ("uno".to_string(), "201".to_string()),
-                                                ("uno/dos".to_string(), "202".to_string()),
-                                                ("tres".to_string(), "203".to_string()),
-                                            ]),
-                                        },
+                                        BySubtree::from([
+                                            ("", "200".to_string()),
+                                            ("uno", "201".to_string()),
+                                            ("uno/dos", "202".to_string()),
+                                            ("tres", "203".to_string()),
+                                        ]),
                                     ),
                                 ]),
                                 severity: None,
@@ -924,21 +889,11 @@ rulesets:
                                 arguments: IndexMap::from([
                                     (
                                         "arg3".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([(
-                                                "".to_string(),
-                                                "300".to_string(),
-                                            )]),
-                                        },
+                                        BySubtree::from([("", "300".to_string())]),
                                     ),
                                     (
                                         "arg4".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([(
-                                                "cuatro".to_string(),
-                                                "400".to_string(),
-                                            )]),
-                                        },
+                                        BySubtree::from([("cuatro", "400".to_string())]),
                                     ),
                                 ]),
                                 severity: None,
@@ -1204,9 +1159,10 @@ rulesets:
 
         let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
         let mut arguments = IndexMap::new();
-        let mut by_subtree = IndexMap::new();
-        by_subtree.insert("".to_string(), "3".to_string());
-        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+        arguments.insert(
+            "max-params".to_string(),
+            BySubtree::from([("", "3".to_string())]),
+        );
 
         rules.insert(
             "rule-number-1".into(),
@@ -1251,10 +1207,10 @@ rulesets:
 
         let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
         let mut arguments = IndexMap::new();
-        let mut by_subtree = IndexMap::new();
-        by_subtree.insert("".to_string(), "3".to_string());
-        by_subtree.insert("my-path/to-file".to_string(), "4".to_string());
-        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+        arguments.insert(
+            "max-params".to_string(),
+            BySubtree::from([("", "3".to_string()), ("my-path/to-file", "4".to_string())]),
+        );
 
         rules.insert(
             "rule-number-1".into(),

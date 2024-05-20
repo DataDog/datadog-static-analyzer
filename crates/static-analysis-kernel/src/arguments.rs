@@ -1,15 +1,12 @@
-use crate::model::config_file::ConfigFile;
-use sequence_trie::SequenceTrie;
+use crate::model::config_file::{BySubtree, ConfigFile, SplitPath};
 use std::collections::HashMap;
 
 type Argument = (String, String);
 
-type ArgumentsByPrefix = SequenceTrie<String, Vec<Argument>>;
-
 #[derive(Clone)]
 // Used to extract rule arguments in the analyzer.
 pub struct ArgumentProvider {
-    by_rule: HashMap<String, ArgumentsByPrefix>,
+    by_rule: HashMap<String, BySubtree<Vec<Argument>>>,
 }
 
 impl ArgumentProvider {
@@ -25,7 +22,7 @@ impl ArgumentProvider {
             for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
                 for (arg_name, arg_values) in &rule_cfg.arguments {
                     let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
-                    for (prefix, value) in &arg_values.by_subtree {
+                    for (prefix, value) in arg_values.iter() {
                         provider.add_argument(&rule_name, prefix, arg_name, value);
                     }
                 }
@@ -34,19 +31,11 @@ impl ArgumentProvider {
         provider
     }
 
-    pub fn add_argument(&mut self, rule_name: &str, path: &str, argument: &str, value: &str) {
-        let prefix: Vec<String> = path
-            .split('/')
-            .filter(|c| !c.is_empty())
-            .map(|c| c.to_string())
-            .collect();
+    pub fn add_argument(&mut self, rule_name: &str, path: SplitPath, argument: &str, value: &str) {
         let trie = self.by_rule.entry(rule_name.to_string()).or_default();
-        match trie.get_mut(prefix.iter()) {
+        match trie.get_mut(&path) {
             None => {
-                trie.insert(
-                    prefix.iter(),
-                    vec![(argument.to_string(), value.to_string())],
-                );
+                trie.insert(&path, vec![(argument.to_string(), value.to_string())]);
             }
             Some(v) => {
                 v.push((argument.to_string(), value.to_string()));
@@ -58,10 +47,7 @@ impl ArgumentProvider {
     pub fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
         let mut out = HashMap::new();
         if let Some(by_prefix) = self.by_rule.get(rulename) {
-            for args in by_prefix
-                .prefix_iter(filename.split('/').filter(|c| !c.is_empty()))
-                .filter_map(|x| x.value())
-            {
+            for args in by_prefix.prefix_iter(&SplitPath::from_string(filename)) {
                 // Longer prefixes appear last, so they'll override arguments from shorter prefixes.
                 out.extend(args.clone());
             }
@@ -84,7 +70,7 @@ mod tests {
     #[test]
     fn test_argument_provider_returns_arg_for_default_prefix() {
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "/", "arg", "value");
+        argument_provider.add_argument("rule", SplitPath::from_string("/"), "arg", "value");
 
         let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
         assert_eq!(argument_provider.get_arguments("a", "rule"), expected);
@@ -94,7 +80,7 @@ mod tests {
     #[test]
     fn test_argument_provider_returns_arg_for_path_prefix() {
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a/b/c", "arg", "value");
+        argument_provider.add_argument("rule", SplitPath::from_string("a/b/c"), "arg", "value");
 
         let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
         assert!(argument_provider.get_arguments("a", "rule").is_empty());
@@ -106,8 +92,8 @@ mod tests {
     #[test]
     fn test_argument_provider_returns_arg_for_longest_path_prefix() {
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a/b", "arg", "first");
-        argument_provider.add_argument("rule", "a/b/c", "arg", "second");
+        argument_provider.add_argument("rule", SplitPath::from_string("a/b"), "arg", "first");
+        argument_provider.add_argument("rule", SplitPath::from_string("a/b/c"), "arg", "second");
 
         let expected_first = HashMap::from([("arg".to_string(), "first".to_string())]);
         let expected_second = HashMap::from([("arg".to_string(), "second".to_string())]);
@@ -129,10 +115,10 @@ mod tests {
     #[test]
     fn test_argument_provider_returns_multiple_args_in_path() {
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a", "arg1", "first_1");
-        argument_provider.add_argument("rule", "a", "arg2", "first_2");
-        argument_provider.add_argument("rule", "a/b", "arg3", "first_3");
-        argument_provider.add_argument("rule", "a/b/c", "arg1", "second_1");
+        argument_provider.add_argument("rule", SplitPath::from_string("a"), "arg1", "first_1");
+        argument_provider.add_argument("rule", SplitPath::from_string("a"), "arg2", "first_2");
+        argument_provider.add_argument("rule", SplitPath::from_string("a/b"), "arg3", "first_3");
+        argument_provider.add_argument("rule", SplitPath::from_string("a/b/c"), "arg1", "second_1");
 
         assert_eq!(
             argument_provider.get_arguments("a", "rule"),
@@ -162,10 +148,10 @@ mod tests {
     #[test]
     fn test_argument_provider_is_independent_from_insertion_order() {
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule", "a/b/c", "arg1", "second_1");
-        argument_provider.add_argument("rule", "a", "arg2", "first_2");
-        argument_provider.add_argument("rule", "a/b", "arg3", "first_3");
-        argument_provider.add_argument("rule", "a", "arg1", "first_1");
+        argument_provider.add_argument("rule", SplitPath::from_string("a/b/c"), "arg1", "second_1");
+        argument_provider.add_argument("rule", SplitPath::from_string("a"), "arg2", "first_2");
+        argument_provider.add_argument("rule", SplitPath::from_string("a/b"), "arg3", "first_3");
+        argument_provider.add_argument("rule", SplitPath::from_string("a"), "arg1", "first_1");
 
         assert_eq!(
             argument_provider.get_arguments("a", "rule"),

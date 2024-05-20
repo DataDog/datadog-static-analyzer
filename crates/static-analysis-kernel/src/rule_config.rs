@@ -1,5 +1,5 @@
 use crate::arguments::ArgumentProvider;
-use crate::model::config_file::ConfigFile;
+use crate::model::config_file::{ConfigFile, SplitPath};
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use crate::path_restrictions::PathRestrictions;
 use crate::rule_overrides::RuleOverrides;
@@ -30,8 +30,12 @@ impl RulesConfigProvider {
     }
 
     pub fn add_argument(&mut self, rule_name: &str, file_path: &str, argument: &str, value: &str) {
-        self.argument_provider
-            .add_argument(rule_name, file_path, argument, value)
+        self.argument_provider.add_argument(
+            rule_name,
+            SplitPath::from_string(file_path),
+            argument,
+            value,
+        )
     }
 }
 
