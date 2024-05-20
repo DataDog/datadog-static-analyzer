@@ -16,6 +16,10 @@ pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
     Ok(serde_yaml::from_str(config_contents)?)
 }
 
+pub fn config_file_to_yaml(cfg: &ConfigFile) -> Result<String> {
+    Ok(serde_yaml::to_string(cfg)?)
+}
+
 const SCHEMA_VERSION: &str = "v1";
 
 pub fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<String, D::Error>
@@ -734,7 +738,7 @@ max-file-size-kb: 512
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         assert_eq!(
             serialized.trim(),
             r#"schema-version: v1
@@ -753,7 +757,7 @@ rulesets: []"#
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         assert_eq!(
             serialized.trim(),
             r#"schema-version: v1
@@ -803,7 +807,7 @@ rulesets:
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r#"
 schema-version: v1
@@ -863,7 +867,7 @@ rulesets:
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r#"
 schema-version: v1
@@ -914,7 +918,7 @@ rulesets:
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r"
 schema-version: v1
@@ -963,7 +967,7 @@ rulesets:
             ..Default::default()
         };
 
-        let serialized = serde_yaml::to_string(&config).unwrap();
+        let serialized = config_file_to_yaml(&config).unwrap();
         let serialized = serialized.trim();
         let expected = r"
 schema-version: v1
