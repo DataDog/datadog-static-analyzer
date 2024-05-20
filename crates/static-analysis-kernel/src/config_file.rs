@@ -85,7 +85,7 @@ struct YamlRuleConfig {
     #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
     pub arguments: UniqueKeyMap<String, YamlBySubtree<AnyAsString>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub severity: Option<RuleSeverity>,
+    pub severity: Option<YamlBySubtree<RuleSeverity>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub category: Option<YamlRuleCategory>,
 }
@@ -496,7 +496,7 @@ impl From<YamlRuleConfig> for RuleConfig {
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))
                 .collect(),
-            severity: value.severity,
+            severity: value.severity.map(YamlBySubtree::into),
             category: value.category.map(|v| v.category),
         }
     }
@@ -513,7 +513,7 @@ impl From<RuleConfig> for YamlRuleConfig {
                     .map(|(k, v)| (k, v.into()))
                     .collect(),
             ),
-            severity: value.severity,
+            severity: value.severity.map(BySubtree::into),
             category: value.category.map(|category| YamlRuleCategory { category }),
         }
     }
@@ -535,6 +535,30 @@ impl From<BySubtree<String>> for YamlBySubtree<AnyAsString> {
             value
                 .iter()
                 .map(|(k, v)| (k.to_string(), AnyAsString::Str(v.clone())))
+                .collect(),
+        )
+    }
+}
+
+impl<T> From<YamlBySubtree<T>> for BySubtree<T> {
+    fn from(value: YamlBySubtree<T>) -> Self {
+        value
+            .0
+            .into_iter()
+            .map(|(k, v)| (SplitPath::from_string(k.as_str()), v))
+            .collect()
+    }
+}
+
+impl<T> From<BySubtree<T>> for YamlBySubtree<T>
+where
+    T: Clone,
+{
+    fn from(value: BySubtree<T>) -> Self {
+        YamlBySubtree(
+            value
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
                 .collect(),
         )
     }
@@ -589,7 +613,7 @@ mod tests {
     #[test]
     fn test_valid_examples_can_be_parsed() {
         for (path, cfg) in get_example_configs("valid") {
-            let result = crate::config_file::parse_config_file(&cfg);
+            let result = parse_config_file(&cfg);
             assert!(
                 result.is_ok(),
                 "expected a valid configuration in {}: {}",
@@ -603,7 +627,7 @@ mod tests {
     #[test]
     fn test_invalid_examples_cannot_be_parsed() {
         for (path, cfg) in get_example_configs("invalid") {
-            let result = crate::config_file::parse_config_file(&cfg);
+            let result = parse_config_file(&cfg);
             assert!(
                 result.is_err(),
                 "expected an invalid configuration in {}",
@@ -628,7 +652,7 @@ rulesets:
             ..ConfigFile::default()
         };
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -650,7 +674,7 @@ rulesets:
       random-iv:
     "#;
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -698,7 +722,7 @@ rulesets:
             ..ConfigFile::default()
         };
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -718,7 +742,7 @@ rulesets:
         - "bar"
     "#;
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -732,7 +756,7 @@ rulesets:
   - go-best-practices
     "#;
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
         let data = r#"
 rulesets:
@@ -741,7 +765,7 @@ rulesets:
   go-best-practices:
     "#;
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -780,7 +804,7 @@ rulesets:
             ..ConfigFile::default()
         };
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -794,7 +818,7 @@ rulesets:
       - no-eval
     "#;
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
 
         let data = r#"
@@ -808,7 +832,7 @@ rulesets:
             - "py/insecure/**"
     "#;
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -827,7 +851,7 @@ rulesets:
           - "bar"
     "#;
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -905,7 +929,7 @@ rulesets:
             )]),
             ..ConfigFile::default()
         };
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -933,7 +957,7 @@ rulesets:
                             RuleConfig {
                                 paths: PathConfig::default(),
                                 arguments: IndexMap::new(),
-                                severity: Some(RuleSeverity::Warning),
+                                severity: Some(BySubtree::from_value(RuleSeverity::Warning)),
                                 category: None,
                             },
                         ),
@@ -942,7 +966,7 @@ rulesets:
                             RuleConfig {
                                 paths: PathConfig::default(),
                                 arguments: IndexMap::new(),
-                                severity: Some(RuleSeverity::Notice),
+                                severity: Some(BySubtree::from_value(RuleSeverity::Notice)),
                                 category: None,
                             },
                         ),
@@ -951,7 +975,7 @@ rulesets:
             )]),
             ..ConfigFile::default()
         };
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -987,7 +1011,7 @@ max-file-size-kb: 512
             ignore_generated_files: None,
         };
 
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert_eq!(expected, res.unwrap());
     }
 
@@ -997,7 +1021,7 @@ max-file-size-kb: 512
     fn test_parse_no_rulesets() {
         let data = r#"
     "#;
-        let res = crate::config_file::parse_config_file(data);
+        let res = parse_config_file(data);
         assert!(res.is_err());
     }
 
@@ -1260,7 +1284,7 @@ rulesets:
         rules.insert(
             "rule-number-1".into(),
             RuleConfig {
-                severity: Some(RuleSeverity::Warning),
+                severity: Some(BySubtree::from_value(RuleSeverity::Warning)),
                 ..Default::default()
             },
         );

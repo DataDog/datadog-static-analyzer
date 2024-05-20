@@ -44,10 +44,10 @@ impl ArgumentProvider {
     }
 
     /// Returns the arguments that apply to the given file and the given rule.
-    pub fn get_arguments(&self, filename: &str, rulename: &str) -> HashMap<String, String> {
+    pub fn get_arguments(&self, filename: &SplitPath, rulename: &str) -> HashMap<String, String> {
         let mut out = HashMap::new();
         if let Some(by_prefix) = self.by_rule.get(rulename) {
-            for args in by_prefix.prefix_iter(&SplitPath::from_string(filename)) {
+            for args in by_prefix.prefix_iter(filename) {
                 // Longer prefixes appear last, so they'll override arguments from shorter prefixes.
                 out.extend(args.clone());
             }
@@ -73,8 +73,14 @@ mod tests {
         argument_provider.add_argument("rule", SplitPath::from_string("/"), "arg", "value");
 
         let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
-        assert_eq!(argument_provider.get_arguments("a", "rule"), expected);
-        assert_eq!(argument_provider.get_arguments("b/c", "rule"), expected);
+        assert_eq!(
+            argument_provider.get_arguments(&SplitPath::from_string("a"), "rule"),
+            expected
+        );
+        assert_eq!(
+            argument_provider.get_arguments(&SplitPath::from_string("b/c"), "rule"),
+            expected
+        );
     }
 
     #[test]
@@ -83,10 +89,20 @@ mod tests {
         argument_provider.add_argument("rule", SplitPath::from_string("a/b/c"), "arg", "value");
 
         let expected = HashMap::from([("arg".to_string(), "value".to_string())]);
-        assert!(argument_provider.get_arguments("a", "rule").is_empty());
-        assert!(argument_provider.get_arguments("a/b", "rule").is_empty());
-        assert_eq!(argument_provider.get_arguments("a/b/c", "rule"), expected);
-        assert_eq!(argument_provider.get_arguments("a/b/c/d", "rule"), expected);
+        assert!(argument_provider
+            .get_arguments(&SplitPath::from_string("a"), "rule")
+            .is_empty());
+        assert!(argument_provider
+            .get_arguments(&SplitPath::from_string("a/b"), "rule")
+            .is_empty());
+        assert_eq!(
+            argument_provider.get_arguments(&SplitPath::from_string("a/b/c"), "rule"),
+            expected
+        );
+        assert_eq!(
+            argument_provider.get_arguments(&SplitPath::from_string("a/b/c/d"), "rule"),
+            expected
+        );
     }
 
     #[test]
@@ -97,17 +113,19 @@ mod tests {
 
         let expected_first = HashMap::from([("arg".to_string(), "first".to_string())]);
         let expected_second = HashMap::from([("arg".to_string(), "second".to_string())]);
-        assert!(argument_provider.get_arguments("a", "rule").is_empty());
+        assert!(argument_provider
+            .get_arguments(&SplitPath::from_string("a"), "rule")
+            .is_empty());
         assert_eq!(
-            argument_provider.get_arguments("a/b", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a/b"), "rule"),
             expected_first
         );
         assert_eq!(
-            argument_provider.get_arguments("a/b/c", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a/b/c"), "rule"),
             expected_second
         );
         assert_eq!(
-            argument_provider.get_arguments("a/b/c/d", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a/b/c/d"), "rule"),
             expected_second
         );
     }
@@ -121,14 +139,14 @@ mod tests {
         argument_provider.add_argument("rule", SplitPath::from_string("a/b/c"), "arg1", "second_1");
 
         assert_eq!(
-            argument_provider.get_arguments("a", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a"), "rule"),
             HashMap::from([
                 ("arg1".to_string(), "first_1".to_string()),
                 ("arg2".to_string(), "first_2".to_string())
             ])
         );
         assert_eq!(
-            argument_provider.get_arguments("a/b", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a/b"), "rule"),
             HashMap::from([
                 ("arg1".to_string(), "first_1".to_string()),
                 ("arg2".to_string(), "first_2".to_string()),
@@ -136,7 +154,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            argument_provider.get_arguments("a/b/c", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a/b/c"), "rule"),
             HashMap::from([
                 ("arg1".to_string(), "second_1".to_string()),
                 ("arg2".to_string(), "first_2".to_string()),
@@ -154,14 +172,14 @@ mod tests {
         argument_provider.add_argument("rule", SplitPath::from_string("a"), "arg1", "first_1");
 
         assert_eq!(
-            argument_provider.get_arguments("a", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a"), "rule"),
             HashMap::from([
                 ("arg1".to_string(), "first_1".to_string()),
                 ("arg2".to_string(), "first_2".to_string())
             ])
         );
         assert_eq!(
-            argument_provider.get_arguments("a/b", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a/b"), "rule"),
             HashMap::from([
                 ("arg1".to_string(), "first_1".to_string()),
                 ("arg2".to_string(), "first_2".to_string()),
@@ -169,7 +187,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            argument_provider.get_arguments("a/b/c", "rule"),
+            argument_provider.get_arguments(&SplitPath::from_string("a/b/c"), "rule"),
             HashMap::from([
                 ("arg1".to_string(), "second_1".to_string()),
                 ("arg2".to_string(), "first_2".to_string()),

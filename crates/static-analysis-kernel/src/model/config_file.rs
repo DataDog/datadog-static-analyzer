@@ -34,7 +34,7 @@ pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     pub paths: PathConfig,
     pub arguments: IndexMap<String, BySubtree<String>>,
-    pub severity: Option<RuleSeverity>,
+    pub severity: Option<BySubtree<RuleSeverity>>,
     pub category: Option<RuleCategory>,
 }
 
@@ -167,11 +167,14 @@ impl<T> BySubtree<T> {
     pub fn new() -> Self {
         BySubtree(SequenceTrie::new())
     }
+    pub fn from_value(value: T) -> Self {
+        Self::from([("", value)])
+    }
     pub fn insert(&mut self, path: &SplitPath, value: T) -> Option<T> {
         self.0.insert(path.0.iter(), value)
     }
     pub fn get(&self, path: &SplitPath) -> Option<&T> {
-        self.0.get(path.0.iter())
+        self.0.get_ancestor(path.0.iter())
     }
     pub fn get_mut(&mut self, path: &SplitPath) -> Option<&mut T> {
         self.0.get_mut(path.0.iter())

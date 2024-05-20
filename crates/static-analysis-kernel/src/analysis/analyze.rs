@@ -195,6 +195,7 @@ where
 mod tests {
     use super::*;
     use crate::analysis::tree_sitter::get_query;
+    use crate::config_file::parse_config_file;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use crate::rule_config::RulesConfigProvider;
@@ -768,7 +769,7 @@ function visit(node, filename, code) {
         "#;
 
         let rule1 = RuleInternal {
-            name: "rule1".to_string(),
+            name: "rs/rule1".to_string(),
             short_description: Some("short desc".to_string()),
             description: Some("description".to_string()),
             category: RuleCategory::CodeStyle,
@@ -778,7 +779,7 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
         let rule2 = RuleInternal {
-            name: "rule2".to_string(),
+            name: "rs/rule2".to_string(),
             short_description: Some("short desc".to_string()),
             description: Some("description".to_string()),
             category: RuleCategory::CodeStyle,
@@ -793,9 +794,20 @@ function visit(node, filename, code) {
             use_debug: false,
             ignore_generated_files: false,
         };
-        let mut rcp = RulesConfigProvider::default();
-        rcp.add_argument("rule1", "myfile.py", "my-argument", "101");
-        rcp.add_argument("rule1", "myfile.py", "another-arg", "101");
+        let rcp = RulesConfigProvider::from_config(
+            &parse_config_file(
+                r#"
+rulesets:
+  - rs:
+    rules:
+      rule1:
+        arguments:
+          my-argument: 101
+          another-arg: 101
+        "#,
+            )
+            .unwrap(),
+        );
 
         let results = analyze(
             &Language::Python,
@@ -812,5 +824,120 @@ function visit(node, filename, code) {
         assert_eq!(result1.violations.len(), 1);
         assert!(result1.violations[0].message.contains("argument = 101"));
         assert_eq!(result2.violations.len(), 0);
+    }
+
+    #[test]
+    fn test_severities() {
+        let rule_code = r#"
+function visit(node, filename, code) {
+    const functionName = node.captures["name"];
+    const error = buildError(
+        functionName.start.line, functionName.start.col,
+        functionName.end.line, functionName.end.col,
+        `error`);
+    addError(error);
+}
+        "#;
+
+        let rule1 = RuleInternal {
+            name: "rs/rule1".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+        };
+        let rule2 = RuleInternal {
+            name: "rs/rule2".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+        };
+        let rules = vec![rule1, rule2];
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+            ignore_generated_files: false,
+        };
+        let rcp = RulesConfigProvider::from_config(
+            &parse_config_file(
+                r#"
+rulesets:
+  - rs:
+    rules:
+      rule1:
+        severity: ERROR
+      rule2:
+        severity:
+          /: NONE
+          uno: NOTICE
+          uno/dos: WARNING
+          tres/myfile.py: ERROR
+        "#,
+            )
+            .unwrap(),
+        );
+
+        {
+            let results = analyze(
+                &Language::Python,
+                &rules,
+                "myfile.py",
+                PYTHON_CODE,
+                &rcp.for_file("myfile.py"),
+                &analysis_options,
+            );
+
+            assert_eq!(2, results.len());
+            let result1 = results.get(0).unwrap();
+            let result2 = results.get(1).unwrap();
+            assert_eq!(result1.violations.len(), 1);
+            assert_eq!(result1.violations[0].severity, RuleSeverity::Error);
+            assert_eq!(result2.violations.len(), 1);
+            assert_eq!(result2.violations[0].severity, RuleSeverity::None);
+        }
+        {
+            let results = analyze(
+                &Language::Python,
+                &rules,
+                "uno/dos/myfile.py",
+                PYTHON_CODE,
+                &rcp.for_file("uno/dos/myfile.py"),
+                &analysis_options,
+            );
+
+            assert_eq!(2, results.len());
+            let result1 = results.get(0).unwrap();
+            let result2 = results.get(1).unwrap();
+            assert_eq!(result1.violations.len(), 1);
+            assert_eq!(result1.violations[0].severity, RuleSeverity::Error);
+            assert_eq!(result2.violations.len(), 1);
+            assert_eq!(result2.violations[0].severity, RuleSeverity::Warning);
+        }
+        {
+            let results = analyze(
+                &Language::Python,
+                &rules,
+                "tres/myfile.py",
+                PYTHON_CODE,
+                &rcp.for_file("tres/myfile.py"),
+                &analysis_options,
+            );
+
+            assert_eq!(2, results.len());
+            let result1 = results.get(0).unwrap();
+            let result2 = results.get(1).unwrap();
+            assert_eq!(result1.violations.len(), 1);
+            assert_eq!(result1.violations[0].severity, RuleSeverity::Error);
+            assert_eq!(result2.violations.len(), 1);
+            assert_eq!(result2.violations[0].severity, RuleSeverity::Error);
+        }
     }
 }

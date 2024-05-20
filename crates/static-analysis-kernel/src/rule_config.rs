@@ -25,22 +25,15 @@ impl RulesConfigProvider {
     pub fn for_file(&self, file_path: &str) -> RulesConfig {
         RulesConfig {
             file_name: file_path.to_string(),
+            split_file_name: SplitPath::from_string(file_path),
             provider: self,
         }
-    }
-
-    pub fn add_argument(&mut self, rule_name: &str, file_path: &str, argument: &str, value: &str) {
-        self.argument_provider.add_argument(
-            rule_name,
-            SplitPath::from_string(file_path),
-            argument,
-            value,
-        )
     }
 }
 
 pub struct RulesConfig<'a> {
     file_name: String,
+    split_file_name: SplitPath,
     provider: &'a RulesConfigProvider,
 }
 
@@ -54,11 +47,13 @@ impl<'a> RulesConfig<'a> {
     pub fn arguments(&self, rule_name: &str) -> HashMap<String, String> {
         self.provider
             .argument_provider
-            .get_arguments(&self.file_name, rule_name)
+            .get_arguments(&self.split_file_name, rule_name)
     }
 
     pub fn severity(&self, rule_name: &str) -> Option<RuleSeverity> {
-        self.provider.rule_overrides.severity(rule_name)
+        self.provider
+            .rule_overrides
+            .severity(rule_name, &self.split_file_name)
     }
 
     pub fn category(&self, rule_name: &str) -> Option<RuleCategory> {
@@ -72,6 +67,7 @@ impl<'a> Default for RulesConfig<'a> {
         let provider = PROVIDER.get_or_init(RulesConfigProvider::default);
         RulesConfig {
             file_name: "".to_string(),
+            split_file_name: SplitPath::from_string(""),
             provider,
         }
     }
