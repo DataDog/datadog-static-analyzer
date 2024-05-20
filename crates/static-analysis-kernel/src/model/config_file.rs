@@ -191,3 +191,13 @@ impl PartialEq for PathPattern {
         self.prefix.eq(&other.prefix)
     }
 }
+
+impl PathConfig {
+    pub fn allows_file(&self, file_name: &str) -> bool {
+        !self.ignore.iter().any(|pattern| pattern.matches(file_name))
+            && match &self.only {
+                None => true,
+                Some(only) => only.iter().any(|pattern| pattern.matches(file_name)),
+            }
+    }
+}
