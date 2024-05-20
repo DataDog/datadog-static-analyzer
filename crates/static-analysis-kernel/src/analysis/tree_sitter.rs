@@ -84,7 +84,7 @@ impl TSQuery {
         TSQueryCursor {
             query: &self.query,
             capture_names: self.capture_names.as_slice(),
-            cursor: MutCow::Borrowed(cursor),
+            cursor: MaybeOwnedMut::Borrowed(cursor),
             captures_scratch: IndexMap::new(),
         }
     }
@@ -94,7 +94,7 @@ impl TSQuery {
     /// This is relatively slow, as it allocates a new [`tree_sitter::QueryCursor`] and drops it after
     /// performing the query. Consider using [`TSQuery::with_cursor`] where possible.
     pub fn cursor(&self) -> TSQueryCursor {
-        let cursor = MutCow::Owned(tree_sitter::QueryCursor::new());
+        let cursor = MaybeOwnedMut::Owned(tree_sitter::QueryCursor::new());
         TSQueryCursor {
             query: &self.query,
             capture_names: self.capture_names.as_slice(),
@@ -133,12 +133,14 @@ where
 {
     query: &'a tree_sitter::Query,
     capture_names: &'a [Arc<str>],
-    cursor: MutCow<'a, tree_sitter::QueryCursor>,
+    cursor: MaybeOwnedMut<'a, tree_sitter::QueryCursor>,
     // A scratch IndexMap used to group captures with the same name.
     captures_scratch: IndexMap<u32, TSQueryCapture<tree_sitter::Node<'tree>>>,
 }
 
-enum MutCow<'a, T> {
+/// A [`Cow`](std::borrow::Cow)-like enum holding either an owned or mutably borrowed [`T`].
+//  Note: we internally use this to give the caller control over allocations when using a `TSQuery`.
+enum MaybeOwnedMut<'a, T> {
     Borrowed(&'a mut T),
     Owned(T),
 }
@@ -154,8 +156,8 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
         text: &'tree str,
     ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> + 'a {
         let cursor = match &mut self.cursor {
-            MutCow::Borrowed(cursor) => cursor,
-            MutCow::Owned(cursor) => cursor,
+            MaybeOwnedMut::Borrowed(cursor) => cursor,
+            MaybeOwnedMut::Owned(cursor) => cursor,
         };
         let matches = cursor.matches(self.query, node, text.as_bytes());
         matches.map(|q_match| {
