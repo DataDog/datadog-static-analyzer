@@ -46,7 +46,6 @@ struct YamlConfigFile {
 impl From<YamlConfigFile> for ConfigFile {
     fn from(value: YamlConfigFile) -> Self {
         ConfigFile {
-            schema_version: SCHEMA_VERSION.to_string(),
             rulesets: value.rulesets.into(),
             paths: {
                 let mut paths: PathConfig = value.paths.into();
@@ -584,7 +583,6 @@ rulesets:
   - go-best-practices
     "#;
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([
                 ("python-security".to_string(), RulesetConfig::default()),
                 ("go-best-practices".to_string(), RulesetConfig::default()),
@@ -635,7 +633,6 @@ rulesets:
     "#;
 
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([
                 ("c-best-practices".to_string(), RulesetConfig::default()),
                 ("rust-best-practices".to_string(), RulesetConfig::default()),
@@ -724,7 +721,6 @@ rulesets:
           - "py/insecure/**"
     "#;
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -820,7 +816,6 @@ rulesets:
         "#;
 
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([(
                 "python-security".to_string(),
                 RulesetConfig {
@@ -911,7 +906,6 @@ max-file-size-kb: 512
     "#;
 
         let expected = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::from([("python-security".to_string(), RulesetConfig::default())]),
             paths: PathConfig {
                 only: Some(vec!["py/**/foo/*.py".to_string().into()]),
@@ -943,7 +937,6 @@ max-file-size-kb: 512
     #[test]
     fn test_serialize_ruleset_configs_empty() {
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets: IndexMap::new(),
             ..Default::default()
         };
@@ -962,7 +955,6 @@ rulesets: []"#
         rulesets.insert("java-1".to_string(), RulesetConfig::default());
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
@@ -1012,7 +1004,6 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
@@ -1072,7 +1063,6 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
@@ -1123,7 +1113,6 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };
@@ -1172,7 +1161,6 @@ rulesets:
         );
 
         let config = ConfigFile {
-            schema_version: "v1".to_string(),
             rulesets,
             ..Default::default()
         };

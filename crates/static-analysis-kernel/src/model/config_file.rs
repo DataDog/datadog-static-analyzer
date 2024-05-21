@@ -53,7 +53,6 @@ pub struct RulesetConfig {
 // The parsed configuration file without any legacy fields.
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct ConfigFile {
-    pub schema_version: String,
     // Configurations for the rulesets.
     pub rulesets: IndexMap<String, RulesetConfig>,
     // Paths to include/exclude from analysis.

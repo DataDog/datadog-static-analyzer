@@ -9,8 +9,6 @@ use kernel::{
 use std::{borrow::Cow, fmt::Debug, ops::Deref};
 use tracing::instrument;
 
-pub const LATEST_SUPPORTED_CONFIG_VERSION: &str = "v1";
-
 pub struct StaticAnalysisConfigFile(ConfigFile);
 
 impl From<ConfigFile> for StaticAnalysisConfigFile {
@@ -172,11 +170,7 @@ impl StaticAnalysisConfigFile {
                 e
             })
         } else {
-            let mut inner = ConfigFile::default();
-            if inner.schema_version.is_empty() {
-                inner.schema_version = LATEST_SUPPORTED_CONFIG_VERSION.to_string();
-            }
-            Ok(Self(inner))
+            Ok(Self(ConfigFile::default()))
         }?;
 
         config.add_rulesets(rulesets);
@@ -340,15 +334,14 @@ rulesets:
                 None,
             )
             .unwrap();
-            let expected = format!(
+            let expected = 
                 r"
-schema-version: {LATEST_SUPPORTED_CONFIG_VERSION}
+schema-version: v1
 rulesets:
 - ruleset1
 - ruleset2
 - a-ruleset3
-"
-            );
+";
             assert_eq!(config.trim(), expected.trim());
         }
 
