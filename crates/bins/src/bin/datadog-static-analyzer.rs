@@ -369,8 +369,8 @@ fn main() -> Result<()> {
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
             .context("error when reading rules from API")?;
         rules.extend(rules_from_api.into_iter().map(|rule| Rule {
-            severity: overrides.severity(&rule.name, rule.severity),
-            category: overrides.category(&rule.name, rule.category),
+            severity: overrides.severity(&rule.name).unwrap_or(rule.severity),
+            category: overrides.category(&rule.name).unwrap_or(rule.category),
             ..rule
         }));
         path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);

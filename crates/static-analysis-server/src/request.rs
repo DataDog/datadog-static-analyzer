@@ -102,8 +102,13 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             short_description_base64: r.short_description_base64.clone(),
             description_base64: r.description_base64.clone(),
             category: overrides
-                .category(&r.name, r.category.unwrap_or(RuleCategory::BestPractices)),
-            severity: overrides.severity(&r.name, r.severity.unwrap_or(RuleSeverity::Warning)),
+                .category(&r.name)
+                .or(r.category)
+                .unwrap_or(RuleCategory::BestPractices),
+            severity: overrides
+                .severity(&r.name)
+                .or(r.severity)
+                .unwrap_or(RuleSeverity::Warning),
             language: r.language,
             rule_type: r.rule_type,
             cwe: None,
