@@ -2,7 +2,7 @@ use crate::model::common::Language;
 use base64::engine::general_purpose;
 use base64::Engine;
 
-use crate::analysis::tree_sitter::get_query;
+use crate::analysis::tree_sitter::{get_query, TSQuery};
 use crate::model::rule_test::RuleTest;
 use crate::model::violation::Violation;
 use anyhow::anyhow;
@@ -177,7 +177,7 @@ pub struct RuleInternal {
     pub severity: RuleSeverity,
     pub language: Language,
     pub code: String,
-    pub tree_sitter_query: tree_sitter::Query,
+    pub tree_sitter_query: TSQuery,
 }
 
 impl Rule {
