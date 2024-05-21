@@ -5,8 +5,8 @@ use kernel::model::rule::Rule;
 
 use anyhow::{Error, Result};
 use getopts::Options;
-use kernel::arguments::ArgumentProvider;
 use kernel::model::rule_test::RuleTest;
+use kernel::rule_config::RuleConfig;
 use kernel::utils::decode_base64_string;
 use std::env;
 use std::process::exit;
@@ -32,7 +32,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
         &rules,
         &Arc::from(test.filename.clone()),
         &code,
-        &ArgumentProvider::new(),
+        &RuleConfig::default(),
         &analysis_options,
     );
 
