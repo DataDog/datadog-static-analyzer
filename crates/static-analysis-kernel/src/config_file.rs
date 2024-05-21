@@ -4,132 +4,205 @@ use serde::de::value::MapAccessDeserializer;
 use serde::de::{Error, MapAccess, Unexpected, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_yaml::Value;
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::marker::PhantomData;
 
 use crate::model::config_file::{
-    ArgumentValues, ConfigFile, PathPattern, RuleConfig, RulesetConfig,
+    ArgumentValues, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
 };
-use crate::model::rule::RuleCategory;
+use crate::model::rule::{RuleCategory, RuleSeverity};
 
 pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
-    Ok(serde_yaml::from_str(config_contents)?)
+    let yaml_config: YamlConfigFile = serde_yaml::from_str(config_contents)?;
+    Ok(yaml_config.into())
 }
 
 pub fn config_file_to_yaml(cfg: &ConfigFile) -> Result<String> {
-    Ok(serde_yaml::to_string(cfg)?)
+    let yaml_config: YamlConfigFile = cfg.clone().into();
+    Ok(serde_yaml::to_string(&yaml_config)?)
 }
+
+// YAML-serializable configuration file.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+struct YamlConfigFile {
+    #[serde(default)]
+    schema_version: YamlSchemaVersion,
+    rulesets: YamlRulesetList,
+    #[serde(flatten)]
+    paths: YamlPathConfig,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore_paths: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore_gitignore: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_file_size_kb: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ignore_generated_files: Option<bool>,
+}
+
+impl From<YamlConfigFile> for ConfigFile {
+    fn from(value: YamlConfigFile) -> Self {
+        ConfigFile {
+            schema_version: SCHEMA_VERSION.to_string(),
+            rulesets: value.rulesets.into(),
+            paths: {
+                let mut paths: PathConfig = value.paths.into();
+                if let Some(ignore) = value.ignore_paths {
+                    paths
+                        .ignore
+                        .extend(ignore.into_iter().map(PathPattern::from));
+                }
+                paths
+            },
+            ignore_gitignore: value.ignore_gitignore,
+            max_file_size_kb: value.max_file_size_kb,
+            ignore_generated_files: value.ignore_generated_files,
+        }
+    }
+}
+
+impl From<ConfigFile> for YamlConfigFile {
+    fn from(value: ConfigFile) -> Self {
+        YamlConfigFile {
+            schema_version: YamlSchemaVersion {},
+            rulesets: value.rulesets.into(),
+            paths: value.paths.into(),
+            ignore_paths: None,
+            ignore_gitignore: value.ignore_gitignore,
+            max_file_size_kb: value.max_file_size_kb,
+            ignore_generated_files: value.ignore_generated_files,
+        }
+    }
+}
+
+// YAML-serializable marker for the schema version.
+// It only deserializes successfully if it matches the expected value.
+#[derive(Default)]
+struct YamlSchemaVersion {}
 
 const SCHEMA_VERSION: &str = "v1";
 
-pub fn deserialize_schema_version<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let v = String::deserialize(deserializer)?;
-    if v != SCHEMA_VERSION {
-        Err(Error::invalid_value(
-            Unexpected::Str(&v),
-            &format!("\"{}\"", SCHEMA_VERSION).as_str(),
-        ))
-    } else {
-        Ok(v.to_string())
-    }
-}
-
-pub fn get_default_schema_version() -> String {
-    SCHEMA_VERSION.to_string()
-}
-
-/// Special deserializer for a `RulesetConfig` map.
-/// Duplicate rulesets are rejected.
-pub fn deserialize_ruleset_configs<'de, D>(
-    deserializer: D,
-) -> Result<IndexMap<String, RulesetConfig>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let mut out = IndexMap::new();
-    let cfgs: Vec<NamedRulesetConfig> = Vec::deserialize(deserializer)?;
-    for nrc in cfgs {
-        if out.insert(nrc.name.clone(), nrc.cfg).is_some() {
-            return Err(Error::custom(format!("duplicate ruleset: {}", nrc.name)));
-        }
-    }
-    if out.is_empty() {
-        return Err(Error::custom("no rulesets were specified"));
-    }
-    Ok(out)
-}
-
-pub fn serialize_ruleset_configs<S: Serializer>(
-    rulesets: &IndexMap<String, RulesetConfig>,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    rulesets
-        .iter()
-        .map(|(key, value)| NamedRulesetConfig {
-            name: key.clone(),
-            cfg: value.clone(),
-        })
-        .collect::<Vec<_>>()
-        .serialize(serializer)
-}
-
-/// Holder for ruleset configurations specified in lists.
-struct NamedRulesetConfig {
-    name: String,
-    cfg: RulesetConfig,
-}
-
-/// Special deserializer for ruleset list items.
-///
-/// ```yaml
-/// rulesets:
-///   - ruleset1
-///   - ruleset2:
-///   - ruleset3:
-///     ignore:
-///       - "foo"
-/// ```
-impl<'de> Deserialize<'de> for NamedRulesetConfig {
-    fn deserialize<D>(deserializer: D) -> Result<NamedRulesetConfig, D::Error>
+impl<'de> Deserialize<'de> for YamlSchemaVersion {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        struct Fields {
-            #[serde(flatten)]
-            cfg: RulesetConfig,
-            #[serde(flatten)]
-            #[serde(default)]
-            remaining_fields: IndexMap<String, Value>,
+        let v = String::deserialize(deserializer)?;
+        if v != SCHEMA_VERSION {
+            Err(Error::invalid_value(
+                Unexpected::Str(&v),
+                &format!("\"{}\"", SCHEMA_VERSION).as_str(),
+            ))
+        } else {
+            Ok(YamlSchemaVersion {})
         }
+    }
+}
+
+impl Serialize for YamlSchemaVersion {
+    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        SCHEMA_VERSION.serialize(serializer)
+    }
+}
+
+// YAML-serializable ruleset list.
+// When deserializing, disallows two rulesets with the same name.
+#[derive(Serialize)]
+#[serde(transparent)]
+struct YamlRulesetList(Vec<YamlNamedRulesetConfig>);
+
+impl<'de> Deserialize<'de> for YamlRulesetList {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let list = Vec::<YamlNamedRulesetConfig>::deserialize(deserializer)?;
+        if list.is_empty() {
+            return Err(Error::custom("no rulesets were specified"));
+        }
+        let mut names = HashSet::new();
+        for item in &list {
+            if !names.insert(&item.name) {
+                return Err(Error::custom(format!("duplicate ruleset: {}", item.name)));
+            }
+        }
+        Ok(YamlRulesetList(list))
+    }
+}
+
+impl From<YamlRulesetList> for IndexMap<String, RulesetConfig> {
+    fn from(value: YamlRulesetList) -> Self {
+        value
+            .0
+            .into_iter()
+            .map(|v| (v.name, v.cfg.into()))
+            .collect()
+    }
+}
+
+impl From<IndexMap<String, RulesetConfig>> for YamlRulesetList {
+    fn from(value: IndexMap<String, RulesetConfig>) -> Self {
+        YamlRulesetList(
+            value
+                .into_iter()
+                .map(|(name, cfg)| YamlNamedRulesetConfig {
+                    name,
+                    cfg: cfg.into(),
+                })
+                .collect(),
+        )
+    }
+}
+
+// YAML-serializable ruleset configuration, including a name.
+// With a default configuration, this serializes and deserialized to only the ruleset name;
+// otherwise, to a map whose first element has the ruleset name as the key and a null value.
+struct YamlNamedRulesetConfig {
+    name: String,
+    cfg: YamlRulesetConfig,
+}
+
+impl<'de> Deserialize<'de> for YamlNamedRulesetConfig {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
         struct StringOrStruct {}
         impl<'de> Visitor<'de> for StringOrStruct {
-            type Value = NamedRulesetConfig;
-
+            type Value = YamlNamedRulesetConfig;
             fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-                formatter.write_str("string or ruleset configuration")
+                formatter.write_str("a string or a ruleset configuration")
             }
-
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: Error,
             {
-                Ok(NamedRulesetConfig {
+                Ok(YamlNamedRulesetConfig {
                     name: v.to_string(),
-                    cfg: RulesetConfig::default(),
+                    cfg: YamlRulesetConfig::default(),
                 })
             }
-
             fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
             where
                 A: MapAccess<'de>,
             {
-                let m = Fields::deserialize(MapAccessDeserializer::new(map))?;
+                #[derive(Deserialize)]
+                struct Holder {
+                    #[serde(flatten)]
+                    cfg: YamlRulesetConfig,
+                    #[serde(flatten)]
+                    #[serde(default)]
+                    remaining_fields: IndexMap<String, Value>,
+                }
+                let m = Holder::deserialize(MapAccessDeserializer::new(map))?;
                 match m.remaining_fields.into_iter().next() {
-                    Some((name, Value::Null)) => Ok(NamedRulesetConfig { name, cfg: m.cfg }),
+                    Some((name, Value::Null)) => Ok(YamlNamedRulesetConfig { name, cfg: m.cfg }),
                     Some((name, _)) => Err(Error::custom(format!("invalid configuration for ruleset \"{}\" (check if it is indented under the ruleset name)", name))),
                     _ => Err(Error::custom("expected a ruleset configuration")),
                 }
@@ -140,127 +213,166 @@ impl<'de> Deserialize<'de> for NamedRulesetConfig {
     }
 }
 
-impl Serialize for NamedRulesetConfig {
+impl Serialize for YamlNamedRulesetConfig {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        if self.cfg == RulesetConfig::default() {
+        if self.cfg == YamlRulesetConfig::default() {
             self.name.serialize(serializer)
         } else {
             #[derive(Serialize)]
-            #[serde(untagged)]
-            enum CfgMapValue<'a> {
-                Null,
-                Rules(&'a IndexMap<String, RuleConfig>),
-                Paths(&'a Vec<PathPattern>),
+            struct Holder<'a> {
+                #[serde(flatten)]
+                name: IndexMap<&'a str, ()>,
+                #[serde(flatten)]
+                cfg: &'a YamlRulesetConfig,
             }
-
-            let mut map = IndexMap::new();
-            map.insert(self.name.as_str(), CfgMapValue::Null);
-            if !self.cfg.paths.ignore.is_empty() {
-                map.insert("ignore", CfgMapValue::Paths(&self.cfg.paths.ignore));
+            Holder {
+                name: IndexMap::from([(self.name.as_str(), ())]),
+                cfg: &self.cfg,
             }
-            if let Some(only) = &self.cfg.paths.only {
-                map.insert("only", CfgMapValue::Paths(only));
-            }
-            if !self.cfg.rules.is_empty() {
-                map.insert("rules", CfgMapValue::Rules(&self.cfg.rules));
-            }
-            map.serialize(serializer)
+            .serialize(serializer)
         }
     }
 }
 
-/// Deserializer for a `RuleConfig` map which rejects duplicate rules.
-pub fn deserialize_rule_configs<'de, D>(
-    deserializer: D,
-) -> Result<IndexMap<String, RuleConfig>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    struct RuleConfigVisitor {}
-    impl<'de> Visitor<'de> for RuleConfigVisitor {
-        type Value = IndexMap<String, RuleConfig>;
-
-        fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
-            formatter.write_str("an optional map from string to rule configuration")
-        }
-
-        /// Deserializes a map of string to `RuleConfig`.
-        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
-        where
-            A: MapAccess<'de>,
-        {
-            let mut out = IndexMap::new();
-            while let Some((k, v)) = map.next_entry::<String, RuleConfig>()? {
-                if out.insert(k.clone(), v).is_some() {
-                    return Err(Error::custom(format!("found duplicate rule: {}", k)));
-                }
-            }
-            Ok(out)
-        }
-    }
-    deserializer.deserialize_any(RuleConfigVisitor {})
+// YAML-serializable ruleset configuration, without the name.
+#[derive(Deserialize, Serialize, Default, PartialEq)]
+struct YamlRulesetConfig {
+    #[serde(flatten)]
+    paths: YamlPathConfig,
+    #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
+    rules: UniqueKeyMap<YamlRuleConfig>,
 }
 
-/// Deserializer for argument values:
-/// ```yaml
-/// arguments:
-///   foo: abc
-///   bar: 1234
-///   baz:
-///     /: abc
-///     uno/dos: 1234
-/// ```
-impl<'de> Deserialize<'de> for ArgumentValues {
+impl From<YamlRulesetConfig> for RulesetConfig {
+    fn from(value: YamlRulesetConfig) -> Self {
+        RulesetConfig {
+            paths: value.paths.into(),
+            rules: value
+                .rules
+                .0
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+        }
+    }
+}
+
+impl From<RulesetConfig> for YamlRulesetConfig {
+    fn from(value: RulesetConfig) -> Self {
+        YamlRulesetConfig {
+            paths: value.paths.into(),
+            rules: UniqueKeyMap(
+                value
+                    .rules
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into()))
+                    .collect(),
+            ),
+        }
+    }
+}
+
+// YAML-serializable by-path-or-glob include/exclude configuration.
+#[derive(Deserialize, Serialize, Default, PartialEq)]
+struct YamlPathConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    only: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    ignore: Vec<String>,
+}
+
+impl From<YamlPathConfig> for PathConfig {
+    fn from(value: YamlPathConfig) -> Self {
+        PathConfig {
+            only: value
+                .only
+                .map(|only| only.into_iter().map(PathPattern::from).collect()),
+            ignore: value.ignore.into_iter().map(PathPattern::from).collect(),
+        }
+    }
+}
+
+impl From<PathConfig> for YamlPathConfig {
+    fn from(value: PathConfig) -> Self {
+        YamlPathConfig {
+            only: value
+                .only
+                .map(|only| only.into_iter().map(String::from).collect()),
+            ignore: value.ignore.into_iter().map(String::from).collect(),
+        }
+    }
+}
+
+// YAML-serializeable rule configuration.
+#[derive(Deserialize, Serialize, Default, PartialEq)]
+struct YamlRuleConfig {
+    #[serde(flatten)]
+    paths: YamlPathConfig,
+    #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
+    arguments: UniqueKeyMap<YamlArgumentValues>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    severity: Option<RuleSeverity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    category: Option<YamlRuleCategory>,
+}
+
+impl From<YamlRuleConfig> for RuleConfig {
+    fn from(value: YamlRuleConfig) -> Self {
+        RuleConfig {
+            paths: value.paths.into(),
+            arguments: value
+                .arguments
+                .0
+                .into_iter()
+                .map(|(k, v)| (k, v.into()))
+                .collect(),
+            severity: value.severity,
+            category: value.category.map(|c| c.0),
+        }
+    }
+}
+
+impl From<RuleConfig> for YamlRuleConfig {
+    fn from(value: RuleConfig) -> Self {
+        YamlRuleConfig {
+            paths: value.paths.into(),
+            arguments: UniqueKeyMap(
+                value
+                    .arguments
+                    .into_iter()
+                    .map(|(k, v)| (k, v.into()))
+                    .collect(),
+            ),
+            severity: value.severity,
+            category: value.category.map(YamlRuleCategory),
+        }
+    }
+}
+
+// YAML-serializable argument value map.
+// If it only contains one value for the root directory, it serializes and deserializes as
+// a string; otherwise, as a map from path prefix to value.
+#[derive(Default, PartialEq)]
+struct YamlArgumentValues(IndexMap<String, String>);
+
+impl<'de> Deserialize<'de> for YamlArgumentValues {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         #[serde(untagged)]
-        enum AnyToString {
-            Bool(bool),
-            I64(i64),
-            U64(u64),
-            I128(i128),
-            U128(u128),
-            F64(f64),
-            Str(String),
+        enum Holder {
+            Single(AnyAsString),
+            ByPath(UniqueKeyMap<AnyAsString>),
         }
-
-        impl Display for AnyToString {
-            fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-                match self {
-                    AnyToString::Bool(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::I64(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::U64(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::I128(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::U128(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::F64(v) => f.write_fmt(format_args!("{}", v)),
-                    AnyToString::Str(v) => f.write_str(v),
-                }
-            }
-        }
-
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum StringOrMap {
-            Str(AnyToString),
-            Map(IndexMap<String, AnyToString>),
-        }
-
-        match StringOrMap::deserialize(deserializer) {
-            Err(_) => Err(Error::custom(
-                "expected a string or a map from path to string",
-            )),
-            Ok(StringOrMap::Str(s)) => Ok(ArgumentValues {
-                by_subtree: IndexMap::from([("".to_string(), s.to_string())]),
-            }),
-            Ok(StringOrMap::Map(m)) => Ok(ArgumentValues {
-                by_subtree: m
-                    .into_iter()
+        let values = match Holder::deserialize(deserializer)? {
+            Holder::Single(v) => IndexMap::from([("".to_string(), v.to_string())]),
+            Holder::ByPath(m) => {
+                m.0.into_iter()
                     .map(|(k, v)| {
                         if k == "/" || k == "**" {
                             ("".to_string(), v.to_string())
@@ -268,27 +380,28 @@ impl<'de> Deserialize<'de> for ArgumentValues {
                             (k, v.to_string())
                         }
                     })
-                    .collect(),
-            }),
-        }
+                    .collect()
+            }
+        };
+        Ok(YamlArgumentValues(values))
     }
 }
 
-impl Serialize for ArgumentValues {
+impl Serialize for YamlArgumentValues {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        if let (1, Some(val)) = (self.by_subtree.len(), self.by_subtree.get("")) {
-            val.serialize(serializer)
+        if let (1, Some(value)) = (self.0.len(), self.0.get("")) {
+            value.serialize(serializer)
         } else {
-            self.by_subtree
+            self.0
                 .iter()
                 .map(|(k, v)| {
                     if k.is_empty() {
-                        ("/", v.as_str())
+                        ("/", v)
                     } else {
-                        (k.as_str(), v.as_str())
+                        (k.as_str(), v)
                     }
                 })
                 .collect::<IndexMap<_, _>>()
@@ -297,19 +410,116 @@ impl Serialize for ArgumentValues {
     }
 }
 
-/// Deserializer for a `RuleCategory` which rejects the 'unknown' option.
-pub fn deserialize_category<'de, D>(deserializer: D) -> Result<Option<RuleCategory>, D::Error>
+impl From<YamlArgumentValues> for ArgumentValues {
+    fn from(value: YamlArgumentValues) -> Self {
+        ArgumentValues {
+            by_subtree: value.0,
+        }
+    }
+}
+
+impl From<ArgumentValues> for YamlArgumentValues {
+    fn from(value: ArgumentValues) -> Self {
+        YamlArgumentValues(value.by_subtree)
+    }
+}
+
+// YAML-serializable rule category. The 'unknown' value is disallowed when deserializing.
+#[derive(Serialize, PartialEq)]
+#[serde(transparent)]
+struct YamlRuleCategory(RuleCategory);
+
+impl<'de> Deserialize<'de> for YamlRuleCategory {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let category = RuleCategory::deserialize(deserializer)?;
+        if category == RuleCategory::Unknown {
+            Err(Error::invalid_value(
+                Unexpected::Str("unknown"),
+                &"a rule category",
+            ))
+        } else {
+            Ok(YamlRuleCategory(category))
+        }
+    }
+}
+
+// A map from string to value that disallows repeated keys when deserializing.
+#[derive(Serialize, Default, PartialEq)]
+#[serde(transparent)]
+struct UniqueKeyMap<T>(IndexMap<String, T>);
+
+impl<T> UniqueKeyMap<T> {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl<'de, V> Deserialize<'de> for UniqueKeyMap<V>
 where
-    D: Deserializer<'de>,
+    V: Deserialize<'de>,
 {
-    let category = RuleCategory::deserialize(deserializer)?;
-    if category == RuleCategory::Unknown {
-        Err(Error::invalid_value(
-            Unexpected::Str("unknown"),
-            &"a rule category",
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UniqueKeyVisitor<U>(PhantomData<fn() -> U>);
+        impl<'de, U> Visitor<'de> for UniqueKeyVisitor<U>
+        where
+            U: Deserialize<'de>,
+        {
+            type Value = IndexMap<String, U>;
+            fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
+                formatter.write_str("a map with unique keys")
+            }
+            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut out = IndexMap::new();
+                while let Some((k, v)) = map.next_entry()? {
+                    if let (i, Some(_)) = out.insert_full(k, v) {
+                        return Err(Error::custom(format!(
+                            "duplicate map key: {}",
+                            out.get_index(i).unwrap().0
+                        )));
+                    }
+                }
+                Ok(out)
+            }
+        }
+        Ok(UniqueKeyMap(
+            deserializer.deserialize_any(UniqueKeyVisitor(PhantomData))?,
         ))
-    } else {
-        Ok(Some(category))
+    }
+}
+
+// A value that, when deserializing, is cast to a string.
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum AnyAsString {
+    Bool(bool),
+    I64(i64),
+    U64(u64),
+    I128(i128),
+    U128(u128),
+    F64(f64),
+    Str(String),
+}
+
+impl Display for AnyAsString {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            AnyAsString::Bool(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::I64(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::U64(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::I128(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::U128(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::F64(v) => f.write_fmt(format_args!("{}", v)),
+            AnyAsString::Str(v) => f.write_str(v),
+        }
     }
 }
 
