@@ -10,7 +10,6 @@ use walkdir::WalkDir;
 use kernel::model::common::Language;
 use kernel::model::config_file::PathConfig;
 use kernel::model::violation::Violation;
-use kernel::path_restrictions::is_allowed_by_path_config;
 
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
@@ -138,8 +137,7 @@ pub fn get_files(
                 .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
 
             // check if the path is allowed by the configuration.
-            should_include =
-                should_include && is_allowed_by_path_config(path_config, relative_path_str);
+            should_include = should_include && path_config.allows_file(relative_path_str);
 
             // do not include the git directory.
             if entry.starts_with(git_directory.as_str()) {
