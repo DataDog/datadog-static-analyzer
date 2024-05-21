@@ -186,8 +186,8 @@ where
 mod tests {
     use super::*;
     use crate::analysis::tree_sitter::get_query;
+    use crate::config_file::parse_config_file;
     use crate::model::common::Language;
-    use crate::model::config_file::SplitPath;
     use crate::model::rule::{RuleCategory, RuleSeverity};
 
     const QUERY_CODE: &str = r#"
@@ -759,7 +759,7 @@ function visit(node, filename, code) {
         "#;
 
         let rule1 = RuleInternal {
-            name: "rule1".to_string(),
+            name: "rs/rule1".to_string(),
             short_description: Some("short desc".to_string()),
             description: Some("description".to_string()),
             category: RuleCategory::CodeStyle,
@@ -769,7 +769,7 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
         let rule2 = RuleInternal {
-            name: "rule2".to_string(),
+            name: "rs/rule2".to_string(),
             short_description: Some("short desc".to_string()),
             description: Some("description".to_string()),
             category: RuleCategory::CodeStyle,
@@ -784,18 +784,19 @@ function visit(node, filename, code) {
             use_debug: false,
             ignore_generated_files: false,
         };
-        let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument(
-            "rule1",
-            &SplitPath::from_string("myfile.py"),
-            "my-argument",
-            "101",
-        );
-        argument_provider.add_argument(
-            "rule1",
-            &SplitPath::from_string("myfile.py"),
-            "another-arg",
-            "101",
+        let argument_provider = ArgumentProvider::from(
+            &parse_config_file(
+                r#"
+rulesets:
+  - rs:
+    rules:
+      rule1:
+        arguments:
+          my-argument: 101
+          another-arg: 101
+        "#,
+            )
+            .unwrap(),
         );
 
         let results = analyze(

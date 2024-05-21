@@ -20,8 +20,8 @@ impl ArgumentProvider {
         let mut provider = ArgumentProvider::new();
         for (ruleset_name, ruleset_cfg) in &config.rulesets {
             for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
+                let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
                 for (arg_name, arg_values) in &rule_cfg.arguments {
-                    let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
                     for (prefix, value) in arg_values {
                         provider.add_argument(&rule_name, &prefix, arg_name, value);
                     }
@@ -31,7 +31,7 @@ impl ArgumentProvider {
         provider
     }
 
-    pub fn add_argument(&mut self, rule_name: &str, path: &SplitPath, argument: &str, value: &str) {
+    fn add_argument(&mut self, rule_name: &str, path: &SplitPath, argument: &str, value: &str) {
         let by_subtree = self.by_rule.entry(rule_name.to_string()).or_default();
         match by_subtree.get_mut(path) {
             None => {
