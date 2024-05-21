@@ -5,6 +5,7 @@ use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::arguments::ArgumentProvider;
 use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
 use crate::model::common::Language;
+use crate::model::config_file::SplitPath;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -114,6 +115,8 @@ where
 
     let parsing_time_ms = parsing_time.elapsed().as_millis();
 
+    let split_filename = SplitPath::from_string(filename);
+
     tree.map_or_else(
         || {
             if analysis_option.use_debug {
@@ -138,7 +141,7 @@ where
                         &rule.tree_sitter_query,
                         filename,
                         code,
-                        &argument_provider.get_arguments(filename, &rule.name),
+                        &argument_provider.get_arguments(&split_filename, &rule.name),
                     );
 
                     let query_node_time_ms = query_node_time.elapsed().as_millis();
@@ -184,6 +187,7 @@ mod tests {
     use super::*;
     use crate::analysis::tree_sitter::get_query;
     use crate::model::common::Language;
+    use crate::model::config_file::SplitPath;
     use crate::model::rule::{RuleCategory, RuleSeverity};
 
     const QUERY_CODE: &str = r#"
@@ -781,8 +785,18 @@ function visit(node, filename, code) {
             ignore_generated_files: false,
         };
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule1", "myfile.py", "my-argument", "101");
-        argument_provider.add_argument("rule1", "myfile.py", "another-arg", "101");
+        argument_provider.add_argument(
+            "rule1",
+            &SplitPath::from_string("myfile.py"),
+            "my-argument",
+            "101",
+        );
+        argument_provider.add_argument(
+            "rule1",
+            &SplitPath::from_string("myfile.py"),
+            "another-arg",
+            "101",
+        );
 
         let results = analyze(
             &Language::Python,

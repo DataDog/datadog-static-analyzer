@@ -10,7 +10,7 @@ use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 
 use crate::model::config_file::{
-    ArgumentValues, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+    BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
@@ -409,17 +409,20 @@ impl Serialize for YamlArgumentValues {
     }
 }
 
-impl From<YamlArgumentValues> for ArgumentValues {
+impl From<YamlArgumentValues> for BySubtree<String> {
     fn from(value: YamlArgumentValues) -> Self {
-        ArgumentValues {
-            by_subtree: value.0,
-        }
+        value.0.into_iter().collect()
     }
 }
 
-impl From<ArgumentValues> for YamlArgumentValues {
-    fn from(value: ArgumentValues) -> Self {
-        YamlArgumentValues(value.by_subtree)
+impl From<BySubtree<String>> for YamlArgumentValues {
+    fn from(value: BySubtree<String>) -> Self {
+        YamlArgumentValues(
+            value
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        )
     }
 }
 
@@ -526,7 +529,7 @@ impl Display for AnyAsString {
 mod tests {
     use super::*;
     use crate::model::config_file::{
-        ArgumentValues, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+        ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -828,23 +831,16 @@ rulesets:
                                 arguments: IndexMap::from([
                                     (
                                         "arg1".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([(
-                                                "".to_string(),
-                                                "100".to_string(),
-                                            )]),
-                                        },
+                                        BySubtree::from([("".to_string(), "100".to_string())]),
                                     ),
                                     (
                                         "arg2".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([
-                                                ("".to_string(), "200".to_string()),
-                                                ("uno".to_string(), "201".to_string()),
-                                                ("uno/dos".to_string(), "202".to_string()),
-                                                ("tres".to_string(), "203".to_string()),
-                                            ]),
-                                        },
+                                        BySubtree::from([
+                                            ("".to_string(), "200".to_string()),
+                                            ("uno".to_string(), "201".to_string()),
+                                            ("uno/dos".to_string(), "202".to_string()),
+                                            ("tres".to_string(), "203".to_string()),
+                                        ]),
                                     ),
                                 ]),
                                 severity: None,
@@ -858,21 +854,14 @@ rulesets:
                                 arguments: IndexMap::from([
                                     (
                                         "arg3".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([(
-                                                "".to_string(),
-                                                "300".to_string(),
-                                            )]),
-                                        },
+                                        BySubtree::from([("".to_string(), "300".to_string())]),
                                     ),
                                     (
                                         "arg4".to_string(),
-                                        ArgumentValues {
-                                            by_subtree: IndexMap::from([(
-                                                "cuatro".to_string(),
-                                                "400".to_string(),
-                                            )]),
-                                        },
+                                        BySubtree::from([(
+                                            "cuatro".to_string(),
+                                            "400".to_string(),
+                                        )]),
                                     ),
                                 ]),
                                 severity: None,
@@ -1092,9 +1081,10 @@ rulesets:
 
         let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
         let mut arguments = IndexMap::new();
-        let mut by_subtree = IndexMap::new();
-        by_subtree.insert("".to_string(), "3".to_string());
-        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+        arguments.insert(
+            "max-params".to_string(),
+            BySubtree::from([("".to_string(), "3".to_string())]),
+        );
 
         rules.insert(
             "rule-number-1".into(),
@@ -1139,10 +1129,13 @@ rulesets:
 
         let mut rules: IndexMap<String, RuleConfig> = IndexMap::new();
         let mut arguments = IndexMap::new();
-        let mut by_subtree = IndexMap::new();
-        by_subtree.insert("".to_string(), "3".to_string());
-        by_subtree.insert("my-path/to-file".to_string(), "4".to_string());
-        arguments.insert("max-params".to_string(), ArgumentValues { by_subtree });
+        arguments.insert(
+            "max-params".to_string(),
+            BySubtree::from([
+                ("".to_string(), "3".to_string()),
+                ("my-path/to-file".to_string(), "4".to_string()),
+            ]),
+        );
 
         rules.insert(
             "rule-number-1".into(),
