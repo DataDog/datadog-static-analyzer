@@ -341,7 +341,7 @@ mod tests {
     use std::env;
     use std::path::Path;
 
-    use kernel::config_file::ArgumentProvider;
+    use kernel::arguments::ArgumentProvider;
     use tempfile::{tempdir, TempDir};
 
     use kernel::model::common::OutputFormat::Sarif;

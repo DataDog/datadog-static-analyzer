@@ -28,7 +28,7 @@ use cli::secrets::{SecretResult, SecretRule};
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
-use kernel::config_file::ArgumentProvider;
+use kernel::arguments::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
