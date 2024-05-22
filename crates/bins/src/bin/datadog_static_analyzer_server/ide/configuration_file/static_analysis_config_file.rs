@@ -334,8 +334,7 @@ rulesets:
                 None,
             )
             .unwrap();
-            let expected = 
-                r"
+            let expected = r"
 schema-version: v1
 rulesets:
 - ruleset1
