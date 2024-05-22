@@ -311,9 +311,9 @@ struct YamlRuleConfig {
     #[serde(flatten)]
     paths: YamlPathConfig,
     #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
-    arguments: UniqueKeyMap<YamlArgumentValues>,
+    arguments: UniqueKeyMap<YamlBySubtree<AnyAsString>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    severity: Option<RuleSeverity>,
+    severity: Option<YamlBySubtree<RuleSeverity>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     category: Option<YamlRuleCategory>,
 }
@@ -328,7 +328,7 @@ impl From<YamlRuleConfig> for RuleConfig {
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))
                 .collect(),
-            severity: value.severity,
+            severity: value.severity.map(YamlBySubtree::into),
             category: value.category.map(|c| c.0),
         }
     }
@@ -345,48 +345,54 @@ impl From<RuleConfig> for YamlRuleConfig {
                     .map(|(k, v)| (k, v.into()))
                     .collect(),
             ),
-            severity: value.severity,
+            severity: value.severity.map(BySubtree::into),
             category: value.category.map(YamlRuleCategory),
         }
     }
 }
 
-// YAML-serializable argument value map.
+// YAML-serializable element whose value depends on the position in the repo tree.
 // If it only contains one value for the root directory, it serializes and deserializes as
-// a string; otherwise, as a map from path prefix to value.
+// a singular value; otherwise, as a map from path prefix to value.
 #[derive(Default, PartialEq)]
-struct YamlArgumentValues(IndexMap<String, String>);
+struct YamlBySubtree<V>(IndexMap<String, V>);
 
-impl<'de> Deserialize<'de> for YamlArgumentValues {
+impl<'de, V> Deserialize<'de> for YamlBySubtree<V>
+where
+    V: Deserialize<'de>,
+{
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
         #[serde(untagged)]
-        enum Holder {
-            Single(AnyAsString),
-            ByPath(UniqueKeyMap<AnyAsString>),
+        enum Holder<T> {
+            Single(T),
+            ByPath(UniqueKeyMap<T>),
         }
-        let values = match Holder::deserialize(deserializer)? {
-            Holder::Single(v) => IndexMap::from([("".to_string(), v.to_string())]),
+        let values = match Holder::<V>::deserialize(deserializer)? {
+            Holder::Single(v) => IndexMap::from([("".to_string(), v)]),
             Holder::ByPath(m) => {
                 m.0.into_iter()
                     .map(|(k, v)| {
                         if k == "/" || k == "**" {
-                            ("".to_string(), v.to_string())
+                            ("".to_string(), v)
                         } else {
-                            (k, v.to_string())
+                            (k, v)
                         }
                     })
                     .collect()
             }
         };
-        Ok(YamlArgumentValues(values))
+        Ok(YamlBySubtree(values))
     }
 }
 
-impl Serialize for YamlArgumentValues {
+impl<V> Serialize for YamlBySubtree<V>
+where
+    V: Serialize,
+{
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -409,18 +415,42 @@ impl Serialize for YamlArgumentValues {
     }
 }
 
-impl From<YamlArgumentValues> for BySubtree<String> {
-    fn from(value: YamlArgumentValues) -> Self {
+impl<V> From<YamlBySubtree<V>> for BySubtree<V> {
+    fn from(value: YamlBySubtree<V>) -> Self {
         value.0.into_iter().collect()
     }
 }
 
-impl From<BySubtree<String>> for YamlArgumentValues {
-    fn from(value: BySubtree<String>) -> Self {
-        YamlArgumentValues(
+impl<V> From<BySubtree<V>> for YamlBySubtree<V>
+where
+    V: Clone,
+{
+    fn from(value: BySubtree<V>) -> Self {
+        YamlBySubtree(
             value
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect(),
+        )
+    }
+}
+
+impl From<YamlBySubtree<AnyAsString>> for BySubtree<String> {
+    fn from(value: YamlBySubtree<AnyAsString>) -> Self {
+        value
+            .0
+            .into_iter()
+            .map(|(k, v)| (k, v.to_string()))
+            .collect()
+    }
+}
+
+impl From<BySubtree<String>> for YamlBySubtree<AnyAsString> {
+    fn from(value: BySubtree<String>) -> Self {
+        YamlBySubtree(
+            value
+                .iter()
+                .map(|(k, v)| (k.to_string(), AnyAsString::Str(v.clone())))
                 .collect(),
         )
     }
@@ -499,7 +529,7 @@ where
 }
 
 // A value that, when deserializing, is cast to a string.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 enum AnyAsString {
     Bool(bool),
@@ -509,6 +539,12 @@ enum AnyAsString {
     U128(u128),
     F64(f64),
     Str(String),
+}
+
+impl Default for AnyAsString {
+    fn default() -> Self {
+        AnyAsString::Str("".to_string())
+    }
 }
 
 impl Display for AnyAsString {

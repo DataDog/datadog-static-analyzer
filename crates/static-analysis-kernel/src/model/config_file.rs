@@ -37,7 +37,7 @@ pub struct RuleConfig {
     // Arguments to pass to this rule.
     pub arguments: IndexMap<String, BySubtree<String>>,
     // Override this rule's severity.
-    pub severity: Option<RuleSeverity>,
+    pub severity: Option<BySubtree<RuleSeverity>>,
     // Override this rule's category.
     pub category: Option<RuleCategory>,
 }
@@ -148,6 +148,9 @@ impl Display for SplitPath {
 impl<T> BySubtree<T> {
     pub fn new() -> Self {
         BySubtree(SequenceTrie::new())
+    }
+    pub fn get_ancestor(&self, path: &SplitPath) -> Option<&T> {
+        self.0.get_ancestor(path.0.iter())
     }
     pub fn get_mut(&mut self, path: &SplitPath) -> Option<&mut T> {
         self.0.get_mut(path.0.iter())

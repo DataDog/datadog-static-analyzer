@@ -825,4 +825,131 @@ rulesets:
         assert!(result1.violations[0].message.contains("argument = 101"));
         assert_eq!(result2.violations.len(), 0);
     }
+
+    #[test]
+    fn test_severity_override() {
+        let rule_code = r#"
+function visit(node, filename, code) {
+    const functionName = node.captures["name"];
+    const error = buildError(
+        functionName.start.line, functionName.start.col,
+        functionName.end.line, functionName.end.col,
+        `error`);
+    addError(error);
+}
+        "#;
+
+        let rule1 = RuleInternal {
+            name: "rs/rule1".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+        };
+        let rule2 = RuleInternal {
+            name: "rs/rule2".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+        };
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+            ignore_generated_files: false,
+        };
+        let rule_config_provider = RuleConfigProvider::from_config(
+            &parse_config_file(
+                r#"
+rulesets:
+  - rs:
+    rules:
+      rule1:
+        severity: ERROR
+      rule2:
+        severity:
+          /: WARNING
+          uno: NOTICE
+          dos/myfile.py: ERROR
+        "#,
+            )
+            .unwrap(),
+        );
+        let rules = vec![rule1, rule2];
+
+        let results = analyze(
+            &Language::Python,
+            &rules,
+            "myfile.py",
+            PYTHON_CODE,
+            &rule_config_provider.config_for_file("myfile.py"),
+            &analysis_options,
+        );
+        assert_eq!(
+            results.get(0).unwrap().violations[0].severity,
+            RuleSeverity::Error
+        );
+        assert_eq!(
+            results.get(1).unwrap().violations[0].severity,
+            RuleSeverity::Warning
+        );
+
+        let results = analyze(
+            &Language::Python,
+            &rules,
+            "uno/myfile.py",
+            PYTHON_CODE,
+            &rule_config_provider.config_for_file("uno/myfile.py"),
+            &analysis_options,
+        );
+        assert_eq!(
+            results.get(0).unwrap().violations[0].severity,
+            RuleSeverity::Error
+        );
+        assert_eq!(
+            results.get(1).unwrap().violations[0].severity,
+            RuleSeverity::Notice
+        );
+
+        let results = analyze(
+            &Language::Python,
+            &rules,
+            "dos/myfile.py",
+            PYTHON_CODE,
+            &rule_config_provider.config_for_file("dos/myfile.py"),
+            &analysis_options,
+        );
+        assert_eq!(
+            results.get(0).unwrap().violations[0].severity,
+            RuleSeverity::Error
+        );
+        assert_eq!(
+            results.get(1).unwrap().violations[0].severity,
+            RuleSeverity::Error
+        );
+
+        let results = analyze(
+            &Language::Python,
+            &rules,
+            "tres/myfile.py",
+            PYTHON_CODE,
+            &rule_config_provider.config_for_file("tres/myfile.py"),
+            &analysis_options,
+        );
+        assert_eq!(
+            results.get(0).unwrap().violations[0].severity,
+            RuleSeverity::Error
+        );
+        assert_eq!(
+            results.get(1).unwrap().violations[0].severity,
+            RuleSeverity::Warning
+        );
+    }
 }

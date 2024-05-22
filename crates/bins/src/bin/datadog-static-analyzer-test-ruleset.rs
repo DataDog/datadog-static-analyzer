@@ -6,10 +6,10 @@ use kernel::model::rule::Rule;
 use anyhow::{Error, Result};
 use getopts::Options;
 use kernel::model::rule_test::RuleTest;
+use kernel::rule_config::RuleConfig;
 use kernel::utils::decode_base64_string;
 use std::env;
 use std::process::exit;
-use kernel::rule_config::RuleConfig;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);

@@ -52,7 +52,10 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     }
 
     // Extract the rule configuration from the configuration file.
-    let rule_config_provider = configuration.as_ref().map(RuleConfigProvider::from_config).unwrap_or_default();
+    let rule_config_provider = configuration
+        .as_ref()
+        .map(RuleConfigProvider::from_config)
+        .unwrap_or_default();
     let rule_config = rule_config_provider.config_for_file(&request.filename);
 
     let rules_with_invalid_language: Vec<ServerRule> = request
@@ -83,10 +86,8 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             name: r.name.clone(),
             short_description_base64: r.short_description_base64.clone(),
             description_base64: r.description_base64.clone(),
-            category: r.category
-                .unwrap_or(RuleCategory::BestPractices),
-            severity: r.severity
-                .unwrap_or(RuleSeverity::Warning),
+            category: r.category.unwrap_or(RuleCategory::BestPractices),
+            severity: r.severity.unwrap_or(RuleSeverity::Warning),
             language: r.language,
             rule_type: r.rule_type,
             cwe: None,
@@ -715,6 +716,38 @@ rulesets:
         );
         assert_eq!(
             RuleSeverity::Error,
+            response.rule_responses[0].violations[0].severity
+        );
+
+        // Per-path severity override.
+        let request = AnalysisRequest {
+            configuration_base64: Some(encode_base64_string(
+                r#"
+rulesets:
+  - myrs:
+    rules:
+      myrule:
+        severity:
+          /: ERROR
+          somepath: WARNING
+          mypath: NOTICE
+          mypath/my: ERROR
+        category: CODE_STYLE
+            "#
+                .to_string(),
+            )),
+            ..base_request.clone()
+        };
+        let response = process_analysis_request(request);
+        assert!(response.errors.is_empty());
+        assert_eq!(1, response.rule_responses.len());
+        assert_eq!(1, response.rule_responses[0].violations.len());
+        assert_eq!(
+            RuleCategory::CodeStyle,
+            response.rule_responses[0].violations[0].category
+        );
+        assert_eq!(
+            RuleSeverity::Notice,
             response.rule_responses[0].violations[0].severity
         );
     }
