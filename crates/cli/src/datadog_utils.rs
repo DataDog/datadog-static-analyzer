@@ -73,18 +73,8 @@ fn get_datadog_hostname(use_staging: bool) -> String {
     }
 }
 
-#[derive(PartialEq)]
-enum UseKeys {
-    // Do not add APP/API keys or a JWT token to the request.
-    DoNotUse,
-    // Add APP/API keys or JWT token to the request, if available.
-    NotRequired,
-    // Add APP/API keys or JWT token to the request, and fail if not available.
-    Required,
-}
-
 // Returns a RequestBuilder for the given API path.
-fn make_request(path: &str, use_staging: bool, use_keys: UseKeys) -> Result<RequestBuilder> {
+fn make_request(path: &str, use_staging: bool, require_keys: bool) -> Result<RequestBuilder> {
     let request_builder = reqwest::blocking::Client::new()
         .get(format!(
             "https://{}/api/v2/static-analysis/{}",
@@ -92,10 +82,6 @@ fn make_request(path: &str, use_staging: bool, use_keys: UseKeys) -> Result<Requ
             path
         ))
         .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
-
-    if use_keys == UseKeys::DoNotUse {
-        return Ok(request_builder);
-    }
 
     let api_key = get_datadog_variable_value("API_KEY");
     let app_key = get_datadog_variable_value("APP_KEY");
@@ -105,7 +91,7 @@ fn make_request(path: &str, use_staging: bool, use_keys: UseKeys) -> Result<Requ
             .header(DATADOG_HEADER_APP_KEY, appk)),
         (apir, appr) => match get_datadog_variable_value("JWT_TOKEN") {
             Ok(jwtt) => Ok(request_builder.header(DATADOG_HEADER_JWT_TOKEN, jwtt)),
-            Err(_) if use_keys != UseKeys::Required => Ok(request_builder),
+            Err(_) if !require_keys => Ok(request_builder),
             Err(jwte) => Err(apir.err().or(appr.err()).unwrap_or(jwte)),
         },
     }
@@ -119,7 +105,7 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         "rulesets/{}?include_tests=false&include_testing_rules=true",
         ruleset_name
     );
-    let server_response = make_request(&path, use_staging, UseKeys::NotRequired)?
+    let server_response = make_request(&path, use_staging, false)?
         .send()
         .expect("error when querying the datadog server");
 
@@ -149,7 +135,7 @@ pub fn get_default_rulesets_name_for_language(
     let request_builder = make_request(
         &format!("default-rulesets/{}", language),
         use_staging,
-        UseKeys::DoNotUse,
+        false,
     )?
     .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
 
@@ -218,7 +204,7 @@ pub fn get_diff_aware_information(arguments: &DiffAwareRequestArguments) -> Resu
         },
     };
 
-    let server_response = make_request("analysis/diff-aware", false, UseKeys::Required)?
+    let server_response = make_request("analysis/diff-aware", false, true)?
         .json(&request_payload)
         .send()
         .expect("error when querying the datadog server");
