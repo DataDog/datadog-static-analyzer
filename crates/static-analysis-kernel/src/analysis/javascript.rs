@@ -3,6 +3,7 @@ use crate::model::analysis::{
 };
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
+use deno_core::serde_v8;
 use deno_core::v8::NewStringType::Internalized;
 use deno_core::{v8, JsRuntime};
 use std::cell::RefCell;
