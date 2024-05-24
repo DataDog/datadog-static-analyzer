@@ -15,7 +15,7 @@ sha2 = { workspace = true }
 indexmap = { workspace = true }
 
 # other
-deno_core = "0.280.0"
+deno_core = "0.275.0"
 globset = "0.4.14"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
