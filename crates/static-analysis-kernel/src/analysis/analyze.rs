@@ -76,12 +76,10 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
                     } else {
                         lines_to_ignore_for_all_rules.push(line_number + 1);
                     }
+                } else if line_number == 1 {
+                    rules_to_ignore.extend(parts.clone());
                 } else {
-                    if line_number == 1 {
-                        rules_to_ignore.extend(parts.clone());
-                    } else {
-                        lines_to_ignore_per_rules.insert(line_number + 1, parts.clone());
-                    }
+                    lines_to_ignore_per_rules.insert(line_number + 1, parts.clone());
                 }
             }
         }
