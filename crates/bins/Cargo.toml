@@ -48,7 +48,7 @@ getopts = "0.2.21"
 num_cpus = "1.15.0"
 indicatif = "0.17.6"
 rayon = "1.7.0"
-rocket = { version = "=0.5.0", features = ["json"] }
+rocket = { version = "=0.5.1", features = ["json"] }
 tracing-subscriber = { version = "0.3.18", features = ["fmt", "env-filter"] }
 thiserror = "1"
 # Secret Scanning
