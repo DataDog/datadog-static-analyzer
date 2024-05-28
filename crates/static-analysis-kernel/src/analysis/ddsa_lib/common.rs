@@ -69,3 +69,19 @@ pub fn v8_string<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8
 pub fn v8_uint<'s>(scope: &mut HandleScope<'s>, number: u32) -> v8::Local<'s, v8::Integer> {
     v8::Integer::new_from_unsigned(scope, number)
 }
+
+/// Creates an iterator over a [`v8::Array`].
+///
+/// NOTE: this is not a zero-cost abstraction, as it first collects the entire v8 array into
+/// a `Vec`, and then returns an iterator over that `Vec`.
+pub fn iter_v8_array<'s>(
+    value: v8::Local<'s, v8::Array>,
+    scope: &mut HandleScope<'s>,
+) -> impl Iterator<Item = v8::Local<'s, v8::Value>> {
+    let len = value.length();
+    let mut vec = Vec::with_capacity(len as usize);
+    for idx in 0..len {
+        vec.push(value.get_index(scope, idx).expect("index should exist"));
+    }
+    vec.into_iter()
+}

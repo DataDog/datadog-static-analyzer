@@ -7,4 +7,6 @@ pub mod extension;
 pub(crate) mod ops;
 pub(crate) mod runtime;
 pub(crate) use runtime::JsRuntime;
+#[allow(dead_code)]
+mod test_utils;
 pub mod v8_ds;
