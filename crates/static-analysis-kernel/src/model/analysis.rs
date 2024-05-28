@@ -2,6 +2,7 @@ use crate::model::common::Position;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
+use crate::model::analysis::FileIgnoreBehavior::AllRules;
 use std::collections::HashMap;
 
 pub const ERROR_RULE_TIMEOUT: &str = "rule-timeout";
@@ -16,12 +17,17 @@ pub struct AnalysisOptions {
     pub ignore_generated_files: bool,
 }
 
+#[derive(PartialEq, Debug)]
+pub enum FileIgnoreBehavior {
+    AllRules,
+    SomeRules(Vec<String>),
+}
+
 // Represent the lines to ignores for a file.
 pub struct LinesToIgnore {
     pub lines_to_ignore_per_rule: HashMap<u32, Vec<String>>, // rules to ignore only for some files
     pub lines_to_ignore: Vec<u32>,                           // lines to ignore
-    pub ignore_file: bool,                                   // if we should ignore all the file
-    pub rules_to_ignore: Vec<String>,                        // rules to ignore in all the file
+    pub ignore_file: FileIgnoreBehavior,                     // apply to all the file
 }
 
 impl LinesToIgnore {
@@ -30,15 +36,18 @@ impl LinesToIgnore {
     ///  - line is the line of the violation
     /// returns true if the rule should be ignored
     pub fn should_filter_rule(&self, rule_name: &str, line: u32) -> bool {
-        if self.ignore_file {
-            return true;
+        match &self.ignore_file {
+            AllRules => {
+                return true;
+            }
+            FileIgnoreBehavior::SomeRules(rules) => {
+                if rules.contains(&rule_name.to_string()) {
+                    return true;
+                }
+            }
         }
 
         let rule_name_string = rule_name.to_string();
-
-        if self.rules_to_ignore.contains(&rule_name_string) {
-            return true;
-        }
 
         if self.lines_to_ignore.contains(&line) {
             return true;
@@ -89,7 +98,8 @@ pub struct MatchNode {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::analysis::LinesToIgnore;
+    use crate::model::analysis::FileIgnoreBehavior::SomeRules;
+    use crate::model::analysis::{FileIgnoreBehavior, LinesToIgnore};
     use std::collections::HashMap;
 
     #[test]
@@ -100,8 +110,7 @@ mod tests {
         let lines_to_ignore = LinesToIgnore {
             lines_to_ignore: vec![10, 42],
             lines_to_ignore_per_rule: lines_per_rule,
-            ignore_file: false,
-            rules_to_ignore: vec![],
+            ignore_file: FileIgnoreBehavior::SomeRules(vec![]),
         };
 
         assert!(!lines_to_ignore.should_filter_rule("foo/bar", 11));
@@ -118,8 +127,7 @@ mod tests {
         let lines_to_ignore = LinesToIgnore {
             lines_to_ignore: vec![],
             lines_to_ignore_per_rule: HashMap::new(),
-            ignore_file: true,
-            rules_to_ignore: vec![],
+            ignore_file: FileIgnoreBehavior::AllRules,
         };
 
         assert!(lines_to_ignore.should_filter_rule("foo/bar", 11));
@@ -135,8 +143,7 @@ mod tests {
         let lines_to_ignore = LinesToIgnore {
             lines_to_ignore: vec![],
             lines_to_ignore_per_rule: HashMap::new(),
-            ignore_file: false,
-            rules_to_ignore: vec!["foo/bar".to_string()],
+            ignore_file: SomeRules(vec!["foo/bar".to_string()]),
         };
 
         assert!(lines_to_ignore.should_filter_rule("foo/bar", 11));

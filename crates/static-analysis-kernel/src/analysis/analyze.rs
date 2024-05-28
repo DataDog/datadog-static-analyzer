@@ -3,7 +3,7 @@ use crate::analysis::generated_content::is_generated_file;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::arguments::ArgumentProvider;
-use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
+use crate::model::analysis::{AnalysisOptions, FileIgnoreBehavior, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
@@ -46,7 +46,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
             vec!["impossiblestringtoreach"]
         }
     };
-    let mut ignore_file: bool = false;
+    let mut ignore_file_all_rules: bool = false;
     let mut rules_to_ignore: Vec<String> = vec![];
     for line in code.lines() {
         let line_without_whitespaces: String =
@@ -72,7 +72,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
                 // no ruleset/rules specified, we just ignore everything
                 if parts.is_empty() {
                     if line_number == 1 {
-                        ignore_file = true;
+                        ignore_file_all_rules = true;
                     } else {
                         lines_to_ignore_for_all_rules.push(line_number + 1);
                     }
@@ -85,11 +85,17 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         }
         line_number += 1;
     }
+
+    let ignore_file = if ignore_file_all_rules {
+        FileIgnoreBehavior::AllRules
+    } else {
+        FileIgnoreBehavior::SomeRules(rules_to_ignore)
+    };
+
     LinesToIgnore {
         lines_to_ignore: lines_to_ignore_for_all_rules,
         lines_to_ignore_per_rule: lines_to_ignore_per_rules,
         ignore_file,
-        rules_to_ignore,
     }
 }
 
@@ -584,35 +590,47 @@ def foo(arg1):
 
     #[test]
     fn test_get_lines_to_ignore_python_ignore_all_file() {
-        let code = "#no-dd-sa\n\ndef foo():\n  pass";
+        let code = "\
+#no-dd-sa\n\n\
+def foo():\n\
+  pass";
 
         let lines_to_ignore = get_lines_to_ignore(code, &Language::Python);
-        assert!(lines_to_ignore.ignore_file);
-        assert!(lines_to_ignore.lines_to_ignore_per_rule.is_empty());
-        assert!(lines_to_ignore.rules_to_ignore.is_empty());
         assert!(lines_to_ignore.lines_to_ignore.is_empty());
+        assert!(lines_to_ignore.lines_to_ignore_per_rule.is_empty());
+        assert!(matches!(
+            lines_to_ignore.ignore_file,
+            FileIgnoreBehavior::AllRules
+        ));
     }
 
     #[test]
     fn test_get_lines_to_ignore_python_ignore_all_file_specific_rules() {
-        let code1 = "#no-dd-sa foo/bar\n\ndef foo():\n  pass";
+        let code1 = "\
+#no-dd-sa foo/bar\n\
+def foo():\n\
+  pass";
 
         let lines_to_ignore1 = get_lines_to_ignore(code1, &Language::Python);
-        assert!(!lines_to_ignore1.ignore_file);
         assert!(lines_to_ignore1.lines_to_ignore_per_rule.is_empty());
-        assert_eq!(lines_to_ignore1.rules_to_ignore.get(0).unwrap(), "foo/bar");
+        assert_eq!(
+            lines_to_ignore1.ignore_file,
+            FileIgnoreBehavior::SomeRules(vec!["foo/bar".to_string()])
+        );
         assert!(lines_to_ignore1.lines_to_ignore.is_empty());
 
-        let code2 = "#no-dd-sa foo/bar ruleset/rule\n\ndef foo():\n  pass";
+        let code2 = "\
+#no-dd-sa foo/bar ruleset/rule\n\
+def foo():\n\
+  pass";
 
         let lines_to_ignore2 = get_lines_to_ignore(code2, &Language::Python);
-        assert!(!lines_to_ignore2.ignore_file);
+
         assert!(lines_to_ignore2.lines_to_ignore_per_rule.is_empty());
-        assert_eq!(lines_to_ignore2.rules_to_ignore.len(), 2);
-        assert_eq!(lines_to_ignore2.rules_to_ignore.get(0).unwrap(), "foo/bar");
+
         assert_eq!(
-            lines_to_ignore2.rules_to_ignore.get(1).unwrap(),
-            "ruleset/rule"
+            lines_to_ignore2.ignore_file,
+            FileIgnoreBehavior::SomeRules(vec!["foo/bar".to_string(), "ruleset/rule".to_string()])
         );
         assert!(lines_to_ignore2.lines_to_ignore.is_empty());
     }
