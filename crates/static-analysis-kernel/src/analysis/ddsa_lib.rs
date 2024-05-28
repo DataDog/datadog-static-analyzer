@@ -3,4 +3,5 @@
 // Copyright 2024 Datadog, Inc.
 
 pub mod common;
+pub mod extension;
 pub mod v8_ds;

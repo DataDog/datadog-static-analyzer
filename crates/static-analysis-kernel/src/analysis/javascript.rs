@@ -12,15 +12,17 @@ use std::time::{Duration, Instant};
 
 use crate::analysis::file_context::common::FileContext;
 use serde::{Deserialize, Serialize};
+use crate::analysis::ddsa_lib;
 
 /// The duration an individual execution of `v8` may run before it will be forcefully halted.
 const JAVASCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_millis(5000);
 
 thread_local! {
     static JS_RUNTIME: RefCell<JsRuntime> = {
-        let code = deno_core::FastString::from_static(include_str!("./js/stella.js"));
-        let mut runtime = JsRuntime::new(Default::default());
-        runtime.execute_script("<stella>", code).expect("stella.js should not throw error");
+        let runtime = JsRuntime::new(deno_core::RuntimeOptions {
+            extensions: vec![ddsa_lib::extension::ddsa_lib::init_ops_and_esm()],
+            ..Default::default()
+        });
         RefCell::new(runtime)
     };
 }
