@@ -13,7 +13,10 @@ deno_core::extension!(
     esm = [ dir "src/analysis/ddsa_lib/js", "__bootstrap.js" ],
     esm_with_specifiers = [
         dir "src/analysis/ddsa_lib/js",
+        ("ext:ddsa_lib/edit", "edit.js"),
+        ("ext:ddsa_lib/fix", "fix.js"),
         ("ext:ddsa_lib/stella_compat", "stella_compat.js"),
         ("ext:ddsa_lib/utility", "utility.js"),
+        ("ext:ddsa_lib/violation", "violation.js"),
     ],
 );

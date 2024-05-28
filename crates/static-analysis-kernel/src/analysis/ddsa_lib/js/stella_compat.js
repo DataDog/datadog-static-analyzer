@@ -1,3 +1,7 @@
+import {Edit} from "ext:ddsa_lib/edit";
+import {Fix} from "ext:ddsa_lib/fix";
+import {Violation} from "ext:ddsa_lib/violation";
+
 globalThis.stellaAllErrors = [];
 
 export function StellaError(startLine, startCol, endLine, endCol, message, severity, category) {
@@ -19,55 +23,29 @@ export function StellaError(startLine, startCol, endLine, endCol, message, sever
   }
 }
 
-export function StellaFix(message, edits) {
-  this.description = message;
-  this.edits = edits;
-}
-
-export function StellaEdit(start, end, editType, content) {
-  this.start = start;
-  this.end = end;
-  this.editType = editType;
-  this.content = content;
-}
-
 export function buildError(startLine, startCol, endLine, endCol, message, severity, category) {
-  return new StellaError(startLine, startCol, endLine, endCol, message, severity, category);
+  return Violation.new(startLine, startCol, endLine, endCol, message);
 }
 
 export function buildFix(message, list) {
-  return new StellaFix(message, list);
+  return Fix.new(message, list);
 }
 
 export function buildEditUpdate(startLine, startCol, endLine, endCol, content) {
-  return new buildEdit(startLine, startCol, endLine, endCol, "UPDATE", content);
+  return Edit.newUpdate(startLine, startCol, endLine, endCol, content);
 }
 
 export function buildEditRemove(startLine, startCol, endLine, endCol) {
-  return new buildEdit(startLine, startCol, endLine, endCol, "REMOVE");
+  return Edit.newRemove(startLine, startCol, endLine, endCol);
 }
 
 
 export function buildEditAdd(startLine, startCol, content) {
-  return new buildEdit(startLine, startCol, null, null, "ADD", content);
+  return Edit.newAdd(startLine, startCol, content);
 }
 
-
 export function buildEdit(startLine, startCol, endLine, endCol, editType, content) {
-  const start = {
-    line: startLine,
-    col: startCol,
-  };
-
-  let end = {
-    line: endLine,
-    col: endCol,
-  };
-
-  if (!endLine || !endCol) {
-    end = null;
-  }
-  return new StellaEdit(start, end, editType.toUpperCase(), content);
+  return new Edit(startLine, startCol, endLine, endCol, editType.toUpperCase(), content);
 }
 
 export function addError(error) {

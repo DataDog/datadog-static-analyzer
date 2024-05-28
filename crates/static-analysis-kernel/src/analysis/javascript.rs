@@ -11,6 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::analysis::ddsa_lib::common::iter_v8_array;
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::file_context::common::FileContext;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,15 @@ thread_local! {
         let runtime = JsRuntime::try_new().expect("runtime should have all data required to init");
         RefCell::new(runtime)
     };
+}
+
+use crate::analysis::ddsa_lib::js::ViolationConverter;
+
+/// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+fn violation_converter() -> &'static ViolationConverter {
+    use std::sync::OnceLock;
+    static V_CONVERTER: OnceLock<ViolationConverter> = OnceLock::new();
+    V_CONVERTER.get_or_init(ViolationConverter::new)
 }
 
 /// An error when attempting to call into the JavaScript runtime.
@@ -138,9 +148,7 @@ for (const n of GLOBAL_nodes) {{
     visit(n, GLOBAL_filename, n.context.code);
 }}
 
-return {{
-    violations: stellaAllErrors,
-}};
+return stellaAllErrors;
 }});
 "#,
         rule.code
@@ -238,7 +246,19 @@ return {{
         ExecutionError::Execution { reason }
     })?;
 
-    let StellaExecution { mut violations } = serde_v8::from_v8(tc_scope, execution_result)
+    let v8_array: v8::Local<v8::Array> =
+        execution_result.try_into().map_err(|err: v8::DataError| {
+            let reason = err.to_string();
+            ExecutionError::UnexpectedReturnValue { reason }
+        })?;
+    let violations = iter_v8_array(v8_array, tc_scope)
+        .map(|value| {
+            use crate::analysis::ddsa_lib::v8_ds::V8Converter;
+            violation_converter()
+                .try_convert_from(tc_scope, value)
+                .map(|v| v.into_violation(rule.severity, rule.category))
+        })
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|err| {
             let reason = err.to_string();
             ExecutionError::UnexpectedReturnValue { reason }
@@ -249,11 +269,6 @@ return {{
     global.delete(tc_scope, key_file_context.into());
     global.delete(tc_scope, key_filename.into());
 
-    // Override the violation's category and severity with that from the rule.
-    for v in violations.iter_mut() {
-        v.category = rule.category;
-        v.severity = rule.severity;
-    }
     Ok(violations)
 }
 
