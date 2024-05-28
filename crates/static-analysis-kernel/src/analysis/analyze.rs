@@ -3,13 +3,16 @@ use crate::analysis::generated_content::is_generated_file;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::arguments::ArgumentProvider;
-use crate::model::analysis::{AnalysisOptions, LinesToIgnore};
+use crate::model::analysis::{AnalysisOptions, FileIgnoreBehavior, LinesToIgnore};
 use crate::model::common::Language;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::time::Instant;
 
+/// Split the code and extract all the logic that reports to lines to ignore.
+/// If a no-dd-sa statement occurs on the first line, it applies to the whole file.
+/// Otherwise, it only applies to the line below.
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut lines_to_ignore_for_all_rules = vec![];
     let mut lines_to_ignore_per_rules: HashMap<u32, Vec<String>> = HashMap::new();
@@ -43,7 +46,8 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
             vec!["impossiblestringtoreach"]
         }
     };
-
+    let mut ignore_file_all_rules: bool = false;
+    let mut rules_to_ignore: Vec<String> = vec![];
     for line in code.lines() {
         let line_without_whitespaces: String =
             line.chars().filter(|c| !c.is_whitespace()).collect();
@@ -67,7 +71,13 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
 
                 // no ruleset/rules specified, we just ignore everything
                 if parts.is_empty() {
-                    lines_to_ignore_for_all_rules.push(line_number + 1);
+                    if line_number == 1 {
+                        ignore_file_all_rules = true;
+                    } else {
+                        lines_to_ignore_for_all_rules.push(line_number + 1);
+                    }
+                } else if line_number == 1 {
+                    rules_to_ignore.extend(parts.clone());
                 } else {
                     lines_to_ignore_per_rules.insert(line_number + 1, parts.clone());
                 }
@@ -75,9 +85,17 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         }
         line_number += 1;
     }
+
+    let ignore_file = if ignore_file_all_rules {
+        FileIgnoreBehavior::AllRules
+    } else {
+        FileIgnoreBehavior::SomeRules(rules_to_ignore)
+    };
+
     LinesToIgnore {
         lines_to_ignore: lines_to_ignore_for_all_rules,
         lines_to_ignore_per_rule: lines_to_ignore_per_rules,
+        ignore_file,
     }
 }
 
@@ -539,7 +557,15 @@ def foo(arg1):
     fn test_get_lines_to_ignore_python() {
         // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
         // no-dd-sa on line 7 so we ignore all rules on line 8
-        let code = "foo\n\n# no-dd-sa ruleset1/rule1\n\nbar\n\n# no-dd-sa\n";
+        let code = "\
+foo
+
+# no-dd-sa ruleset1/rule1
+
+bar
+
+# no-dd-sa
+";
 
         let lines_to_ignore = get_lines_to_ignore(code, &Language::Python);
 
@@ -568,6 +594,53 @@ def foo(arg1):
                 .get(0)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn test_get_lines_to_ignore_python_ignore_all_file() {
+        let code = "\
+#no-dd-sa
+def foo():
+  pass";
+
+        let lines_to_ignore = get_lines_to_ignore(code, &Language::Python);
+        assert!(lines_to_ignore.lines_to_ignore.is_empty());
+        assert!(lines_to_ignore.lines_to_ignore_per_rule.is_empty());
+        assert!(matches!(
+            lines_to_ignore.ignore_file,
+            FileIgnoreBehavior::AllRules
+        ));
+    }
+
+    #[test]
+    fn test_get_lines_to_ignore_python_ignore_all_file_specific_rules() {
+        let code1 = "\
+#no-dd-sa foo/bar
+def foo():
+  pass";
+
+        let lines_to_ignore1 = get_lines_to_ignore(code1, &Language::Python);
+        assert!(lines_to_ignore1.lines_to_ignore_per_rule.is_empty());
+        assert_eq!(
+            lines_to_ignore1.ignore_file,
+            FileIgnoreBehavior::SomeRules(vec!["foo/bar".to_string()])
+        );
+        assert!(lines_to_ignore1.lines_to_ignore.is_empty());
+
+        let code2 = "\
+#no-dd-sa foo/bar ruleset/rule
+def foo():
+  pass";
+
+        let lines_to_ignore2 = get_lines_to_ignore(code2, &Language::Python);
+
+        assert!(lines_to_ignore2.lines_to_ignore_per_rule.is_empty());
+
+        assert_eq!(
+            lines_to_ignore2.ignore_file,
+            FileIgnoreBehavior::SomeRules(vec!["foo/bar".to_string(), "ruleset/rule".to_string()])
+        );
+        assert!(lines_to_ignore2.lines_to_ignore.is_empty());
     }
 
     #[test]

@@ -2,6 +2,7 @@ use crate::model::common::Position;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
+use crate::model::analysis::FileIgnoreBehavior::AllRules;
 use std::collections::HashMap;
 
 pub const ERROR_RULE_TIMEOUT: &str = "rule-timeout";
@@ -16,11 +17,17 @@ pub struct AnalysisOptions {
     pub ignore_generated_files: bool,
 }
 
-// Represent the lines to ignores for a file. If we need to ignore all rules on a file, it's in the
-// lines_to_ignore attribute. If it's only specific rules, it's in the rules_to_ignore
+#[derive(PartialEq, Debug)]
+pub enum FileIgnoreBehavior {
+    AllRules,
+    SomeRules(Vec<String>),
+}
+
+// Represent the lines to ignores for a file.
 pub struct LinesToIgnore {
-    pub lines_to_ignore_per_rule: HashMap<u32, Vec<String>>,
-    pub lines_to_ignore: Vec<u32>,
+    pub lines_to_ignore_per_rule: HashMap<u32, Vec<String>>, // rules to ignore only for some files
+    pub lines_to_ignore: Vec<u32>,                           // lines to ignore
+    pub ignore_file: FileIgnoreBehavior,                     // apply to all the file
 }
 
 impl LinesToIgnore {
@@ -29,12 +36,23 @@ impl LinesToIgnore {
     ///  - line is the line of the violation
     /// returns true if the rule should be ignored
     pub fn should_filter_rule(&self, rule_name: &str, line: u32) -> bool {
+        match &self.ignore_file {
+            AllRules => {
+                return true;
+            }
+            FileIgnoreBehavior::SomeRules(rules) => {
+                if rules.iter().any(|c| c == rule_name) {
+                    return true;
+                }
+            }
+        }
+
         if self.lines_to_ignore.contains(&line) {
             return true;
         }
 
         if let Some(rules) = self.lines_to_ignore_per_rule.get(&line) {
-            return rules.contains(&rule_name.to_string());
+            return rules.iter().any(|c| c == rule_name);
         }
 
         false
@@ -78,17 +96,19 @@ pub struct MatchNode {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::analysis::LinesToIgnore;
+    use crate::model::analysis::FileIgnoreBehavior::SomeRules;
+    use crate::model::analysis::{FileIgnoreBehavior, LinesToIgnore};
     use std::collections::HashMap;
 
     #[test]
-    fn test_lines_to_ignores() {
+    fn test_lines_to_ignore() {
         let mut lines_per_rule: HashMap<u32, Vec<String>> = HashMap::new();
         lines_per_rule.insert(13, vec!["ruleset/rule".to_string()]);
 
         let lines_to_ignore = LinesToIgnore {
             lines_to_ignore: vec![10, 42],
             lines_to_ignore_per_rule: lines_per_rule,
+            ignore_file: FileIgnoreBehavior::SomeRules(vec![]),
         };
 
         assert!(!lines_to_ignore.should_filter_rule("foo/bar", 11));
@@ -97,5 +117,38 @@ mod tests {
         assert!(!lines_to_ignore.should_filter_rule("ruleset/rule", 11));
         assert!(lines_to_ignore.should_filter_rule("ruleset/rule", 13));
         assert!(!lines_to_ignore.should_filter_rule("foo/bar", 13));
+    }
+
+    // This should ignore everything
+    #[test]
+    fn test_lines_to_ignore_all_file() {
+        let lines_to_ignore = LinesToIgnore {
+            lines_to_ignore: vec![],
+            lines_to_ignore_per_rule: HashMap::new(),
+            ignore_file: FileIgnoreBehavior::AllRules,
+        };
+
+        assert!(lines_to_ignore.should_filter_rule("foo/bar", 11));
+        assert!(lines_to_ignore.should_filter_rule("foo/bar", 10));
+        assert!(lines_to_ignore.should_filter_rule("ruleset/rule", 10));
+        assert!(lines_to_ignore.should_filter_rule("ruleset/rule", 11));
+        assert!(lines_to_ignore.should_filter_rule("ruleset/rule", 13));
+        assert!(lines_to_ignore.should_filter_rule("foo/bar", 13));
+    }
+
+    #[test]
+    fn test_lines_to_ignore_one_rule_in_all_file() {
+        let lines_to_ignore = LinesToIgnore {
+            lines_to_ignore: vec![],
+            lines_to_ignore_per_rule: HashMap::new(),
+            ignore_file: SomeRules(vec!["foo/bar".to_string()]),
+        };
+
+        assert!(lines_to_ignore.should_filter_rule("foo/bar", 11));
+        assert!(lines_to_ignore.should_filter_rule("foo/bar", 10));
+        assert!(!lines_to_ignore.should_filter_rule("ruleset/rule", 10));
+        assert!(!lines_to_ignore.should_filter_rule("ruleset/rule", 11));
+        assert!(!lines_to_ignore.should_filter_rule("ruleset/rule", 13));
+        assert!(lines_to_ignore.should_filter_rule("foo/bar", 13));
     }
 }
