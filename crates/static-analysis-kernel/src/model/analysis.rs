@@ -41,20 +41,18 @@ impl LinesToIgnore {
                 return true;
             }
             FileIgnoreBehavior::SomeRules(rules) => {
-                if rules.contains(&rule_name.to_string()) {
+                if rules.iter().any(|c| c == rule_name) {
                     return true;
                 }
             }
         }
-
-        let rule_name_string = rule_name.to_string();
 
         if self.lines_to_ignore.contains(&line) {
             return true;
         }
 
         if let Some(rules) = self.lines_to_ignore_per_rule.get(&line) {
-            return rules.contains(&rule_name_string);
+            return rules.iter().any(|c| c == rule_name);
         }
 
         false
