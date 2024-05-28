@@ -557,7 +557,15 @@ def foo(arg1):
     fn test_get_lines_to_ignore_python() {
         // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
         // no-dd-sa on line 7 so we ignore all rules on line 8
-        let code = "foo\n\n# no-dd-sa ruleset1/rule1\n\nbar\n\n# no-dd-sa\n";
+        let code = "\
+foo
+
+# no-dd-sa ruleset1/rule1
+
+bar
+
+# no-dd-sa
+";
 
         let lines_to_ignore = get_lines_to_ignore(code, &Language::Python);
 
@@ -591,8 +599,8 @@ def foo(arg1):
     #[test]
     fn test_get_lines_to_ignore_python_ignore_all_file() {
         let code = "\
-#no-dd-sa\n\n\
-def foo():\n\
+#no-dd-sa
+def foo():
   pass";
 
         let lines_to_ignore = get_lines_to_ignore(code, &Language::Python);
@@ -607,8 +615,8 @@ def foo():\n\
     #[test]
     fn test_get_lines_to_ignore_python_ignore_all_file_specific_rules() {
         let code1 = "\
-#no-dd-sa foo/bar\n\
-def foo():\n\
+#no-dd-sa foo/bar
+def foo():
   pass";
 
         let lines_to_ignore1 = get_lines_to_ignore(code1, &Language::Python);
@@ -620,8 +628,8 @@ def foo():\n\
         assert!(lines_to_ignore1.lines_to_ignore.is_empty());
 
         let code2 = "\
-#no-dd-sa foo/bar ruleset/rule\n\
-def foo():\n\
+#no-dd-sa foo/bar ruleset/rule
+def foo():
   pass";
 
         let lines_to_ignore2 = get_lines_to_ignore(code2, &Language::Python);
