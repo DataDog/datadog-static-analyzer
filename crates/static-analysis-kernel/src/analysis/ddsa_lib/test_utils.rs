@@ -6,7 +6,7 @@
 //       their module, we work around this by exposing the following functions to all compilation profiles.
 //       They should only be used in unit tests.
 
-use crate::analysis::ddsa_lib::common::{iter_v8_array, load_function};
+use crate::analysis::ddsa_lib::common::{iter_v8_array, load_function, v8_string};
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use deno_core::v8::HandleScope;
 use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
@@ -107,6 +107,21 @@ fn js_all_props(scope: &mut HandleScope, value: &impl Deref<Target = v8::Object>
         base_props.remove(prop_name);
     }
     base_props.into_iter().collect()
+}
+
+/// Compiles JavaScript and executes it within the provided scope, returning the script's return value.
+pub(crate) fn try_execute<'s>(
+    scope: &mut HandleScope<'s>,
+    code: &str,
+) -> Result<v8::Local<'s, v8::Value>, String> {
+    let tc_scope = &mut v8::TryCatch::new(scope);
+    let code = v8_string(tc_scope, code);
+    let script = v8::Script::compile(tc_scope, code, None).unwrap();
+    script.run(tc_scope).ok_or_else(|| {
+        let exception = tc_scope.exception().unwrap().to_rust_string_lossy(tc_scope);
+        tc_scope.reset();
+        exception
+    })
 }
 
 /// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.
