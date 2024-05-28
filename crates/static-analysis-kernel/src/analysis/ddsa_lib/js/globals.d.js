@@ -2,9 +2,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-pub mod common;
-pub mod extension;
-pub(crate) mod ops;
-pub(crate) mod runtime;
-pub(crate) use runtime::JsRuntime;
-pub mod v8_ds;
+import {DDSA_Console} from "ext:ddsa_lib/utility";
+
+/**
+ * Global variables available within a rule execution.
+ * These are populated by `__bootstrap.js`.
+ */
+
+/**
+ * @name console
+ * @type {DDSA_Console}
+ * @global
+ */

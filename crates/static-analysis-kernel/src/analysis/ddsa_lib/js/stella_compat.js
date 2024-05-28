@@ -19,20 +19,6 @@ export function StellaError(startLine, startCol, endLine, endCol, message, sever
   }
 }
 
-export function StellaConsole(startLine, startCol, endLine, endCol, message, severity, category) {
-  this.lines = [];
-  this.log = function (message) {
-    if (Array.isArray(message) || typeof message === "object") {
-      this.lines.push(JSON.stringify(message));
-      return;
-    }
-
-    this.lines.push("" + message);
-  }
-}
-
-globalThis.console = new StellaConsole();
-
 export function StellaFix(message, edits) {
   this.description = message;
   this.edits = edits;
@@ -120,6 +106,5 @@ export function getCodeForNode(node, code) {
 // external to its scope, this function allows us to ensure that a closure is executed in a "clean", non-mutated context.
 export function _cleanExecute(closure) {
   stellaAllErrors.length = 0;
-  console.lines.length = 0
   return closure();
 }

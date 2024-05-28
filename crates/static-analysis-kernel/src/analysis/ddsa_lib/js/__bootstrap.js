@@ -12,3 +12,6 @@ for (const [name, obj] of Object.entries(stellaCompat)) {
     globalThis[name] = obj;
 }
 ///////////
+
+import {DDSA_Console} from "ext:ddsa_lib/utility";
+globalThis.console = new DDSA_Console();

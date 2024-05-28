@@ -24,15 +24,6 @@ thread_local! {
     };
 }
 
-/// A successful execution of a rule's JavaScript code.
-#[derive(Debug, Clone)]
-pub struct CompletedExecution {
-    /// The violations reported by the rule execution.
-    pub violations: Vec<Violation>,
-    /// A vector of the JSON-serialized console.log output from the rule.
-    pub output: Vec<String>,
-}
-
 /// An error when attempting to call into the JavaScript runtime.
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
@@ -50,7 +41,6 @@ pub enum ExecutionError {
 #[derive(Deserialize, Debug, Serialize, Clone)]
 struct StellaExecution {
     violations: Vec<Violation>, // the list of violations returned by the rule
-    console: Vec<String>,       // the log lines from console.log
 }
 
 // execute a rule. It is the exposed function to execute a rule and start the underlying
@@ -64,18 +54,20 @@ pub fn execute_rule(
 ) -> RuleResult {
     let execution_start = Instant::now();
 
-    let res = JS_RUNTIME.with_borrow_mut(|runtime| {
-        execute_rule_internal(runtime, rule, &match_nodes, &filename, file_context)
+    let (res, console_output) = JS_RUNTIME.with_borrow_mut(|runtime| {
+        let res = execute_rule_internal(runtime, rule, &match_nodes, &filename, file_context);
+        let console_output = runtime.console_compat().drain().collect::<Vec<_>>();
+        (res, console_output)
     });
     let execution_time_ms = execution_start.elapsed().as_millis();
 
     // NOTE: This is a translation layer to map Result<T, E> to a `RuleResult` struct.
     // Eventually, `execute_rule` should be refactored to also use a `Result`, and then this will no longer be required.
     let (violations, errors, execution_error, output) = match res {
-        Ok(completed) => {
-            let output = (!completed.output.is_empty() && analysis_options.log_output)
-                .then_some(completed.output.join("\n"));
-            (completed.violations, vec![], None, output)
+        Ok(violations) => {
+            let output = (!console_output.is_empty() && analysis_options.log_output)
+                .then_some(console_output.join("\n"));
+            (violations, vec![], None, output)
         }
         Err(err) => {
             let r_f = format!("{}:{}", rule.name, filename);
@@ -125,7 +117,7 @@ fn execute_rule_internal(
     match_nodes: &[MatchNode],
     filename: &str,
     file_context: &FileContext,
-) -> Result<CompletedExecution, ExecutionError> {
+) -> Result<Vec<Violation>, ExecutionError> {
     // NOTE: We merge the existing node context with the file context and resolve key collisions
     // by using the file context's value.
     let js_code = format!(
@@ -147,7 +139,6 @@ for (const n of GLOBAL_nodes) {{
 
 return {{
     violations: stellaAllErrors,
-    console: console.lines,
 }};
 }});
 "#,
@@ -246,13 +237,11 @@ return {{
         ExecutionError::Execution { reason }
     })?;
 
-    let StellaExecution {
-        mut violations,
-        console: output,
-    } = serde_v8::from_v8(tc_scope, execution_result).map_err(|err| {
-        let reason = err.to_string();
-        ExecutionError::UnexpectedReturnValue { reason }
-    })?;
+    let StellaExecution { mut violations } = serde_v8::from_v8(tc_scope, execution_result)
+        .map_err(|err| {
+            let reason = err.to_string();
+            ExecutionError::UnexpectedReturnValue { reason }
+        })?;
 
     // Drop the objects we created. Because we are re-using the context, it won't happen automatically.
     global.delete(tc_scope, key_nodes.into());
@@ -264,7 +253,7 @@ return {{
         v.category = rule.category;
         v.severity = rule.severity;
     }
-    Ok(CompletedExecution { violations, output })
+    Ok(violations)
 }
 
 #[cfg(test)]
