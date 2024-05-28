@@ -3,26 +3,23 @@ use crate::model::analysis::{
 };
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
+use deno_core::v8;
 use deno_core::v8::NewStringType::Internalized;
-use deno_core::{v8, JsRuntime};
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::file_context::common::FileContext;
 use serde::{Deserialize, Serialize};
-use crate::analysis::ddsa_lib;
 
 /// The duration an individual execution of `v8` may run before it will be forcefully halted.
 const JAVASCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_millis(5000);
 
 thread_local! {
     static JS_RUNTIME: RefCell<JsRuntime> = {
-        let runtime = JsRuntime::new(deno_core::RuntimeOptions {
-            extensions: vec![ddsa_lib::extension::ddsa_lib::init_ops_and_esm()],
-            ..Default::default()
-        });
+        let runtime = JsRuntime::try_new().expect("runtime should have all data required to init");
         RefCell::new(runtime)
     };
 }
@@ -157,9 +154,9 @@ return {{
         rule.code
     );
 
-    let iso_handle = runtime.v8_isolate().thread_safe_handle();
+    let iso_handle = runtime.inner_compat().v8_isolate().thread_safe_handle();
 
-    let handle_scope = &mut runtime.handle_scope();
+    let handle_scope = &mut runtime.inner_compat().handle_scope();
     let ctx = handle_scope.get_current_context();
     let scope = &mut v8::ContextScope::new(handle_scope, ctx);
     let global = ctx.global(scope);

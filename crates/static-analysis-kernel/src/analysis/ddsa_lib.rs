@@ -4,4 +4,6 @@
 
 pub mod common;
 pub mod extension;
+pub(crate) mod runtime;
+pub(crate) use runtime::JsRuntime;
 pub mod v8_ds;
