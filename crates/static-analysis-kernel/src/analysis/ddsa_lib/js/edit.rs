@@ -145,8 +145,32 @@ impl V8Converter for EditConverter {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::js::EditInstance;
-    use crate::analysis::ddsa_lib::test_utils::{js_class_eq, js_instance_eq};
+    use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
+    use crate::analysis::ddsa_lib::js::{EditConverter, EditInstance};
+    use crate::analysis::ddsa_lib::test_utils::{
+        cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+    };
+    use crate::analysis::ddsa_lib::v8_ds::V8Converter;
+    use deno_core::v8::HandleScope;
+
+    #[rustfmt::skip]
+    fn assert_de_ok(input: &str, s: &mut HandleScope) {
+        let c = EditConverter::new();
+        assert!(try_execute(s, input).is_ok_and(|v| c.try_convert_from(s, v).is_ok()));
+    }
+    #[rustfmt::skip]
+    fn assert_de_fail(input: &str, scope: &mut HandleScope, expected: &str) {
+        let c = EditConverter::new();
+        assert!(try_execute(scope, input).is_ok_and(|v| {
+            let err = c.try_convert_from(scope, v).unwrap_err();
+            match expected {
+                "NotFound" => { matches!(err, DDSAJsRuntimeError::VariableNotFound { .. })}
+                "WrongType" => { matches!(err, DDSAJsRuntimeError::WrongType { .. })}
+                "InvalidValue" => { matches!(err, DDSAJsRuntimeError::InvalidValue { .. })}
+                _ => unreachable!()
+            }
+        }));
+    }
 
     #[test]
     fn js_properties_canary() {
@@ -162,5 +186,57 @@ mod tests {
         assert!(js_instance_eq(EditInstance::CLASS_NAME, instance_expected));
         let class_expected = &["newAdd", "newRemove", "newUpdate"];
         assert!(js_class_eq(EditInstance::CLASS_NAME, class_expected));
+    }
+
+    /// Simple smoke test for deserialization
+    #[rustfmt::skip]
+    #[test]
+    fn edit_converter_deserialization() {
+        let mut runtime = cfg_test_runtime();
+        let s = &mut runtime.handle_scope();
+        // Users should not be creating `Edit` instances via the constructor, it's tested regardless
+        // Missing `startCol`
+        assert_de_fail("new Edit(10, undefined, undefined, undefined, 'ADD', 'More text')", s, "NotFound");
+        // Missing `startLine`
+        assert_de_ok("new Edit(10, 20, undefined, undefined, 'ADD', 'Additional')", s);
+        assert_de_fail("new Edit(undefined, 20, undefined, undefined, 'ADD', 'More text')", s, "NotFound");
+
+        // Static "constructors"
+        // Add
+        assert_de_ok("Edit.newAdd(10, 20, 'Additional')", s);
+        assert_de_fail("Edit.newAdd(10, 'string_not_number', 'Additional')", s, "WrongType");
+        // Remove
+        assert_de_ok("Edit.newRemove(10, 20, 10, 30)", s);
+        // JavaScript implicit `undefined` parameters (equivalent to `Edit.newRemove(10, 20, 10, undefined)`)
+        assert_de_fail("Edit.newRemove(10, 20, 10)", s, "NotFound");
+        // Update
+        assert_de_ok("Edit.newUpdate(10, 20, 10, 31, 'Replacement')", s);
+
+        // Incorrect `kind` string enum
+        assert_de_ok("new Edit(10, 20, 10, 31, 'REMOVE')", s);
+        assert_de_fail("new Edit(10, 20, 10, 31, 'DELETE')", s, "InvalidValue");
+    }
+
+    /// The `Edit` JavaScript class is not strictly validated upon creation (in JavaScript), allowing
+    /// superfluous input. This should not cause a deserialization failure, as we are plucking
+    /// specific fields, not deserializing the entire object. In practice, this should
+    #[rustfmt::skip]
+    #[test]
+    fn edit_converter_deserialize_superfluous() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let mut deserialize = |input: &str| -> EditInstance {
+            let c = EditConverter::new();
+            try_execute(scope, input).map(|v| c.try_convert_from(scope, v)).unwrap().unwrap()
+        };
+        let expected = EditInstance::Add {
+            start_line: 10,
+            start_col: 20,
+            content: "More text".to_string(),
+        };
+        // Extraneous `endLine`, `endCol`
+        assert_eq!(deserialize("new Edit(10, 20, 1234, 4321, 'ADD', 'More text')"), expected.clone());
+        // Extraneous fields on static methods
+        assert_eq!(deserialize("Edit.newAdd(10, 20, 'More text', 1234, undefined, 4321)"), expected.clone());
     }
 }
