@@ -46,10 +46,7 @@ where
     T: for<'s> FnMut(&mut HandleScope<'s>) -> v8::Local<'s, v8::Object>,
 {
     use std::collections::HashSet;
-    let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-        extensions: vec![cfg_test_deno_ext()],
-        ..Default::default()
-    });
+    let mut runtime = cfg_test_runtime();
     let scope = &mut runtime.handle_scope();
     let object = object_creator(scope);
 
@@ -112,13 +109,21 @@ fn js_all_props(scope: &mut HandleScope, value: &impl Deref<Target = v8::Object>
     base_props.into_iter().collect()
 }
 
+/// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.
+pub(crate) fn cfg_test_runtime() -> deno_core::JsRuntime {
+    deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+        extensions: vec![cfg_test_deno_ext()],
+        ..Default::default()
+    })
+}
+
 /// A [`deno_core::Extension`] that clones the ES modules from [`ddsa_lib`] and uses an
 /// entrypoint that adds all module exports to `globalThis`.
 ///
 /// We do this because we want unit tests to have access to all classes, but in the entry point
 /// used for production, we don't add every class to `globalThis`. Unit tests use `v8::Script`
 /// to execute JavaScript (and, because it's not an ES module, a script can't perform imports).
-pub(crate) fn cfg_test_deno_ext() -> deno_core::Extension {
+fn cfg_test_deno_ext() -> deno_core::Extension {
     fn leaked(string: impl ToString) -> &'static str {
         Box::leak(string.to_string().into_boxed_str())
     }
