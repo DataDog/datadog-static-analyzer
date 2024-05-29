@@ -66,7 +66,7 @@ impl From<YamlConfigFile> for ConfigFile {
 impl From<ConfigFile> for YamlConfigFile {
     fn from(value: ConfigFile) -> Self {
         YamlConfigFile {
-            schema_version: YamlSchemaVersion {},
+            schema_version: YamlSchemaVersion::V1,
             rulesets: value.rulesets.into(),
             paths: value.paths.into(),
             ignore_paths: None,
@@ -77,37 +77,13 @@ impl From<ConfigFile> for YamlConfigFile {
     }
 }
 
-// YAML-serializable marker for the schema version.
-// It only deserializes successfully if it matches the expected value.
-#[derive(Default)]
-struct YamlSchemaVersion {}
-
-const SCHEMA_VERSION: &str = "v1";
-
-impl<'de> Deserialize<'de> for YamlSchemaVersion {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let v = String::deserialize(deserializer)?;
-        if v != SCHEMA_VERSION {
-            Err(Error::invalid_value(
-                Unexpected::Str(&v),
-                &format!("\"{}\"", SCHEMA_VERSION).as_str(),
-            ))
-        } else {
-            Ok(YamlSchemaVersion {})
-        }
-    }
-}
-
-impl Serialize for YamlSchemaVersion {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        SCHEMA_VERSION.serialize(serializer)
-    }
+// YAML-serializable schema version.
+// It only contains the expected value for this parser.
+#[derive(Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+enum YamlSchemaVersion {
+    #[default]
+    V1,
 }
 
 // YAML-serializable ruleset list.
@@ -451,9 +427,9 @@ impl<'de> Deserialize<'de> for YamlRuleCategory {
 // A map from string to value that disallows repeated keys when deserializing.
 #[derive(Serialize, Default, PartialEq)]
 #[serde(transparent)]
-struct UniqueKeyMap<T>(IndexMap<String, T>);
+struct UniqueKeyMap<V>(IndexMap<String, V>);
 
-impl<T> UniqueKeyMap<T> {
+impl<V> UniqueKeyMap<V> {
     fn is_empty(&self) -> bool {
         self.0.is_empty()
     }

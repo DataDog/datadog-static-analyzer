@@ -1,6 +1,6 @@
-const stellaAllErrors = [];
+globalThis.stellaAllErrors = [];
 
-function StellaError(startLine, startCol, endLine, endCol, message, severity, category) {
+export function StellaError(startLine, startCol, endLine, endCol, message, severity, category) {
   this.start = {
     line: startLine,
     col: startCol,
@@ -19,55 +19,41 @@ function StellaError(startLine, startCol, endLine, endCol, message, severity, ca
   }
 }
 
-function StellaConsole(startLine, startCol, endLine, endCol, message, severity, category) {
-  this.lines = [];
-  this.log = function (message) {
-    if (Array.isArray(message) || typeof message === "object") {
-      this.lines.push(JSON.stringify(message));
-      return;
-    }
-
-    this.lines.push("" + message);
-  }
-}
-
-console = new StellaConsole();
-
-function StellaFix(message, edits) {
+export function StellaFix(message, edits) {
   this.description = message;
   this.edits = edits;
 }
 
-function StellaEdit(start, end, editType, content) {
+export function StellaEdit(start, end, editType, content) {
   this.start = start;
   this.end = end;
   this.editType = editType;
   this.content = content;
 }
 
-function buildError(startLine, startCol, endLine, endCol, message, severity, category) {
+export function buildError(startLine, startCol, endLine, endCol, message, severity, category) {
   return new StellaError(startLine, startCol, endLine, endCol, message, severity, category);
 }
 
-function buildFix(message, list) {
+export function buildFix(message, list) {
   return new StellaFix(message, list);
 }
 
-function buildEditUpdate(startLine, startCol, endLine, endCol, content) {
+export function buildEditUpdate(startLine, startCol, endLine, endCol, content) {
   return new buildEdit(startLine, startCol, endLine, endCol, "UPDATE", content);
 }
 
-function buildEditRemove(startLine, startCol, endLine, endCol) {
+export function buildEditRemove(startLine, startCol, endLine, endCol) {
   return new buildEdit(startLine, startCol, endLine, endCol, "REMOVE");
 }
 
 
-function buildEditAdd(startLine, startCol, content) {
+export function buildEditAdd(startLine, startCol, content) {
   return new buildEdit(startLine, startCol, null, null, "ADD", content);
 }
 
 
-function buildEdit(startLine, startCol, endLine, endCol, editType, content) {
+export function buildEdit(startLine, startCol, endLine, endCol, editType, content) {
   const start = {
     line: startLine,
     col: startCol,
@@ -84,12 +70,12 @@ function buildEdit(startLine, startCol, endLine, endCol, editType, content) {
   return new StellaEdit(start, end, editType.toUpperCase(), content);
 }
 
-function addError(error) {
+export function addError(error) {
   stellaAllErrors.push(error);
 }
 
 // helper function getCode
-function getCode(start, end, code) {
+export function getCode(start, end, code) {
   const lines = code.split("\n");
   const startLine = start.line - 1;
   const startCol = start.col - 1;
@@ -112,14 +98,13 @@ function getCode(start, end, code) {
 };
 
 // helper function getCodeForNode
-function getCodeForNode(node, code) {
+export function getCodeForNode(node, code) {
   return getCode(node.start, node.end, code);
 }
 
 // We re-use the same v8 isolate across multiple rule executions. Because the user's JavaScript can mutate variables
 // external to its scope, this function allows us to ensure that a closure is executed in a "clean", non-mutated context.
-function _cleanExecute(closure) {
+export function _cleanExecute(closure) {
   stellaAllErrors.length = 0;
-  console.lines.length = 0
   return closure();
 }
