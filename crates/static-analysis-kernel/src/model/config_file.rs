@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
 use std::borrow::Borrow;
 use std::fmt;
-use std::fmt::{Display, Formatter};
 use std::path::{Path, PathBuf};
 
 use crate::model::rule::{RuleCategory, RuleSeverity};
@@ -25,9 +24,8 @@ pub struct PathConfig {
     pub ignore: Vec<PathPattern>,
 }
 
-// A structure that stores values that depend on the position in the repository tree.
-#[derive(Debug, PartialEq, Default, Clone)]
-pub struct BySubtree<T>(SequenceTrie<String, T>);
+// A type that stores values that depend on the position in the repository tree.
+pub type BySubtree<T> = SequenceTrie<PathComponent, T>;
 
 // Configuration for a single rule.
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -125,94 +123,42 @@ impl PathConfig {
     }
 }
 
+// An opaque path component.
+#[derive(Debug, PartialEq, Eq, Hash, Default, Clone)]
+pub struct PathComponent(String);
+
 // The key for operations on BySubtree.
-pub struct SplitPath(Vec<String>);
+pub type SplitPath = Vec<PathComponent>;
 
-impl SplitPath {
-    pub fn from_string(path: &str) -> Self {
-        SplitPath(
-            path.split('/')
-                .filter(|c| !c.is_empty())
-                .map(&str::to_string)
-                .collect(),
-        )
-    }
+// Generates a SplitPath from a path string, separated by '/'.
+pub fn split_path<S>(path: S) -> SplitPath
+where
+    S: Borrow<str>,
+{
+    path.borrow()
+        .split('/')
+        .filter(|c| !c.is_empty())
+        .map(|s| PathComponent(s.to_string()))
+        .collect()
 }
 
-impl Display for SplitPath {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.0.join("/").as_str())
-    }
+// Generates a path string from a SplitPath.
+pub fn join_path(path: &SplitPath) -> String {
+    path.iter()
+        .map(|c| c.0.clone())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
-impl<T> BySubtree<T> {
-    pub fn new() -> Self {
-        BySubtree(SequenceTrie::new())
+// Generates a BySubtree from an iterable of tuples of path string and value.
+pub fn values_by_subtree<T, S, I>(src: I) -> BySubtree<T>
+where
+    S: Borrow<str>,
+    I: IntoIterator<Item = (S, T)>,
+{
+    let mut out = BySubtree::new();
+    for (k, v) in src {
+        out.insert(&split_path(k), v);
     }
-    pub fn get_mut(&mut self, path: &SplitPath) -> Option<&mut T> {
-        self.0.get_mut(path.0.iter())
-    }
-    pub fn insert(&mut self, path: &SplitPath, value: T) -> Option<T> {
-        self.0.insert(path.0.iter(), value)
-    }
-    pub fn prefix_iter<'s, 'k>(&'s self, path: &'k SplitPath) -> BySubtreePrefixIter<'s, 'k, T> {
-        BySubtreePrefixIter(self.0.prefix_iter(path.0.iter()))
-    }
-    pub fn iter(&self) -> BySubtreeIter<T> {
-        self.into_iter()
-    }
-}
-
-impl<V, const N: usize> From<[(String, V); N]> for BySubtree<V> {
-    fn from(value: [(String, V); N]) -> Self {
-        BySubtree::from_iter(value)
-    }
-}
-
-impl<V> FromIterator<(String, V)> for BySubtree<V> {
-    fn from_iter<T: IntoIterator<Item = (String, V)>>(iter: T) -> Self {
-        let mut out = BySubtree::new();
-        for (k, v) in iter {
-            out.insert(&SplitPath::from_string(k.as_str()), v);
-        }
-        out
-    }
-}
-
-impl<'a, T> IntoIterator for &'a BySubtree<T> {
-    type Item = (SplitPath, &'a T);
-    type IntoIter = BySubtreeIter<'a, T>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        BySubtreeIter(self.0.iter())
-    }
-}
-
-pub struct BySubtreeIter<'a, T>(sequence_trie::Iter<'a, String, T>);
-
-impl<'a, T> Iterator for BySubtreeIter<'a, T> {
-    type Item = (SplitPath, &'a T);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|(k, v)| (SplitPath(k.into_iter().cloned().collect()), v))
-    }
-}
-
-pub struct BySubtreePrefixIter<'s, 'k, T>(
-    sequence_trie::PrefixIter<'s, 'k, String, T, String, std::slice::Iter<'k, String>>,
-);
-
-impl<'s, 'k, T> Iterator for BySubtreePrefixIter<'s, 'k, T> {
-    type Item = &'s T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for item in self.0.by_ref() {
-            if let Some(value) = item.value() {
-                return Some(value);
-            }
-        }
-        None
-    }
+    out
 }

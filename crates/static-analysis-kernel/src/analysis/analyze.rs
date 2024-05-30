@@ -5,7 +5,7 @@ use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::arguments::ArgumentProvider;
 use crate::model::analysis::{AnalysisOptions, FileIgnoreBehavior, LinesToIgnore};
 use crate::model::common::Language;
-use crate::model::config_file::SplitPath;
+use crate::model::config_file::split_path;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
 use std::collections::HashMap;
@@ -133,7 +133,7 @@ where
 
     let parsing_time_ms = parsing_time.elapsed().as_millis();
 
-    let split_filename = SplitPath::from_string(filename);
+    let split_filename = split_path(filename);
 
     tree.map_or_else(
         || {
@@ -205,7 +205,6 @@ mod tests {
     use super::*;
     use crate::analysis::tree_sitter::get_query;
     use crate::model::common::Language;
-    use crate::model::config_file::SplitPath;
     use crate::model::rule::{RuleCategory, RuleSeverity};
 
     const QUERY_CODE: &str = r#"
@@ -858,18 +857,8 @@ function visit(node, filename, code) {
             ignore_generated_files: false,
         };
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument(
-            "rule1",
-            &SplitPath::from_string("myfile.py"),
-            "my-argument",
-            "101",
-        );
-        argument_provider.add_argument(
-            "rule1",
-            &SplitPath::from_string("myfile.py"),
-            "another-arg",
-            "101",
-        );
+        argument_provider.add_argument("rule1", &split_path("myfile.py"), "my-argument", "101");
+        argument_provider.add_argument("rule1", &split_path("myfile.py"), "another-arg", "101");
 
         let results = analyze(
             &Language::Python,

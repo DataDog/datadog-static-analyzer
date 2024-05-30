@@ -10,7 +10,8 @@ use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 
 use crate::model::config_file::{
-    BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+    join_path, split_path, BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig,
+    RulesetConfig,
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
@@ -387,7 +388,11 @@ impl Serialize for YamlArgumentValues {
 
 impl From<YamlArgumentValues> for BySubtree<String> {
     fn from(value: YamlArgumentValues) -> Self {
-        value.0.into_iter().collect()
+        let mut out = BySubtree::new();
+        for (k, v) in value.0 {
+            out.insert(&split_path(k), v);
+        }
+        out
     }
 }
 
@@ -396,7 +401,7 @@ impl From<BySubtree<String>> for YamlArgumentValues {
         YamlArgumentValues(
             value
                 .iter()
-                .map(|(k, v)| (k.to_string(), v.clone()))
+                .map(|(k, v)| (join_path(&k.into_iter().cloned().collect()), v.clone()))
                 .collect(),
         )
     }
@@ -505,7 +510,7 @@ impl Display for AnyAsString {
 mod tests {
     use super::*;
     use crate::model::config_file::{
-        ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+        values_by_subtree, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
@@ -807,15 +812,15 @@ rulesets:
                                 arguments: IndexMap::from([
                                     (
                                         "arg1".to_string(),
-                                        BySubtree::from([("".to_string(), "100".to_string())]),
+                                        values_by_subtree([("", "100".to_string())]),
                                     ),
                                     (
                                         "arg2".to_string(),
-                                        BySubtree::from([
-                                            ("".to_string(), "200".to_string()),
-                                            ("uno".to_string(), "201".to_string()),
-                                            ("uno/dos".to_string(), "202".to_string()),
-                                            ("tres".to_string(), "203".to_string()),
+                                        values_by_subtree([
+                                            ("", "200".to_string()),
+                                            ("uno", "201".to_string()),
+                                            ("uno/dos", "202".to_string()),
+                                            ("tres", "203".to_string()),
                                         ]),
                                     ),
                                 ]),
@@ -830,14 +835,11 @@ rulesets:
                                 arguments: IndexMap::from([
                                     (
                                         "arg3".to_string(),
-                                        BySubtree::from([("".to_string(), "300".to_string())]),
+                                        values_by_subtree([("", "300".to_string())]),
                                     ),
                                     (
                                         "arg4".to_string(),
-                                        BySubtree::from([(
-                                            "cuatro".to_string(),
-                                            "400".to_string(),
-                                        )]),
+                                        values_by_subtree([("cuatro", "400".to_string())]),
                                     ),
                                 ]),
                                 severity: None,
@@ -1059,7 +1061,7 @@ rulesets:
         let mut arguments = IndexMap::new();
         arguments.insert(
             "max-params".to_string(),
-            BySubtree::from([("".to_string(), "3".to_string())]),
+            values_by_subtree([("", "3".to_string())]),
         );
 
         rules.insert(
@@ -1107,10 +1109,7 @@ rulesets:
         let mut arguments = IndexMap::new();
         arguments.insert(
             "max-params".to_string(),
-            BySubtree::from([
-                ("".to_string(), "3".to_string()),
-                ("my-path/to-file".to_string(), "4".to_string()),
-            ]),
+            values_by_subtree([("", "3".to_string()), ("my-path/to-file", "4".to_string())]),
         );
 
         rules.insert(
