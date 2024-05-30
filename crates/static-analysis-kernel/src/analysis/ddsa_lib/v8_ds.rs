@@ -406,7 +406,7 @@ where
 /// ```
 #[macro_export]
 macro_rules! rust_converter {
-  (($r#struct:ident, $ty:ty), |&$self:ident, $scope:ident, $value:ident| $convert_expr:expr) => {
+  (($r#struct:ty, $ty:ty), |&$self:ident, $scope:ident, $value:ident| $convert_expr:expr) => {
       impl $crate::analysis::ddsa_lib::v8_ds::RustConverter for $r#struct {
           type Item = $ty;
           fn convert_to<'s>(
