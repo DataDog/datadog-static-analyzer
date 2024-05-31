@@ -101,6 +101,18 @@ impl RootContext<Instance> {
         }
     }
 
+    /// Gets the value of the filename cache.
+    #[cfg(test)]
+    pub fn get_filename_cache(&self, scope: &mut HandleScope) -> Option<String> {
+        self.get_cache(scope, &self.s_filename)
+    }
+
+    /// Gets the value of the file contents cache.
+    #[cfg(test)]
+    pub fn get_file_contents_cache(&self, scope: &mut HandleScope) -> Option<String> {
+        self.get_cache(scope, &self.s_file_contents)
+    }
+
     /// Sets the file contents cache in the context.
     pub fn set_file_contents_cache(&self, scope: &mut HandleScope, file_contents: Option<&str>) {
         if let Some(file_contents) = file_contents {
@@ -111,12 +123,46 @@ impl RootContext<Instance> {
             set_undefined(&self.v8_object, scope, &self.s_file_contents);
         }
     }
+
+    #[cfg(test)]
+    fn get_cache(&self, scope: &mut HandleScope, key: &v8::Global<v8::String>) -> Option<String> {
+        let v8_key = v8::Local::new(scope, key);
+        let v8_value = self.v8_object.open(scope).get(scope, v8_key.into());
+        let v8_value = v8_value.unwrap();
+        if v8_value.is_string() {
+            Some(v8_value.to_rust_string_lossy(scope))
+        } else if v8_value.is_undefined() {
+            None
+        } else {
+            panic!("unexpected v8 type")
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::analysis::ddsa_lib::bridge::ContextBridge;
+    use crate::analysis::ddsa_lib::common::v8_string;
     use crate::analysis::ddsa_lib::js::RootContext;
-    use crate::analysis::ddsa_lib::test_utils::{js_class_eq, js_instance_eq};
+    use crate::analysis::ddsa_lib::test_utils::{
+        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, parse_js, try_execute,
+    };
+    use crate::analysis::tree_sitter::get_tree_sitter_language;
+    use crate::model::common::Language;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+    use std::sync::Arc;
+
+    /// Constructs a `ContextBridge` and attaches it to `globalThis` with the given name
+    fn setup_bridge(runtime: &mut deno_core::JsRuntime, name: &str) -> Rc<RefCell<ContextBridge>> {
+        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        let bridge = Rc::new(RefCell::new(bridge));
+        runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
+        let scope = &mut runtime.handle_scope();
+        let v8_bridge = bridge.borrow().as_local(scope);
+        attach_as_global(scope, v8_bridge, name);
+        bridge
+    }
 
     #[test]
     fn js_properties_canary() {
@@ -133,5 +179,40 @@ mod tests {
         assert!(js_instance_eq(RootContext::CLASS_NAME, instance_expected));
         let class_expected = &[];
         assert!(js_class_eq(RootContext::CLASS_NAME, class_expected));
+    }
+
+    /// File contents can be retrieved and cached.
+    /// Filename can be retrieved and cached.
+    #[rustfmt::skip]
+    #[test]
+    fn get_file_info() {
+        let file_contents = "\
+// File
+// Contents
+const sampleFileContents = 0 + 1 + 2;
+";
+        let file_contents = Arc::<str>::from(file_contents);
+        let file_name = Arc::<str>::from("file_name.js");
+
+        let mut runtime = cfg_test_runtime();
+        let bridge = setup_bridge(&mut runtime, "ROOT");
+        let tree = parse_js(&file_contents);
+        let scope = &mut runtime.handle_scope();
+        bridge
+            .borrow_mut()
+            .set_root_context(scope, &tree, &file_contents, &file_name);
+        let v8_bridge = bridge.borrow().as_local(scope);
+        for (cache_key, js_code, expected) in [
+            ("__js_cachedFileContents", "ROOT.fileContents;", &file_contents),
+            ("__js_cachedFilename", "ROOT.filename;", &file_name),
+        ] {
+            let cache_key = v8_string(scope, cache_key);
+            let cache_before = v8_bridge.get(scope, cache_key.into()).unwrap();
+            assert!(cache_before.is_undefined());
+            let res = try_execute(scope, js_code).unwrap();
+            assert_eq!(res.to_rust_string_lossy(scope), expected.as_ref());
+            let cache_after = v8_bridge.get(scope, cache_key.into()).unwrap();
+            assert!(cache_after.is_string());
+        }
     }
 }
