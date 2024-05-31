@@ -169,8 +169,9 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     }
 
     // The extension we use in production.
-    let production_extension = ddsa_lib::init_ops_and_esm();
+    let mut production_extension = ddsa_lib::init_ops_and_esm();
     let prod_entrypoint = production_extension.get_esm_entry_point().unwrap();
+    let prod_ops = production_extension.init_ops().unwrap();
 
     // Clone all ES modules, minus the entrypoint.
     let mut esm_sources = production_extension.get_esm_sources().clone();
@@ -201,5 +202,6 @@ for (const [name, obj] of Object.entries({})) {{
     ExtensionBuilder::default()
         .esm(esm_sources)
         .esm_entry_point(specifier)
+        .ops(prod_ops)
         .build()
 }
