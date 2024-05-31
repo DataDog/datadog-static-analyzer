@@ -5,6 +5,12 @@
 // These lints are temporarily disabled while transitioning to ddsa_lib.
 #![allow(unused_imports, dead_code)]
 
+mod context_file;
+pub(crate) use context_file::FileContext;
+mod context_root;
+pub(crate) use context_root::RootContext;
+mod context_rule;
+pub(crate) use context_rule::RuleContext;
 mod edit;
 pub(crate) use edit::*;
 mod fix;
