@@ -124,6 +124,31 @@ pub(crate) fn try_execute<'s>(
     })
 }
 
+/// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`.
+pub(crate) fn attach_as_global<'s, T>(
+    scope: &mut HandleScope<'s>,
+    v8_item: impl v8::Handle<Data = T>,
+    name: &str,
+) where
+    v8::Local<'s, v8::Value>: From<v8::Local<'s, T>>,
+{
+    let v8_local = v8::Local::new(scope, v8_item);
+    let global = scope.get_current_context().global(scope);
+    let v8_key = v8_string(scope, name);
+    global.set(scope, v8_key.into(), v8_local.into());
+}
+
+/// Creates a JavaScript [`tree_sitter::Tree`] from the given input.
+pub(crate) fn parse_js(javascript_code: impl AsRef<str>) -> tree_sitter::Tree {
+    use crate::analysis::tree_sitter::get_tree_sitter_language;
+    use crate::model::common::Language;
+    let mut parser = tree_sitter::Parser::new();
+    parser
+        .set_language(&get_tree_sitter_language(&Language::JavaScript))
+        .unwrap();
+    parser.parse(javascript_code.as_ref(), None).unwrap()
+}
+
 /// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.
 pub(crate) fn cfg_test_runtime() -> deno_core::JsRuntime {
     deno_core::JsRuntime::new(deno_core::RuntimeOptions {
