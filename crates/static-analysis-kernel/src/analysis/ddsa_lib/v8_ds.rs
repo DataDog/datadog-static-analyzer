@@ -456,7 +456,9 @@ macro_rules! v8_converter {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{v8_interned, v8_string, v8_uint, DDSAJsRuntimeError};
+    use crate::analysis::ddsa_lib::common::{
+        attach_as_global, v8_interned, v8_string, v8_uint, DDSAJsRuntimeError,
+    };
     use crate::analysis::ddsa_lib::v8_ds::{MirroredIndexMap, MirroredVec, SyncedV8Array};
     use deno_core::v8::HandleScope;
     use deno_core::{v8, JsRuntime, RuntimeOptions};
@@ -530,12 +532,9 @@ mod tests {
             let scope = &mut rt.handle_scope();
             let v8_array = v8::Array::new(scope, 0);
             let v8_array = v8::Global::new(scope, v8_array);
-            let s_name = v8_interned(scope, name);
             let synced = SyncedV8Array::new(ObjConverter, scope, v8_array);
-            let ctx = scope.get_current_context();
-            let global = ctx.global(scope);
             let v8_synced = synced.as_local(scope);
-            global.set(scope, s_name.into(), v8_synced.into());
+            attach_as_global(scope, v8_synced, name);
             synced
         };
         (rt, synced)
