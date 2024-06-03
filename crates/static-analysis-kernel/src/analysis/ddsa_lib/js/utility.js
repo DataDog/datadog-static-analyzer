@@ -52,3 +52,22 @@ export class DDSA_Console {
         }
     }
 }
+
+/**
+ * An empty, sealed object.
+ * @internal
+ *
+ * @privateRemarks
+ * This is used to return an empty object without having v8 allocate a new one.
+ */
+export const SEALED_EMPTY_OBJECT = Object.seal({});
+
+/**
+ * An empty, sealed array.
+ * @internal
+ * @type {Array<any>}
+ *
+ * @privateRemarks
+ * This is used to return an empty array without having v8 allocate a new one.
+ */
+export const SEALED_EMPTY_ARRAY  = Object.seal(new Array(0));
