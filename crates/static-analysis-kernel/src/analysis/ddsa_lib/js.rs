@@ -7,6 +7,8 @@
 
 mod context_file;
 pub(crate) use context_file::FileContext;
+mod context_file_go;
+pub(crate) use context_file_go::FileContextGo;
 mod context_root;
 pub(crate) use context_root::RootContext;
 mod context_rule;

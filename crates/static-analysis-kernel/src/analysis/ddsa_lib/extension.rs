@@ -16,6 +16,7 @@ deno_core::extension!(
     esm_with_specifiers = [
         dir "src/analysis/ddsa_lib/js",
         ("ext:ddsa_lib/context_file", "context_file.js"),
+        ("ext:ddsa_lib/context_file_go", "context_file_go.js"),
         ("ext:ddsa_lib/context_root", "context_root.js"),
         ("ext:ddsa_lib/context_rule", "context_rule.js"),
         ("ext:ddsa_lib/edit", "edit.js"),
