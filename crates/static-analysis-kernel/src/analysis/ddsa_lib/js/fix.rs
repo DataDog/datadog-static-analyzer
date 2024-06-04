@@ -3,9 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::common::{
-    get_field, iter_v8_array, v8_type_from, DDSAJsRuntimeError,
+    get_field, iter_v8_array, v8_type_from, DDSAJsRuntimeError, Instance,
 };
-use crate::analysis::ddsa_lib::js::edit::{EditConverter, EditInstance};
+use crate::analysis::ddsa_lib::js::edit::EditConverter;
+use crate::analysis::ddsa_lib::js::Edit;
 use crate::analysis::ddsa_lib::v8_ds::V8Converter;
 use crate::model::violation;
 use deno_core::v8;
@@ -13,17 +14,17 @@ use deno_core::v8::HandleScope;
 
 /// The JavaScript representation of a fix for a rule violation.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct FixInstance {
+pub struct Fix<T> {
     pub message: String,
-    pub edits: Vec<EditInstance>,
+    pub edits: Vec<Edit<T>>,
 }
 
-impl FixInstance {
+impl Fix<Instance> {
     pub const CLASS_NAME: &'static str = "Fix";
 }
 
-impl From<FixInstance> for violation::Fix {
-    fn from(value: FixInstance) -> Self {
+impl<T> From<Fix<T>> for violation::Fix {
+    fn from(value: Fix<T>) -> Self {
         let description = value.message;
         let edits = value
             .edits
@@ -47,7 +48,7 @@ impl FixConverter {
 }
 
 impl V8Converter for FixConverter {
-    type Item = FixInstance;
+    type Item = Fix<Instance>;
     type Error = DDSAJsRuntimeError;
 
     fn try_convert_from<'s>(
@@ -62,13 +63,13 @@ impl V8Converter for FixConverter {
         let edits = iter_v8_array(edits, scope)
             .map(|value| self.edit_converter.try_convert_from(scope, value))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(FixInstance { message, edits })
+        Ok(Fix { message, edits })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::js::FixInstance;
+    use crate::analysis::ddsa_lib::js::Fix;
     use crate::analysis::ddsa_lib::test_utils::{js_class_eq, js_instance_eq};
 
     #[test]
@@ -77,8 +78,8 @@ mod tests {
             // Variables
             "message", "edits",
         ];
-        assert!(js_instance_eq(FixInstance::CLASS_NAME, instance_expected));
+        assert!(js_instance_eq(Fix::CLASS_NAME, instance_expected));
         let class_expected = &["new"];
-        assert!(js_class_eq(FixInstance::CLASS_NAME, class_expected));
+        assert!(js_class_eq(Fix::CLASS_NAME, class_expected));
     }
 }
