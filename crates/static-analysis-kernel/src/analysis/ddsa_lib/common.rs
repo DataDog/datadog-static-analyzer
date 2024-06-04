@@ -26,6 +26,15 @@ pub enum DDSAJsRuntimeError {
     Unspecified,
 }
 
+/// A zero-size type marker indicating that the associated struct represents a JavaScript ES6 class object.
+/// This is only used to improve code readability (it's not used to implement the Typestate pattern).
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
+pub struct Class;
+/// A zero-size type marker indicating that the associated struct represents an _instance_ of a JavaScript ES6 class.
+/// This is only used to improve code readability (it's not used to implement the Typestate pattern).
+#[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
+pub struct Instance;
+
 /// Loads a global [`v8::Function`] from the provided scope, returning an error if either the
 /// identifier doesn't exist, or if it doesn't refer to a function.
 pub fn load_function(
@@ -161,4 +170,36 @@ pub fn iter_v8_array<'s>(
         vec.push(value.get_index(scope, idx).expect("index should exist"));
     }
     vec.into_iter()
+}
+
+/// Sets a [`v8::Global`] object's property to undefined.
+pub fn set_undefined(
+    object: &v8::Global<v8::Object>,
+    scope: &mut HandleScope,
+    key: &v8::Global<v8::String>,
+) {
+    let v8_object = object.open(scope);
+    let key = v8::Local::new(scope, key);
+    if v8_object
+        .get(scope, key.into())
+        .is_some_and(|value| !value.is_undefined())
+    {
+        let undefined = v8::undefined(scope);
+        v8_object.set(scope, key.into(), undefined.into());
+    }
+}
+
+/// Sets a [`v8::Global`] object's key to the value returned by the `value_generator`.
+pub fn set_key_value<G>(
+    object: &v8::Global<v8::Object>,
+    scope: &mut HandleScope,
+    key: &v8::Global<v8::String>,
+    value_generator: G,
+) where
+    for<'s> G: Fn(&mut HandleScope<'s>) -> v8::Local<'s, v8::Value>,
+{
+    let v8_object = object.open(scope);
+    let v8_key = v8::Local::new(scope, key);
+    let v8_value = value_generator(scope);
+    v8_object.set(scope, v8_key.into(), v8_value);
 }

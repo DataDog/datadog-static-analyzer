@@ -245,8 +245,11 @@ where
     /// Returns a local handle to the underlying [`v8::Global`] map.
     #[inline(always)]
     pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Map> {
-        let v8_map = v8::Local::new(scope, &self.v8_map);
-        v8::Local::new(scope, v8_map)
+        v8::Local::new(scope, &self.v8_map)
+    }
+
+    pub fn v8_map(&self) -> &v8::Global<v8::Map> {
+        &self.v8_map
     }
 
     /// Returns the number of key-value pairs in the map.
@@ -403,7 +406,7 @@ where
 /// ```
 #[macro_export]
 macro_rules! rust_converter {
-  (($r#struct:ident, $ty:ty), |&$self:ident, $scope:ident, $value:ident| $convert_expr:expr) => {
+  (($r#struct:ty, $ty:ty), |&$self:ident, $scope:ident, $value:ident| $convert_expr:expr) => {
       impl $crate::analysis::ddsa_lib::v8_ds::RustConverter for $r#struct {
           type Item = $ty;
           fn convert_to<'s>(

@@ -1,0 +1,187 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache License, Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2024 Datadog, Inc.
+
+use crate::analysis::ddsa_lib;
+use crate::analysis::ddsa_lib::common::{DDSAJsRuntimeError, Instance};
+use crate::analysis::ddsa_lib::js;
+use deno_core::v8;
+use deno_core::v8::HandleScope;
+use std::sync::Arc;
+
+/// A [`ddsa_lib`] Context and its corresponding [`js`] Context.
+#[derive(Debug)]
+struct Linked<T, U> {
+    pub ddsa: T,
+    pub js: U,
+}
+
+/// A stateful bridge used to update all [`ddsa_lib::context`]s.
+#[derive(Debug)]
+pub struct ContextBridge {
+    root: Linked<ddsa_lib::RootContext, js::RootContext<Instance>>,
+    rule: Linked<ddsa_lib::RuleContext, js::RuleContext<Instance>>,
+    file: Linked<ddsa_lib::FileContext, js::FileContext<Instance>>,
+}
+
+impl ContextBridge {
+    /// Constructs a new `ContextBridge` for the given `scope`. The scope's [`v8::Context::global`] must
+    /// have class functions with the following identifiers:
+    /// * [`js::RootContext::CLASS_NAME`]
+    /// * [`js::RuleContext::CLASS_NAME`]
+    /// * [`js::FileContext::CLASS_NAME`]
+    ///
+    /// Note that individual [`ddsa_lib::FileContext`] instances may require their own class functions
+    /// to be present in the scope, and these contexts can be viewed at [`Self::init_all_file_ctx`].
+    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+        let js_root_ctx = js::RootContext::try_new(scope)?;
+        let js_rule_ctx = js::RuleContext::try_new(scope)?;
+        let js_file_ctx = js::FileContext::try_new(scope)?;
+
+        let root = Linked {
+            ddsa: ddsa_lib::RootContext::default(),
+            js: js_root_ctx,
+        };
+        let rule = Linked {
+            ddsa: ddsa_lib::RuleContext::new(scope),
+            js: js_rule_ctx,
+        };
+        let mut file = Linked {
+            ddsa: ddsa_lib::FileContext::default(),
+            js: js_file_ctx,
+        };
+        // Initialize the contexts
+        rule.js
+            .set_arguments_map(scope, Some(rule.ddsa.arguments_map()));
+        Self::init_all_file_ctx(scope, &mut file)?;
+        // Attach the `ruleCtx` and `fileCtx` to the root context.
+        root.js.set_rule_ctx(scope, Some(&rule.js));
+        root.js.set_file_ctx(scope, Some(&file.js));
+
+        Ok(Self { root, rule, file })
+    }
+
+    /// Returns a local handle to the underlying [`v8::Global`] object.
+    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Object> {
+        self.root.js.as_local(scope)
+    }
+
+    /// Assigns the provided metadata to the context. If the incoming values are the same
+    /// as the current context, the existing values will not be modified.
+    pub fn set_root_context(
+        &mut self,
+        scope: &mut HandleScope,
+        tree: &tree_sitter::Tree,
+        file_contents: &Arc<str>,
+        filename: &Arc<str>,
+    ) {
+        // NOTE:
+        // We know that two trees are equal if their root node is the same because
+        // we never mutate trees (or nodes).
+        if self.root.ddsa.get_tree().map(|ex| ex.root_node().id()) != Some(tree.root_node().id()) {
+            self.root.ddsa.set_tree(tree.clone());
+        }
+        if self.root.ddsa.get_text() != Some(file_contents.as_ref()) {
+            self.root.ddsa.set_text(Arc::clone(file_contents));
+            // The cache is populated lazily, so a change in value means we need to clear the cache.
+            self.root.js.set_file_contents_cache(scope, None);
+        }
+        if self.root.ddsa.get_filename() != Some(filename.as_ref()) {
+            self.root.ddsa.set_filename(Arc::clone(filename));
+            // The cache is populated lazily, so a change in value means we need to clear the cache.
+            self.root.js.set_filename_cache(scope, None);
+        }
+    }
+
+    /// Assigns the provide rule arguments to the context.
+    pub fn set_rule_arguments<K: Into<String>, V: Into<String>>(
+        &mut self,
+        scope: &mut HandleScope,
+        args: impl IntoIterator<Item = (K, V)>,
+    ) {
+        self.rule.ddsa.clear_arguments(scope);
+        for (arg_name, arg_value) in args {
+            self.rule.ddsa.insert_argument(scope, arg_name, arg_value)
+        }
+    }
+
+    /// Returns a reference to the underlying `ddsa_lib::RootContext`.
+    pub(crate) fn ddsa_root_context(&self) -> &ddsa_lib::RootContext {
+        &self.root.ddsa
+    }
+
+    /// Initializes all file contexts supported by the associated [`ddsa_lib::FileContext`].
+    fn init_all_file_ctx(
+        scope: &mut HandleScope,
+        file: &mut Linked<ddsa_lib::FileContext, js::FileContext<Instance>>,
+    ) -> Result<(), DDSAJsRuntimeError> {
+        let (_scope, _file) = (scope, file);
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::ddsa_lib::bridge::ContextBridge;
+    use crate::analysis::ddsa_lib::common::v8_string;
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, parse_js};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    /// Ensures that the file content and filename cache is cleared every time they are set.
+    #[rustfmt::skip]
+    #[test]
+    fn set_root_context_clears_cache() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let contents_1: Arc<str> = Arc::from("const fileContents = '11111'");
+        let filename_1: Arc<str> = Arc::from("11111.js");
+        let mut bridge = ContextBridge::try_new(scope).unwrap();
+        assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
+        assert!(bridge.root.js.get_filename_cache(scope).is_none());
+        bridge.set_root_context(scope, &parse_js(&contents_1), &contents_1, &filename_1);
+        assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
+        assert!(bridge.root.js.get_filename_cache(scope).is_none());
+        // Set the caches to simulate them being warmed
+        bridge.root.js.set_file_contents_cache(scope, Some(contents_1.as_ref()));
+        bridge.root.js.set_filename_cache(scope, Some(filename_1.as_ref()));
+
+        assert_eq!(bridge.root.js.get_file_contents_cache(scope).unwrap(), contents_1.to_string());
+        assert_eq!(bridge.root.js.get_filename_cache(scope).unwrap(), filename_1.to_string());
+        let contents_2: Arc<str> = Arc::from("const fileContents = '22222'");
+        let filename_2: Arc<str> = Arc::from("22222.js");
+        bridge.set_root_context(scope, &parse_js(&contents_2), &contents_2, &filename_2);
+        assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
+        assert!(bridge.root.js.get_filename_cache(scope).is_none());
+    }
+
+    /// Ensures `set_rule_arguments` updates the JavaScript map, and that sequential calls don't co-mingle arguments.
+    #[rustfmt::skip]
+    #[test]
+    fn set_rule_context_args_is_exact() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let mut bridge = ContextBridge::try_new(scope).unwrap();
+        assert!(bridge.rule.js.v8_arguments_map(scope).is_some());
+        let v8_args_map = bridge.rule.js.v8_arguments_map(scope).unwrap();
+
+        let args = HashMap::from([("max_lines", "200"), ("target", "def")]);
+        bridge.set_rule_arguments(scope, args.iter().map(|(&k, &v)| (k, v)));
+        for (&key, &value) in &args {
+            let v8_key = v8_string(scope, key);
+            assert_eq!(v8_args_map.get(scope, v8_key.into()).unwrap().to_rust_string_lossy(scope).as_str(), value);
+        }
+
+        let old_args = args;
+        let new_args = HashMap::from([("disallowed_words", "foo,bar")]);
+        bridge.set_rule_arguments(scope, new_args.iter().map(|(&k, &v)| (k, v)));
+        for &key in old_args.keys() {
+            let v8_key = v8_string(scope, key);
+            assert!(v8_args_map.get(scope, v8_key.into()).unwrap().is_undefined());
+        }
+        for (&key, &value) in &new_args {
+            let v8_key = v8_string(scope, key);
+            assert_eq!(v8_args_map.get(scope, v8_key.into()).unwrap().to_rust_string_lossy(scope), value);
+        }
+    }
+}
