@@ -3,28 +3,30 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::common::{
-    get_field, get_optional_field, iter_v8_array, v8_type_from, DDSAJsRuntimeError,
+    get_field, get_optional_field, iter_v8_array, v8_type_from, DDSAJsRuntimeError, Instance,
 };
-use crate::analysis::ddsa_lib::js::fix::{FixConverter, FixInstance};
+use crate::analysis::ddsa_lib::js::fix::{Fix, FixConverter};
 use crate::analysis::ddsa_lib::v8_ds::V8Converter;
 use crate::model::common::Position;
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use crate::model::violation;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
+use std::marker::PhantomData;
 
 /// A representation of a JavaScript `Violation` class instance.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub struct ViolationInstance {
+pub struct Violation<T> {
     pub start_line: u32,
     pub start_col: u32,
     pub end_line: u32,
     pub end_col: u32,
     pub message: String,
-    pub fixes: Option<Vec<FixInstance>>,
+    pub fixes: Option<Vec<Fix<T>>>,
+    pub _pd: PhantomData<T>,
 }
 
-impl ViolationInstance {
+impl Violation<Instance> {
     pub const CLASS_NAME: &'static str = "Violation";
 
     /// Converts this into a [`violation::Violation`] with the given severity and category.
@@ -66,7 +68,7 @@ impl ViolationConverter {
 }
 
 impl V8Converter for ViolationConverter {
-    type Item = ViolationInstance;
+    type Item = Violation<Instance>;
     type Error = DDSAJsRuntimeError;
 
     fn try_convert_from<'s>(
@@ -91,20 +93,21 @@ impl V8Converter for ViolationConverter {
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
-        Ok(ViolationInstance {
+        Ok(Violation {
             start_line,
             start_col,
             end_line,
             end_col,
             message,
             fixes,
+            _pd: PhantomData,
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::js::ViolationInstance;
+    use crate::analysis::ddsa_lib::js::Violation;
     use crate::analysis::ddsa_lib::test_utils::{js_class_eq, js_instance_eq};
 
     #[test]
@@ -120,8 +123,8 @@ mod tests {
             // Methods
             "addFix",
         ];
-        assert!(js_instance_eq(ViolationInstance::CLASS_NAME, instance_exp));
+        assert!(js_instance_eq(Violation::CLASS_NAME, instance_exp));
         let class_expected = &["new"];
-        assert!(js_class_eq(ViolationInstance::CLASS_NAME, class_expected));
+        assert!(js_class_eq(Violation::CLASS_NAME, class_expected));
     }
 }

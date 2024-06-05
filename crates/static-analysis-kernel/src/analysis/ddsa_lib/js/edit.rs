@@ -3,17 +3,24 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::common::{
-    expecting_var, get_field, get_optional_field, v8_type_from, DDSAJsRuntimeError,
+    expecting_var, get_field, get_optional_field, v8_type_from, DDSAJsRuntimeError, Instance,
 };
 use crate::analysis::ddsa_lib::v8_ds::V8Converter;
 use crate::model::common::Position;
 use crate::model::violation;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
+use std::marker::PhantomData;
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+pub struct Edit<T> {
+    pub kind: EditKind,
+    _pd: PhantomData<T>,
+}
 
 /// An intermediate representation of a JavaScript `Edit` class instance associated with a `Fix`.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum EditInstance {
+pub enum EditKind {
     Add {
         start_line: u32,
         start_col: u32,
@@ -34,15 +41,15 @@ pub enum EditInstance {
     },
 }
 
-impl EditInstance {
+impl Edit<Instance> {
     pub const CLASS_NAME: &'static str = "Edit";
 }
 
-impl From<EditInstance> for violation::Edit {
+impl<T> From<Edit<T>> for violation::Edit {
     #[rustfmt::skip]
-    fn from(value: EditInstance) -> Self {
-        match value {
-            EditInstance::Add { start_line, start_col, content } => {
+    fn from(value: Edit<T>) -> Self {
+        match value.kind {
+            EditKind::Add { start_line, start_col, content } => {
                 violation::Edit {
                     start: Position { line: start_line, col: start_col },
                     end: None,
@@ -50,7 +57,7 @@ impl From<EditInstance> for violation::Edit {
                     content: Some(content),
                 }
             },
-            EditInstance::Remove { start_line, start_col, end_line, end_col} => {
+            EditKind::Remove { start_line, start_col, end_line, end_col} => {
                 violation::Edit {
                     start: Position { line: start_line, col: start_col },
                     end: Some(Position { line: end_line, col: end_col }),
@@ -58,7 +65,7 @@ impl From<EditInstance> for violation::Edit {
                     content: None,
                 }
             },
-            EditInstance::Update { start_line, start_col, end_line, end_col, content} => {
+            EditKind::Update { start_line, start_col, end_line, end_col, content} => {
                 violation::Edit {
                     start: Position { line: start_line, col: start_col },
                     end: Some(Position { line: end_line, col: end_col }),
@@ -70,7 +77,7 @@ impl From<EditInstance> for violation::Edit {
     }
 }
 
-/// A struct that can convert a [`v8::Value`] into an [`EditInstance`].
+/// A struct that can convert a [`v8::Value`] into an [`Edit`].
 #[derive(Debug)]
 pub(crate) struct EditConverter;
 
@@ -81,7 +88,7 @@ impl EditConverter {
 }
 
 impl V8Converter for EditConverter {
-    type Item = EditInstance;
+    type Item = Edit<Instance>;
     type Error = DDSAJsRuntimeError;
 
     fn try_convert_from<'s>(
@@ -89,6 +96,7 @@ impl V8Converter for EditConverter {
         scope: &mut HandleScope<'s>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error> {
+        let _pd = PhantomData;
         // NOTE: We don't cache the field names here purely for simplicity.
         let v8_obj = v8_type_from::<v8::Object>(value, "object")?;
         let edit_type =
@@ -107,32 +115,41 @@ impl V8Converter for EditConverter {
         match edit_type.as_str() {
             "ADD" => {
                 let content = expecting_var(content, "content")?;
-                Ok(EditInstance::Add {
-                    start_line,
-                    start_col,
-                    content,
+                Ok(Edit {
+                    kind: EditKind::Add {
+                        start_line,
+                        start_col,
+                        content,
+                    },
+                    _pd,
                 })
             }
             "REMOVE" => {
                 let end_line = expecting_var(end_line, "endLine")?;
                 let end_col = expecting_var(end_col, "endCol")?;
-                Ok(EditInstance::Remove {
-                    start_line,
-                    start_col,
-                    end_line,
-                    end_col,
+                Ok(Edit {
+                    kind: EditKind::Remove {
+                        start_line,
+                        start_col,
+                        end_line,
+                        end_col,
+                    },
+                    _pd,
                 })
             }
             "UPDATE" => {
                 let end_line = expecting_var(end_line, "endLine")?;
                 let end_col = expecting_var(end_col, "endCol")?;
                 let content = expecting_var(content, "content")?;
-                Ok(EditInstance::Update {
-                    start_line,
-                    start_col,
-                    end_line,
-                    end_col,
-                    content,
+                Ok(Edit {
+                    kind: EditKind::Update {
+                        start_line,
+                        start_col,
+                        end_line,
+                        end_col,
+                        content,
+                    },
+                    _pd,
                 })
             }
             _ => Err(DDSAJsRuntimeError::InvalidValue {
@@ -145,13 +162,14 @@ impl V8Converter for EditConverter {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
-    use crate::analysis::ddsa_lib::js::{EditConverter, EditInstance};
+    use crate::analysis::ddsa_lib::common::{DDSAJsRuntimeError, Instance};
+    use crate::analysis::ddsa_lib::js::{Edit, EditConverter, EditKind};
     use crate::analysis::ddsa_lib::test_utils::{
         cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
     use deno_core::v8::HandleScope;
+    use std::marker::PhantomData;
 
     #[rustfmt::skip]
     fn assert_de_ok(input: &str, s: &mut HandleScope) {
@@ -183,9 +201,9 @@ mod tests {
             "kind",
             "content",
         ];
-        assert!(js_instance_eq(EditInstance::CLASS_NAME, instance_expected));
+        assert!(js_instance_eq(Edit::CLASS_NAME, instance_expected));
         let class_expected = &["newAdd", "newRemove", "newUpdate"];
-        assert!(js_class_eq(EditInstance::CLASS_NAME, class_expected));
+        assert!(js_class_eq(Edit::CLASS_NAME, class_expected));
     }
 
     /// Simple smoke test for deserialization
@@ -225,14 +243,17 @@ mod tests {
     fn edit_converter_deserialize_superfluous() {
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
-        let mut deserialize = |input: &str| -> EditInstance {
+        let mut deserialize = |input: &str| -> Edit<Instance> {
             let c = EditConverter::new();
             try_execute(scope, input).map(|v| c.try_convert_from(scope, v)).unwrap().unwrap()
         };
-        let expected = EditInstance::Add {
-            start_line: 10,
-            start_col: 20,
-            content: "More text".to_string(),
+        let expected = Edit {
+            kind: EditKind::Add {
+                start_line: 10,
+                start_col: 20,
+                content: "More text".to_string(),
+            },
+            _pd: PhantomData,
         };
         // Extraneous `endLine`, `endCol`
         assert_eq!(deserialize("new Edit(10, 20, 1234, 4321, 'ADD', 'More text')"), expected.clone());
