@@ -19,6 +19,8 @@ mod edit;
 pub(crate) use edit::*;
 mod fix;
 pub(crate) use fix::*;
+mod query_match;
+pub(crate) use query_match::*;
 mod ts_node;
 pub(crate) use ts_node::*;
 mod violation;

@@ -22,6 +22,7 @@ deno_core::extension!(
         ("ext:ddsa_lib/context_rule", "context_rule.js"),
         ("ext:ddsa_lib/edit", "edit.js"),
         ("ext:ddsa_lib/fix", "fix.js"),
+        ("ext:ddsa_lib/query_match", "query_match.js"),
         ("ext:ddsa_lib/stella_compat", "stella_compat.js"),
         ("ext:ddsa_lib/utility", "utility.js"),
         ("ext:ddsa_lib/ts_node", "ts_node.js"),
