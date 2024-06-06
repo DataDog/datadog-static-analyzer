@@ -17,5 +17,7 @@ mod edit;
 pub(crate) use edit::*;
 mod fix;
 pub(crate) use fix::*;
+mod ts_node;
+pub(crate) use ts_node::*;
 mod violation;
 pub(crate) use violation::*;
