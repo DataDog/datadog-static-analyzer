@@ -65,7 +65,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
                     .replace("datadog-disable", "")
                     .replace(':', "")
                     .replace(',', " ")
-                    .split(' ')
+                    .split_whitespace()
                     .filter(|e| e.contains('/'))
                     .map(|e| e.to_string())
                     .collect();
@@ -202,6 +202,7 @@ where
 
 #[cfg(test)]
 mod tests {
+
     use super::*;
     use crate::analysis::tree_sitter::get_query;
     use crate::model::common::Language;
@@ -452,7 +453,7 @@ for(var i = 0; i <= 10; i--){}
 
     // do not execute the visit function when there is no match
     #[test]
-    fn test_no_unecessary_execute() {
+    fn test_no_unnecessary_execute() {
         let rule_code1 = r#"
 function visit(node, filename, code) {
 
@@ -554,6 +555,35 @@ def foo(arg1):
         assert_eq!(1, results.len());
         let result = results.get(0).unwrap();
         assert!(result.violations.is_empty());
+    }
+
+    fn assert_lines_to_ignore(code: String, language: Language, rule: &'static str) {
+        let lines_to_ignore = get_lines_to_ignore(code.as_str(), &language);
+        assert_eq!(1, lines_to_ignore.lines_to_ignore_per_rule.len());
+        assert_eq!(
+            rule,
+            lines_to_ignore
+                .lines_to_ignore_per_rule
+                .get(&3)
+                .unwrap()
+                .get(0)
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_get_lines_to_ignore_with_tabs_and_no_space_from_comment_symbol() {
+        // no-dd-sa on line 2 so we ignore line 3 for rule
+        let rule = "ruleset/rule1";
+        // java
+        let code = format!("\n\t//no-dd-sa:{rule}");
+        assert_lines_to_ignore(code, Language::Java, rule);
+        // js
+        let code = format!("\n\t//no-dd-sa:{rule}");
+        assert_lines_to_ignore(code, Language::JavaScript, rule);
+        // python
+        let code = format!("\n\t#no-dd-sa:{rule}");
+        assert_lines_to_ignore(code, Language::Python, rule);
     }
 
     #[test]
