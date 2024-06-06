@@ -64,9 +64,9 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
                     .replace("datadog-disable", "")
                     .replace(':', "")
                     .replace(',', " ")
-                    .split(' ')
+                    .split_whitespace()
                     .filter(|e| e.contains('/'))
-                    .map(|e| e.trim().to_string())
+                    .map(|e| e.to_string())
                     .collect();
 
                 // no ruleset/rules specified, we just ignore everything
