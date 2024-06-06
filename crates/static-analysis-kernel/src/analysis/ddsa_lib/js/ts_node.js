@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-const op_ts_node_text = ((_id) => "unimplemented");
+const { op_ts_node_text } = Deno.core.ops;
 
 /**
  * A non-zero integer assigned by the Rust static-analysis-kernel.

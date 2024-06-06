@@ -6,6 +6,9 @@ use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::fmt::Debug;
 
+/// A unique `u32` id used to identify a tree-sitter node sent from Rust to v8.
+pub type NodeId = u32;
+
 #[derive(Debug, thiserror::Error)]
 pub enum DDSAJsRuntimeError {
     #[error("expected `{name}` to exist within the v8 context")]
