@@ -223,6 +223,18 @@ impl<T> TSQueryCapture<T> {
         vec.push(prior_value);
         vec.push(value);
     }
+
+    /// Creates a new `TsQueryCapture` that is a `SingleCapture`.
+    pub fn new_single(name: Arc<str>, value: T) -> TSQueryCapture<T> {
+        let contents = TSCaptureContent::<T>::Single(value);
+        Self { name, contents }
+    }
+
+    /// Creates a new `TsQueryCapture` that is a `MultiCapture`.
+    pub fn new_multi(name: Arc<str>, value: impl Into<Vec<T>>) -> TSQueryCapture<T> {
+        let contents = TSCaptureContent::<T>::Multi(value.into());
+        Self { name, contents }
+    }
 }
 
 /// An enum describing whether a named capture has one or many captured nodes.
