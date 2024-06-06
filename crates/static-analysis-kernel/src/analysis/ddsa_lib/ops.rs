@@ -19,7 +19,7 @@ pub fn op_console_push(state: &mut OpState, #[string] line: &str) {
 /// Returns a string containing the text used to generate the tree-sitter tree.
 ///
 /// # Panics
-/// Panics if the [`ddsa_lib::Context`] has not set the tree's text.
+/// Panics if the [`ddsa_lib::RootContext`](crate::analysis::ddsa_lib::RootContext) has not set the tree's text.
 #[op2]
 #[string]
 pub fn op_current_ts_tree_text(state: &OpState) -> String {
@@ -35,7 +35,7 @@ pub fn op_current_ts_tree_text(state: &OpState) -> String {
 /// Returns a string containing the filename of the file being scanned.
 ///
 /// # Panics
-/// Panics if the [`ddsa_lib::Context`] has not set the filename.
+/// Panics if the [`ddsa_lib::RootContext`](crate::analysis::ddsa_lib::RootContext) has not set the filename.
 #[op2]
 #[string]
 pub fn op_current_filename(state: &OpState) -> String {

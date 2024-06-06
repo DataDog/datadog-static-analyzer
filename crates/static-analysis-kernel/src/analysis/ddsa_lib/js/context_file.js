@@ -10,6 +10,10 @@ export class FileContext {
      * Creates a new, empty `FileContext`.
      */
     constructor() {
-        //
+        /**
+         * A `go` file context.
+         * @type {FileContextGo | undefined}
+         */
+        this.go = undefined;
     }
 }

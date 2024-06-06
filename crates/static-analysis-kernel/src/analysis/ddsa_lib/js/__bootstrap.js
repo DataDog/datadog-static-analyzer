@@ -5,11 +5,13 @@
 "use strict";
 
 import {FileContext} from "ext:ddsa_lib/context_file";
+import {FileContextGo} from "ext:ddsa_lib/context_file_go";
 import {RootContext} from "ext:ddsa_lib/context_root";
 import {RuleContext} from "ext:ddsa_lib/context_rule";
 // TODO(JF): These are only used by the Rust runtime, which currently expects them in global scope, but
 //           these should be hidden inside another object, not `globalThis`.
 globalThis.FileContext = FileContext;
+globalThis.FileContextGo = FileContextGo;
 globalThis.RootContext = RootContext;
 globalThis.RuleContext = RuleContext;
 

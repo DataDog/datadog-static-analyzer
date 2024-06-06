@@ -6,6 +6,7 @@ use crate::analysis::ddsa_lib::common::{
     load_function, set_key_value, set_undefined, v8_interned, v8_string, DDSAJsRuntimeError,
     Instance,
 };
+use crate::analysis::ddsa_lib::js;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::marker::PhantomData;
@@ -15,6 +16,8 @@ use std::marker::PhantomData;
 pub struct FileContext<T> {
     v8_object: v8::Global<v8::Object>,
     _pd: PhantomData<T>,
+    // Individual language support:
+    pub ctx_go: Option<js::FileContextGo<Instance>>,
 }
 
 impl FileContext<Instance> {
@@ -30,7 +33,22 @@ impl FileContext<Instance> {
             .expect("class constructor should not throw");
         let v8_object = v8::Global::new(scope, v8_object);
         let _pd = PhantomData;
-        Ok(Self { v8_object, _pd })
+        Ok(Self {
+            v8_object,
+            _pd,
+            ctx_go: None,
+        })
+    }
+
+    // Initializes support for `go`, linking a [`js::FileContextGo`] to this `FileContext`.
+    pub fn initialize_go(&mut self, scope: &mut HandleScope, ctx_go: js::FileContextGo<Instance>) {
+        let s_go = v8_string(scope, "go");
+        // (Convert to `Global` just to satisfy the interface)
+        let s_go = v8::Global::new(scope, s_go);
+        set_key_value(&self.v8_object, scope, &s_go, |inner| {
+            v8::Local::new(inner, ctx_go.v8_object()).into()
+        });
+        self.ctx_go = Some(ctx_go);
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
@@ -53,6 +71,7 @@ mod tests {
     fn js_properties_canary() {
         let instance_expected = &[
             // Variables
+            "go",
         ];
         assert!(js_instance_eq(FileContext::CLASS_NAME, instance_expected));
         let class_expected = &[];

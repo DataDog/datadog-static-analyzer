@@ -80,6 +80,12 @@ impl ContextBridge {
         // we never mutate trees (or nodes).
         if self.root.ddsa.get_tree().map(|ex| ex.root_node().id()) != Some(tree.root_node().id()) {
             self.root.ddsa.set_tree(tree.clone());
+            // Update file contexts
+            self.file
+                .ddsa
+                .go_mut()
+                .expect("`init_all_file_ctx` should have initialized go")
+                .update_state(scope, tree, file_contents.as_ref());
         }
         if self.root.ddsa.get_text() != Some(file_contents.as_ref()) {
             self.root.ddsa.set_text(Arc::clone(file_contents));
@@ -115,7 +121,11 @@ impl ContextBridge {
         scope: &mut HandleScope,
         file: &mut Linked<ddsa_lib::FileContext, js::FileContext<Instance>>,
     ) -> Result<(), DDSAJsRuntimeError> {
-        let (_scope, _file) = (scope, file);
+        let ddsa_go = ddsa_lib::FileContextGo::new(scope);
+        let js_go = js::FileContextGo::try_new(scope)?;
+        js_go.set_pkg_alias_map(scope, Some(ddsa_go.package_alias_v8_map()));
+        file.js.initialize_go(scope, js_go);
+        file.ddsa.set_go(ddsa_go);
         Ok(())
     }
 }
@@ -123,9 +133,13 @@ impl ContextBridge {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
-    use crate::analysis::ddsa_lib::common::v8_string;
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, parse_js};
+    use crate::analysis::ddsa_lib::common::{attach_as_global, v8_string};
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, parse_js, try_execute};
+    use crate::analysis::tree_sitter::get_tree;
+    use crate::model::common::Language;
+    use std::cell::RefCell;
     use std::collections::HashMap;
+    use std::rc::Rc;
     use std::sync::Arc;
 
     /// Ensures that the file content and filename cache is cleared every time they are set.
@@ -183,5 +197,41 @@ mod tests {
             let v8_key = v8_string(scope, key);
             assert_eq!(v8_args_map.get(scope, v8_key.into()).unwrap().to_rust_string_lossy(scope), value);
         }
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    /// Tests that go module aliases are eagerly calculated by `set_root_context`.
+    fn test_fetch_go_module_alias_eagerly() {
+        let mut runtime = cfg_test_runtime();
+        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        attach_as_global(&mut runtime.handle_scope(), bridge.file.js.v8_object(), "FILE_CTX_BRIDGE");
+        let bridge = Rc::new(RefCell::new(bridge));
+        runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
+        let scope = &mut runtime.handle_scope();
+
+        let filename = Arc::<str>::from("filename.go");
+        let file_contents = r#"
+import (
+    "fmt"
+    mrand "math/rand"
+)
+"#;
+        let tree = get_tree(file_contents, &Language::Go).unwrap();
+        let file_contents = Arc::<str>::from(file_contents);
+        let mut mut_bridge = bridge.borrow_mut();
+        assert_eq!(mut_bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 0);
+        mut_bridge.set_root_context(scope, &tree, &file_contents, &filename);
+        assert_eq!(mut_bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 2);
+        let code = r#"
+FILE_CTX_BRIDGE.go.getResolvedPackage("mrand");
+"#;
+        drop(mut_bridge);
+        let result = try_execute(scope, code).unwrap();
+        assert_eq!(result.to_rust_string_lossy(scope), "math/rand");
+
+        // The JavaScript code does not mutate the map.
+        let bridge = bridge.borrow_mut();
+        assert_eq!(bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 2);
     }
 }

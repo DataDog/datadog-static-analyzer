@@ -4,6 +4,8 @@
 
 mod file;
 pub use file::FileContext;
+pub(crate) mod file_go;
+pub use file_go::FileContextGo;
 mod root;
 pub use root::RootContext;
 mod rule;
