@@ -4,6 +4,8 @@
 
 mod context;
 pub use context::ContextBridge;
+mod query_match;
+pub use query_match::QueryMatchBridge;
 mod ts_node;
 pub use ts_node::TsNodeBridge;
 mod ts_symbol_map;
