@@ -1,5 +1,6 @@
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
+use sequence_trie::SequenceTrie;
 use std::borrow::Borrow;
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -23,10 +24,8 @@ pub struct PathConfig {
     pub ignore: Vec<PathPattern>,
 }
 
-#[derive(Debug, PartialEq, Default, Clone)]
-pub struct ArgumentValues {
-    pub by_subtree: IndexMap<String, String>,
-}
+// A type that stores values that depend on the position in the repository tree.
+pub type BySubtree<T> = SequenceTrie<PathComponent, T>;
 
 // Configuration for a single rule.
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -34,7 +33,7 @@ pub struct RuleConfig {
     // Paths to include/exclude for this rule.
     pub paths: PathConfig,
     // Arguments to pass to this rule.
-    pub arguments: IndexMap<String, ArgumentValues>,
+    pub arguments: IndexMap<String, BySubtree<String>>,
     // Override this rule's severity.
     pub severity: Option<RuleSeverity>,
     // Override this rule's category.
@@ -122,4 +121,44 @@ impl PathConfig {
                 Some(only) => only.iter().any(|pattern| pattern.matches(file_name)),
             }
     }
+}
+
+// An opaque path component.
+#[derive(Debug, PartialEq, Eq, Hash, Default, Clone)]
+pub struct PathComponent(String);
+
+// The key for operations on BySubtree.
+pub type SplitPath = Vec<PathComponent>;
+
+// Generates a SplitPath from a path string, separated by '/'.
+pub fn split_path<S>(path: S) -> SplitPath
+where
+    S: Borrow<str>,
+{
+    path.borrow()
+        .split('/')
+        .filter(|c| !c.is_empty())
+        .map(|s| PathComponent(s.to_string()))
+        .collect()
+}
+
+// Generates a path string from a SplitPath.
+pub fn join_path(path: &SplitPath) -> String {
+    path.iter()
+        .map(|c| c.0.clone())
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+// Generates a BySubtree from an iterable of tuples of path string and value.
+pub fn values_by_subtree<T, S, I>(src: I) -> BySubtree<T>
+where
+    S: Borrow<str>,
+    I: IntoIterator<Item = (S, T)>,
+{
+    let mut out = BySubtree::new();
+    for (k, v) in src {
+        out.insert(&split_path(k), v);
+    }
+    out
 }
