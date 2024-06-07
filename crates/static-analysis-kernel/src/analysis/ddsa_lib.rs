@@ -45,10 +45,12 @@ impl From<tree_sitter::Node<'_>> for RawTSNode {
 impl Hash for RawTSNode {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let ctx = &self.0.context;
-        state.write_u64((ctx[0] as u64) << 32 | ctx[1] as u64);
-        state.write_u64((ctx[2] as u64) << 32 | ctx[3] as u64);
-        state.write_u64(self.0.id as u64);
-        state.write_u64(self.0.tree as u64);
+        state.write_usize(ctx[0] as usize);
+        state.write_usize(ctx[1] as usize);
+        state.write_usize(ctx[2] as usize);
+        state.write_usize(ctx[3] as usize);
+        state.write_usize(self.0.id as usize);
+        state.write_usize(self.0.tree as usize);
     }
 }
 
