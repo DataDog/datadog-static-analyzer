@@ -73,15 +73,28 @@ fn get_datadog_hostname(use_staging: bool) -> String {
     }
 }
 
+enum RequestMethod {
+    Get,
+    Post,
+}
+
 // Returns a RequestBuilder for the given API path.
-fn make_request(path: &str, use_staging: bool, require_keys: bool) -> Result<RequestBuilder> {
-    let request_builder = reqwest::blocking::Client::new()
-        .get(format!(
-            "https://{}/api/v2/static-analysis/{}",
-            get_datadog_hostname(use_staging),
-            path
-        ))
-        .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
+fn make_request(
+    method: RequestMethod,
+    path: &str,
+    use_staging: bool,
+    require_keys: bool,
+) -> Result<RequestBuilder> {
+    let url = format!(
+        "https://{}/api/v2/static-analysis/{}",
+        get_datadog_hostname(use_staging),
+        path
+    );
+    let request_builder = match method {
+        RequestMethod::Get => reqwest::blocking::Client::new().get(url),
+        RequestMethod::Post => reqwest::blocking::Client::new().post(url),
+    }
+    .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
 
     let api_key = get_datadog_variable_value("API_KEY");
     let app_key = get_datadog_variable_value("APP_KEY");
@@ -105,7 +118,7 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         "rulesets/{}?include_tests=false&include_testing_rules=true",
         ruleset_name
     );
-    let server_response = make_request(&path, use_staging, false)?
+    let server_response = make_request(RequestMethod::Get, &path, use_staging, false)?
         .send()
         .expect("error when querying the datadog server");
 
@@ -133,6 +146,7 @@ pub fn get_default_rulesets_name_for_language(
     use_staging: bool,
 ) -> Result<Vec<String>> {
     let request_builder = make_request(
+        RequestMethod::Get,
         &format!("default-rulesets/{}", language),
         use_staging,
         false,
@@ -204,7 +218,7 @@ pub fn get_diff_aware_information(arguments: &DiffAwareRequestArguments) -> Resu
         },
     };
 
-    let server_response = make_request("analysis/diff-aware", false, true)?
+    let server_response = make_request(RequestMethod::Post, "analysis/diff-aware", false, true)?
         .json(&request_payload)
         .send()
         .expect("error when querying the datadog server");
