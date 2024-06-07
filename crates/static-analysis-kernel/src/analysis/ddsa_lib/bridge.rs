@@ -4,5 +4,7 @@
 
 mod context;
 pub use context::ContextBridge;
+mod ts_node;
+pub use ts_node::TsNodeBridge;
 mod ts_symbol_map;
 pub use ts_symbol_map::TsSymbolMapBridge;
