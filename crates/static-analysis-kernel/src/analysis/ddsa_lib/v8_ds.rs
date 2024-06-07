@@ -67,7 +67,7 @@ where
         // its length to implement this behavior.
         if capacity > 0 {
             let undefined = v8::undefined(scope);
-            for i in (0..capacity).rev() {
+            for i in 0..capacity {
                 v8_array.set_index(scope, i, undefined.into());
             }
             let zero = v8_uint(scope, 0);
