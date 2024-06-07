@@ -14,6 +14,12 @@ use std::marker::PhantomData;
 /// A stateful bridge holding a collection of [`RawTsNode`].
 #[derive(Debug)]
 pub struct TsNodeBridge {
+    /// NOTE: This MirroredIndexMap has _different_ key/value semantics between Rust and v8:
+    ///
+    /// In Rust, it is as the type signature indicates: an IndexMap from [`RawTsNode`] to [`NodeId`].
+    /// However, in v8, it is the reverse mapping: from [`NodeId`] to [`TreeSitterNode`].
+    ///
+    /// This allows Rust to send unique TsNodes to v8 (which v8 can quickly look up).
     mirrored_im: MirroredIndexMap<RawTSNode, NodeId>,
     js_class: js::TreeSitterNodeFn<Class>,
 }
