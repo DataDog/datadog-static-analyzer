@@ -94,10 +94,11 @@ impl TsNodeBridge {
         } = node.end_position();
         let ts_node = TreeSitterNode {
             id,
-            start_line: start_line as u32,
-            start_col: start_col as u32,
-            end_line: end_line as u32,
-            end_col: end_col as u32,
+            // NOTE: We normalize the 0-based `tree_sitter::Point` to be 1-based.
+            start_line: start_line as u32 + 1,
+            start_col: start_col as u32 + 1,
+            end_line: end_line as u32 + 1,
+            end_col: end_col as u32 + 1,
             node_type_id: node.grammar_id(),
             _pd: PhantomData,
         };
@@ -169,7 +170,7 @@ impl TsNodeBridge {
 mod tests {
     use crate::analysis::ddsa_lib::bridge::ts_node::TsNodeBridge;
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
-    use crate::analysis::ddsa_lib::common::{attach_as_global, get_field};
+    use crate::analysis::ddsa_lib::common::{attach_as_global, get_field, v8_interned};
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
     use crate::analysis::ddsa_lib::RawTSNode;
     use crate::analysis::tree_sitter::get_tree_sitter_language;
@@ -235,10 +236,11 @@ mod tests {
             get_field::<v8::Integer>(obj, name, scope, "integer").unwrap().value() as usize == other
         };
         // We intentionally do not check `id` here because that is our abstraction, not tree-sitter's.
-        equals("_startLine", node.start_position().row)
-            && equals("_startCol", node.start_position().column)
-            && equals("_endLine", node.end_position().row)
-            && equals("_endCol", node.end_position().column)
+        // Because we also normalize the `tree_sitter::Point` to be 1-based, we need to do that here.
+        equals("_startLine", node.start_position().row + 1)
+            && equals("_startCol", node.start_position().column + 1)
+            && equals("_endLine", node.end_position().row + 1)
+            && equals("_endCol", node.end_position().column + 1)
             && equals("_typeId", node.grammar_id() as usize)
     }
 
@@ -319,6 +321,40 @@ mod tests {
         assert!(bridge.v8_get(scope, 1).is_none());
         assert_eq!(bridge.insert(scope, foo), 0);
         assert!(bridge.v8_get(scope, 1).is_none());
+    }
+
+    /// Tests that the line and column number of the node is 1-based. This test is necessary because
+    /// [`tree_sitter::Point`] is 0-based, whereas we prefer a 1-based number.
+    #[test]
+    fn ts_node_line_col_one_based() {
+        let (mut runtime, bridge, mut parser) = setup_bridge();
+        let scope = &mut runtime.handle_scope();
+        let mut bridge = bridge.borrow_mut();
+
+        let tree = parser.parse(r#"const val = foo(bar, baz);"#);
+        let foo = tree.find_first("foo", "_");
+
+        assert_eq!(foo.start_position().row, 0);
+        assert_eq!(foo.start_position().column, 12);
+        assert_eq!(foo.end_position().row, 0);
+        assert_eq!(foo.end_position().column, 15);
+
+        let nid = bridge.insert(scope, foo);
+        let s_start_line = v8_interned(scope, "_startLine");
+        let s_start_col = v8_interned(scope, "_startCol");
+        let s_end_line = v8_interned(scope, "_endLine");
+        let s_end_col = v8_interned(scope, "_endCol");
+
+        let v8_node = bridge.v8_get(scope, nid).unwrap();
+        let start_line = v8_node.get(scope, s_start_line.into()).unwrap();
+        let start_col = v8_node.get(scope, s_start_col.into()).unwrap();
+        let end_line = v8_node.get(scope, s_end_line.into()).unwrap();
+        let end_col = v8_node.get(scope, s_end_col.into()).unwrap();
+
+        assert_eq!(start_line.uint32_value(scope).unwrap(), 1);
+        assert_eq!(start_col.uint32_value(scope).unwrap(), 13);
+        assert_eq!(end_line.uint32_value(scope).unwrap(), 1);
+        assert_eq!(end_col.uint32_value(scope).unwrap(), 16);
     }
 
     /// The text that the node spans can be retrieved.
