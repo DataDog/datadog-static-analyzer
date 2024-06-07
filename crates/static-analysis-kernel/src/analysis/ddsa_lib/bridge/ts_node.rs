@@ -229,10 +229,10 @@ mod tests {
             get_field::<v8::Integer>(obj, name, scope, "integer").unwrap().value() as usize == other
         };
         // We intentionally do not check `id` here because that is our abstraction, not tree-sitter's.
-        equals("startLine", node.start_position().row)
-            && equals("startCol", node.start_position().column)
-            && equals("endLine", node.end_position().row)
-            && equals("endCol", node.end_position().column)
+        equals("_startLine", node.start_position().row)
+            && equals("_startCol", node.start_position().column)
+            && equals("_endLine", node.end_position().row)
+            && equals("_endCol", node.end_position().column)
             && equals("_typeId", node.grammar_id() as usize)
     }
 
