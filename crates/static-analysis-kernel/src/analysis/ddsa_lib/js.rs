@@ -5,6 +5,8 @@
 // These lints are temporarily disabled while transitioning to ddsa_lib.
 #![allow(unused_imports, dead_code)]
 
+mod capture;
+pub(crate) use capture::*;
 mod context_file;
 pub(crate) use context_file::FileContext;
 mod context_file_go;
