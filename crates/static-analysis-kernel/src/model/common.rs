@@ -50,6 +50,8 @@ pub enum Language {
     TypeScript,
     #[serde(rename = "YAML")]
     Yaml,
+    #[serde(rename = "XML")]
+    Xml,
 }
 
 #[allow(dead_code)]
@@ -87,6 +89,7 @@ impl fmt::Display for Language {
             Self::Terraform => "terraform",
             Self::TypeScript => "typescript",
             Self::Yaml => "yaml",
+            Self::Xml => "xml",
         };
         write!(f, "{s}")
     }

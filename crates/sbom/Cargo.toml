@@ -1,10 +1,11 @@
 [package]
-name = "static-analysis-kernel"
+name = "sbom"
 edition = "2021"
 version.workspace = true
 
 [dependencies]
 # workspace
+kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
 anyhow = { workspace = true }
 base64 = { workspace = true }
 serde = { workspace = true }
@@ -13,14 +14,12 @@ derive_builder = { workspace = true }
 serde-sarif = { workspace = true }
 sha2 = { workspace = true }
 indexmap = { workspace = true }
-tree-sitter = {workspace = true}
+tree-sitter = { workspace = true }
 
 # other
-deno_core = "0.196.0"
-globset = "0.4.14"
-sequence_trie = "0.3.6"
-serde_yaml = "0.9.21"
-thiserror = "1.0.59"
+serde-cyclonedx = "0.8.4"
+regex = "1.10.4"
+
 
 [build-dependencies]
 cc = "1.0.97"

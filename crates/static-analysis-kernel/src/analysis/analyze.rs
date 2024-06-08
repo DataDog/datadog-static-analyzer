@@ -42,7 +42,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         | Language::Swift => {
             vec!["//no-dd-sa", "//datadog-disable"]
         }
-        Language::Json => {
+        Language::Json | Language::Xml => {
             vec!["impossiblestringtoreach"]
         }
     };

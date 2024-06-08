@@ -425,7 +425,7 @@ fn main() -> Result<()> {
     let files_in_repository = get_files(
         directory_to_analyze.as_str(),
         subdirectories_to_analyze.clone(),
-        &path_config,
+        Some(&path_config),
     )
     .expect("unable to get the list of files to analyze");
 

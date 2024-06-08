@@ -7,6 +7,9 @@ edition = "2021"
 name = "datadog-static-analyzer"
 
 [[bin]]
+name = "datadog-sbom-generator"
+
+[[bin]]
 name = "datadog-static-analyzer-test-ruleset"
 
 [[bin]]
@@ -34,6 +37,7 @@ secrets = ["dep:secrets", "cli/secrets"]
 cli = { path = "../cli" }
 kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
 server = { package = "static-analysis-server", path = "../static-analysis-server" }
+sbom = { package = "sbom", path = "../sbom" }
 # workspace
 anyhow = { workspace = true }
 itertools = { workspace = true }

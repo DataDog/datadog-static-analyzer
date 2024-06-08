@@ -177,6 +177,15 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
+        TreeSitterProject {
+            name: "tree-sitter-xml".to_string(),
+            compilation_unit: "tree-sitter-xml".to_string(),
+            repository: "https://github.com/tree-sitter-grammars/tree-sitter-xml.git".to_string(),
+            build_dir: "xml/src".into(),
+            commit_hash: "648183d86f6f8ffb240ea11b4c6873f6f45d8b67".to_string(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
+        },
     ];
 
     // For each project:

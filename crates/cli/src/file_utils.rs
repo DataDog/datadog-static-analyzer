@@ -98,7 +98,7 @@ pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> 
 pub fn get_files(
     directory: &str,
     subdirectories_to_analyze: Vec<String>,
-    path_config: &PathConfig,
+    path_config: Option<&PathConfig>,
 ) -> Result<Vec<PathBuf>> {
     let mut files_to_return: Vec<PathBuf> = vec![];
 
@@ -137,7 +137,10 @@ pub fn get_files(
                 .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
 
             // check if the path is allowed by the configuration.
-            should_include = should_include && path_config.allows_file(relative_path_str);
+            should_include = should_include
+                && path_config
+                    .map(|v| v.allows_file(relative_path_str))
+                    .unwrap_or(true);
 
             // do not include the git directory.
             if entry.starts_with(git_directory.as_str()) {
@@ -174,7 +177,7 @@ pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String])
 }
 
 // filter the file according to a list of extensions
-fn match_extension(path: &Path, extensions: &[String]) -> bool {
+pub fn match_extension(path: &Path, extensions: &[String]) -> bool {
     match path.extension() {
         Some(ext) => match ext.to_str() {
             Some(e) => extensions.contains(&e.to_string().to_lowercase()),
@@ -608,7 +611,7 @@ mod tests {
 
         // first, we get the list of files without any path to ignore
         let empty_config = PathConfig::default();
-        let files = get_files(&base_path, vec![], &empty_config).unwrap();
+        let files = get_files(&base_path, vec![], Some(&empty_config)).unwrap();
         assert_contains_files!(
             &base_path,
             files,
@@ -626,7 +629,7 @@ mod tests {
             ignore: vec!["src/**/main.rs".to_string().into()],
             only: None,
         };
-        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        let files = get_files(&base_path, vec![], Some(&path_config)).unwrap();
         assert_contains_files!(
             &base_path,
             files,
@@ -644,7 +647,7 @@ mod tests {
             ignore: vec!["src/a".to_string().into()],
             only: None,
         };
-        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        let files = get_files(&base_path, vec![], Some(&path_config)).unwrap();
         assert_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs",]);
         assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);
 
@@ -653,7 +656,7 @@ mod tests {
             ignore: vec![],
             only: Some(vec!["**/other.rs".to_string().into()]),
         };
-        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        let files = get_files(&base_path, vec![], Some(&path_config)).unwrap();
         assert_contains_files!(&base_path, files, ["src/a/other.rs", "test/a/other.rs"]);
         assert_not_contains_files!(&base_path, files, ["src/a/main.rs", "test/a/main.rs"]);
 
@@ -662,7 +665,7 @@ mod tests {
             ignore: vec![],
             only: Some(vec!["src/a".to_string().into()]),
         };
-        let files = get_files(&base_path, vec![], &path_config).unwrap();
+        let files = get_files(&base_path, vec![], Some(&path_config)).unwrap();
         assert_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);
         assert_not_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs"]);
     }
@@ -676,7 +679,7 @@ mod tests {
         let files = get_files(
             current_path.display().to_string().as_str(),
             vec![subdirectory.into_os_string().into_string().unwrap()],
-            &PathConfig::default(),
+            Some(&PathConfig::default()),
         );
 
         assert_eq!(2, files.unwrap().len());
@@ -710,7 +713,7 @@ mod tests {
         let files = get_files(
             current_path.display().to_string().as_str(),
             vec![],
-            &PathConfig::default(),
+            Some(&PathConfig::default()),
         );
         assert!(files.is_ok());
         let files = &files.unwrap();

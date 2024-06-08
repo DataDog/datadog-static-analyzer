@@ -26,4 +26,5 @@ serde-sarif = "0.4"
 serde_yaml = "0.9.21"
 sha2 = "0.10.7"
 tracing = "0.1.40"
+tree-sitter = "0.22.6"
 uuid = { version = "1.6.1", features = ["v4"] }
