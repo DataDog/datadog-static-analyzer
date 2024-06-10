@@ -18,8 +18,14 @@ impl QueryMatchBridge {
     /// have class functions with the following identifiers:
     /// * [`js::QueryMatch::CLASS_NAME`]
     pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+        /// The `QueryMatchBridge` persists across the entire lifetime of the [`JsRuntime`](use crate::analysis::ddsa_lib::JsRuntime),
+        /// so push operations amortize to O(1) (because we aren't constantly re-creating this vec).
+        ///
+        /// Even so, we allocate an (arbitrary non-zero) initial capacity, as we know all executions will contain query matches.
+        const CAPACITY: u32 = 16;
+
         let js_class = js::QueryMatch::try_new(scope)?;
-        Ok(Self(MirroredVec::with_capacity(js_class, scope, 16)))
+        Ok(Self(MirroredVec::with_capacity(js_class, scope, CAPACITY)))
     }
 
     /// Sets the bridge's data to the list of [`QueryMatch`]es, inserting tree-sitter nodes
