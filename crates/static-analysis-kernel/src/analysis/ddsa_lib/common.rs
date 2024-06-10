@@ -5,6 +5,7 @@
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::fmt::Debug;
+use std::ops::Deref;
 
 /// A unique `u32` id used to identify a tree-sitter node sent from Rust to v8.
 pub type NodeId = u32;
@@ -37,6 +38,30 @@ pub struct Class;
 /// This is only used to improve code readability (it's not used to implement the Typestate pattern).
 #[derive(Debug, Copy, Clone, Default, Eq, PartialEq, Hash)]
 pub struct Instance;
+
+/// A newtype wrapper that provides a hook to alter behavior to provide backward compability with the
+/// old `stella` library. This implements [`Deref`] for `T`.
+pub struct StellaCompat<T>(T);
+
+impl<T> StellaCompat<T> {
+    pub fn new(inner: T) -> Self {
+        Self(inner)
+    }
+}
+
+impl<T> From<T> for StellaCompat<T> {
+    fn from(value: T) -> Self {
+        Self::new(value)
+    }
+}
+
+impl<T> Deref for StellaCompat<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 /// Loads a global [`v8::Function`] from the provided scope, returning an error if either the
 /// identifier doesn't exist, or if it doesn't refer to a function.

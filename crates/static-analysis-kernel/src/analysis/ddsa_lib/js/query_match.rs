@@ -4,10 +4,11 @@
 
 use crate::analysis;
 use crate::analysis::ddsa_lib::common::{
-    load_function, v8_interned, Class, DDSAJsRuntimeError, NodeId,
+    load_function, v8_interned, Class, DDSAJsRuntimeError, NodeId, StellaCompat,
 };
 use crate::analysis::ddsa_lib::js::capture::{MultiCaptureTemplate, SingleCaptureTemplate};
 use crate::analysis::ddsa_lib::js::TreeSitterNodeFn;
+use crate::analysis::ddsa_lib::v8_ds::RustConverter;
 use crate::analysis::tree_sitter::TSCaptureContent;
 use crate::rust_converter;
 use deno_core::v8;
@@ -70,11 +71,60 @@ impl QueryMatch<Class> {
     }
 }
 
+rust_converter!(
+    (
+        QueryMatchCompat<Class>,
+        StellaCompat<analysis::tree_sitter::QueryMatch<NodeId>>
+    ),
+    |&self, scope, value| {
+        let qm_rust_converter: &dyn RustConverter<
+            Item = analysis::tree_sitter::QueryMatch<NodeId>,
+        > = &self.proxied;
+        let query_match_instance = qm_rust_converter.convert_to(scope, value);
+
+        // Then pass the `QueryMatch` instance into the `QueryMatchCompat` constructor to build a compat instance.
+        let args = [query_match_instance];
+        self.class
+            .open(scope)
+            .new_instance(scope, &args[..])
+            .expect("class constructor should not throw")
+            .into()
+    }
+);
+
+/// A function representing the ES6 class `QueryMatchCompat`.
+#[derive(Debug)]
+pub struct QueryMatchCompat<T> {
+    /// The `QueryMatchCompat` class.
+    class: v8::Global<v8::Function>,
+    /// The `QueryMatch` class. An instance of this is used as a JavaScript `Proxy` target.
+    proxied: QueryMatch<T>,
+    _pd: PhantomData<T>,
+}
+
+impl QueryMatchCompat<Class> {
+    pub const CLASS_NAME: &'static str = "QueryMatchCompat";
+
+    /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] and instantiating
+    /// a [`QueryMatch<T>`].
+    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+        let class = load_function(scope, Self::CLASS_NAME)?;
+        let proxied = QueryMatch::<Class>::try_new(scope)?;
+        Ok(Self {
+            class,
+            proxied,
+            _pd: PhantomData,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::analysis;
     use crate::analysis::ddsa_lib::common::{attach_as_global, v8_interned, NodeId};
-    use crate::analysis::ddsa_lib::js::{MultiCaptureTemplate, QueryMatch, SingleCaptureTemplate};
+    use crate::analysis::ddsa_lib::js::{
+        MultiCaptureTemplate, QueryMatch, QueryMatchCompat, SingleCaptureTemplate,
+    };
     use crate::analysis::ddsa_lib::test_utils::{
         cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
     };
@@ -223,5 +273,69 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         let v8_captures = v8_query_match.open(scope).get(scope, v8_key.into()).unwrap();
 
         assert!(v8_captures.is_undefined());
+    }
+
+    /// Tests that `QueryMatchCompat` allows for object-style property lookup
+    #[test]
+    fn compat_layer_prop_lookup() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let js_class = QueryMatchCompat::try_new(scope).unwrap();
+        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
+        let captures = vec![single_cap];
+        let v8_query_match_compat = js_class.convert_to(scope, &captures.into());
+        attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
+
+        let code = r#"
+const assert = (val, msg) => { if (!val) throw new Error(msg); };
+assert(QUERY_MATCH["cap_name"] === 10);
+assert(QUERY_MATCH.cap_name === 10);
+"#;
+        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
+        assert_eq!(result, Ok("undefined".to_string()));
+
+        // Additionally, we could've used "get" or "getMany".
+        let code = r#"
+assert(QUERY_MATCH.get("cap_name") === 10);
+assert(QUERY_MATCH.getMany("cap_name").join("") === "10");
+"#;
+        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
+        assert_eq!(result, Ok("undefined".to_string()));
+    }
+
+    /// Tests the edge case in `QueryMatchCompat` where the rule has "get" or "getMany" as a capture name.
+    #[test]
+    fn compat_layer_prop_name_collision() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let js_class = QueryMatchCompat::try_new(scope).unwrap();
+        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
+        let get_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("get"), 20);
+        let get_many_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("getMany"), 30);
+        let captures = vec![single_cap, get_cap, get_many_cap];
+        let v8_query_match_compat = js_class.convert_to(scope, &captures.into());
+        attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
+
+        let code = r#"
+const assert = (val, msg) => { if (!val) throw new Error(msg); };
+assert(QUERY_MATCH["get"] === 20);
+assert(QUERY_MATCH.get === 20);
+assert(QUERY_MATCH["getMany"] === 30);
+assert(QUERY_MATCH.getMany === 30);
+"#;
+        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
+        assert_eq!(result, Ok("undefined".to_string()));
+
+        for method in ["get", "getMany"] {
+            let code = format!(
+                "\
+assert(QUERY_MATCH.cap_name === 10);
+QUERY_MATCH.{}(\"cap_name\");",
+                method
+            );
+            let result = try_execute(scope, &code).map(|v| v.to_rust_string_lossy(scope));
+            let expected_msg = format!("TypeError: QUERY_MATCH.{} is not a function", method);
+            assert_eq!(result, Err(expected_msg));
+        }
     }
 }

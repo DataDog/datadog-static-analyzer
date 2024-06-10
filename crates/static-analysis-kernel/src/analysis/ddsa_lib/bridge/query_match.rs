@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::bridge::ts_node::TsNodeBridge;
-use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError, NodeId};
+use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError, NodeId, StellaCompat};
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
 use crate::analysis::tree_sitter::QueryMatch;
@@ -11,7 +11,9 @@ use deno_core::v8;
 use deno_core::v8::HandleScope;
 
 /// A stateful bridge holding a collection of [`QueryMatch<NodeId>`].
-pub struct QueryMatchBridge(MirroredVec<QueryMatch<NodeId>, js::QueryMatch<Class>>);
+pub struct QueryMatchBridge(
+    MirroredVec<StellaCompat<QueryMatch<NodeId>>, js::QueryMatchCompat<Class>>,
+);
 
 impl QueryMatchBridge {
     /// Constructs a new `QueryMatchBridge` for the given `scope`. The scope's [`v8::Context::global`] must
@@ -24,7 +26,7 @@ impl QueryMatchBridge {
         /// Even so, we allocate an (arbitrary non-zero) initial capacity, as we know all executions will contain query matches.
         const CAPACITY: u32 = 16;
 
-        let js_class = js::QueryMatch::try_new(scope)?;
+        let js_class = js::QueryMatchCompat::try_new(scope)?;
         Ok(Self(MirroredVec::with_capacity(js_class, scope, CAPACITY)))
     }
 
@@ -49,6 +51,7 @@ impl QueryMatchBridge {
                     .into_iter()
                     .map(|capture| node_bridge.insert_capture(scope, capture))
                     .collect::<Vec<_>>()
+                    .into()
             })
             .collect::<Vec<_>>();
 
@@ -75,9 +78,11 @@ impl QueryMatchBridge {
 mod tests {
     use crate::analysis::ddsa_lib::bridge::query_match::QueryMatchBridge;
     use crate::analysis::ddsa_lib::bridge::ts_node::TsNodeBridge;
-    use crate::analysis::ddsa_lib::common::NodeId;
+    use crate::analysis::ddsa_lib::common::{Class, NodeId, StellaCompat};
+    use crate::analysis::ddsa_lib::js;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_runtime;
-    use crate::analysis::tree_sitter::{get_tree, TSCaptureContent, TSQuery};
+    use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
+    use crate::analysis::tree_sitter::{get_tree, QueryMatch, TSCaptureContent, TSQuery};
     use crate::model::common::Language;
     use deno_core::JsRuntime;
 
@@ -147,5 +152,16 @@ const alpha = 'bravo';
         query_match_bridge.set_data(scope, matches, &mut ts_node_bridge);
         assert_eq!(get_node_id_at_idx(&query_match_bridge, 0), 3);
         assert_eq!(ts_node_bridge.len(), 4);
+    }
+
+    /// This is a static type "assertion" that ensures `QueryMatchCompat` is used by the bridge.
+    /// This "test" should be removed when the full transition has been made.
+    #[allow(clippy::assertions_on_constants)]
+    #[test]
+    fn query_match_compat() {
+        let (_, query_match_bridge, _) = setup_bridge();
+        let _guard: &MirroredVec<StellaCompat<QueryMatch<NodeId>>, js::QueryMatchCompat<Class>> =
+            &query_match_bridge.0;
+        assert!(true);
     }
 }
