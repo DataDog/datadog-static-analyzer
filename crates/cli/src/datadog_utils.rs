@@ -1,8 +1,11 @@
 use std::env;
 
-use crate::constants::{
-    DATADOG_HEADER_API_KEY, DATADOG_HEADER_APP_KEY, DATADOG_HEADER_JWT_TOKEN, HEADER_CONTENT_TYPE,
-    HEADER_CONTENT_TYPE_APPLICATION_JSON,
+use crate::{
+    constants::{
+        DATADOG_HEADER_API_KEY, DATADOG_HEADER_APP_KEY, DATADOG_HEADER_JWT_TOKEN,
+        HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON,
+    },
+    model::datadog_api::APIErrorResponse,
 };
 use anyhow::{anyhow, Result};
 use kernel::model::rule::Rule;
@@ -11,7 +14,7 @@ use reqwest::blocking::RequestBuilder;
 use uuid::Uuid;
 
 use crate::model::datadog_api::{
-    ApiResponse, ApiResponseDefaultRuleset, DiffAwareData, DiffAwareRequest,
+    APIResponse, ApiResponseDefaultRuleset, DiffAwareData, DiffAwareRequest,
     DiffAwareRequestArguments, DiffAwareRequestData, DiffAwareRequestDataAttributes,
     DiffAwareResponse,
 };
@@ -114,16 +117,25 @@ fn make_request(
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
 // the rulesets. We then extract all the rulesets
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
-    let path = format!(
-        "rulesets/{}?include_tests=false&include_testing_rules=true",
-        ruleset_name
-    );
+    let path = format!("rulesets/{ruleset_name}?include_tests=false&include_testing_rules=true");
     let server_response = make_request(RequestMethod::Get, &path, use_staging, false)?
         .send()
         .expect("error when querying the datadog server");
 
+    let status_code = server_response.status();
     let response_text = &server_response.text()?;
-    let api_response = serde_json::from_str::<ApiResponse>(response_text);
+
+    if !status_code.is_success() {
+        let error = serde_json::from_str::<APIErrorResponse>(response_text)?;
+        let error_msg = error.errors.into_iter().next().map_or_else(
+            || format!("Unknown error {status_code}"),
+            |e| format!("Error: {}", e.detail.unwrap_or(e.title)),
+        );
+        eprintln!("{error_msg}");
+        return Err(anyhow!(error_msg));
+    }
+
+    let api_response = serde_json::from_str::<APIResponse>(response_text);
 
     match api_response {
         Ok(d) => {
@@ -134,9 +146,9 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
             Ok(ruleset)
         }
         Err(e) => {
-            eprintln!("Error when parsing the ruleset {} {:?}", ruleset_name, e);
-            eprintln!("{}", response_text);
-            Err(anyhow!("error {:?}", e))
+            eprintln!("Error when parsing the ruleset {ruleset_name} {e:?}");
+            eprintln!("{response_text}");
+            Err(anyhow!("error {e:?}"))
         }
     }
 }

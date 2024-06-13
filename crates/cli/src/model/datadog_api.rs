@@ -138,11 +138,11 @@ pub struct ApiResponseRulesetAttributes {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ApiResponseRuleset {
+pub struct APIResponseRuleset {
     pub attributes: ApiResponseRulesetAttributes,
 }
 
-impl ApiResponseRuleset {
+impl APIResponseRuleset {
     fn into_ruleset(self) -> RuleSet {
         let ruleset_name = self.attributes.name;
         let description = self.attributes.description;
@@ -194,12 +194,24 @@ impl ApiResponseRuleset {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct ApiResponse {
-    pub data: ApiResponseRuleset,
+#[derive(Deserialize, Clone)]
+pub struct APIResponse {
+    pub data: APIResponseRuleset,
 }
 
-impl ApiResponse {
+#[derive(Deserialize)]
+pub struct APIErrorResponse {
+    pub errors: Vec<APIError>,
+}
+
+#[derive(Deserialize)]
+pub struct APIError {
+    pub title: String,
+    pub status: Option<String>,
+    pub detail: Option<String>,
+}
+
+impl APIResponse {
     pub fn into_ruleset(self) -> RuleSet {
         self.data.into_ruleset()
     }
@@ -259,7 +271,7 @@ mod tests {
                 }
             }
         });
-        let res: Result<ApiResponse, _> = serde_json::from_value(data);
+        let res = serde_json::from_value::<APIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
         assert_eq!(1, ruleset.rules.len());
         let rule = ruleset.rules.get(0).unwrap();
@@ -295,7 +307,7 @@ mod tests {
                 }
             }
         });
-        let res: Result<ApiResponse, _> = serde_json::from_value(data);
+        let res = serde_json::from_value::<APIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
         assert_eq!(0, ruleset.rules.len());
     }
