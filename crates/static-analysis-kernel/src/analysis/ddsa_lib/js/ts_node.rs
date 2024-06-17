@@ -55,10 +55,10 @@ impl TreeSitterNodeFn<Class> {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{attach_as_global, v8_interned, Class, Instance};
+    use crate::analysis::ddsa_lib::common::{v8_interned, Class, Instance};
     use crate::analysis::ddsa_lib::js::{TreeSitterNode, TreeSitterNodeFn};
     use crate::analysis::ddsa_lib::test_utils::{
-        cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
     };
     use deno_core::v8;
     use std::marker::PhantomData;

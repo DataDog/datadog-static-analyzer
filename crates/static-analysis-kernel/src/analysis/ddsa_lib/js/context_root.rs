@@ -142,10 +142,10 @@ impl RootContext<Instance> {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
-    use crate::analysis::ddsa_lib::common::{attach_as_global, v8_string};
+    use crate::analysis::ddsa_lib::common::v8_string;
     use crate::analysis::ddsa_lib::js::RootContext;
     use crate::analysis::ddsa_lib::test_utils::{
-        cfg_test_runtime, js_class_eq, js_instance_eq, parse_js, try_execute,
+        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, parse_js, try_execute,
     };
     use std::cell::RefCell;
     use std::rc::Rc;

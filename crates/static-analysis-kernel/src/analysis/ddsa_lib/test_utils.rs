@@ -191,3 +191,18 @@ for (const [name, obj] of Object.entries({})) {{
         .ops(prod_ops)
         .build()
 }
+
+/// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
+/// any previous value.
+pub(crate) fn attach_as_global<'s, T>(
+    scope: &mut HandleScope<'s>,
+    v8_item: impl v8::Handle<Data = T>,
+    name: &str,
+) where
+    v8::Local<'s, v8::Value>: From<v8::Local<'s, T>>,
+{
+    let v8_local = v8::Local::new(scope, v8_item);
+    let global = scope.get_current_context().global(scope);
+    let v8_key = v8_string(scope, name);
+    global.set(scope, v8_key.into(), v8_local.into());
+}

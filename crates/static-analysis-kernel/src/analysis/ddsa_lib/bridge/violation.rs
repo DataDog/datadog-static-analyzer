@@ -50,8 +50,8 @@ impl ViolationBridge {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::bridge::violation::ViolationBridge;
-    use crate::analysis::ddsa_lib::common::{attach_as_global, DDSAJsRuntimeError};
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
     use deno_core::JsRuntime;
 
     /// Sets up a bridge, binding it as a global JavaScript variable with name `global_name`.
