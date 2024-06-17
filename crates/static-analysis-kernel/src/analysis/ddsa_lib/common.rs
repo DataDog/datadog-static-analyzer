@@ -12,6 +12,8 @@ pub type NodeId = u32;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DDSAJsRuntimeError {
+    #[error("execution error: {reason}")]
+    Execution { reason: String },
     #[error("expected `{name}` to exist within the v8 context")]
     VariableNotFound { name: String },
     #[error("type should be \"{expected}\", not \"{got}\"")]
