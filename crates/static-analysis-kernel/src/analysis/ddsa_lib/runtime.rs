@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::ddsa_lib::bridge::{ContextBridge, TsSymbolMapBridge};
+use crate::analysis::ddsa_lib::bridge::{ContextBridge, TsNodeBridge, TsSymbolMapBridge};
 use crate::analysis::ddsa_lib::common::{v8_interned, DDSAJsRuntimeError};
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use deno_core::v8;
@@ -10,6 +10,7 @@ use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
 const BRIDGE_CONTEXT: &str = "__RUST_BRIDGE__context";
+const BRIDGE_TS_NODE: &str = "__RUST_BRIDGE__ts_node";
 const BRIDGE_TS_SYMBOL: &str = "__RUST_BRIDGE__ts_symbol_lookup";
 
 /// The Datadog Static Analyzer JavaScript runtime
@@ -17,6 +18,7 @@ pub struct JsRuntime {
     runtime: deno_core::JsRuntime,
     console: Rc<RefCell<JsConsole>>,
     bridge_context: Rc<RefCell<ContextBridge>>,
+    bridge_ts_node: Rc<RefCell<TsNodeBridge>>,
     bridge_ts_symbol_map: Rc<TsSymbolMapBridge>,
     // v8-specific
     /// A JavaScript "global" object (i.e. `globalThis`) augmented with ddsa variables. This is _not_
@@ -50,7 +52,7 @@ impl JsRuntime {
 
         // Construct the bridges and attach their underlying `v8:Global` object to the
         // default context's `globalThis` variable.
-        let (context, ts_symbols, ctx_true_global) = {
+        let (context, ts_node, ts_symbols, ctx_true_global) = {
             let scope = &mut runtime.handle_scope();
             let v8_ctx = scope.get_current_context();
             let global_proxy = v8_ctx.global(scope);
@@ -66,6 +68,12 @@ impl JsRuntime {
             true_global.set(scope, key_ctx.into(), v8_ctx_obj.into());
             let context = Rc::new(RefCell::new(context));
 
+            let ts_node = TsNodeBridge::try_new(scope)?;
+            let v8_ts_node_map = ts_node.as_local(scope);
+            let key_tsn = v8_interned(scope, BRIDGE_TS_NODE);
+            true_global.set(scope, key_tsn.into(), v8_ts_node_map.into());
+            let ts_node = Rc::new(RefCell::new(ts_node));
+
             let ts_symbols = TsSymbolMapBridge::new();
             let ts_symbols = Rc::new(ts_symbols);
             // The actual v8::Map containing the language-specific symbols will be populated when a rule is executed.
@@ -74,7 +82,7 @@ impl JsRuntime {
             true_global.set(scope, key_sym.into(), v8_undefined.into());
 
             let ctx_true_global = v8::Global::new(scope, true_global);
-            (context, ts_symbols, ctx_true_global)
+            (context, ts_node, ts_symbols, ctx_true_global)
         };
 
         let s_bridge_ts_symbol_lookup = {
@@ -86,6 +94,7 @@ impl JsRuntime {
         let op_state = runtime.op_state();
         let mut op_state = op_state.borrow_mut();
         op_state.put(Rc::clone(&context));
+        op_state.put(Rc::clone(&ts_node));
         op_state.put(Rc::clone(&ts_symbols));
 
         let console = Rc::new(RefCell::new(JsConsole::new()));
@@ -95,6 +104,7 @@ impl JsRuntime {
             runtime,
             console,
             bridge_context: context,
+            bridge_ts_node: ts_node,
             bridge_ts_symbol_map: ts_symbols,
             ddsa_v8_ctx_true_global: ctx_true_global,
             s_bridge_ts_symbol_lookup,
@@ -252,6 +262,7 @@ mod tests {
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(globalThis.__RUST_BRIDGE__context instanceof RootContext, "ContextBridge global has wrong type");
+assert(typeof globalThis.__RUST_BRIDGE__ts_node === "object", "TsNodeBridge global has wrong type");
 // An arbitrary return value to confirm that the execution completed without throwing:
 123;
 "#;
