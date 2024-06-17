@@ -143,8 +143,7 @@ export class TreeSitterNode {
     get type() {
         // Note: the map lookup should only return undefined if either `this._typeId` or the symbol map were mutated.
         // Although that should never happen, we handle it by returning an empty string.
-        // return globalThis.__RUST_BRIDGE__ts_symbol_lookup.get(this._typeId) ?? "";
-        return "unimplemented"; // (The above line will be uncommented when the TsSymbol bridge is enabled in the runtime)
+        return globalThis.__RUST_BRIDGE__ts_symbol_lookup.get(this._typeId) ?? "";
     }
 }
 
