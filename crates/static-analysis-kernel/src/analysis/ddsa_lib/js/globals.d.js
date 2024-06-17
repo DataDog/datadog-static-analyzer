@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 import {DDSA_Console} from "ext:ddsa_lib/utility";
+import {RootContext} from "ext:ddsa_lib/context_root";
 
 /**
  * Global variables available within a rule execution.
@@ -12,5 +13,12 @@ import {DDSA_Console} from "ext:ddsa_lib/utility";
 /**
  * @name console
  * @type {DDSA_Console}
+ * @global
+ */
+
+/**
+ * The context for a rule execution.
+ * @name __RUST_BRIDGE__context
+ * @type {RootContext}
  * @global
  */

@@ -2,16 +2,20 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
+use crate::analysis::ddsa_lib::bridge::ContextBridge;
+use crate::analysis::ddsa_lib::common::{v8_interned, DDSAJsRuntimeError};
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use deno_core::v8;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
+const BRIDGE_CONTEXT: &str = "__RUST_BRIDGE__context";
+
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
     runtime: deno_core::JsRuntime,
     console: Rc<RefCell<JsConsole>>,
+    bridge_context: Rc<RefCell<ContextBridge>>,
     // v8-specific
     /// A JavaScript "global" object (i.e. `globalThis`) augmented with ddsa variables. This is _not_
     /// a global proxy object, but rather, the global object itself.
@@ -40,7 +44,9 @@ impl JsRuntime {
     pub fn try_new() -> Result<Self, DDSAJsRuntimeError> {
         let mut runtime = base_js_runtime();
 
-        let ctx_true_global = {
+        // Construct the bridges and attach their underlying `v8:Global` object to the
+        // default context's `globalThis` variable.
+        let (context, ctx_true_global) = {
             let scope = &mut runtime.handle_scope();
             let v8_ctx = scope.get_current_context();
             let global_proxy = v8_ctx.global(scope);
@@ -50,15 +56,27 @@ impl JsRuntime {
                 .to_object(scope)
                 .expect("global proxy prototype should always be an object");
 
-            v8::Global::new(scope, true_global)
+            let context = ContextBridge::try_new(scope)?;
+            let v8_ctx_obj = context.as_local(scope);
+            let key_ctx = v8_interned(scope, BRIDGE_CONTEXT);
+            true_global.set(scope, key_ctx.into(), v8_ctx_obj.into());
+            let context = Rc::new(RefCell::new(context));
+
+            let ctx_true_global = v8::Global::new(scope, true_global);
+            (context, ctx_true_global)
         };
 
+        let op_state = runtime.op_state();
+        let mut op_state = op_state.borrow_mut();
+        op_state.put(Rc::clone(&context));
+
         let console = Rc::new(RefCell::new(JsConsole::new()));
-        runtime.op_state().borrow_mut().put(Rc::clone(&console));
+        op_state.put(Rc::clone(&console));
 
         Ok(Self {
             runtime,
             console,
+            bridge_context: context,
             ddsa_v8_ctx_true_global: ctx_true_global,
         })
     }
@@ -189,7 +207,7 @@ impl JsConsole {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::common::{compile_script, v8_interned};
-    use crate::analysis::ddsa_lib::test_utils::js_all_props;
+    use crate::analysis::ddsa_lib::test_utils::{js_all_props, try_execute};
     use crate::analysis::ddsa_lib::JsRuntime;
     use deno_core::v8;
     use std::collections::HashSet;
@@ -204,6 +222,21 @@ mod tests {
         let global = runtime.ddsa_v8_ctx_true_global.open(scope);
         let value = value_gen(scope);
         global.set(scope, key.into(), value);
+    }
+
+    /// Ensures that the bridge globals exist within the JavaScript scope, and are of the expected type.
+    #[test]
+    fn bridge_global_defined() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let scope = &mut runtime.runtime.handle_scope();
+        let code = r#"
+const assert = (val, msg) => { if (!val) throw new Error(msg); };
+assert(globalThis.__RUST_BRIDGE__context instanceof RootContext, "ContextBridge global has wrong type");
+// An arbitrary return value to confirm that the execution completed without throwing:
+123;
+"#;
+        let result = try_execute(scope, code).map(|v| v.uint32_value(scope).unwrap());
+        assert_eq!(result, Ok(123));
     }
 
     /// Tests that `scoped_execute` has access to the same global variables that the v8 isolate's
