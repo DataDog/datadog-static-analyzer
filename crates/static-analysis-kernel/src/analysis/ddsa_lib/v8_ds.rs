@@ -140,6 +140,11 @@ where
         self.vec.len() == 0
     }
 
+    /// Returns a local handle to the underlying [`v8::Global`] array.
+    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Array> {
+        v8::Local::new(scope, &self.v8_array)
+    }
+
     /// Returns a handle to the v8 element at the given index.
     #[cfg(test)]
     pub fn get_v8<'s>(&self, scope: &mut HandleScope<'s>, index: u32) -> v8::Local<'s, v8::Value> {

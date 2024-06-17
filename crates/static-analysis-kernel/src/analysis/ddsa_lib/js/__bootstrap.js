@@ -6,6 +6,7 @@
 
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
+import {QueryMatch, QueryMatchCompat} from "ext:ddsa_lib/query_match";
 import {RootContext} from "ext:ddsa_lib/context_root";
 import {RuleContext} from "ext:ddsa_lib/context_rule";
 import {TreeSitterNode} from "ext:ddsa_lib/ts_node";
@@ -13,6 +14,8 @@ import {TreeSitterNode} from "ext:ddsa_lib/ts_node";
 //           these should be hidden inside another object, not `globalThis`.
 globalThis.FileContext = FileContext;
 globalThis.FileContextGo = FileContextGo;
+globalThis.QueryMatch = QueryMatch;
+globalThis.QueryMatchCompat = QueryMatchCompat;
 globalThis.RootContext = RootContext;
 globalThis.RuleContext = RuleContext;
 globalThis.TreeSitterNode = TreeSitterNode;
