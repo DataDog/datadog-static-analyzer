@@ -75,7 +75,10 @@ const BASE_INSTANCE_PROTO_PROPS: &[&str] = &[
 
 /// A function that inspects a [`v8::Object`] and returns a list of all property names
 /// (excluding property names from the object's prototype chain).
-fn js_all_props(scope: &mut HandleScope, value: &impl Deref<Target = v8::Object>) -> Vec<String> {
+pub(crate) fn js_all_props(
+    scope: &mut HandleScope,
+    value: &impl Deref<Target = v8::Object>,
+) -> Vec<String> {
     use std::collections::HashSet;
     /// Helper function to enumerate all properties in an object.
     fn get_all_props(scope: &mut HandleScope, object: &v8::Object) -> HashSet<String> {
