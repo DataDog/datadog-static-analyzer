@@ -10,6 +10,7 @@ pub use context::*;
 pub mod extension;
 pub(crate) mod js;
 pub(crate) mod ops;
+#[allow(dead_code)]
 pub(crate) mod runtime;
 pub(crate) use runtime::JsRuntime;
 #[allow(dead_code)]
