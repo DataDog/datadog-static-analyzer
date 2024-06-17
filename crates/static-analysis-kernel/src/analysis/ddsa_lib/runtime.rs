@@ -4,6 +4,7 @@
 
 use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
+use deno_core::v8;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 
@@ -37,6 +38,12 @@ impl JsRuntime {
     /// Panics if the `RefCell` can't be borrowed mutably.
     pub fn console_compat(&mut self) -> RefMut<'_, JsConsole> {
         self.console.borrow_mut()
+    }
+
+    /// Provides a [`v8::HandleScope`] for the underlying v8 isolate.
+    #[cfg(test)]
+    pub fn v8_handle_scope(&mut self) -> v8::HandleScope {
+        self.runtime.handle_scope()
     }
 }
 
