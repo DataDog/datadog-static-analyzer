@@ -2,7 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::ddsa_lib::bridge::{ContextBridge, TsNodeBridge, TsSymbolMapBridge};
+use crate::analysis::ddsa_lib::bridge::{
+    ContextBridge, TsNodeBridge, TsSymbolMapBridge, ViolationBridge,
+};
 use crate::analysis::ddsa_lib::common::{v8_interned, DDSAJsRuntimeError};
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use deno_core::v8;
@@ -12,6 +14,7 @@ use std::rc::Rc;
 const BRIDGE_CONTEXT: &str = "__RUST_BRIDGE__context";
 const BRIDGE_TS_NODE: &str = "__RUST_BRIDGE__ts_node";
 const BRIDGE_TS_SYMBOL: &str = "__RUST_BRIDGE__ts_symbol_lookup";
+const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
 
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
@@ -20,6 +23,7 @@ pub struct JsRuntime {
     bridge_context: Rc<RefCell<ContextBridge>>,
     bridge_ts_node: Rc<RefCell<TsNodeBridge>>,
     bridge_ts_symbol_map: Rc<TsSymbolMapBridge>,
+    bridge_violation: ViolationBridge,
     // v8-specific
     /// A JavaScript "global" object (i.e. `globalThis`) augmented with ddsa variables. This is _not_
     /// a global proxy object, but rather, the global object itself.
@@ -52,7 +56,7 @@ impl JsRuntime {
 
         // Construct the bridges and attach their underlying `v8:Global` object to the
         // default context's `globalThis` variable.
-        let (context, ts_node, ts_symbols, ctx_true_global) = {
+        let (context, ts_node, ts_symbols, violation, ctx_true_global) = {
             let scope = &mut runtime.handle_scope();
             let v8_ctx = scope.get_current_context();
             let global_proxy = v8_ctx.global(scope);
@@ -81,8 +85,13 @@ impl JsRuntime {
             let v8_undefined = v8::undefined(scope);
             true_global.set(scope, key_sym.into(), v8_undefined.into());
 
+            let violation = ViolationBridge::new(scope);
+            let v8_violation_array = violation.as_local(scope);
+            let key_vio = v8_interned(scope, BRIDGE_VIOLATION);
+            true_global.set(scope, key_vio.into(), v8_violation_array.into());
+
             let ctx_true_global = v8::Global::new(scope, true_global);
-            (context, ts_node, ts_symbols, ctx_true_global)
+            (context, ts_node, ts_symbols, violation, ctx_true_global)
         };
 
         let s_bridge_ts_symbol_lookup = {
@@ -106,6 +115,7 @@ impl JsRuntime {
             bridge_context: context,
             bridge_ts_node: ts_node,
             bridge_ts_symbol_map: ts_symbols,
+            bridge_violation: violation,
             ddsa_v8_ctx_true_global: ctx_true_global,
             s_bridge_ts_symbol_lookup,
         })
@@ -263,6 +273,7 @@ mod tests {
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(globalThis.__RUST_BRIDGE__context instanceof RootContext, "ContextBridge global has wrong type");
 assert(typeof globalThis.__RUST_BRIDGE__ts_node === "object", "TsNodeBridge global has wrong type");
+assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge global has wrong type");
 // An arbitrary return value to confirm that the execution completed without throwing:
 123;
 "#;

@@ -5,6 +5,7 @@
 import {DDSA_Console} from "ext:ddsa_lib/utility";
 import {RootContext} from "ext:ddsa_lib/context_root";
 import {TreeSitterNode} from "ext:ddsa_lib/ts_node";
+import {Violation} from "ext:ddsa_lib/violation";
 
 /**
  * Global variables available within a rule execution.
@@ -35,5 +36,12 @@ import {TreeSitterNode} from "ext:ddsa_lib/ts_node";
  * A map containing all the tree-sitter nodes passed from the Rust static-analysis-kernel.
  * @name __RUST_BRIDGE__ts_node
  * @type {Map<NodeId, TreeSitterNode>}
+ * @global
+ */
+
+/**
+ * An array storing the violations reported by the rule's JavaScript execution.
+ * @name __RUST_BRIDGE__violation
+ * @type {Array<Violation>}
  * @global
  */
