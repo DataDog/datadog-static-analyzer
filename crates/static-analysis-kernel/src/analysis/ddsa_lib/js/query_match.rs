@@ -125,34 +125,12 @@ mod tests {
     use crate::analysis::ddsa_lib::js::{
         MultiCaptureTemplate, QueryMatch, QueryMatchCompat, SingleCaptureTemplate,
     };
-    use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
-    };
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_tsn_bridge, try_execute};
     use crate::analysis::ddsa_lib::v8_ds::RustConverter;
     use crate::analysis::tree_sitter::TSQueryCapture;
     use deno_core::v8;
     use deno_core::v8::Handle;
     use std::sync::Arc;
-
-    /// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
-    /// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
-    fn make_stub_tsn_bridge<'s>(
-        scope: &mut v8::HandleScope<'s>,
-        node_ids: &[u32],
-    ) -> v8::Local<'s, v8::Map> {
-        let stub_tsn_bridge = v8::Map::new(scope);
-        let s_key_id = v8_interned(scope, "id");
-        for &node_id in node_ids {
-            let stub_ts_node = v8::Object::new(scope);
-            let v8_node_id = v8_uint(scope, node_id);
-            stub_ts_node.set(scope, s_key_id.into(), v8_node_id.into());
-            let s_key_abc = v8_interned(scope, "abc");
-            let v8_value = v8_interned(scope, "def");
-            stub_ts_node.set(scope, s_key_abc.into(), v8_value.into());
-            stub_tsn_bridge.set(scope, v8_node_id.into(), stub_ts_node.into());
-        }
-        stub_tsn_bridge
-    }
 
     #[test]
     fn js_properties_canary() {

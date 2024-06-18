@@ -6,7 +6,9 @@
 //       their module, we work around this by exposing the following functions to all compilation profiles.
 //       They should only be used in unit tests.
 
-use crate::analysis::ddsa_lib::common::{iter_v8_array, load_function, v8_string};
+use crate::analysis::ddsa_lib::common::{
+    iter_v8_array, load_function, v8_interned, v8_string, v8_uint,
+};
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use deno_core::v8::HandleScope;
 use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
@@ -208,4 +210,24 @@ pub(crate) fn attach_as_global<'s, T>(
     let global = scope.get_current_context().global(scope);
     let v8_key = v8_string(scope, name);
     global.set(scope, v8_key.into(), v8_local.into());
+}
+
+/// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
+/// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
+pub(crate) fn make_stub_tsn_bridge<'s>(
+    scope: &mut HandleScope<'s>,
+    node_ids: &[u32],
+) -> v8::Local<'s, v8::Map> {
+    let stub_tsn_bridge = v8::Map::new(scope);
+    let s_key_id = v8_interned(scope, "id");
+    for &node_id in node_ids {
+        let stub_ts_node = v8::Object::new(scope);
+        let v8_node_id = v8_uint(scope, node_id);
+        stub_ts_node.set(scope, s_key_id.into(), v8_node_id.into());
+        let s_key_abc = v8_interned(scope, "abc");
+        let v8_value = v8_interned(scope, "def");
+        stub_ts_node.set(scope, s_key_abc.into(), v8_value.into());
+        stub_tsn_bridge.set(scope, v8_node_id.into(), stub_ts_node.into());
+    }
+    stub_tsn_bridge
 }
