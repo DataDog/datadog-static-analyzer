@@ -388,7 +388,7 @@ fn generate_tool_section(rules: &[SarifRule], options: &SarifGenerationOptions) 
 }
 
 fn is_valid_position(position: &Position) -> bool {
-    return position.line > 0 && position.line > 0;
+    position.line > 0 && position.col > 0
 }
 
 /// Check that the violation is valid and must be included
