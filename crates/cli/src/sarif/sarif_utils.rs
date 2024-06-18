@@ -526,7 +526,16 @@ fn generate_results(
             rule_result
                 .violations()
                 .iter()
-                .filter(|violation| is_valid_violation(violation))
+                .filter(|violation| {
+                    let is_valid = is_valid_violation(violation);
+                    if !is_valid && options_orig.debug {
+                        eprintln!(
+                            "Invalid violations detected, check the rule {}",
+                            rule_result.rule_name()
+                        )
+                    }
+                    is_valid
+                })
                 .map(move |violation| {
                     // if we find the rule for this violation, get the id, level and category
                     let location = LocationBuilder::default()
