@@ -52,6 +52,8 @@ export function addError(error) {
   /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
   if (globalThis.__ENV_STELLA__ === true) {
     stellaAllErrors.push(error);
+  } else {
+    globalThis.__RUST_BRIDGE__violation.push(error);
   }
 }
 

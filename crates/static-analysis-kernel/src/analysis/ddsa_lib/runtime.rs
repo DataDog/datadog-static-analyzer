@@ -2,14 +2,23 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::analysis;
 use crate::analysis::ddsa_lib::bridge::{
     ContextBridge, QueryMatchBridge, TsNodeBridge, TsSymbolMapBridge, ViolationBridge,
 };
-use crate::analysis::ddsa_lib::common::{v8_interned, DDSAJsRuntimeError};
+use crate::analysis::ddsa_lib::common::{
+    compile_script, v8_interned, DDSAJsRuntimeError, Instance,
+};
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
+use crate::analysis::ddsa_lib::js;
+use crate::model::common::Language;
+use crate::model::rule::RuleInternal;
+use crate::model::violation;
 use deno_core::v8;
 use std::cell::{RefCell, RefMut};
+use std::collections::HashMap;
 use std::rc::Rc;
+use std::sync::Arc;
 
 const BRIDGE_CONTEXT: &str = "__RUST_BRIDGE__context";
 const BRIDGE_QUERY_MATCH: &str = "__RUST_BRIDGE__query_match";
@@ -26,6 +35,10 @@ pub struct JsRuntime {
     bridge_ts_node: Rc<RefCell<TsNodeBridge>>,
     bridge_ts_symbol_map: Rc<TsSymbolMapBridge>,
     bridge_violation: ViolationBridge,
+    /// A map from a rule's name to its compiled `v8::UnboundScript`.
+    script_cache: Rc<RefCell<HashMap<String, v8::Global<v8::UnboundScript>>>>,
+    /// A pre-allocated `tree_sitter::QueryCursor` that is re-used for each execution.
+    ts_query_cursor: Rc<RefCell<tree_sitter::QueryCursor>>,
     // v8-specific
     /// A JavaScript "global" object (i.e. `globalThis`) augmented with ddsa variables. This is _not_
     /// a global proxy object, but rather, the global object itself.
@@ -131,9 +144,94 @@ impl JsRuntime {
             bridge_ts_node: ts_node,
             bridge_ts_symbol_map: ts_symbols,
             bridge_violation: violation,
+            script_cache: Rc::new(RefCell::new(HashMap::new())),
+            ts_query_cursor: Rc::new(RefCell::new(tree_sitter::QueryCursor::new())),
             ddsa_v8_ctx_true_global: ctx_true_global,
             s_bridge_ts_symbol_lookup,
         })
+    }
+
+    pub fn execute_rule(
+        &mut self,
+        source_text: &Arc<str>,
+        source_tree: &tree_sitter::Tree,
+        file_name: &Arc<str>,
+        rule: &RuleInternal,
+        rule_arguments: &HashMap<String, String>,
+    ) -> Result<Vec<violation::Violation>, DDSAJsRuntimeError> {
+        let script_cache = Rc::clone(&self.script_cache);
+        let mut script_cache_ref = script_cache.borrow_mut();
+        if !script_cache_ref.contains_key(&rule.name) {
+            let rule_script = Self::format_rule_script(&rule.code);
+            let script = compile_script(&mut self.runtime.handle_scope(), &rule_script)?;
+            script_cache_ref.insert(rule.name.clone(), script);
+        }
+        let rule_script = script_cache_ref
+            .get(&rule.name)
+            .expect("cache should have been populated");
+
+        let ts_query_cursor = Rc::clone(&self.ts_query_cursor);
+        let mut ts_qc = ts_query_cursor.borrow_mut();
+        let mut query_cursor = rule.tree_sitter_query.with_cursor(&mut ts_qc);
+        let query_matches = query_cursor
+            .matches(source_tree.root_node(), source_text.as_ref())
+            .collect::<Vec<_>>();
+        let js_violations = self.execute_rule_internal(
+            source_text,
+            source_tree,
+            file_name,
+            rule.language,
+            rule_script,
+            &query_matches,
+            rule_arguments,
+        )?;
+        Ok(js_violations
+            .into_iter()
+            .map(|v| v.into_violation(rule.severity, rule.category))
+            .collect::<Vec<_>>())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn execute_rule_internal(
+        &mut self,
+        source_text: &Arc<str>,
+        source_tree: &tree_sitter::Tree,
+        file_name: &Arc<str>,
+        language: Language,
+        rule_script: &v8::Global<v8::UnboundScript>,
+        query_matches: &[analysis::tree_sitter::QueryMatch<tree_sitter::Node>],
+        rule_arguments: &HashMap<String, String>,
+    ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
+        {
+            let scope = &mut self.runtime.handle_scope();
+
+            // Change the global object's pointer to the TSSymbolMap to the one for this specific language.
+            let v8_ts_symbol_map = self
+                .bridge_ts_symbol_map
+                .get_map(scope, &source_tree.language());
+            let opened = self.ddsa_v8_ctx_true_global.open(scope);
+            let key_sym = v8::Local::new(scope, &self.s_bridge_ts_symbol_lookup);
+            opened.set(scope, key_sym.into(), v8_ts_symbol_map.into());
+
+            // Push data from Rust to v8
+            // Update the DDSA context metadata
+            let mut ctx_bridge = self.bridge_context.borrow_mut();
+            ctx_bridge.set_root_context(scope, source_tree, source_text, file_name);
+            // Set a file context, if applicable
+            ctx_bridge.set_file_context(scope, language, source_tree, source_text);
+            // Add any rule arguments
+            ctx_bridge.set_rule_arguments(scope, rule_arguments);
+            // Push the query matches:
+            let mut ts_node_bridge = self.bridge_ts_node.borrow_mut();
+            self.bridge_query_match
+                .set_data(scope, query_matches, &mut ts_node_bridge);
+        }
+
+        // We use a bridge to pull violations, so we can ignore the return value with a noop handler.
+        self.scoped_execute(rule_script, |_, _| ())?;
+
+        self.bridge_violation
+            .drain_collect(&mut self.runtime.handle_scope())
     }
 
     /// Executes a given closure within the DDSA runtime context.
@@ -207,6 +305,23 @@ impl JsRuntime {
         Ok(handle_return_value(tc_ctx_scope, return_val))
     }
 
+    /// Wraps a `rule_code` with the necessary DDSA hooks to pass and receive data from Rust to v8.
+    fn format_rule_script(rule_code: &str) -> String {
+        format!(
+            r#"
+for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
+    visit(queryMatch);
+}}
+
+// The rule's JavaScript code
+//////////////////////////////
+{}
+//////////////////////////////
+"#,
+            rule_code
+        )
+    }
+
     /// Provides a mutable reference to the underlying [`deno_core::JsRuntime`].
     ///
     /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
@@ -263,9 +378,12 @@ impl JsConsole {
 mod tests {
     use crate::analysis::ddsa_lib::common::{compile_script, v8_interned};
     use crate::analysis::ddsa_lib::test_utils::{js_all_props, try_execute};
-    use crate::analysis::ddsa_lib::JsRuntime;
+    use crate::analysis::ddsa_lib::{js, JsRuntime};
+    use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
+    use crate::model::common::Language;
     use deno_core::v8;
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
+    use std::sync::Arc;
 
     /// A shorthand helper to set a key/value pair to the runtime's true global object.
     fn set_runtime_global<F>(runtime: &mut JsRuntime, key: &str, value_gen: F)
@@ -427,5 +545,65 @@ typeof globalThis.addedProperty;
         assert!(err
             .to_string()
             .contains("ReferenceError: abc is not defined"));
+    }
+
+    #[test]
+    fn execute_rule_internal() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let source_text: Arc<str> = Arc::from("const someName = 123; const protectedName = 456;");
+        let filename: Arc<str> = Arc::from("some_filename.js");
+        let ts_query = r#"
+((identifier) @cap_name (#eq? @cap_name "protectedName"))
+"#;
+        let rule_code = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    const error = buildError(
+        node.start.line,
+        node.start.col,
+        node.end.line,
+        node.end.col,
+        `\`${node.text}\` is a protected variable name`
+    );
+    addError(error);
+}
+"#;
+        let rule_script = JsRuntime::format_rule_script(rule_code);
+        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
+
+        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
+        let tree = get_tree(source_text.as_ref(), &Language::JavaScript).unwrap();
+
+        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+
+        let mut curs = ts_query.cursor();
+        let q_matches = curs
+            .matches(tree.root_node(), source_text.as_ref())
+            .collect::<Vec<_>>();
+
+        let violations = runtime.execute_rule_internal(
+            &source_text,
+            &tree,
+            &filename,
+            Language::JavaScript,
+            &rule_script,
+            &q_matches,
+            &HashMap::new(),
+        );
+
+        let violations = violations.unwrap();
+        assert_eq!(violations.len(), 1);
+        let violation = violations.first().unwrap();
+
+        let expected = js::Violation {
+            start_line: 1,
+            start_col: 29,
+            end_line: 1,
+            end_col: 42,
+            message: "`protectedName` is a protected variable name".to_string(),
+            fixes: None,
+            _pd: Default::default(),
+        };
+        assert_eq!(*violation, expected);
     }
 }
