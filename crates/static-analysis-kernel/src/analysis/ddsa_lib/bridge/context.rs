@@ -5,6 +5,7 @@
 use crate::analysis::ddsa_lib;
 use crate::analysis::ddsa_lib::common::{DDSAJsRuntimeError, Instance};
 use crate::analysis::ddsa_lib::js;
+use crate::model::common::Language;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::sync::Arc;
@@ -108,6 +109,26 @@ impl ContextBridge {
         self.rule.ddsa.clear_arguments(scope);
         for (arg_name, arg_value) in args {
             self.rule.ddsa.insert_argument(scope, arg_name, arg_value)
+        }
+    }
+
+    /// Updates the file contexts that have been initialized, given the file.
+    pub fn set_file_context(
+        &mut self,
+        scope: &mut HandleScope,
+        language: Language,
+        tree: &tree_sitter::Tree,
+        file_contents: &Arc<str>,
+    ) {
+        // Because we allocate all Mirrored v8 data structures ahead of time, the role of this function
+        // is to clear out the ones that no longer apply.
+        // A file can only have a single file context.
+        if language == Language::Go {
+            if let Some(go) = self.file.ddsa.go_mut() {
+                go.update_state(scope, tree, file_contents.as_ref());
+            }
+        } else if let Some(go) = self.file.ddsa.go_mut() {
+            go.clear(scope);
         }
     }
 
