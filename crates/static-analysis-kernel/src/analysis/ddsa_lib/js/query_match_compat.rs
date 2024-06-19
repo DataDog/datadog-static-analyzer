@@ -63,8 +63,8 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{v8_interned, NodeId};
     use crate::analysis::ddsa_lib::js::query_match_compat::QueryMatchCompat;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_tsn_bridge,
-        try_execute,
+        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_root_context,
+        make_stub_tsn_bridge, try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::RustConverter;
     use crate::analysis::tree_sitter::TSQueryCapture;
@@ -77,41 +77,6 @@ const abc = 123; thisStringRepresents(\"File Contents\");\
 ";
     /// Sample filename to test the compatibility layer
     const COMPAT_FILENAME: &str = "filename.js";
-
-    /// Creates a stub [`v8::Object`] that represents a `RootContext`.
-    fn make_stub_root_context<'s>(
-        scope: &mut v8::HandleScope<'s>,
-        arguments: &[(&str, &str)],
-    ) -> v8::Local<'s, v8::Object> {
-        use crate::analysis::ddsa_lib::common::{load_function, v8_string};
-
-        let v8_root_ctx = v8::Object::new(scope);
-
-        let rule_ctx_class = load_function(scope, "RuleContext").unwrap();
-        let rule_ctx_class = rule_ctx_class.open(scope);
-        let v8_arguments = v8::Map::new(scope);
-        for &(name, value) in arguments {
-            let s_key = v8_interned(scope, name);
-            let v8_value = v8_string(scope, value);
-            v8_arguments.set(scope, s_key.into(), v8_value.into());
-        }
-        let v8_rule_ctx = rule_ctx_class
-            .new_instance(scope, &[v8_arguments.into()][..])
-            .unwrap();
-
-        let s_key_rule_ctx = v8_interned(scope, "ruleCtx");
-        v8_root_ctx.set(scope, s_key_rule_ctx.into(), v8_rule_ctx.into());
-
-        let s_key_filename = v8_interned(scope, "filename");
-        let v8_filename = v8_string(scope, COMPAT_FILENAME);
-        v8_root_ctx.set(scope, s_key_filename.into(), v8_filename.into());
-
-        let s_key_file_contents = v8_interned(scope, "fileContents");
-        let v8_file_contents = v8_string(scope, COMPAT_FILE_CONTENTS);
-        v8_root_ctx.set(scope, s_key_file_contents.into(), v8_file_contents.into());
-
-        v8_root_ctx
-    }
 
     #[test]
     fn js_properties_canary() {
@@ -243,7 +208,7 @@ assert(Array.isArray(stubNodes) && stubNodes.length === 0);
         let mut runtime = cfg_test_runtime();
 
         let scope = &mut runtime.handle_scope();
-        let stub_root_context = make_stub_root_context(scope, &[("arg_name1", "123")]);
+        let stub_root_context = make_stub_root_context(scope, &[("arg_name1", "123")], COMPAT_FILENAME, COMPAT_FILE_CONTENTS);
         attach_as_global(scope, stub_root_context, "__RUST_BRIDGE__context");
 
         let js_class = QueryMatchCompat::try_new(scope).unwrap();
