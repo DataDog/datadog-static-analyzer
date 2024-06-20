@@ -121,7 +121,7 @@ impl QueryMatchCompat<Class> {
 #[cfg(test)]
 mod tests {
     use crate::analysis;
-    use crate::analysis::ddsa_lib::common::{v8_interned, NodeId};
+    use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, NodeId};
     use crate::analysis::ddsa_lib::js::{
         MultiCaptureTemplate, QueryMatch, QueryMatchCompat, SingleCaptureTemplate,
     };
@@ -134,6 +134,26 @@ mod tests {
     use deno_core::v8::Handle;
     use std::sync::Arc;
 
+    /// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
+    /// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
+    fn make_stub_tsn_bridge<'s>(
+        scope: &mut v8::HandleScope<'s>,
+        node_ids: &[u32],
+    ) -> v8::Local<'s, v8::Map> {
+        let stub_tsn_bridge = v8::Map::new(scope);
+        let s_key_id = v8_interned(scope, "id");
+        for &node_id in node_ids {
+            let stub_ts_node = v8::Object::new(scope);
+            let v8_node_id = v8_uint(scope, node_id);
+            stub_ts_node.set(scope, s_key_id.into(), v8_node_id.into());
+            let s_key_abc = v8_interned(scope, "abc");
+            let v8_value = v8_interned(scope, "def");
+            stub_ts_node.set(scope, s_key_abc.into(), v8_value.into());
+            stub_tsn_bridge.set(scope, v8_node_id.into(), stub_ts_node.into());
+        }
+        stub_tsn_bridge
+    }
+
     #[test]
     fn js_properties_canary() {
         let instance_exp = &[
@@ -142,15 +162,17 @@ mod tests {
             // Methods
             "get",
             "getMany",
+            "_getId",
+            "_getManyIds",
         ];
         assert!(js_instance_eq(QueryMatch::CLASS_NAME, instance_exp));
         let class_expected = &[];
         assert!(js_class_eq(QueryMatch::CLASS_NAME, class_expected));
     }
 
-    /// Tests that a call to `Get` on a `SingleCapture` properly returns the captured node's id.
+    /// Tests that a call to `_getId` on a `SingleCapture` properly returns the captured node's id.
     #[test]
-    fn get_single_on_single() {
+    fn get_id_single_on_single() {
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
@@ -158,20 +180,20 @@ mod tests {
         let captures = vec![single_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
-        let code = r#"QUERY_MATCH.get("cap_name");"#;
+        let code = r#"QUERY_MATCH._getId("cap_name");"#;
         let res = try_execute(scope, code).unwrap();
         assert_eq!(res.to_rust_string_lossy(scope), "10");
 
         // A capture name that isn't present should return undefined
-        let code = r#"QUERY_MATCH.get("missing_from_captures");"#;
+        let code = r#"QUERY_MATCH._getId("missing_from_captures");"#;
         let res = try_execute(scope, code).unwrap();
         assert!(res.is_undefined());
     }
 
-    /// Tests that a call to `Get` on a `MultiCapture` returns the *last* node of the array.
+    /// Tests that a call to `_getId` on a `MultiCapture` returns the *last* node of the array.
     /// This behavior has been preserved from the original stella library.
     #[test]
-    fn get_single_on_multi_is_last() {
+    fn get_id_single_on_multi_is_last() {
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
@@ -180,14 +202,14 @@ mod tests {
         let captures = vec![multi_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
-        let code = r#"QUERY_MATCH.get("cap_name");"#;
+        let code = r#"QUERY_MATCH._getId("cap_name");"#;
         let res = try_execute(scope, code).unwrap();
         assert_eq!(res.to_rust_string_lossy(scope), "30");
     }
 
-    /// Tests that a call to `GetMany` on a `SingleCapture` returns an array containing only the single node id.
+    /// Tests that a call to `_getManyIds` on a `SingleCapture` returns an array containing only the single node id.
     #[test]
-    fn get_many_on_single() {
+    fn get_many_ids_on_single() {
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
@@ -198,7 +220,7 @@ mod tests {
 
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
-const cap_node_ids = QUERY_MATCH.getMany("cap_name");
+const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
 assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
 assert(cap_node_ids.length === 1, "array must have exactly one elements");
 assert(cap_node_ids[0] === 10, "nodeId was incorrect");
@@ -207,14 +229,14 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         assert_eq!(result, Ok("undefined".to_string()));
 
         // A capture name that isn't present should return undefined
-        let code = r#"QUERY_MATCH.getMany("missing_from_captures");"#;
+        let code = r#"QUERY_MATCH._getManyIds("missing_from_captures");"#;
         let res = try_execute(scope, code).unwrap();
         assert!(res.is_undefined());
     }
 
-    /// Tests that a call to `GetMany` on a `MultiCapture` returns an array of node ids.
+    /// Tests that a call to `_getManyIds` on a `MultiCapture` returns an array of node ids.
     #[test]
-    fn get_many_on_multi() {
+    fn get_many_ids_on_multi() {
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
@@ -226,7 +248,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
-const cap_node_ids = QUERY_MATCH.getMany("cap_name");
+const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
 assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
 assert(cap_node_ids.length === 3, "array must have exactly three elements");
 assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
@@ -235,10 +257,10 @@ assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
         assert_eq!(result, Ok("undefined".to_string()));
     }
 
-    /// Tests that a call to `GetMany` on a `MultiCapture` that happens to have only a single node id
+    /// Tests that a call to `_getManyIds` on a `MultiCapture` that happens to have only a single node id
     /// still returns an array (with a single node id).
     #[test]
-    fn get_many_on_multi_with_one_element() {
+    fn get_many_ids_on_multi_with_one_element() {
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
@@ -249,7 +271,7 @@ assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
 
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
-const cap_node_ids = QUERY_MATCH.getMany("cap_name");
+const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
 assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
 assert(cap_node_ids.length === 1, "array must have exactly one elements");
 assert(cap_node_ids[0] === 10, "nodeId was incorrect");
@@ -275,11 +297,66 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         assert!(v8_captures.is_undefined());
     }
 
-    /// Tests that `QueryMatchCompat` allows for object-style property lookup
+    /// Tests that `get` properly retrieves nodes from the `TsNodeBridge`.
+    #[test]
+    fn get_node() {
+        let mut runtime = cfg_test_runtime();
+
+        let scope = &mut runtime.handle_scope();
+        let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10]);
+        attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
+
+        let js_class = QueryMatch::try_new(scope).unwrap();
+        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
+        let captures = vec![single_cap];
+        let v8_query_match_compat = js_class.convert_to(scope, &captures);
+        attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
+
+        let code = r#"
+const assert = (val, msg) => { if (!val) throw new Error(msg); };
+assert(QUERY_MATCH.get("cap_name").id === 10);
+"#;
+        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
+        assert_eq!(result, Ok("undefined".to_string()));
+    }
+
+    /// Tests that `getMany` properly retrieves nodes from the `TsNodeBridge`.
+    #[test]
+    fn get_many_nodes() {
+        let mut runtime = cfg_test_runtime();
+
+        let scope = &mut runtime.handle_scope();
+        let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20]);
+        attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
+
+        let js_class = QueryMatch::try_new(scope).unwrap();
+        let multi_cap =
+            TSQueryCapture::<NodeId>::new_multi(Arc::<str>::from("cap_name"), vec![10, 20]);
+        let captures = vec![multi_cap];
+        let v8_query_match = js_class.convert_to(scope, &captures);
+        attach_as_global(scope, v8_query_match, "QUERY_MATCH");
+
+        let code = r#"
+const assert = (val, msg) => { if (!val) throw new Error(msg); };
+const stubNodes = QUERY_MATCH.getMany("cap_name");
+assert(stubNodes.length === 2);
+assert(stubNodes[0].id === 10);
+assert(stubNodes[1].id === 20);
+"#;
+        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
+        assert_eq!(result, Ok("undefined".to_string()));
+    }
+
+    /// Tests that `QueryMatchCompat` allows for object-style property lookup, which looks up nodes
+    /// from the TsNodeBridge.
     #[test]
     fn compat_layer_prop_lookup() {
         let mut runtime = cfg_test_runtime();
+
         let scope = &mut runtime.handle_scope();
+        let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10]);
+        attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
+
         let js_class = QueryMatchCompat::try_new(scope).unwrap();
         let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
         let captures = vec![single_cap];
@@ -288,48 +365,51 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH["cap_name"] === 10);
-assert(QUERY_MATCH.cap_name === 10);
-"#;
-        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
-
-        // Additionally, we could've used "get" or "getMany".
-        let code = r#"
-assert(QUERY_MATCH.get("cap_name") === 10);
-assert(QUERY_MATCH.getMany("cap_name").join("") === "10");
+assert(QUERY_MATCH["cap_name"].id === 10);
+assert(QUERY_MATCH.cap_name.id === 10);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
     }
 
-    /// Tests the edge case in `QueryMatchCompat` where the rule has "get" or "getMany" as a capture name.
+    /// Tests the edge case in `QueryMatchCompat` where the rule has a capture name that collides with an instance method/variable.
     #[test]
     fn compat_layer_prop_name_collision() {
         let mut runtime = cfg_test_runtime();
+
         let scope = &mut runtime.handle_scope();
+        let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20, 30, 40, 50]);
+        attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
+
         let js_class = QueryMatchCompat::try_new(scope).unwrap();
         let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
         let get_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("get"), 20);
         let get_many_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("getMany"), 30);
-        let captures = vec![single_cap, get_cap, get_many_cap];
+        let get_id = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("_getId"), 40);
+        let get_many_ids =
+            TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("_getManyIds"), 50);
+        let captures = vec![single_cap, get_cap, get_many_cap, get_id, get_many_ids];
         let v8_query_match_compat = js_class.convert_to(scope, &captures.into());
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH["get"] === 20);
-assert(QUERY_MATCH.get === 20);
-assert(QUERY_MATCH["getMany"] === 30);
-assert(QUERY_MATCH.getMany === 30);
+assert(QUERY_MATCH["get"].id === 20);
+assert(QUERY_MATCH.get.id === 20);
+assert(QUERY_MATCH["getMany"].id === 30);
+assert(QUERY_MATCH.getMany.id === 30);
+assert(QUERY_MATCH["_getId"].id === 40);
+assert(QUERY_MATCH._getId.id === 40);
+assert(QUERY_MATCH["_getManyIds"].id === 50);
+assert(QUERY_MATCH._getManyIds.id === 50);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
 
-        for method in ["get", "getMany"] {
+        for method in ["get", "getMany", "_getId", "_getManyIds"] {
             let code = format!(
                 "\
-assert(QUERY_MATCH.cap_name === 10);
+assert(QUERY_MATCH.cap_name.id === 10);
 QUERY_MATCH.{}(\"cap_name\");",
                 method
             );
