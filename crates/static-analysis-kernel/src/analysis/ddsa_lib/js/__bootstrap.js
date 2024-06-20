@@ -6,7 +6,8 @@
 
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
-import {QueryMatch, QueryMatchCompat} from "ext:ddsa_lib/query_match";
+import {QueryMatch} from "ext:ddsa_lib/query_match";
+import {QueryMatchCompat} from "ext:ddsa_lib/query_match_compat";
 import {RootContext} from "ext:ddsa_lib/context_root";
 import {RuleContext} from "ext:ddsa_lib/context_rule";
 import {TreeSitterNode} from "ext:ddsa_lib/ts_node";

@@ -71,88 +71,20 @@ impl QueryMatch<Class> {
     }
 }
 
-rust_converter!(
-    (
-        QueryMatchCompat<Class>,
-        StellaCompat<analysis::tree_sitter::QueryMatch<NodeId>>
-    ),
-    |&self, scope, value| {
-        let qm_rust_converter: &dyn RustConverter<
-            Item = analysis::tree_sitter::QueryMatch<NodeId>,
-        > = &self.proxied;
-        let query_match_instance = qm_rust_converter.convert_to(scope, value);
-
-        // Then pass the `QueryMatch` instance into the `QueryMatchCompat` constructor to build a compat instance.
-        let args = [query_match_instance];
-        self.class
-            .open(scope)
-            .new_instance(scope, &args[..])
-            .expect("class constructor should not throw")
-            .into()
-    }
-);
-
-/// A function representing the ES6 class `QueryMatchCompat`.
-#[derive(Debug)]
-pub struct QueryMatchCompat<T> {
-    /// The `QueryMatchCompat` class.
-    class: v8::Global<v8::Function>,
-    /// The `QueryMatch` class. An instance of this is used as a JavaScript `Proxy` target.
-    proxied: QueryMatch<T>,
-    _pd: PhantomData<T>,
-}
-
-impl QueryMatchCompat<Class> {
-    pub const CLASS_NAME: &'static str = "QueryMatchCompat";
-
-    /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] and instantiating
-    /// a [`QueryMatch<T>`].
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
-        let class = load_function(scope, Self::CLASS_NAME)?;
-        let proxied = QueryMatch::<Class>::try_new(scope)?;
-        Ok(Self {
-            class,
-            proxied,
-            _pd: PhantomData,
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::analysis;
     use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, NodeId};
-    use crate::analysis::ddsa_lib::js::{
-        MultiCaptureTemplate, QueryMatch, QueryMatchCompat, SingleCaptureTemplate,
-    };
+    use crate::analysis::ddsa_lib::js::{MultiCaptureTemplate, QueryMatch, SingleCaptureTemplate};
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_tsn_bridge,
+        try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::RustConverter;
     use crate::analysis::tree_sitter::TSQueryCapture;
     use deno_core::v8;
     use deno_core::v8::Handle;
     use std::sync::Arc;
-
-    /// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
-    /// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
-    fn make_stub_tsn_bridge<'s>(
-        scope: &mut v8::HandleScope<'s>,
-        node_ids: &[u32],
-    ) -> v8::Local<'s, v8::Map> {
-        let stub_tsn_bridge = v8::Map::new(scope);
-        let s_key_id = v8_interned(scope, "id");
-        for &node_id in node_ids {
-            let stub_ts_node = v8::Object::new(scope);
-            let v8_node_id = v8_uint(scope, node_id);
-            stub_ts_node.set(scope, s_key_id.into(), v8_node_id.into());
-            let s_key_abc = v8_interned(scope, "abc");
-            let v8_value = v8_interned(scope, "def");
-            stub_ts_node.set(scope, s_key_abc.into(), v8_value.into());
-            stub_tsn_bridge.set(scope, v8_node_id.into(), stub_ts_node.into());
-        }
-        stub_tsn_bridge
-    }
 
     #[test]
     fn js_properties_canary() {
@@ -309,8 +241,8 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         let js_class = QueryMatch::try_new(scope).unwrap();
         let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
         let captures = vec![single_cap];
-        let v8_query_match_compat = js_class.convert_to(scope, &captures);
-        attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
+        let v8_query_match = js_class.convert_to(scope, &captures);
+        attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
@@ -345,77 +277,5 @@ assert(stubNodes[1].id === 20);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
-    }
-
-    /// Tests that `QueryMatchCompat` allows for object-style property lookup, which looks up nodes
-    /// from the TsNodeBridge.
-    #[test]
-    fn compat_layer_prop_lookup() {
-        let mut runtime = cfg_test_runtime();
-
-        let scope = &mut runtime.handle_scope();
-        let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10]);
-        attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
-
-        let js_class = QueryMatchCompat::try_new(scope).unwrap();
-        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
-        let captures = vec![single_cap];
-        let v8_query_match_compat = js_class.convert_to(scope, &captures.into());
-        attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
-
-        let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH["cap_name"].id === 10);
-assert(QUERY_MATCH.cap_name.id === 10);
-"#;
-        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
-    }
-
-    /// Tests the edge case in `QueryMatchCompat` where the rule has a capture name that collides with an instance method/variable.
-    #[test]
-    fn compat_layer_prop_name_collision() {
-        let mut runtime = cfg_test_runtime();
-
-        let scope = &mut runtime.handle_scope();
-        let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20, 30, 40, 50]);
-        attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
-
-        let js_class = QueryMatchCompat::try_new(scope).unwrap();
-        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
-        let get_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("get"), 20);
-        let get_many_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("getMany"), 30);
-        let get_id = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("_getId"), 40);
-        let get_many_ids =
-            TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("_getManyIds"), 50);
-        let captures = vec![single_cap, get_cap, get_many_cap, get_id, get_many_ids];
-        let v8_query_match_compat = js_class.convert_to(scope, &captures.into());
-        attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
-
-        let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH["get"].id === 20);
-assert(QUERY_MATCH.get.id === 20);
-assert(QUERY_MATCH["getMany"].id === 30);
-assert(QUERY_MATCH.getMany.id === 30);
-assert(QUERY_MATCH["_getId"].id === 40);
-assert(QUERY_MATCH._getId.id === 40);
-assert(QUERY_MATCH["_getManyIds"].id === 50);
-assert(QUERY_MATCH._getManyIds.id === 50);
-"#;
-        let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
-
-        for method in ["get", "getMany", "_getId", "_getManyIds"] {
-            let code = format!(
-                "\
-assert(QUERY_MATCH.cap_name.id === 10);
-QUERY_MATCH.{}(\"cap_name\");",
-                method
-            );
-            let result = try_execute(scope, &code).map(|v| v.to_rust_string_lossy(scope));
-            let expected_msg = format!("TypeError: QUERY_MATCH.{} is not a function", method);
-            assert_eq!(result, Err(expected_msg));
-        }
     }
 }
