@@ -415,14 +415,13 @@ mod tests {
     }
 
     /// Executes the given JavaScript rule, handling test-related setup boilerplate.
-    fn execute_rule_internal_js(
+    fn shorthand_execute_rule_internal(
+        runtime: &mut JsRuntime,
         source_text: &str,
         filename: &str,
         ts_query: &str,
         rule_code: &str,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
-        let mut runtime = JsRuntime::try_new().unwrap();
-
         let source_text: Arc<str> = Arc::from(source_text);
         let filename: Arc<str> = Arc::from(filename);
 
@@ -602,6 +601,7 @@ typeof globalThis.addedProperty;
 
     #[test]
     fn execute_rule_internal() {
+        let mut rt = JsRuntime::try_new().unwrap();
         let source_text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
@@ -622,7 +622,8 @@ function visit(captures) {
 "#;
 
         let violations =
-            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
+                .unwrap();
 
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
@@ -642,6 +643,7 @@ function visit(captures) {
     /// Tests that the compatibility layer allows a rule written for the stella runtime to execute.
     #[test]
     fn stella_compat_execute_rule_internal() {
+        let mut rt = JsRuntime::try_new().unwrap();
         let source_text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
@@ -663,7 +665,8 @@ function visit(query, filename, code) {
 "#;
 
         let violations =
-            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
+                .unwrap();
 
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
