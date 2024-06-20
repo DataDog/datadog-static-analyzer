@@ -376,7 +376,9 @@ impl JsConsole {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{compile_script, v8_interned};
+    use crate::analysis::ddsa_lib::common::{
+        compile_script, v8_interned, DDSAJsRuntimeError, Instance,
+    };
     use crate::analysis::ddsa_lib::test_utils::{js_all_props, try_execute};
     use crate::analysis::ddsa_lib::{js, JsRuntime};
     use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
@@ -395,6 +397,42 @@ mod tests {
         let global = runtime.ddsa_v8_ctx_true_global.open(scope);
         let value = value_gen(scope);
         global.set(scope, key.into(), value);
+    }
+
+    /// Executes the given JavaScript rule, handling test-related setup boilerplate.
+    fn execute_rule_internal_js(
+        source_text: &str,
+        filename: &str,
+        ts_query: &str,
+        rule_code: &str,
+    ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
+        let mut runtime = JsRuntime::try_new().unwrap();
+
+        let source_text: Arc<str> = Arc::from(source_text);
+        let filename: Arc<str> = Arc::from(filename);
+
+        let rule_script = JsRuntime::format_rule_script(rule_code);
+        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
+
+        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
+        let tree = get_tree(source_text.as_ref(), &Language::JavaScript).unwrap();
+
+        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+
+        let mut curs = ts_query.cursor();
+        let q_matches = curs
+            .matches(tree.root_node(), source_text.as_ref())
+            .collect::<Vec<_>>();
+
+        runtime.execute_rule_internal(
+            &source_text,
+            &tree,
+            &filename,
+            Language::JavaScript,
+            &rule_script,
+            &q_matches,
+            &HashMap::new(),
+        )
     }
 
     /// Ensures that the bridge globals exist within the JavaScript scope, and are of the expected type.
@@ -549,9 +587,8 @@ typeof globalThis.addedProperty;
 
     #[test]
     fn execute_rule_internal() {
-        let mut runtime = JsRuntime::try_new().unwrap();
-        let source_text: Arc<str> = Arc::from("const someName = 123; const protectedName = 456;");
-        let filename: Arc<str> = Arc::from("some_filename.js");
+        let source_text = "const someName = 123; const protectedName = 456;";
+        let filename = "some_filename.js";
         let ts_query = r#"
 ((identifier) @cap_name (#eq? @cap_name "protectedName"))
 "#;
@@ -568,30 +605,10 @@ function visit(captures) {
     addError(error);
 }
 "#;
-        let rule_script = JsRuntime::format_rule_script(rule_code);
-        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
 
-        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
-        let tree = get_tree(source_text.as_ref(), &Language::JavaScript).unwrap();
+        let violations =
+            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
 
-        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
-
-        let mut curs = ts_query.cursor();
-        let q_matches = curs
-            .matches(tree.root_node(), source_text.as_ref())
-            .collect::<Vec<_>>();
-
-        let violations = runtime.execute_rule_internal(
-            &source_text,
-            &tree,
-            &filename,
-            Language::JavaScript,
-            &rule_script,
-            &q_matches,
-            &HashMap::new(),
-        );
-
-        let violations = violations.unwrap();
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
 
