@@ -11,6 +11,7 @@ use crate::analysis::ddsa_lib::common::{
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use crate::analysis::ddsa_lib::js;
+use crate::analysis::ddsa_lib::js::{VisitArgCodeCompat, VisitArgFilenameCompat};
 use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
@@ -25,6 +26,8 @@ const BRIDGE_QUERY_MATCH: &str = "__RUST_BRIDGE__query_match";
 const BRIDGE_TS_NODE: &str = "__RUST_BRIDGE__ts_node";
 const BRIDGE_TS_SYMBOL: &str = "__RUST_BRIDGE__ts_symbol_lookup";
 const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
+const STELLA_COMPAT_FILENAME: &str = "__STELLA_COMPAT__filename";
+const STELLA_COMPAT_FILE_CONTENTS: &str = "__STELLA_COMPAT__file_contents";
 
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
@@ -109,6 +112,18 @@ impl JsRuntime {
             let v8_violation_array = violation.as_local(scope);
             let key_vio = v8_interned(scope, BRIDGE_VIOLATION);
             true_global.set(scope, key_vio.into(), v8_violation_array.into());
+
+            // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+            let compat_filename = VisitArgFilenameCompat::try_new(scope)?;
+            let compat_filename = compat_filename.as_local(scope);
+            let key_compat_filename = v8_interned(scope, STELLA_COMPAT_FILENAME);
+            true_global.set(scope, key_compat_filename.into(), compat_filename.into());
+
+            // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+            let compat_fc = VisitArgCodeCompat::try_new(scope)?;
+            let compat_fc = compat_fc.as_local(scope);
+            let key_compat_fc = v8_interned(scope, STELLA_COMPAT_FILE_CONTENTS);
+            true_global.set(scope, key_compat_fc.into(), compat_fc.into());
 
             let ctx_true_global = v8::Global::new(scope, true_global);
             (
@@ -310,7 +325,7 @@ impl JsRuntime {
         format!(
             r#"
 for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
-    visit(queryMatch);
+    visit(queryMatch, globalThis.__STELLA_COMPAT__filename, globalThis.__STELLA_COMPAT__file_contents);
 }}
 
 // The rule's JavaScript code
@@ -601,6 +616,47 @@ function visit(captures) {
         node.end.line,
         node.end.col,
         `\`${node.text}\` is a protected variable name`
+    );
+    addError(error);
+}
+"#;
+
+        let violations =
+            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
+
+        assert_eq!(violations.len(), 1);
+        let violation = violations.first().unwrap();
+
+        let expected = js::Violation {
+            start_line: 1,
+            start_col: 29,
+            end_line: 1,
+            end_col: 42,
+            message: "`protectedName` is a protected variable name".to_string(),
+            fixes: None,
+            _pd: Default::default(),
+        };
+        assert_eq!(*violation, expected);
+    }
+
+    /// Tests that the compatibility layer allows a rule written for the stella runtime to execute.
+    #[test]
+    fn stella_compat_execute_rule_internal() {
+        let source_text = "const someName = 123; const protectedName = 456;";
+        let filename = "some_filename.js";
+        let ts_query = r#"
+((identifier) @cap_name (#eq? @cap_name "protectedName"))
+"#;
+        let rule_code = r#"
+function visit(query, filename, code) {
+    const node = query.captures["cap_name"];
+    const nodeText = getCodeForNode(node, code);
+    const error = buildError(
+        node.start.line,
+        node.start.col,
+        node.end.line,
+        node.end.col,
+        `\`${nodeText}\` is a protected variable name`
     );
     addError(error);
 }
