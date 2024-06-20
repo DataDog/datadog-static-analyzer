@@ -133,8 +133,10 @@ impl ContextBridge {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
-    use crate::analysis::ddsa_lib::common::{attach_as_global, v8_string};
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, parse_js, try_execute};
+    use crate::analysis::ddsa_lib::common::v8_string;
+    use crate::analysis::ddsa_lib::test_utils::{
+        attach_as_global, cfg_test_runtime, parse_js, try_execute,
+    };
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
     use std::cell::RefCell;

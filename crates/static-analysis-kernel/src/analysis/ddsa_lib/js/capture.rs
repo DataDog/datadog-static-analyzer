@@ -120,9 +120,8 @@ impl MultiCaptureTemplate {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{attach_as_global, v8_string};
     use crate::analysis::ddsa_lib::js::{MultiCaptureTemplate, SingleCaptureTemplate};
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
 
     // These objects are created entirely in v8, so the property canary tests are implemented
     // slightly differently than in other files where we use `js_instance_eq`.

@@ -75,7 +75,10 @@ const BASE_INSTANCE_PROTO_PROPS: &[&str] = &[
 
 /// A function that inspects a [`v8::Object`] and returns a list of all property names
 /// (excluding property names from the object's prototype chain).
-fn js_all_props(scope: &mut HandleScope, value: &impl Deref<Target = v8::Object>) -> Vec<String> {
+pub(crate) fn js_all_props(
+    scope: &mut HandleScope,
+    value: &impl Deref<Target = v8::Object>,
+) -> Vec<String> {
     use std::collections::HashSet;
     /// Helper function to enumerate all properties in an object.
     fn get_all_props(scope: &mut HandleScope, object: &v8::Object) -> HashSet<String> {
@@ -190,4 +193,19 @@ for (const [name, obj] of Object.entries({})) {{
         .esm_entry_point(specifier)
         .ops(prod_ops)
         .build()
+}
+
+/// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
+/// any previous value.
+pub(crate) fn attach_as_global<'s, T>(
+    scope: &mut HandleScope<'s>,
+    v8_item: impl v8::Handle<Data = T>,
+    name: &str,
+) where
+    v8::Local<'s, v8::Value>: From<v8::Local<'s, T>>,
+{
+    let v8_local = v8::Local::new(scope, v8_item);
+    let global = scope.get_current_context().global(scope);
+    let v8_key = v8_string(scope, name);
+    global.set(scope, v8_key.into(), v8_local.into());
 }

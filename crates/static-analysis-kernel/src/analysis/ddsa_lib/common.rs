@@ -12,6 +12,8 @@ pub type NodeId = u32;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DDSAJsRuntimeError {
+    #[error("execution error: {reason}")]
+    Execution { reason: String },
     #[error("expected `{name}` to exist within the v8 context")]
     VariableNotFound { name: String },
     #[error("type should be \"{expected}\", not \"{got}\"")]
@@ -24,6 +26,8 @@ pub enum DDSAJsRuntimeError {
         identifier: &'static str,
         expected: &'static str,
     },
+    #[error("unable to interpret JavaScript: `{reason}`")]
+    Interpreter { reason: String },
     /// A (shorthand) generic error used to fail a test. The test itself will have the appropriate context.
     #[cfg(test)]
     #[error("cfg(test): unspecified")]
@@ -232,17 +236,52 @@ pub fn set_key_value<G>(
     v8_object.set(scope, v8_key.into(), v8_value);
 }
 
-/// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
-/// any previous value.
-pub fn attach_as_global<'s, T>(
-    scope: &mut HandleScope<'s>,
-    v8_item: impl v8::Handle<Data = T>,
-    name: &str,
-) where
-    v8::Local<'s, v8::Value>: From<v8::Local<'s, T>>,
-{
-    let v8_local = v8::Local::new(scope, v8_item);
-    let global = scope.get_current_context().global(scope);
-    let v8_key = v8_string(scope, name);
-    global.set(scope, v8_key.into(), v8_local.into());
+/// Creates a `v8::Global` [`UnboundScript`](v8::UnboundScript) from the given code.
+pub fn compile_script(
+    scope: &mut HandleScope,
+    code: &str,
+) -> Result<v8::Global<v8::UnboundScript>, DDSAJsRuntimeError> {
+    let code_str = v8_string(scope, code);
+    let tc_scope = &mut v8::TryCatch::new(scope);
+    let script_result = v8::Script::compile(tc_scope, code_str, None);
+
+    let script = script_result.ok_or_else(|| {
+        let exception = tc_scope
+            .exception()
+            .expect("return value should only be `None` if an error was caught");
+        let reason = exception.to_rust_string_lossy(tc_scope);
+        tc_scope.reset();
+        DDSAJsRuntimeError::Interpreter { reason }
+    })?;
+
+    let unbound_script = script.get_unbound_script(tc_scope);
+    Ok(v8::Global::new(tc_scope, unbound_script))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::ddsa_lib::common::{compile_script, DDSAJsRuntimeError};
+    use crate::analysis::ddsa_lib::JsRuntime;
+
+    #[test]
+    fn compile_script_invalid() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let invalid_js = r#"
+const invalidSyntax = const;
+"#;
+        let err = compile_script(&mut runtime.v8_handle_scope(), invalid_js).unwrap_err();
+        let DDSAJsRuntimeError::Interpreter { reason } = err else {
+            panic!("error variant should be `Interpreter`");
+        };
+        assert_eq!(reason, "SyntaxError: Unexpected token 'const'");
+    }
+
+    #[test]
+    fn compile_script_valid() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let invalid_js = r#"
+const validSyntax = 123;
+"#;
+        assert!(compile_script(&mut runtime.v8_handle_scope(), invalid_js).is_ok());
+    }
 }

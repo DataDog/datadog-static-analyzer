@@ -461,9 +461,8 @@ macro_rules! v8_converter {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{
-        attach_as_global, v8_interned, v8_string, v8_uint, DDSAJsRuntimeError,
-    };
+    use crate::analysis::ddsa_lib::common::{v8_interned, v8_string, v8_uint, DDSAJsRuntimeError};
+    use crate::analysis::ddsa_lib::test_utils::attach_as_global;
     use crate::analysis::ddsa_lib::v8_ds::{MirroredIndexMap, MirroredVec, SyncedV8Array};
     use deno_core::v8::HandleScope;
     use deno_core::{v8, JsRuntime, RuntimeOptions};
