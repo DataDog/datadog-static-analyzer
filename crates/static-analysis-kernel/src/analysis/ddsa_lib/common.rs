@@ -18,7 +18,6 @@ pub enum DDSAJsRuntimeError {
     VariableNotFound { name: String },
     #[error("type should be \"{expected}\", not \"{got}\"")]
     WrongType {
-        identifier: Option<String>,
         expected: &'static str,
         got: &'static str,
     },
@@ -85,7 +84,6 @@ pub fn load_function(
     })?;
     let func = v8::Local::<v8::Function>::try_from(id_value).map_err(|_| {
         DDSAJsRuntimeError::WrongType {
-            identifier: Some(identifier.to_string()),
             expected: "function",
             got: id_value.type_repr(),
         }
@@ -138,7 +136,6 @@ where
 {
     let as_ty: Result<v8::Local<T>, _> =
         value.try_into().map_err(|_| DDSAJsRuntimeError::WrongType {
-            identifier: None,
             expected: expecting,
             got: value.type_repr(),
         });
