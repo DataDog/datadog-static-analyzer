@@ -49,7 +49,12 @@ export function buildEdit(startLine, startCol, endLine, endCol, editType, conten
 }
 
 export function addError(error) {
-  stellaAllErrors.push(error);
+  /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+  if (globalThis.__ENV_STELLA__ === true) {
+    stellaAllErrors.push(error);
+  } else {
+    globalThis.__RUST_BRIDGE__violation.push(error);
+  }
 }
 
 // helper function getCode
