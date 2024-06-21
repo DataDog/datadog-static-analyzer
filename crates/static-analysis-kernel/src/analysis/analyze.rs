@@ -370,7 +370,7 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
         let rule2 = RuleInternal {
-            name: "myrule".to_string(),
+            name: "myrule2".to_string(),
             short_description: Some("short desc".to_string()),
             description: Some("description".to_string()),
             category: RuleCategory::CodeStyle,
