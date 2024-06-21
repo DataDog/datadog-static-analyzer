@@ -291,10 +291,6 @@ def foo(arg1):
     fn test_execution_time() {
         let rule_code = r#"
 function visit(node, filename, code) {
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-    sleep(10);
     const functionName = node.captures["name"];
     if(functionName) {
         const error = buildError(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col,
@@ -338,9 +334,6 @@ function visit(node, filename, code) {
     fn test_two_rules_executed() {
         let rule_code1 = r#"
 function visit(node, filename, code) {
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
     const functionName = node.captures["name"];
     if(functionName) {
         const error = buildError(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col,
@@ -354,9 +347,6 @@ function visit(node, filename, code) {
         "#;
         let rule_code2 = r#"
 function visit(node, filename, code) {
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
     const functionName = node.captures["name"];
     if(functionName) {
         const error = buildError(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col,
@@ -557,10 +547,6 @@ def foo():
     fn test_violation_ignore() {
         let rule_code = r#"
 function visit(node, filename, code) {
-    function sleep(ms) {
-        return new Promise(resolve => setTimeout(resolve, ms));
-    }
-    sleep(10);
     const functionName = node.captures["name"];
     if(functionName) {
         const error = buildError(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col,
