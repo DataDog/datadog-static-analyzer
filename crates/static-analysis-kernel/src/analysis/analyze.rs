@@ -871,8 +871,8 @@ function visit(node, filename, code) {
         };
 
         let mut argument_provider = ArgumentProvider::new();
-        argument_provider.add_argument("rule1", &split_path("myfile.py"), "my-argument", "101");
-        argument_provider.add_argument("rule1", &split_path("myfile.py"), "another-arg", "101");
+        argument_provider.add_argument("rule1", &split_path("sample_file"), "my-argument", "101");
+        argument_provider.add_argument("rule1", &split_path("sample_file"), "another-arg", "101");
 
         let results = test_analyze(
             Language::Python,
