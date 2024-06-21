@@ -64,6 +64,8 @@ export class QueryMatchCompat {
                                         return globalThis.__RUST_BRIDGE__context.fileContents;
                                     case "filename":
                                         return globalThis.__RUST_BRIDGE__context.filename;
+                                    case "packages":
+                                        return globalThis.__RUST_BRIDGE__context.fileCtx.go.packages;
                                     default:
                                         return undefined;
                                 }
