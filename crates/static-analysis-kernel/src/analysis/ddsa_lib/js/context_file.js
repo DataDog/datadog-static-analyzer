@@ -15,5 +15,10 @@ export class FileContext {
          * @type {FileContextGo | undefined}
          */
         this.go = undefined;
+        /**
+         * A `terraform` file context.
+         * @type {FileContextTerraform | undefined}
+         */
+        this.terraform = undefined;
     }
 }

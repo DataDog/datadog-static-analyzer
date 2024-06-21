@@ -145,6 +145,10 @@ where
         v8::Local::new(scope, &self.v8_array)
     }
 
+    pub fn v8_array(&self) -> &v8::Global<v8::Array> {
+        &self.v8_array
+    }
+
     /// Returns a handle to the v8 element at the given index.
     #[cfg(test)]
     pub fn get_v8<'s>(&self, scope: &mut HandleScope<'s>, index: u32) -> v8::Local<'s, v8::Value> {
