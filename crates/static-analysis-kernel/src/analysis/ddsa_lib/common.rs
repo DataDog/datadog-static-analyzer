@@ -258,9 +258,47 @@ pub fn compile_script(
     Ok(v8::Global::new(tc_scope, unbound_script))
 }
 
+pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Context>);
+
+/// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
+///
+/// If provided, a `config_default_v8_context` can configure the default `v8::Context`
+/// that will be used as the base for all newly-created `v8::Context`s within the
+/// runtime's `v8::Isolate`.
+pub fn create_base_runtime(
+    extensions: Vec<deno_core::Extension>,
+    config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
+) -> deno_core::JsRuntime {
+    if let Some(config_fn) = config_default_v8_context {
+        // If a function is provided to configure the default v8::Context, first create a v8::Snapshot,
+        // mutate the default context, and then create a new JsRuntime with that snapshot.
+        let mut snapshot_runtime =
+            deno_core::JsRuntimeForSnapshot::new(Default::default(), Default::default());
+        {
+            let scope = &mut snapshot_runtime.handle_scope();
+            let default_ctx = scope.get_current_context();
+            config_fn(scope, default_ctx);
+        }
+        let snapshot = snapshot_runtime.snapshot();
+        deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+            extensions,
+            startup_snapshot: Some(deno_core::Snapshot::JustCreated(snapshot)),
+            ..Default::default()
+        })
+    } else {
+        deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+            extensions,
+            ..Default::default()
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{compile_script, DDSAJsRuntimeError};
+    use crate::analysis::ddsa_lib::common::{
+        compile_script, create_base_runtime, v8_interned, DDSAJsRuntimeError,
+    };
+    use crate::analysis::ddsa_lib::test_utils::try_execute;
     use crate::analysis::ddsa_lib::JsRuntime;
 
     #[test]
@@ -283,5 +321,27 @@ const invalidSyntax = const;
 const validSyntax = 123;
 "#;
         assert!(compile_script(&mut runtime.v8_handle_scope(), invalid_js).is_ok());
+    }
+
+    /// Tests that `create_base_runtime` can modify the default v8::Context for the runtime's v8 isolate.
+    #[test]
+    fn create_base_runtime_mutate_ctx() {
+        let mut runtime = create_base_runtime(vec![], None);
+        // We use the ES6 `Map` constructor because it will always be present
+        let code = "Map;";
+
+        let value = try_execute(&mut runtime.handle_scope(), code).unwrap();
+        assert!(value.is_object());
+
+        let mut runtime = create_base_runtime(
+            vec![],
+            Some(Box::new(|scope, default_ctx| {
+                let key = v8_interned(scope, "Map");
+                let global_proxy = default_ctx.global(scope);
+                global_proxy.delete(scope, key.into());
+            })),
+        );
+        let value = try_execute(&mut runtime.handle_scope(), code).unwrap_err();
+        assert_eq!(value, "ReferenceError: Map is not defined".to_string());
     }
 }
