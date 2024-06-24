@@ -243,10 +243,22 @@ impl JsRuntime {
         }
 
         // We use a bridge to pull violations, so we can ignore the return value with a noop handler.
-        self.scoped_execute(rule_script, |_, _| ())?;
+        // However, because we could've had an error thrown after a mutation of the bridge globals,
+        // we can't immediately return here -- the bridges need to be cleared.
+        let execution_res = self.scoped_execute(rule_script, |_, _| ());
 
-        self.bridge_violation
-            .drain_collect(&mut self.runtime.handle_scope())
+        let violations_res = self
+            .bridge_violation
+            .drain_collect(&mut self.runtime.handle_scope());
+
+        self.bridge_query_match
+            .clear(&mut self.runtime.handle_scope());
+
+        if let Err(runtime_err) = execution_res {
+            Err(runtime_err)
+        } else {
+            violations_res
+        }
     }
 
     /// Executes a given closure within the DDSA runtime context.
@@ -358,6 +370,15 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
     #[cfg(test)]
     pub fn v8_handle_scope(&mut self) -> v8::HandleScope {
         self.runtime.handle_scope()
+    }
+
+    /// Returns the length of the `v8::Array` backing the runtime's `ViolationBridge`.
+    #[cfg(test)]
+    pub fn violation_bridge_v8_len(&mut self) -> usize {
+        let v8_array = self
+            .bridge_violation
+            .as_local(&mut self.runtime.handle_scope());
+        v8_array.length() as usize
     }
 }
 
@@ -638,6 +659,36 @@ function visit(captures) {
             _pd: Default::default(),
         };
         assert_eq!(*violation, expected);
+    }
+
+    /// Tests that an error during JavaScript execution doesn't leave a bridge in a dirty state
+    /// QueryMatch - cleared
+    /// Violation  - cleared
+    /// TsNode     - preserved
+    #[test]
+    fn execute_rule_internal_bridge_state() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let source_text = "123; 456; 789;";
+        let filename = "some_filename.js";
+        let ts_query = "(number) @cap_name";
+        let rule_code = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    if (node.text === "456") {
+        throw new Error("Sample error between query matches");
+    }
+    const error = buildError(1, 2, 3, 4, "Error text");
+    addError(error);
+}
+"#;
+
+        let violations_res =
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code);
+
+        assert!(violations_res.is_err());
+        assert_eq!(rt.bridge_query_match.len(), 0);
+        assert_eq!(rt.violation_bridge_v8_len(), 0);
+        assert_eq!(rt.bridge_ts_node.borrow().len(), 3);
     }
 
     /// Tests that the compatibility layer allows a rule written for the stella runtime to execute.

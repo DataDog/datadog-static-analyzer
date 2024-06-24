@@ -58,6 +58,11 @@ impl QueryMatchBridge {
         self.0.set_data(scope, q_matches)
     }
 
+    /// Clears all [`QueryMatch`] from the bridge, releasing its `v8::Local` objects to the garbage collector.
+    pub fn clear(&mut self, scope: &mut HandleScope) {
+        self.0.set_data(scope, []);
+    }
+
     /// Returns the number of `QueryMatch`es in the bridge.
     pub fn len(&self) -> usize {
         self.0.len()
