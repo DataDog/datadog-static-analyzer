@@ -11,6 +11,7 @@ use crate::analysis::ddsa_lib::common::{
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use crate::analysis::ddsa_lib::js;
+use crate::analysis::ddsa_lib::js::{VisitArgCodeCompat, VisitArgFilenameCompat};
 use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
@@ -25,6 +26,8 @@ const BRIDGE_QUERY_MATCH: &str = "__RUST_BRIDGE__query_match";
 const BRIDGE_TS_NODE: &str = "__RUST_BRIDGE__ts_node";
 const BRIDGE_TS_SYMBOL: &str = "__RUST_BRIDGE__ts_symbol_lookup";
 const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
+const STELLA_COMPAT_FILENAME: &str = "STELLA_COMPAT_FILENAME";
+const STELLA_COMPAT_FILE_CONTENTS: &str = "STELLA_COMPAT_FILE_CONTENTS";
 
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
@@ -109,6 +112,18 @@ impl JsRuntime {
             let v8_violation_array = violation.as_local(scope);
             let key_vio = v8_interned(scope, BRIDGE_VIOLATION);
             true_global.set(scope, key_vio.into(), v8_violation_array.into());
+
+            // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+            let compat_filename = VisitArgFilenameCompat::try_new(scope)?;
+            let compat_filename = compat_filename.as_local(scope);
+            let key_compat_filename = v8_interned(scope, STELLA_COMPAT_FILENAME);
+            true_global.set(scope, key_compat_filename.into(), compat_filename.into());
+
+            // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+            let compat_fc = VisitArgCodeCompat::try_new(scope)?;
+            let compat_fc = compat_fc.as_local(scope);
+            let key_compat_fc = v8_interned(scope, STELLA_COMPAT_FILE_CONTENTS);
+            true_global.set(scope, key_compat_fc.into(), compat_fc.into());
 
             let ctx_true_global = v8::Global::new(scope, true_global);
             (
@@ -310,7 +325,7 @@ impl JsRuntime {
         format!(
             r#"
 for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
-    visit(queryMatch);
+    visit(queryMatch, globalThis.STELLA_COMPAT_FILENAME, globalThis.STELLA_COMPAT_FILE_CONTENTS);
 }}
 
 // The rule's JavaScript code
@@ -376,7 +391,9 @@ impl JsConsole {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{compile_script, v8_interned};
+    use crate::analysis::ddsa_lib::common::{
+        compile_script, v8_interned, DDSAJsRuntimeError, Instance,
+    };
     use crate::analysis::ddsa_lib::test_utils::{js_all_props, try_execute};
     use crate::analysis::ddsa_lib::{js, JsRuntime};
     use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
@@ -395,6 +412,42 @@ mod tests {
         let global = runtime.ddsa_v8_ctx_true_global.open(scope);
         let value = value_gen(scope);
         global.set(scope, key.into(), value);
+    }
+
+    /// Executes the given JavaScript rule, handling test-related setup boilerplate.
+    fn execute_rule_internal_js(
+        source_text: &str,
+        filename: &str,
+        ts_query: &str,
+        rule_code: &str,
+    ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
+        let mut runtime = JsRuntime::try_new().unwrap();
+
+        let source_text: Arc<str> = Arc::from(source_text);
+        let filename: Arc<str> = Arc::from(filename);
+
+        let rule_script = JsRuntime::format_rule_script(rule_code);
+        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
+
+        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
+        let tree = get_tree(source_text.as_ref(), &Language::JavaScript).unwrap();
+
+        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+
+        let mut curs = ts_query.cursor();
+        let q_matches = curs
+            .matches(tree.root_node(), source_text.as_ref())
+            .collect::<Vec<_>>();
+
+        runtime.execute_rule_internal(
+            &source_text,
+            &tree,
+            &filename,
+            Language::JavaScript,
+            &rule_script,
+            &q_matches,
+            &HashMap::new(),
+        )
     }
 
     /// Ensures that the bridge globals exist within the JavaScript scope, and are of the expected type.
@@ -549,9 +602,8 @@ typeof globalThis.addedProperty;
 
     #[test]
     fn execute_rule_internal() {
-        let mut runtime = JsRuntime::try_new().unwrap();
-        let source_text: Arc<str> = Arc::from("const someName = 123; const protectedName = 456;");
-        let filename: Arc<str> = Arc::from("some_filename.js");
+        let source_text = "const someName = 123; const protectedName = 456;";
+        let filename = "some_filename.js";
         let ts_query = r#"
 ((identifier) @cap_name (#eq? @cap_name "protectedName"))
 "#;
@@ -568,30 +620,51 @@ function visit(captures) {
     addError(error);
 }
 "#;
-        let rule_script = JsRuntime::format_rule_script(rule_code);
-        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
 
-        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
-        let tree = get_tree(source_text.as_ref(), &Language::JavaScript).unwrap();
+        let violations =
+            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
 
-        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+        assert_eq!(violations.len(), 1);
+        let violation = violations.first().unwrap();
 
-        let mut curs = ts_query.cursor();
-        let q_matches = curs
-            .matches(tree.root_node(), source_text.as_ref())
-            .collect::<Vec<_>>();
+        let expected = js::Violation {
+            start_line: 1,
+            start_col: 29,
+            end_line: 1,
+            end_col: 42,
+            message: "`protectedName` is a protected variable name".to_string(),
+            fixes: None,
+            _pd: Default::default(),
+        };
+        assert_eq!(*violation, expected);
+    }
 
-        let violations = runtime.execute_rule_internal(
-            &source_text,
-            &tree,
-            &filename,
-            Language::JavaScript,
-            &rule_script,
-            &q_matches,
-            &HashMap::new(),
-        );
+    /// Tests that the compatibility layer allows a rule written for the stella runtime to execute.
+    #[test]
+    fn stella_compat_execute_rule_internal() {
+        let source_text = "const someName = 123; const protectedName = 456;";
+        let filename = "some_filename.js";
+        let ts_query = r#"
+((identifier) @cap_name (#eq? @cap_name "protectedName"))
+"#;
+        let rule_code = r#"
+function visit(query, filename, code) {
+    const node = query.captures["cap_name"];
+    const nodeText = getCodeForNode(node, code);
+    const error = buildError(
+        node.start.line,
+        node.start.col,
+        node.end.line,
+        node.end.col,
+        `\`${nodeText}\` is a protected variable name`
+    );
+    addError(error);
+}
+"#;
 
-        let violations = violations.unwrap();
+        let violations =
+            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
+
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
 

@@ -231,3 +231,40 @@ pub(crate) fn make_stub_tsn_bridge<'s>(
     }
     stub_tsn_bridge
 }
+
+/// Creates a stub [`v8::Object`] that represents a `RootContext`.
+pub(crate) fn make_stub_root_context<'s>(
+    scope: &mut HandleScope<'s>,
+    arguments: &[(&str, &str)],
+    filename: &str,
+    file_contents: &str,
+) -> v8::Local<'s, v8::Object> {
+    use crate::analysis::ddsa_lib::common::{load_function, v8_string};
+
+    let v8_root_ctx = v8::Object::new(scope);
+
+    let rule_ctx_class = load_function(scope, "RuleContext").unwrap();
+    let rule_ctx_class = rule_ctx_class.open(scope);
+    let v8_arguments = v8::Map::new(scope);
+    for &(name, value) in arguments {
+        let s_key = v8_interned(scope, name);
+        let v8_value = v8_string(scope, value);
+        v8_arguments.set(scope, s_key.into(), v8_value.into());
+    }
+    let v8_rule_ctx = rule_ctx_class
+        .new_instance(scope, &[v8_arguments.into()][..])
+        .unwrap();
+
+    let s_key_rule_ctx = v8_interned(scope, "ruleCtx");
+    v8_root_ctx.set(scope, s_key_rule_ctx.into(), v8_rule_ctx.into());
+
+    let s_key_filename = v8_interned(scope, "filename");
+    let v8_filename = v8_string(scope, filename);
+    v8_root_ctx.set(scope, s_key_filename.into(), v8_filename.into());
+
+    let s_key_file_contents = v8_interned(scope, "fileContents");
+    let v8_file_contents = v8_string(scope, file_contents);
+    v8_root_ctx.set(scope, s_key_file_contents.into(), v8_file_contents.into());
+
+    v8_root_ctx
+}

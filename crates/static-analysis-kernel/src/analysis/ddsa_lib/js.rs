@@ -25,5 +25,7 @@ mod query_match_compat;
 pub(crate) use query_match_compat::*;
 mod ts_node;
 pub(crate) use ts_node::*;
+mod stella_compat;
+pub(crate) use stella_compat::*;
 mod violation;
 pub(crate) use violation::*;
