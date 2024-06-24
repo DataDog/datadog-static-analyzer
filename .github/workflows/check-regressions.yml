@@ -10,22 +10,22 @@ jobs:
       fail-fast: false
       matrix:
         repo:
-          - golang/go
-          - numpy/numpy
-          - npm/cli
-          - JamesNK/Newtonsoft.Json
-          - google/guava
-          - reduxjs/redux
-          - ruby/spec
-          - muh-nee/BenchmarkJava
-          - muh-nee/NodeGoat
-          - muh-nee/WebGoat
-          - muh-nee/WebGoat.NET
-          - muh-nee/FlowBlot.NET
-          - muh-nee/Damn-Vulnerable-GraphQL-Application
-          - muh-nee/SecurityShepherd
-          - muh-nee/DSVW
-          - muh-nee/NIST-Juliet-CSharp-1.3
+          - { org: "golang", name: "go" }
+          - { org: "numpy", name: "numpy" }
+          - { org: "npm", name: "cli" }
+          - { org: "JamesNK", name: "Newtonsoft.Json" }
+          - { org: "google", name: "guava" }
+          - { org: "reduxjs", name: "redux" }
+          - { org: "ruby", name: "spec" }
+          - { org: "muh-nee", name: "BenchmarkJava" }
+          - { org: "muh-nee", name: "NodeGoat" }
+          - { org: "muh-nee", name: "WebGoat" }
+          - { org: "muh-nee", name: "WebGoat.NET" }
+          - { org: "muh-nee", name: "FlowBlot.NET" }
+          - { org: "muh-nee", name: "Damn-Vulnerable-GraphQL-Application" }
+          - { org: "muh-nee", name: "SecurityShepherd" }
+          - { org: "muh-nee", name: "DSVW" }
+          - { org: "muh-nee", name: "NIST-Juliet-CSharp-1.3" }
     env:
       DD_API_KEY: ${{ secrets.DD_API_KEY }}
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
@@ -48,12 +48,12 @@ jobs:
       - name: Checkout test repositories
         uses: actions/checkout@v4
         with:
-          repository: ${{ matrix.repo }}
-          path: ${{ matrix.repo }}
+          repository: ${{ matrix.repo.org }}/${{ matrix.repo.name }}
+          path: ${{ matrix.repo.org }}/${{ matrix.repo.name }}
 
       - name: Obtain results before changes
         run: |
-          cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo }} -o result-pre.json -b -f sarif
+          cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo.org }}/${{ matrix.repo.name }} -o result-pre.json -b -f sarif
 
       - name: Fetch all branches and checkout PR
         run: |
@@ -63,7 +63,7 @@ jobs:
 
       - name: Obtain results after changes
         run: |
-          cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo }} -o result-post.json -b -f sarif
+          cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo.org }}/${{ matrix.repo.name }} -o result-post.json -b -f sarif
 
       - name: Install Node.js dependencies
         run: npm install
@@ -75,20 +75,20 @@ jobs:
 
       - name: Run Regression Checks
         id: regression
-        run: node ./.github/scripts/check-regressions.js ${{ matrix.repo }} result-pre.json result-post.json
+        run: node ./.github/scripts/check-regressions.js ${{ matrix.repo.org }}/${{ matrix.repo.name }} result-pre.json result-post.json
 
       - name: Upload unique changes from before
         uses: actions/upload-artifact@v4
         if: steps.regression.outputs.diff1files != ''
         with:
-          name: failures-before
+          name: failures-before-${{ matrix.repo.org }}-${{ matrix.repo.name }}
           path: ${{ steps.regression.outputs.diff1files }}
 
       - name: Upload unique changes from after
         uses: actions/upload-artifact@v4
         if: steps.regression.outputs.diff2files != ''
         with:
-          name: failures-after
+          name: failures-after-${{ matrix.repo.org }}-${{ matrix.repo.name }}
           path: ${{ steps.regression.outputs.diff2files }}
 
       - name: Fail
