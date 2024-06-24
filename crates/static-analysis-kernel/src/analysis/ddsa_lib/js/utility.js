@@ -41,7 +41,7 @@ export class DDSA_Console {
             case "boolean":
             case "undefined":
             case "symbol":
-                return String(arg)
+                return String(arg).toString();
             default:
                 // `typeof null === "object"`
                 if (arg === null) {
