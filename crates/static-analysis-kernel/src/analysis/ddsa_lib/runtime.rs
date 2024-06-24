@@ -851,4 +851,30 @@ function visit(captures) {
         let correct_instance = runtime.scoped_execute(&script, |_, value| value.is_true());
         assert!(correct_instance.unwrap());
     }
+
+    /// Tests that `TreeSitterNode` serializes to a human-friendly representation via the DDSA_Console.
+    #[test]
+    fn ddsa_console_ts_node() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let source_text = "const abc = 123;";
+        let filename = "some_filename.js";
+        let ts_query = r#"
+(identifier) @cap_name
+"#;
+        let rule_code = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    console.log(node);
+    // The special serialization applies, even if the object is nested.
+    console.log([{abc: node}]);
+}
+"#;
+        shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
+            .unwrap();
+        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        let expected = r#"{"type":"identifier","start":{"line":1,"col":7},"end":{"line":1,"col":10},"text":"abc"}"#;
+        assert_eq!(console_lines[0], expected);
+        let expected_nested = format!("[{{\"abc\":{}}}]", expected);
+        assert_eq!(console_lines[1], expected_nested);
+    }
 }
