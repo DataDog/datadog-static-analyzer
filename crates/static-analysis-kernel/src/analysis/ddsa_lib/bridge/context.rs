@@ -81,12 +81,6 @@ impl ContextBridge {
         // we never mutate trees (or nodes).
         if self.root.ddsa.get_tree().map(|ex| ex.root_node().id()) != Some(tree.root_node().id()) {
             self.root.ddsa.set_tree(tree.clone());
-            // Update file contexts
-            self.file
-                .ddsa
-                .go_mut()
-                .expect("`init_all_file_ctx` should have initialized go")
-                .update_state(scope, tree, file_contents.as_ref());
         }
         if self.root.ddsa.get_text() != Some(file_contents.as_ref()) {
             self.root.ddsa.set_text(Arc::clone(file_contents));
@@ -224,7 +218,7 @@ mod tests {
 
     #[rustfmt::skip]
     #[test]
-    /// Tests that go module aliases are eagerly calculated by `set_root_context`.
+    /// Tests that go module aliases are eagerly calculated by calling `set_file_context`.
     fn test_fetch_go_module_alias_eagerly() {
         let mut runtime = cfg_test_runtime();
         let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
@@ -245,6 +239,8 @@ import (
         let mut mut_bridge = bridge.borrow_mut();
         assert_eq!(mut_bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 0);
         mut_bridge.set_root_context(scope, &tree, &file_contents, &filename);
+        assert_eq!(mut_bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 0);
+        mut_bridge.set_file_context(scope, Language::Go, &tree, &file_contents);
         assert_eq!(mut_bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 2);
         let code = r#"
 FILE_CTX_BRIDGE.go.getResolvedPackage("mrand");
