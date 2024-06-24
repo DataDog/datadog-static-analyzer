@@ -190,6 +190,7 @@ impl JsRuntime {
         let mut query_cursor = rule.tree_sitter_query.with_cursor(&mut ts_qc);
         let query_matches = query_cursor
             .matches(source_tree.root_node(), source_text.as_ref())
+            .filter(|captures| !captures.is_empty())
             .collect::<Vec<_>>();
         let js_violations = self.execute_rule_internal(
             source_text,
@@ -218,6 +219,10 @@ impl JsRuntime {
         rule_arguments: &HashMap<String, String>,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
         {
+            if query_matches.is_empty() {
+                return Ok(vec![]);
+            }
+
             let scope = &mut self.runtime.handle_scope();
 
             // Change the global object's pointer to the TSSymbolMap to the one for this specific language.
@@ -689,6 +694,24 @@ function visit(captures) {
         assert_eq!(rt.bridge_query_match.len(), 0);
         assert_eq!(rt.violation_bridge_v8_len(), 0);
         assert_eq!(rt.bridge_ts_node.borrow().len(), 3);
+    }
+
+    /// Tests that we don't call out to v8 to execute JavaScript if there are no `query_matches`.
+    #[test]
+    fn execute_rule_internal_no_unnecessary_invocations() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let source_text = "123; 456; 789;";
+        let filename = "some_filename.js";
+        let ts_query = "(identifier) @cap_name";
+        let rule_code = r#"
+function visit(captures) {}
+
+throw new Error("script should not have been executed");
+"#;
+
+        let violations_res =
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code);
+        assert!(violations_res.unwrap().is_empty());
     }
 
     /// Tests that the compatibility layer allows a rule written for the stella runtime to execute.
