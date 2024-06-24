@@ -26,8 +26,8 @@ const BRIDGE_QUERY_MATCH: &str = "__RUST_BRIDGE__query_match";
 const BRIDGE_TS_NODE: &str = "__RUST_BRIDGE__ts_node";
 const BRIDGE_TS_SYMBOL: &str = "__RUST_BRIDGE__ts_symbol_lookup";
 const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
-const STELLA_COMPAT_FILENAME: &str = "__STELLA_COMPAT__filename";
-const STELLA_COMPAT_FILE_CONTENTS: &str = "__STELLA_COMPAT__file_contents";
+const STELLA_COMPAT_FILENAME: &str = "STELLA_COMPAT_FILENAME";
+const STELLA_COMPAT_FILE_CONTENTS: &str = "STELLA_COMPAT_FILE_CONTENTS";
 
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
@@ -325,7 +325,7 @@ impl JsRuntime {
         format!(
             r#"
 for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
-    visit(queryMatch, globalThis.__STELLA_COMPAT__filename, globalThis.__STELLA_COMPAT__file_contents);
+    visit(queryMatch, globalThis.STELLA_COMPAT_FILENAME, globalThis.STELLA_COMPAT_FILE_CONTENTS);
 }}
 
 // The rule's JavaScript code
