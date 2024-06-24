@@ -19,7 +19,8 @@ use deno_core::v8;
 use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::Arc;
+use std::sync::{Arc, Condvar, Mutex};
+use std::time::{Duration, Instant};
 
 const BRIDGE_CONTEXT: &str = "__RUST_BRIDGE__context";
 const BRIDGE_QUERY_MATCH: &str = "__RUST_BRIDGE__query_match";
@@ -38,6 +39,10 @@ pub(crate) const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
     runtime: deno_core::JsRuntime,
+    /// Each `JsRuntime` spawns a thread that lives for as long as the `JsRuntime`, and it is used
+    /// to manually terminate JavaScript executions that go on for too long. Synchronization between
+    /// the `JsRuntime` and this thread is performed through this `watchdog_pair`.
+    watchdog_pair: Arc<(Mutex<JsExecutionState>, Condvar)>,
     console: Rc<RefCell<JsConsole>>,
     bridge_context: Rc<RefCell<ContextBridge>>,
     bridge_query_match: QueryMatchBridge,
@@ -150,8 +155,12 @@ impl JsRuntime {
         let console = Rc::new(RefCell::new(JsConsole::new()));
         op_state.put(Rc::clone(&console));
 
+        let v8_isolate_handle = runtime.v8_isolate().thread_safe_handle();
+        let watchdog_pair = spawn_watchdog_thread(v8_isolate_handle);
+
         Ok(Self {
             runtime,
+            watchdog_pair,
             console,
             bridge_context: context,
             bridge_query_match: query_match,
@@ -172,6 +181,7 @@ impl JsRuntime {
         file_name: &Arc<str>,
         rule: &RuleInternal,
         rule_arguments: &HashMap<String, String>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<violation::Violation>, DDSAJsRuntimeError> {
         let script_cache = Rc::clone(&self.script_cache);
         let mut script_cache_ref = script_cache.borrow_mut();
@@ -199,6 +209,7 @@ impl JsRuntime {
             rule_script,
             &query_matches,
             rule_arguments,
+            timeout,
         )?;
         Ok(js_violations
             .into_iter()
@@ -216,6 +227,7 @@ impl JsRuntime {
         rule_script: &v8::Global<v8::UnboundScript>,
         query_matches: &[analysis::tree_sitter::QueryMatch<tree_sitter::Node>],
         rule_arguments: &HashMap<String, String>,
+        timeout: Option<Duration>,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
         {
             if query_matches.is_empty() {
@@ -253,9 +265,9 @@ impl JsRuntime {
         }
 
         // We use a bridge to pull violations, so we can ignore the return value with a noop handler.
-        // However, because we could've had an error thrown after a mutation of the bridge globals,
+        // However, because we could've timed out or had an error thrown after a mutation of the bridge globals,
         // we can't immediately return here -- the bridges need to be cleared.
-        let execution_res = self.scoped_execute(rule_script, |_, _| ());
+        let execution_res = self.scoped_execute(rule_script, |_, _| (), timeout);
 
         let violations_res = self
             .bridge_violation
@@ -271,9 +283,11 @@ impl JsRuntime {
         }
     }
 
-    /// Executes a given closure within the DDSA runtime context.
+    /// Executes a given script within the DDSA runtime context.
     ///
-    /// The return value type and the logic to produce it must be provided by the caller with the `handle_result` closure.
+    /// An optional `timeout` can be specified to limit the length the JavaScript script may run for.
+    ///
+    /// The return value type and the logic to produce it must be provided by the caller with the `handle_return_value` closure.
     /// A call may return unit:
     /// ```text
     /// runtime.scoped_execute(
@@ -296,6 +310,7 @@ impl JsRuntime {
         &mut self,
         script: &v8::Global<v8::UnboundScript>,
         handle_return_value: T,
+        timeout: Option<Duration>,
     ) -> Result<U, DDSAJsRuntimeError>
     where
         T: Fn(&mut v8::TryCatch<v8::HandleScope>, v8::Local<v8::Value>) -> U,
@@ -312,7 +327,38 @@ impl JsRuntime {
 
         let opened = script.open(tc_ctx_scope);
         let bound_script = opened.bind_to_current_context(tc_ctx_scope);
+
+        // Notify the watchdog thread that an execution is starting.
+        if let Some(duration) = timeout {
+            let (lock, cvar) = &*self.watchdog_pair;
+            let mut state = lock.lock().unwrap();
+            state.timeout_duration = duration;
+            state.start_time = Instant::now();
+            state.is_currently_executing = true;
+            drop(state);
+            cvar.notify_one();
+        }
+
         let execution_result = bound_script.run(tc_ctx_scope);
+
+        // If the watchdog requested termination, it should have marked `is_currently_executing` as false,
+        // and so we don't need to set `is_currently_executing`, nor do we need to (inefficiently) re-notify
+        // via the condvar. We just reset the v8 isolate's termination state and return a timeout error.
+        if tc_ctx_scope.is_execution_terminating() {
+            debug_assert!(!self.watchdog_pair.0.lock().unwrap().is_currently_executing);
+            tc_ctx_scope.cancel_terminate_execution();
+            tc_ctx_scope.reset();
+            let timeout = timeout.expect("timeout should exist if we had v8 terminate execution");
+            return Err(DDSAJsRuntimeError::JavaScriptTimeout { timeout });
+        } else if timeout.is_some() {
+            // Otherwise, we successfully completed execution without timing out. We need to notify
+            // the watchdog thread to stop actively tracking a timeout.
+            let (lock, cvar) = &*self.watchdog_pair;
+            let mut state = lock.lock().unwrap();
+            state.is_currently_executing = false;
+            drop(state);
+            cvar.notify_one();
+        }
 
         let return_val = execution_result.ok_or_else(|| {
             let exception = tc_ctx_scope
@@ -382,6 +428,103 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
     }
 }
 
+impl Drop for JsRuntime {
+    fn drop(&mut self) {
+        let (lock, cvar) = &*self.watchdog_pair;
+        let mut state = lock.lock().unwrap();
+        // Tell the watchdog thread that it should shut down.
+        state.watchdog_should_shut_down = true;
+        drop(state);
+        cvar.notify_one();
+    }
+}
+
+/// Spawns a watchdog thread that invokes [`v8::Isolate::terminate_execution`] when a JavaScript execution
+/// runs past a specified timeout duration. Returns a tuple containing the `JsExecutionState` used
+/// to communicate state to the watchdog thread, as well as a `Condvar` to notify the watchdog.
+///
+/// The spawned thread may be shut down by setting `should_shut_down` on `JsExecutionState` and
+/// notifying the thread via the condvar.
+fn spawn_watchdog_thread(v8_handle: v8::IsolateHandle) -> Arc<(Mutex<JsExecutionState>, Condvar)> {
+    let state_pair = Arc::new((Mutex::new(JsExecutionState::new()), Condvar::new()));
+    let pair_clone = Arc::clone(&state_pair);
+
+    std::thread::spawn(move || {
+        let (lock, cvar) = &*pair_clone;
+        loop {
+            let mut state = cvar
+                .wait_while(lock.lock().unwrap(), |state| {
+                    !state.is_currently_executing && !state.watchdog_should_shut_down
+                })
+                .expect("mutex should not be poisoned");
+
+            if state.watchdog_should_shut_down {
+                break;
+            }
+
+            // Any instant after `timeout_threshold` will trigger the timeout
+            let timeout_threshold = state.start_time + state.timeout_duration;
+            let now = Instant::now();
+
+            if now >= timeout_threshold {
+                // This branch represents an edge case where the OS couldn't wake this thread up
+                // until after the watchdog should've already triggered a timeout.
+
+                // Trust that v8 will halt execution and eagerly mark the execution as complete so the
+                // main thread doesn't need to acquire the lock to do it.
+                state.is_currently_executing = false;
+                drop(state);
+                v8_handle.terminate_execution();
+            } else {
+                // This is guaranteed not to underflow
+                let additional_wait = timeout_threshold - now;
+                let result = cvar
+                    .wait_timeout_while(state, additional_wait, |state| {
+                        state.is_currently_executing
+                    })
+                    .expect("mutex should not be poisoned");
+                state = result.0;
+
+                // If the condvar triggered a timeout, `execution_complete` _must_ be false, because of
+                // our use of `wait_timeout_while`. Thus, it's always appropriate to terminate execution.
+                if result.1.timed_out() {
+                    // Trust that v8 will halt execution and eagerly mark the execution as complete so the
+                    // main thread doesn't need to acquire the lock to do it.
+                    state.is_currently_executing = false;
+                    drop(state);
+                    v8_handle.terminate_execution();
+                }
+            }
+        }
+    });
+    state_pair
+}
+
+/// A struct used to communicate state from a `JsRuntime` to a watchdog thread that calls
+/// [`v8::Isolate::terminate_execution`]. To request the watchdog to enforce a timeout,
+/// this struct should be populated with `timeout_duration`, `start_time`, and `execution_complete`
+/// should be set to `false`. After that, the watchdog thread should be notified via a condvar.
+///
+/// `should_shut_down` should only be set to `true` when the `JsRuntime` is being dropped.
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+struct JsExecutionState {
+    timeout_duration: Duration,
+    start_time: Instant,
+    is_currently_executing: bool,
+    watchdog_should_shut_down: bool,
+}
+
+impl JsExecutionState {
+    pub fn new() -> Self {
+        Self {
+            timeout_duration: Duration::default(),
+            start_time: Instant::now(),
+            is_currently_executing: false,
+            watchdog_should_shut_down: false,
+        }
+    }
+}
+
 /// Constructs a [`deno_core::JsRuntime`] with the [`ddsa_lib`] extension enabled.
 pub(crate) fn base_js_runtime() -> deno_core::JsRuntime {
     create_base_runtime(
@@ -428,6 +571,7 @@ mod tests {
     use deno_core::v8;
     use std::collections::HashMap;
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     /// Executes the given JavaScript rule against the given Tree, handling test-related setup boilerplate.
     fn execute_rule_internal_with_tree(
@@ -455,6 +599,7 @@ mod tests {
             &rule_script,
             &q_matches,
             &HashMap::new(),
+            None,
         )
     }
 
@@ -465,6 +610,7 @@ mod tests {
         filename: &str,
         ts_query: &str,
         rule_code: &str,
+        timeout: Option<Duration>,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
         let source_text: Arc<str> = Arc::from(source_text);
         let filename: Arc<str> = Arc::from(filename);
@@ -490,6 +636,7 @@ mod tests {
             &rule_script,
             &q_matches,
             &HashMap::new(),
+            timeout,
         )
     }
 
@@ -546,7 +693,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
         let type_of = compile_script(&mut rt.v8_handle_scope(), type_of).unwrap();
 
         // Baseline: the bridge should be an object
-        let value = rt.scoped_execute(&type_of, |s, v| v.to_rust_string_lossy(s));
+        let value = rt.scoped_execute(&type_of, |s, v| v.to_rust_string_lossy(s), None);
         assert_eq!(value.unwrap(), "object");
 
         let code = r#"
@@ -555,7 +702,7 @@ globalThis.__RUST_BRIDGE__ts_node = 123;
 typeof __RUST_BRIDGE__ts_node;
 "#;
         let script = compile_script(&mut rt.v8_handle_scope(), code).unwrap();
-        let value = rt.scoped_execute(&script, |s, v| v.to_rust_string_lossy(s));
+        let value = rt.scoped_execute(&script, |s, v| v.to_rust_string_lossy(s), None);
         // JavaScript should not be able to mutate the value.
         assert!(value.unwrap_err().to_string().contains(
             "TypeError: Cannot add property __RUST_BRIDGE__ts_node, object is not extensible",
@@ -587,7 +734,7 @@ typeof __RUST_BRIDGE__ts_node;
         // Restore the original `ddsa_global`, dropping the `stub_obj` v8::Global.
         drop(std::mem::replace(&mut rt.v8_ddsa_global, ddsa_global));
 
-        let value = rt.scoped_execute(&type_of, |sc, value| value.to_rust_string_lossy(sc));
+        let value = rt.scoped_execute(&type_of, |sc, value| value.to_rust_string_lossy(sc), None);
         // Rust should be able to mutate the value.
         assert_eq!(value.unwrap(), "number");
     }
@@ -609,15 +756,19 @@ typeof __RUST_BRIDGE__ts_node;
         };
 
         let scoped_exe_id_hash = runtime
-            .scoped_execute(&script, |scope, _| {
-                // (While in general, this function will be used to map the `v8::Value` of the script's output,
-                // we use it here in this test to inspect the context).
+            .scoped_execute(
+                &script,
+                |scope, _| {
+                    // (While in general, this function will be used to map the `v8::Value` of the script's output,
+                    // we use it here in this test to inspect the context).
 
-                // In this case `get_current_context` will be the context the script is running in,
-                // not necessarily the default context of the v8 isolate.
-                let global_proxy = scope.get_current_context().global(scope);
-                global_proxy.get_identity_hash()
-            })
+                    // In this case `get_current_context` will be the context the script is running in,
+                    // not necessarily the default context of the v8 isolate.
+                    let global_proxy = scope.get_current_context().global(scope);
+                    global_proxy.get_identity_hash()
+                },
+                None,
+            )
             .unwrap();
         assert_eq!(default_ctx_id_hash, scoped_exe_id_hash);
     }
@@ -638,7 +789,7 @@ function visit(captures) {
         // Because `globalThis` should be frozen, attempting to declare a function would normally
         // throw an error (e.g. "TypeError: Cannot add property visit, object is not extensible").
         // The function declaration will only work if we're doing it within an anonymous function.
-        shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule).unwrap();
+        shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
         let lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         assert_eq!(lines[0], "123");
     }
@@ -651,22 +802,53 @@ function visit(captures) {
         let code = "abc;";
         let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
         let err = runtime
-            .scoped_execute(&script, |tc_scope, val| val.to_rust_string_lossy(tc_scope))
+            .scoped_execute(&script, |sc, val| val.to_rust_string_lossy(sc), None)
             .unwrap_err();
         assert!(err
             .to_string()
             .contains("ReferenceError: abc is not defined"));
     }
 
+    /// `scoped_execute` can terminate JavaScript execution that goes on for too long.
+    #[test]
+    fn scoped_execute_timeout() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let timeout = Duration::from_millis(500);
+        let loop_code = "while (true) {}";
+        let loop_script = compile_script(&mut runtime.v8_handle_scope(), loop_code).unwrap();
+        let code = "123;";
+        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+
+        // First, ensure that the implementation isn't forcing a minimum execution time to that of the
+        // timeout (which could happen if we are improperly handling a mutex lock).
+        let now = Instant::now();
+        runtime
+            .scoped_execute(&script, |_, _| (), Some(Duration::from_secs(10)))
+            .unwrap();
+        assert!(now.elapsed() < Duration::from_secs(10));
+
+        let err = runtime
+            .scoped_execute(&loop_script, |_, _| (), Some(timeout))
+            .unwrap_err();
+        assert!(matches!(err, DDSAJsRuntimeError::JavaScriptTimeout { .. }));
+
+        // After calling `TerminateExecution`, a v8 isolate cannot execute JavaScript until all frames have
+        // propagated the uncatchable exception (or we've manually cancelled the termination). Invoking
+        // a subsequent script execution ensures that we're handling this properly.
+        let return_val =
+            runtime.scoped_execute(&script, |scope, value| value.uint32_value(scope), None);
+        assert_eq!(return_val.unwrap().unwrap(), 123);
+    }
+
     #[test]
     fn execute_rule_internal() {
         let mut rt = JsRuntime::try_new().unwrap();
-        let source_text = "const someName = 123; const protectedName = 456;";
+        let text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
 ((identifier) @cap_name (#eq? @cap_name "protectedName"))
 "#;
-        let rule_code = r#"
+        let rule = r#"
 function visit(captures) {
     const node = captures.get("cap_name");
     const error = buildError(
@@ -681,8 +863,7 @@ function visit(captures) {
 "#;
 
         let violations =
-            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
-                .unwrap();
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
 
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
@@ -706,7 +887,7 @@ function visit(captures) {
     #[test]
     fn execute_rule_internal_bridge_state() {
         let mut rt = JsRuntime::try_new().unwrap();
-        let source_text = "123; 456; 789;";
+        let text = "123; 456; 789;";
         let filename = "some_filename.js";
         let ts_query = "(number) @cap_name";
         let rule_code = r#"
@@ -721,7 +902,7 @@ function visit(captures) {
 "#;
 
         let violations_res =
-            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code);
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule_code, None);
 
         assert!(violations_res.is_err());
         assert_eq!(rt.bridge_query_match.len(), 0);
@@ -733,7 +914,7 @@ function visit(captures) {
     #[test]
     fn execute_rule_internal_no_unnecessary_invocations() {
         let mut rt = JsRuntime::try_new().unwrap();
-        let source_text = "123; 456; 789;";
+        let text = "123; 456; 789;";
         let filename = "some_filename.js";
         let ts_query = "(identifier) @cap_name";
         let rule_code = r#"
@@ -743,7 +924,7 @@ throw new Error("script should not have been executed");
 "#;
 
         let violations_res =
-            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code);
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule_code, None);
         assert!(violations_res.unwrap().is_empty());
     }
 
@@ -751,12 +932,12 @@ throw new Error("script should not have been executed");
     #[test]
     fn stella_compat_execute_rule_internal() {
         let mut rt = JsRuntime::try_new().unwrap();
-        let source_text = "const someName = 123; const protectedName = 456;";
+        let text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
 ((identifier) @cap_name (#eq? @cap_name "protectedName"))
 "#;
-        let rule_code = r#"
+        let rule = r#"
 function visit(query, filename, code) {
     const node = query.captures["cap_name"];
     const nodeText = getCodeForNode(node, code);
@@ -772,8 +953,7 @@ function visit(query, filename, code) {
 "#;
 
         let violations =
-            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
-                .unwrap();
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
 
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
@@ -834,7 +1014,7 @@ function visit(captures) {
         let mut runtime = JsRuntime::try_new().unwrap();
         let code = "console instanceof DDSA_Console;";
         let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
-        let correct_instance = runtime.scoped_execute(&script, |_, value| value.is_true());
+        let correct_instance = runtime.scoped_execute(&script, |_, value| value.is_true(), None);
         assert!(correct_instance.unwrap());
     }
 
@@ -855,7 +1035,7 @@ function visit(captures) {
     console.log([{abc: node}]);
 }
 "#;
-        shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
+        shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code, None)
             .unwrap();
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         let expected = r#"{"type":"identifier","start":{"line":1,"col":7},"end":{"line":1,"col":10},"text":"abc"}"#;
@@ -868,7 +1048,7 @@ function visit(captures) {
     #[test]
     fn op_ts_node_named_children() {
         let mut rt = JsRuntime::try_new().unwrap();
-        let source_text = "function echo(a, b, c) {}";
+        let text = "function echo(a, b, c) {}";
         let filename = "some_filename.js";
         let ts_query = r#"
 ((function_declaration
@@ -885,10 +1065,10 @@ function visit(captures) {
 }
 "#;
         // First run a no-op rule to assert that only 1 (captured) node is sent to the bridge.
-        shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, noop).unwrap();
+        shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, noop, None).unwrap();
         assert_eq!(rt.bridge_ts_node.borrow().len(), 1);
         // Then execute the rule that fetches the children of the node.
-        shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, get_children)
+        shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, get_children, None)
             .unwrap();
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         // We should've newly pushed the captured node's 3 children to the bridge.
