@@ -72,7 +72,7 @@ impl ContextBridge {
     pub fn set_root_context(
         &mut self,
         scope: &mut HandleScope,
-        tree: &tree_sitter::Tree,
+        tree: &Arc<tree_sitter::Tree>,
         file_contents: &Arc<str>,
         filename: &Arc<str>,
     ) {
@@ -80,7 +80,7 @@ impl ContextBridge {
         // We know that two trees are equal if their root node is the same because
         // we never mutate trees (or nodes).
         if self.root.ddsa.get_tree().map(|ex| ex.root_node().id()) != Some(tree.root_node().id()) {
-            self.root.ddsa.set_tree(tree.clone());
+            self.root.ddsa.set_tree(Arc::clone(&tree));
         }
         if self.root.ddsa.get_text() != Some(file_contents.as_ref()) {
             self.root.ddsa.set_text(Arc::clone(file_contents));
@@ -167,10 +167,11 @@ mod tests {
         let scope = &mut runtime.handle_scope();
         let contents_1: Arc<str> = Arc::from("const fileContents = '11111'");
         let filename_1: Arc<str> = Arc::from("11111.js");
+        let tree_1 = Arc::new(parse_js(contents_1.as_ref()));
         let mut bridge = ContextBridge::try_new(scope).unwrap();
         assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
         assert!(bridge.root.js.get_filename_cache(scope).is_none());
-        bridge.set_root_context(scope, &parse_js(&contents_1), &contents_1, &filename_1);
+        bridge.set_root_context(scope, &tree_1, &contents_1, &filename_1);
         assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
         assert!(bridge.root.js.get_filename_cache(scope).is_none());
         // Set the caches to simulate them being warmed
@@ -181,7 +182,8 @@ mod tests {
         assert_eq!(bridge.root.js.get_filename_cache(scope).unwrap(), filename_1.to_string());
         let contents_2: Arc<str> = Arc::from("const fileContents = '22222'");
         let filename_2: Arc<str> = Arc::from("22222.js");
-        bridge.set_root_context(scope, &parse_js(&contents_2), &contents_2, &filename_2);
+        let tree_2 = Arc::new(parse_js(contents_2.as_ref()));
+        bridge.set_root_context(scope, &tree_2, &contents_2, &filename_2);
         assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
         assert!(bridge.root.js.get_filename_cache(scope).is_none());
     }
@@ -234,7 +236,7 @@ import (
     mrand "math/rand"
 )
 "#;
-        let tree = get_tree(file_contents, &Language::Go).unwrap();
+        let tree = Arc::new(get_tree(file_contents, &Language::Go).unwrap());
         let file_contents = Arc::<str>::from(file_contents);
         let mut mut_bridge = bridge.borrow_mut();
         assert_eq!(mut_bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 0);

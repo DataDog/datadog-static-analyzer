@@ -183,7 +183,7 @@ mod tests {
 
     /// A tree-sitter tree and the text it was parsed from, along with convenience functions
     /// to inspect the nodes.
-    struct Tree(tree_sitter::Tree, &'static str);
+    struct Tree(Arc<tree_sitter::Tree>, &'static str);
 
     impl Tree {
         fn text(&self, node: tree_sitter::Node<'_>) -> &'static str {
@@ -218,7 +218,7 @@ mod tests {
             Self(parser)
         }
         fn parse(&mut self, text: &'static str) -> Tree {
-            Tree(self.0.parse(text, None).unwrap(), text)
+            Tree(Arc::new(self.0.parse(text, None).unwrap()), text)
         }
         fn language(&self) -> tree_sitter::Language {
             self.0.language().unwrap()

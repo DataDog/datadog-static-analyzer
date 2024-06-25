@@ -169,7 +169,7 @@ impl JsRuntime {
     pub fn execute_rule(
         &mut self,
         source_text: &Arc<str>,
-        source_tree: &tree_sitter::Tree,
+        source_tree: &Arc<tree_sitter::Tree>,
         file_name: &Arc<str>,
         rule: &RuleInternal,
         rule_arguments: &HashMap<String, String>,
@@ -211,7 +211,7 @@ impl JsRuntime {
     fn execute_rule_internal(
         &mut self,
         source_text: &Arc<str>,
-        source_tree: &tree_sitter::Tree,
+        source_tree: &Arc<tree_sitter::Tree>,
         file_name: &Arc<str>,
         language: Language,
         rule_script: &v8::Global<v8::UnboundScript>,
@@ -455,7 +455,7 @@ mod tests {
         let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
 
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
-        let tree = get_tree(source_text.as_ref(), &Language::JavaScript).unwrap();
+        let tree = Arc::new(get_tree(source_text.as_ref(), &Language::JavaScript).unwrap());
 
         let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
 
