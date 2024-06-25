@@ -28,10 +28,13 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Terraform, &["tf"]),
     (Language::TypeScript, &["ts", "tsx"]),
     (Language::Yaml, &["yml", "yaml"]),
+    (Language::Starlark, &["bzl", "ipd", "star", "starlark"]),
 ];
 
-static FILE_EXACT_MATCH_PER_LANGUAGE_LIST: &[(Language, &[&str])] =
-    &[(Language::Dockerfile, &["Dockerfile"])];
+static FILE_EXACT_MATCH_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
+    (Language::Dockerfile, &["Dockerfile"]),
+    (Language::Starlark, &["BUILD", "BUILD.bazel"]),
+];
 
 static FILE_PREFIX_PER_LANGUAGE_LIST: &[(Language, &[&str])] =
     &[(Language::Dockerfile, &["Dockerfile"])];
@@ -692,6 +695,7 @@ mod tests {
         extensions_per_languages.insert(Language::TypeScript, 2);
         extensions_per_languages.insert(Language::Dockerfile, 2);
         extensions_per_languages.insert(Language::Yaml, 2);
+        extensions_per_languages.insert(Language::Starlark, 4);
 
         for (l, e) in extensions_per_languages {
             assert_eq!(

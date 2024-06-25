@@ -1,6 +1,7 @@
+use std::fmt;
+
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 #[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum OutputFormat {
@@ -50,6 +51,8 @@ pub enum Language {
     TypeScript,
     #[serde(rename = "YAML")]
     Yaml,
+    #[serde(rename = "STARLARK")]
+    Starlark,
 }
 
 #[allow(dead_code)]
@@ -68,6 +71,7 @@ pub static ALL_LANGUAGES: &[Language] = &[
     Language::TypeScript,
     Language::Terraform,
     Language::Yaml,
+    Language::Starlark,
 ];
 
 impl fmt::Display for Language {
@@ -87,6 +91,7 @@ impl fmt::Display for Language {
             Self::Terraform => "terraform",
             Self::TypeScript => "typescript",
             Self::Yaml => "yaml",
+            Self::Starlark => "starlark",
         };
         write!(f, "{s}")
     }

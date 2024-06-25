@@ -21,6 +21,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut line_number = 1u32;
     let disabling_patterns = match language {
         Language::Python
+        | Language::Starlark
         | Language::Dockerfile
         | Language::Ruby
         | Language::Terraform
