@@ -67,22 +67,28 @@ impl ContextBridge {
         self.root.js.as_local(scope)
     }
 
-    /// Assigns the provided metadata to the context. If the incoming values are the same
-    /// as the current context, the existing values will not be modified.
+    /// Assigns the provided metadata to the context.
+    ///
+    /// Returns `true` if the incoming `tree` was different from the last one analyzed, or `false`
+    /// if they were the same.
     pub fn set_root_context(
         &mut self,
         scope: &mut HandleScope,
         tree: &Arc<tree_sitter::Tree>,
         file_contents: &Arc<str>,
         filename: &Arc<str>,
-    ) {
+    ) -> bool {
+        let mut was_new_tree = false;
         // NOTE:
         // We know that two trees are equal if their root node is the same because
         // we never mutate trees (or nodes).
         if self.root.ddsa.get_tree().map(|ex| ex.root_node().id()) != Some(tree.root_node().id()) {
-            self.root.ddsa.set_tree(Arc::clone(&tree));
+            self.root.ddsa.set_tree(Arc::clone(tree));
+            was_new_tree = true;
         }
-        if self.root.ddsa.get_text() != Some(file_contents.as_ref()) {
+        // Because trees and file contents go hand-in-hand, we can avoid a relatively expensive string
+        // comparison by just using the `new_tree` boolean for control flow.
+        if was_new_tree {
             self.root.ddsa.set_text(Arc::clone(file_contents));
             // The cache is populated lazily, so a change in value means we need to clear the cache.
             self.root.js.set_file_contents_cache(scope, None);
@@ -92,6 +98,7 @@ impl ContextBridge {
             // The cache is populated lazily, so a change in value means we need to clear the cache.
             self.root.js.set_filename_cache(scope, None);
         }
+        was_new_tree
     }
 
     /// Assigns the provide rule arguments to the context.

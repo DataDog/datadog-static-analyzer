@@ -236,7 +236,13 @@ impl JsRuntime {
             // Push data from Rust to v8
             // Update the DDSA context metadata
             let mut ctx_bridge = self.bridge_context.borrow_mut();
-            ctx_bridge.set_root_context(scope, source_tree, source_text, file_name);
+            let was_new_tree =
+                ctx_bridge.set_root_context(scope, source_tree, source_text, file_name);
+            // If the tree was new, clear the TsNodeBridge, as it contains nodes for the old tree.
+            if was_new_tree {
+                self.bridge_ts_node.borrow_mut().clear(scope);
+            }
+
             // Set a file context, if applicable
             ctx_bridge.set_file_context(scope, language, source_tree, source_text);
             // Add any rule arguments
@@ -438,6 +444,35 @@ mod tests {
         let global = runtime.ddsa_v8_ctx_true_global.open(scope);
         let value = value_gen(scope);
         global.set(scope, key.into(), value);
+    }
+
+    /// Executes the given JavaScript rule against the given Tree, handling test-related setup boilerplate.
+    fn execute_rule_internal_with_tree(
+        runtime: &mut JsRuntime,
+        tree: &Arc<tree_sitter::Tree>,
+        source_text: &Arc<str>,
+        ts_query: &str,
+        rule_code: &str,
+    ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
+        let rule_script = JsRuntime::format_rule_script(rule_code);
+        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
+        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
+        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+        let filename: Arc<str> = Arc::from("some_filename.js");
+
+        let mut curs = ts_query.cursor();
+        let q_matches = curs
+            .matches(tree.root_node(), source_text.as_ref())
+            .collect::<Vec<_>>();
+        runtime.execute_rule_internal(
+            source_text,
+            tree,
+            &filename,
+            Language::JavaScript,
+            &rule_script,
+            &q_matches,
+            &HashMap::new(),
+        )
     }
 
     /// Executes the given JavaScript rule, handling test-related setup boilerplate.
@@ -755,5 +790,47 @@ function visit(query, filename, code) {
             _pd: Default::default(),
         };
         assert_eq!(*violation, expected);
+    }
+
+    /// Tests that the runtime's `TsNodeBridge` state persists between rule executions on the same
+    /// tree but is cleared when the tree changes.
+    #[test]
+    fn runtime_ts_node_bridge_state() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let ts_query_1 = "(number) @cap_name";
+        let rule_code_1 = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    // TODO (JF): When the deno console issue is resolved, this will be removed
+    const console = Object.getPrototypeOf(globalThis).console;
+    console.log(node.id);
+}
+"#;
+        let ts_query_2 = "(identifier) @other_cap_name";
+        let rule_code_2 = r#"
+function visit(captures) {
+    const node = captures.get("other_cap_name");
+    // TODO (JF): When the deno console issue is resolved, this will be removed
+    const console = Object.getPrototypeOf(globalThis).console;
+    console.log(node.id);
+}
+"#;
+        let source: Arc<str> = Arc::from("const alpha = 123; const bravo = 456;");
+        let tree1 = Arc::new(get_tree(source.as_ref(), &Language::JavaScript).unwrap());
+
+        execute_rule_internal_with_tree(&mut rt, &tree1, &source, ts_query_1, rule_code_1).unwrap();
+        let log = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(log, vec!["0".to_string(), "1".to_string()]);
+
+        execute_rule_internal_with_tree(&mut rt, &tree1, &source, ts_query_2, rule_code_2).unwrap();
+        let log = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        // Ids are assigned sequentially, so a start id of 2 means the bridge already contained 2 nodes.
+        assert_eq!(log, vec!["2".to_string(), "3".to_string()]);
+
+        let source: Arc<str> = Arc::from("const echo = 888; const foxtrot = 999;");
+        let tree2 = Arc::new(get_tree(source.as_ref(), &Language::JavaScript).unwrap());
+        execute_rule_internal_with_tree(&mut rt, &tree2, &source, ts_query_1, rule_code_1).unwrap();
+        let log = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(log, vec!["0".to_string(), "1".to_string()]);
     }
 }
