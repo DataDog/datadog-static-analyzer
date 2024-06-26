@@ -194,7 +194,7 @@ const sampleFileContents = 0 + 1 + 2;
 
         let mut runtime = cfg_test_runtime();
         let bridge = setup_bridge(&mut runtime, "ROOT");
-        let tree = parse_js(&file_contents);
+        let tree = Arc::new(parse_js(&file_contents));
         let scope = &mut runtime.handle_scope();
         bridge
             .borrow_mut()

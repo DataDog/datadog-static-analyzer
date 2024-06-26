@@ -169,7 +169,7 @@ impl JsRuntime {
     pub fn execute_rule(
         &mut self,
         source_text: &Arc<str>,
-        source_tree: &tree_sitter::Tree,
+        source_tree: &Arc<tree_sitter::Tree>,
         file_name: &Arc<str>,
         rule: &RuleInternal,
         rule_arguments: &HashMap<String, String>,
@@ -190,6 +190,7 @@ impl JsRuntime {
         let mut query_cursor = rule.tree_sitter_query.with_cursor(&mut ts_qc);
         let query_matches = query_cursor
             .matches(source_tree.root_node(), source_text.as_ref())
+            .filter(|captures| !captures.is_empty())
             .collect::<Vec<_>>();
         let js_violations = self.execute_rule_internal(
             source_text,
@@ -210,7 +211,7 @@ impl JsRuntime {
     fn execute_rule_internal(
         &mut self,
         source_text: &Arc<str>,
-        source_tree: &tree_sitter::Tree,
+        source_tree: &Arc<tree_sitter::Tree>,
         file_name: &Arc<str>,
         language: Language,
         rule_script: &v8::Global<v8::UnboundScript>,
@@ -218,6 +219,10 @@ impl JsRuntime {
         rule_arguments: &HashMap<String, String>,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
         {
+            if query_matches.is_empty() {
+                return Ok(vec![]);
+            }
+
             let scope = &mut self.runtime.handle_scope();
 
             // Change the global object's pointer to the TSSymbolMap to the one for this specific language.
@@ -231,7 +236,13 @@ impl JsRuntime {
             // Push data from Rust to v8
             // Update the DDSA context metadata
             let mut ctx_bridge = self.bridge_context.borrow_mut();
-            ctx_bridge.set_root_context(scope, source_tree, source_text, file_name);
+            let was_new_tree =
+                ctx_bridge.set_root_context(scope, source_tree, source_text, file_name);
+            // If the tree was new, clear the TsNodeBridge, as it contains nodes for the old tree.
+            if was_new_tree {
+                self.bridge_ts_node.borrow_mut().clear(scope);
+            }
+
             // Set a file context, if applicable
             ctx_bridge.set_file_context(scope, language, source_tree, source_text);
             // Add any rule arguments
@@ -243,10 +254,22 @@ impl JsRuntime {
         }
 
         // We use a bridge to pull violations, so we can ignore the return value with a noop handler.
-        self.scoped_execute(rule_script, |_, _| ())?;
+        // However, because we could've had an error thrown after a mutation of the bridge globals,
+        // we can't immediately return here -- the bridges need to be cleared.
+        let execution_res = self.scoped_execute(rule_script, |_, _| ());
 
-        self.bridge_violation
-            .drain_collect(&mut self.runtime.handle_scope())
+        let violations_res = self
+            .bridge_violation
+            .drain_collect(&mut self.runtime.handle_scope());
+
+        self.bridge_query_match
+            .clear(&mut self.runtime.handle_scope());
+
+        if let Err(runtime_err) = execution_res {
+            Err(runtime_err)
+        } else {
+            violations_res
+        }
     }
 
     /// Executes a given closure within the DDSA runtime context.
@@ -359,6 +382,15 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
     pub fn v8_handle_scope(&mut self) -> v8::HandleScope {
         self.runtime.handle_scope()
     }
+
+    /// Returns the length of the `v8::Array` backing the runtime's `ViolationBridge`.
+    #[cfg(test)]
+    pub fn violation_bridge_v8_len(&mut self) -> usize {
+        let v8_array = self
+            .bridge_violation
+            .as_local(&mut self.runtime.handle_scope());
+        v8_array.length() as usize
+    }
 }
 
 /// Constructs a [`deno_core::JsRuntime`] with the [`ddsa_lib`] extension enabled.
@@ -414,15 +446,43 @@ mod tests {
         global.set(scope, key.into(), value);
     }
 
+    /// Executes the given JavaScript rule against the given Tree, handling test-related setup boilerplate.
+    fn execute_rule_internal_with_tree(
+        runtime: &mut JsRuntime,
+        tree: &Arc<tree_sitter::Tree>,
+        source_text: &Arc<str>,
+        ts_query: &str,
+        rule_code: &str,
+    ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
+        let rule_script = JsRuntime::format_rule_script(rule_code);
+        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
+        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
+        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+        let filename: Arc<str> = Arc::from("some_filename.js");
+
+        let mut curs = ts_query.cursor();
+        let q_matches = curs
+            .matches(tree.root_node(), source_text.as_ref())
+            .collect::<Vec<_>>();
+        runtime.execute_rule_internal(
+            source_text,
+            tree,
+            &filename,
+            Language::JavaScript,
+            &rule_script,
+            &q_matches,
+            &HashMap::new(),
+        )
+    }
+
     /// Executes the given JavaScript rule, handling test-related setup boilerplate.
-    fn execute_rule_internal_js(
+    fn shorthand_execute_rule_internal(
+        runtime: &mut JsRuntime,
         source_text: &str,
         filename: &str,
         ts_query: &str,
         rule_code: &str,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
-        let mut runtime = JsRuntime::try_new().unwrap();
-
         let source_text: Arc<str> = Arc::from(source_text);
         let filename: Arc<str> = Arc::from(filename);
 
@@ -430,7 +490,7 @@ mod tests {
         let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
 
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
-        let tree = get_tree(source_text.as_ref(), &Language::JavaScript).unwrap();
+        let tree = Arc::new(get_tree(source_text.as_ref(), &Language::JavaScript).unwrap());
 
         let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
 
@@ -602,6 +662,7 @@ typeof globalThis.addedProperty;
 
     #[test]
     fn execute_rule_internal() {
+        let mut rt = JsRuntime::try_new().unwrap();
         let source_text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
@@ -622,7 +683,8 @@ function visit(captures) {
 "#;
 
         let violations =
-            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
+                .unwrap();
 
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
@@ -639,9 +701,58 @@ function visit(captures) {
         assert_eq!(*violation, expected);
     }
 
+    /// Tests that an error during JavaScript execution doesn't leave a bridge in a dirty state
+    /// QueryMatch - cleared
+    /// Violation  - cleared
+    /// TsNode     - preserved
+    #[test]
+    fn execute_rule_internal_bridge_state() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let source_text = "123; 456; 789;";
+        let filename = "some_filename.js";
+        let ts_query = "(number) @cap_name";
+        let rule_code = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    if (node.text === "456") {
+        throw new Error("Sample error between query matches");
+    }
+    const error = buildError(1, 2, 3, 4, "Error text");
+    addError(error);
+}
+"#;
+
+        let violations_res =
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code);
+
+        assert!(violations_res.is_err());
+        assert_eq!(rt.bridge_query_match.len(), 0);
+        assert_eq!(rt.violation_bridge_v8_len(), 0);
+        assert_eq!(rt.bridge_ts_node.borrow().len(), 3);
+    }
+
+    /// Tests that we don't call out to v8 to execute JavaScript if there are no `query_matches`.
+    #[test]
+    fn execute_rule_internal_no_unnecessary_invocations() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let source_text = "123; 456; 789;";
+        let filename = "some_filename.js";
+        let ts_query = "(identifier) @cap_name";
+        let rule_code = r#"
+function visit(captures) {}
+
+throw new Error("script should not have been executed");
+"#;
+
+        let violations_res =
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code);
+        assert!(violations_res.unwrap().is_empty());
+    }
+
     /// Tests that the compatibility layer allows a rule written for the stella runtime to execute.
     #[test]
     fn stella_compat_execute_rule_internal() {
+        let mut rt = JsRuntime::try_new().unwrap();
         let source_text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
@@ -663,7 +774,8 @@ function visit(query, filename, code) {
 "#;
 
         let violations =
-            execute_rule_internal_js(source_text, filename, ts_query, rule_code).unwrap();
+            shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code)
+                .unwrap();
 
         assert_eq!(violations.len(), 1);
         let violation = violations.first().unwrap();
@@ -678,5 +790,47 @@ function visit(query, filename, code) {
             _pd: Default::default(),
         };
         assert_eq!(*violation, expected);
+    }
+
+    /// Tests that the runtime's `TsNodeBridge` state persists between rule executions on the same
+    /// tree but is cleared when the tree changes.
+    #[test]
+    fn runtime_ts_node_bridge_state() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let ts_query_1 = "(number) @cap_name";
+        let rule_code_1 = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    // TODO (JF): When the deno console issue is resolved, this will be removed
+    const console = Object.getPrototypeOf(globalThis).console;
+    console.log(node.id);
+}
+"#;
+        let ts_query_2 = "(identifier) @other_cap_name";
+        let rule_code_2 = r#"
+function visit(captures) {
+    const node = captures.get("other_cap_name");
+    // TODO (JF): When the deno console issue is resolved, this will be removed
+    const console = Object.getPrototypeOf(globalThis).console;
+    console.log(node.id);
+}
+"#;
+        let source: Arc<str> = Arc::from("const alpha = 123; const bravo = 456;");
+        let tree1 = Arc::new(get_tree(source.as_ref(), &Language::JavaScript).unwrap());
+
+        execute_rule_internal_with_tree(&mut rt, &tree1, &source, ts_query_1, rule_code_1).unwrap();
+        let log = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(log, vec!["0".to_string(), "1".to_string()]);
+
+        execute_rule_internal_with_tree(&mut rt, &tree1, &source, ts_query_2, rule_code_2).unwrap();
+        let log = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        // Ids are assigned sequentially, so a start id of 2 means the bridge already contained 2 nodes.
+        assert_eq!(log, vec!["2".to_string(), "3".to_string()]);
+
+        let source: Arc<str> = Arc::from("const echo = 888; const foxtrot = 999;");
+        let tree2 = Arc::new(get_tree(source.as_ref(), &Language::JavaScript).unwrap());
+        execute_rule_internal_with_tree(&mut rt, &tree2, &source, ts_query_1, rule_code_1).unwrap();
+        let log = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(log, vec!["0".to_string(), "1".to_string()]);
     }
 }

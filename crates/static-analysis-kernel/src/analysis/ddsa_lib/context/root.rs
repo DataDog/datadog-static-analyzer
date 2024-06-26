@@ -8,9 +8,10 @@ use std::sync::Arc;
 #[derive(Debug, Default)]
 pub struct RootContext {
     /// The tree-sitter tree.
-    //  NOTE: With the way the tree-sitter C library implements `Tree`, this is cheap to clone and
-    //        move into this [`Context`], and a reference counting pointer is not necessary.
-    tree: Option<tree_sitter::Tree>,
+    //  NOTE: Despite the tree-sitter C library implementing `Tree` as a reference-counting pointer,
+    //        we use an `Arc` here so that we can easily check tree equivalence (when a `tree_sitter::Tree`
+    //        is cloned, the root_node does not have the same memory address).
+    tree: Option<Arc<tree_sitter::Tree>>,
     /// The source string that was parsed by tree-sitter to generate `tree`.
     tree_text: Option<Arc<str>>,
     /// A filename associated with a rule execution.
@@ -31,12 +32,12 @@ impl RootContext {
 
     /// Returns a reference to the underlying [`tree_sitter::Tree`], if it exists.
     pub fn get_tree(&self) -> Option<&tree_sitter::Tree> {
-        self.tree.as_ref()
+        self.tree.as_ref().map(AsRef::as_ref)
     }
 
     /// Assigns the provided `tree_sitter::Tree` to the context. If an existing tree was assigned, it
     /// will be returned as `Some(tree)`.
-    pub fn set_tree(&mut self, tree: tree_sitter::Tree) -> Option<tree_sitter::Tree> {
+    pub fn set_tree(&mut self, tree: Arc<tree_sitter::Tree>) -> Option<Arc<tree_sitter::Tree>> {
         Option::replace(&mut self.tree, tree)
     }
 
