@@ -7,7 +7,7 @@ use crate::analysis::ddsa_lib::bridge::{
     ContextBridge, QueryMatchBridge, TsNodeBridge, TsSymbolMapBridge, ViolationBridge,
 };
 use crate::analysis::ddsa_lib::common::{
-    compile_script, v8_interned, DDSAJsRuntimeError, Instance,
+    compile_script, create_base_runtime, v8_interned, v8_string, DDSAJsRuntimeError, Instance,
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use crate::analysis::ddsa_lib::js;
@@ -28,6 +28,12 @@ const BRIDGE_TS_SYMBOL: &str = "__RUST_BRIDGE__ts_symbol_lookup";
 const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
 const STELLA_COMPAT_FILENAME: &str = "STELLA_COMPAT_FILENAME";
 const STELLA_COMPAT_FILE_CONTENTS: &str = "STELLA_COMPAT_FILE_CONTENTS";
+
+/// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
+pub(crate) const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
+    // `deno_core`, by default, injects its own `console` implementation.
+    "console",
+];
 
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
@@ -395,10 +401,16 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
 
 /// Constructs a [`deno_core::JsRuntime`] with the [`ddsa_lib`] extension enabled.
 pub(crate) fn base_js_runtime() -> deno_core::JsRuntime {
-    deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-        extensions: vec![ddsa_lib::init_ops_and_esm()],
-        ..Default::default()
-    })
+    create_base_runtime(
+        vec![ddsa_lib::init_ops_and_esm()],
+        Some(Box::new(|scope, default_ctx| {
+            let global_proxy = default_ctx.global(scope);
+            for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
+                let key = v8_string(scope, prop);
+                global_proxy.delete(scope, key.into());
+            }
+        })),
+    )
 }
 
 /// A mutable scratch space that collects the output of the `console.log` function invoked by JavaScript code.
@@ -801,8 +813,6 @@ function visit(query, filename, code) {
         let rule_code_1 = r#"
 function visit(captures) {
     const node = captures.get("cap_name");
-    // TODO (JF): When the deno console issue is resolved, this will be removed
-    const console = Object.getPrototypeOf(globalThis).console;
     console.log(node.id);
 }
 "#;
@@ -810,8 +820,6 @@ function visit(captures) {
         let rule_code_2 = r#"
 function visit(captures) {
     const node = captures.get("other_cap_name");
-    // TODO (JF): When the deno console issue is resolved, this will be removed
-    const console = Object.getPrototypeOf(globalThis).console;
     console.log(node.id);
 }
 "#;
@@ -832,5 +840,15 @@ function visit(captures) {
         execute_rule_internal_with_tree(&mut rt, &tree2, &source, ts_query_1, rule_code_1).unwrap();
         let log = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         assert_eq!(log, vec!["0".to_string(), "1".to_string()]);
+    }
+
+    /// Tests that `console` resolves to our `DDSA_Console` implementation, not deno's
+    #[test]
+    fn ddsa_console_global() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let code = "console instanceof DDSA_Console;";
+        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+        let correct_instance = runtime.scoped_execute(&script, |_, value| value.is_true());
+        assert!(correct_instance.unwrap());
     }
 }
