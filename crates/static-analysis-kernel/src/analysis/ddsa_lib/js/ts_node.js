@@ -176,6 +176,18 @@ export class TreeSitterNode {
         }
         return children;
     }
+
+    /**
+     * A getter to return the string version of this node's type.
+     * NOTE: This is deprecated, because it is a compatibility layer to support the stella API.
+     * Do not rely on this, as it will be removed.
+     *
+     * @returns {string}
+     * @deprecated
+     */
+    get astType() {
+        return this.type;
+    }
 }
 
 /**
