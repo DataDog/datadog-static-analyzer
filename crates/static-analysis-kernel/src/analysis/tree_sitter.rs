@@ -1,13 +1,12 @@
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use anyhow::Result;
 use indexmap::IndexMap;
 use tree_sitter::CaptureQuantifier;
 
-use crate::model::{
-    analysis::{MatchNode, MatchNodeContext, TreeSitterNode},
-    common::{Language, Position},
-};
+use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
+use crate::model::common::{Language, Position};
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
