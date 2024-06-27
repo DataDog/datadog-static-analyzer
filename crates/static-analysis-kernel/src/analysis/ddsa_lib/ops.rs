@@ -72,12 +72,12 @@ pub fn op_ts_node_text(state: &OpState, #[smi] node_id: u32) -> Option<String> {
 }
 
 /// Given a tree-sitter node (via its `node_id`), this function traverses the tree to find the
-/// children of the node, inserting them into the `TsNodeBridge`. Nodes are returned as a
+/// named children of the node, inserting them into the `TsNodeBridge`. Nodes are returned as a
 /// `v8::Uint32Array` of node ids.
 ///
-/// If the node doesn't exist, or it has no children, `None` is returned.
+/// If the node doesn't exist, or it has no named children, `None` is returned.
 #[op2]
-pub fn op_ts_node_children<'s>(
+pub fn op_ts_node_named_children<'s>(
     state: &OpState,
     scope: &mut v8::HandleScope<'s>,
     #[smi] node_id: u32,
@@ -88,7 +88,7 @@ pub fn op_ts_node_children<'s>(
     let ts_node = safe_raw_ts_node.to_node();
     let mut tree_cursor = ts_node.walk();
 
-    let children = ts_node.children(&mut tree_cursor);
+    let children = ts_node.named_children(&mut tree_cursor);
     let count = children.len();
     if count == 0 {
         None
