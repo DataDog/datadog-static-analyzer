@@ -4,7 +4,7 @@
 
 import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
 
-const { op_ts_node_children, op_ts_node_text } = Deno.core.ops;
+const { op_ts_node_named_children, op_ts_node_text } = Deno.core.ops;
 
 /**
  * A non-zero integer assigned by the Rust static-analysis-kernel.
@@ -149,7 +149,7 @@ export class TreeSitterNode {
     }
 
     /**
-     * A getter to return the children of this tree-sitter node.
+     * A getter to return the named children of this tree-sitter node.
      * NOTE: This is deprecated, because it is a compatibility layer to support the stella API.
      * Do not rely on this, as it will be removed.
      *
@@ -157,7 +157,7 @@ export class TreeSitterNode {
      * @deprecated
      */
     get children() {
-        const childIds = op_ts_node_children(this.id);
+        const childIds = op_ts_node_named_children(this.id);
         if (childIds === undefined) {
             return SEALED_EMPTY_ARRAY;
         }

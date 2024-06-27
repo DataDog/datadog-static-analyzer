@@ -864,8 +864,9 @@ function visit(captures) {
         assert_eq!(console_lines[1], expected_nested);
     }
 
+    /// Tests that `op_ts_node_named_children` returns only named children.
     #[test]
-    fn op_ts_node_children() {
+    fn op_ts_node_named_children() {
         let mut rt = JsRuntime::try_new().unwrap();
         let source_text = "function echo(a, b, c) {}";
         let filename = "some_filename.js";
@@ -880,7 +881,7 @@ function visit(captures) { }
 function visit(captures) {
     const node = captures.get("paramList");
     const children = node.children;
-    console.log(children);
+    console.log(children.map((c) => c.text));
 }
 "#;
         // First run a no-op rule to assert that only 1 (captured) node is sent to the bridge.
@@ -890,9 +891,8 @@ function visit(captures) {
         shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, get_children)
             .unwrap();
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        // We should've newly pushed the captured node's 7 children to the bridge.
-        assert_eq!(rt.bridge_ts_node.borrow().len(), 8);
-        let expected = r#"[{"type":"","start":{"line":1,"col":14},"end":{"line":1,"col":15},"text":"("},{"type":"identifier","start":{"line":1,"col":15},"end":{"line":1,"col":16},"text":"a"},{"type":"","start":{"line":1,"col":16},"end":{"line":1,"col":17},"text":","},{"type":"identifier","start":{"line":1,"col":18},"end":{"line":1,"col":19},"text":"b"},{"type":"","start":{"line":1,"col":19},"end":{"line":1,"col":20},"text":","},{"type":"identifier","start":{"line":1,"col":21},"end":{"line":1,"col":22},"text":"c"},{"type":"","start":{"line":1,"col":22},"end":{"line":1,"col":23},"text":")"}]"#;
-        assert_eq!(console_lines[0], expected);
+        // We should've newly pushed the captured node's 3 children to the bridge.
+        assert_eq!(rt.bridge_ts_node.borrow().len(), 4);
+        assert_eq!(console_lines[0], r#"["a","b","c"]"#);
     }
 }
