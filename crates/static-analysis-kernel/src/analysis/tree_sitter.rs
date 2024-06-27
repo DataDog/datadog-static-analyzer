@@ -9,43 +9,41 @@ use crate::model::{
     common::{Language, Position},
 };
 
-extern "C" {
-    fn tree_sitter_c_sharp() -> tree_sitter::Language;
-    fn tree_sitter_dockerfile() -> tree_sitter::Language;
-    fn tree_sitter_go() -> tree_sitter::Language;
-    fn tree_sitter_java() -> tree_sitter::Language;
-    fn tree_sitter_javascript() -> tree_sitter::Language;
-    fn tree_sitter_json() -> tree_sitter::Language;
-    fn tree_sitter_kotlin() -> tree_sitter::Language;
-    fn tree_sitter_python() -> tree_sitter::Language;
-    fn tree_sitter_ruby() -> tree_sitter::Language;
-    fn tree_sitter_rust() -> tree_sitter::Language;
-    fn tree_sitter_swift() -> tree_sitter::Language;
-    fn tree_sitter_tsx() -> tree_sitter::Language;
-    fn tree_sitter_hcl() -> tree_sitter::Language;
-    fn tree_sitter_yaml() -> tree_sitter::Language;
-    fn tree_sitter_starlark() -> tree_sitter::Language;
-}
-
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
-    unsafe {
-        match language {
-            Language::Csharp => tree_sitter_c_sharp(),
-            Language::Dockerfile => tree_sitter_dockerfile(),
-            Language::Go => tree_sitter_go(),
-            Language::Java => tree_sitter_java(),
-            Language::JavaScript => tree_sitter_javascript(),
-            Language::Kotlin => tree_sitter_kotlin(),
-            Language::Json => tree_sitter_json(),
-            Language::Python => tree_sitter_python(),
-            Language::Ruby => tree_sitter_ruby(),
-            Language::Rust => tree_sitter_rust(),
-            Language::Swift => tree_sitter_swift(),
-            Language::Terraform => tree_sitter_hcl(),
-            Language::TypeScript => tree_sitter_tsx(),
-            Language::Yaml => tree_sitter_yaml(),
-            Language::Starlark => tree_sitter_starlark(),
-        }
+    extern "C" {
+        fn tree_sitter_c_sharp() -> tree_sitter::Language;
+        fn tree_sitter_dockerfile() -> tree_sitter::Language;
+        fn tree_sitter_go() -> tree_sitter::Language;
+        fn tree_sitter_java() -> tree_sitter::Language;
+        fn tree_sitter_javascript() -> tree_sitter::Language;
+        fn tree_sitter_json() -> tree_sitter::Language;
+        fn tree_sitter_kotlin() -> tree_sitter::Language;
+        fn tree_sitter_python() -> tree_sitter::Language;
+        fn tree_sitter_ruby() -> tree_sitter::Language;
+        fn tree_sitter_rust() -> tree_sitter::Language;
+        fn tree_sitter_swift() -> tree_sitter::Language;
+        fn tree_sitter_tsx() -> tree_sitter::Language;
+        fn tree_sitter_hcl() -> tree_sitter::Language;
+        fn tree_sitter_yaml() -> tree_sitter::Language;
+        fn tree_sitter_starlark() -> tree_sitter::Language;
+    }
+
+    match language {
+        Language::Csharp => unsafe { tree_sitter_c_sharp() },
+        Language::Dockerfile => unsafe { tree_sitter_dockerfile() },
+        Language::Go => unsafe { tree_sitter_go() },
+        Language::Java => unsafe { tree_sitter_java() },
+        Language::JavaScript => unsafe { tree_sitter_javascript() },
+        Language::Kotlin => unsafe { tree_sitter_kotlin() },
+        Language::Json => unsafe { tree_sitter_json() },
+        Language::Python => unsafe { tree_sitter_python() },
+        Language::Ruby => unsafe { tree_sitter_ruby() },
+        Language::Rust => unsafe { tree_sitter_rust() },
+        Language::Swift => unsafe { tree_sitter_swift() },
+        Language::Terraform => unsafe { tree_sitter_hcl() },
+        Language::TypeScript => unsafe { tree_sitter_tsx() },
+        Language::Yaml => unsafe { tree_sitter_yaml() },
+        Language::Starlark => unsafe { tree_sitter_starlark() },
     }
 }
 
