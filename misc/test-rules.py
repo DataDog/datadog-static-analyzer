@@ -12,7 +12,6 @@ import json
 import optparse
 import os.path
 import os
-import random
 import shlex
 import shutil
 import signal
@@ -22,6 +21,8 @@ import time
 
 import requests
 import sys
+
+RETRY_DELAY = 1
 
 parser = optparse.OptionParser()
 parser.add_option(
@@ -63,20 +64,21 @@ def fetch_ruleset(ruleset_name: str):
     :return:
     """
 
-    dd_site = os.environ["DD_SITE"]
-    if dd_site is None:
+    if "DD_SITE" not in os.environ:
         print("DD_SITE environment variable not set")
         sys.exit(1)
+    dd_site = os.environ["DD_SITE"]
 
     url: str = f"https://api.{dd_site}/api/v2/static-analysis/rulesets/{ruleset_name}"
 
-    response = requests.get(url, timeout=10)
+    for _ in range(5):
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        time.sleep(RETRY_DELAY)
 
-    if response.status_code != 200:
-        print(f"ruleset {ruleset_name} not found")
-        sys.exit(1)
-
-    return response.json()
+    print(f"[{response.status_code} failed to get ruleset {ruleset_name}")
+    sys.exit(1)
 
 
 def fetch_default_ruleset(language: str):
@@ -86,23 +88,24 @@ def fetch_default_ruleset(language: str):
     :return:
     """
 
-    dd_site = os.environ["DD_SITE"]
-    if dd_site is None:
+    if 'DD_SITE' not in os.environ:
         print("DD_SITE environment variable not set")
-        sys.exit(0)
-
-    url: str = f"https://api.{dd_site}/api/v2/static-analysis/default-rulesets/{language}"
-
-    response = requests.get(url, timeout=10)
-
-    if response.status_code != 200:
-        print(f"language {language} not found")
         sys.exit(1)
+    dd_site = os.environ["DD_SITE"]
 
-    return response.json()
+    url = f"https://api.{dd_site}/api/v2/static-analysis/default-rulesets/{language}"
+
+    for _ in range(5):
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        time.sleep(RETRY_DELAY)
+
+    print(f"[{response.status_code}] failed to get default ruleset for language {language}")
+    sys.exit(1)
 
 
-def ping_server(port):
+def ping_server(port: int):
     try:
         r = requests.get(f"http://localhost:{port}/version")
         if r.status_code != 200:
@@ -113,15 +116,15 @@ def ping_server(port):
 
 
 # Gets a currently free port. (note: this is subject to race conditions, and so isn't guaranteed)
-def get_free_port():
+def get_free_port() -> int | None:
     import socket
 
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("", 0))
-            port = s.getsockname()[1]
+            port: int = s.getsockname()[1]
             return port
-    except:
+    except OSError:
         return None
 
 
@@ -132,7 +135,7 @@ def start_server():
     MAX_PINGS = 5
     port = -1
     pid = -1
-    for start_attempt in range(MAX_STARTS):
+    for _ in range(MAX_STARTS):
         port = get_free_port()
         if port is None:
             continue
@@ -140,9 +143,12 @@ def start_server():
             pid = os.spawnl(
                 os.P_NOWAIT, options.serverbin, options.serverbin, "-p", str(port)
             )
+            break
         except:
-            continue
-        time.sleep(0.1)
+            time.sleep(0.1)
+    if port == -1 or port is None:
+        print(f"Error: unable to find a free port after {MAX_STARTS} attempts")
+        sys.exit(1)
     for ping_attempt in range(MAX_PINGS):
         if ping_server(port):
             return port, pid
@@ -151,10 +157,10 @@ def start_server():
     print(f"Error: unable start a server after {MAX_STARTS} attempts")
     sys.exit(1)
 
-def stop_server(server_pid):
+def stop_server(server_pid: int):
     os.kill(server_pid, signal.SIGKILL)
 
-def test_ruleset_server(ruleset, port):
+def test_ruleset_server(ruleset, port: int):
     print(f"Testing ruleset {ruleset['data']['id']} on the server")
     rules = ruleset['data']['attributes']['rules']
 
@@ -186,7 +192,7 @@ def test_ruleset_server(ruleset, port):
                 results_annotations_count = len(test_results[0]['violations'])
 
             if results_annotations_count != test_annotations_count:
-                print(f"number of annotations mistmatch for rule {rule['name']}")
+                print(f"number of annotations mismatch for rule {rule['name']}")
                 print(f"Expected number of annotations: {test_annotations_count}")
                 print(f"Got number of annotations: {results_annotations_count}")
                 sys.exit(1)
@@ -281,7 +287,7 @@ def test_ruleset_cli(ruleset):
                 results_annotations_count = len(test_results[0]['violations'])
 
                 if results_annotations_count != test_annotations_count:
-                    print(f"number of annotations mistmatch for rule {rule['name']}")
+                    print(f"number of annotations mismatch for rule {rule['name']}")
                     print(f"Expected number of annotations: {test_annotations_count}")
                     print(f"Got number of annotations: {results_annotations_count}")
                     print(f"Command executed: {cmd}")

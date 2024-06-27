@@ -9,8 +9,9 @@ deno_core::extension!(
     ops = [
         ops::op_current_filename,
         ops::op_console_push,
-        ops::op_ts_node_text,
         ops::op_current_ts_tree_text,
+        ops::op_ts_node_children,
+        ops::op_ts_node_text,
     ],
     esm_entry_point = "ext:ddsa_lib/__bootstrap.js",
     esm = [ dir "src/analysis/ddsa_lib/js", "__bootstrap.js" ],
@@ -23,6 +24,7 @@ deno_core::extension!(
         ("ext:ddsa_lib/edit", "edit.js"),
         ("ext:ddsa_lib/fix", "fix.js"),
         ("ext:ddsa_lib/query_match", "query_match.js"),
+        ("ext:ddsa_lib/query_match_compat", "query_match_compat.js"),
         ("ext:ddsa_lib/stella_compat", "stella_compat.js"),
         ("ext:ddsa_lib/utility", "utility.js"),
         ("ext:ddsa_lib/ts_node", "ts_node.js"),

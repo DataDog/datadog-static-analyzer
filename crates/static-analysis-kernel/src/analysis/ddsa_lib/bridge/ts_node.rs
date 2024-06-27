@@ -170,8 +170,8 @@ impl TsNodeBridge {
 mod tests {
     use crate::analysis::ddsa_lib::bridge::ts_node::TsNodeBridge;
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
-    use crate::analysis::ddsa_lib::common::{attach_as_global, get_field, v8_interned};
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::common::{get_field, v8_interned};
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
     use crate::analysis::ddsa_lib::RawTSNode;
     use crate::analysis::tree_sitter::get_tree_sitter_language;
     use crate::model::common::Language;
@@ -183,7 +183,7 @@ mod tests {
 
     /// A tree-sitter tree and the text it was parsed from, along with convenience functions
     /// to inspect the nodes.
-    struct Tree(tree_sitter::Tree, &'static str);
+    struct Tree(Arc<tree_sitter::Tree>, &'static str);
 
     impl Tree {
         fn text(&self, node: tree_sitter::Node<'_>) -> &'static str {
@@ -218,7 +218,7 @@ mod tests {
             Self(parser)
         }
         fn parse(&mut self, text: &'static str) -> Tree {
-            Tree(self.0.parse(text, None).unwrap(), text)
+            Tree(Arc::new(self.0.parse(text, None).unwrap()), text)
         }
         fn language(&self) -> tree_sitter::Language {
             self.0.language().unwrap()

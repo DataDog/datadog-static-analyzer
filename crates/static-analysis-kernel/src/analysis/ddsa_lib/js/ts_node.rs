@@ -55,11 +55,14 @@ impl TreeSitterNodeFn<Class> {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{attach_as_global, v8_interned, Class, Instance};
+    use crate::analysis::ddsa_lib::bridge::MirroredTsSymbolMap;
+    use crate::analysis::ddsa_lib::common::{v8_interned, Class, Instance};
     use crate::analysis::ddsa_lib::js::{TreeSitterNode, TreeSitterNodeFn};
     use crate::analysis::ddsa_lib::test_utils::{
-        cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
     };
+    use crate::analysis::tree_sitter::get_tree_sitter_language;
+    use crate::model::common::Language;
     use deno_core::v8;
     use std::marker::PhantomData;
 
@@ -81,6 +84,7 @@ mod tests {
             "type",
             "start",
             "end",
+            "children",
         ];
         assert!(js_instance_eq(TreeSitterNodeFn::CLASS_NAME, expected));
         let expected = &[];
@@ -141,5 +145,43 @@ mod tests {
             // exact same object as the cached object.
             assert_eq!(v8_cached_pos.get_hash(), v8_returned_pos.get_hash())
         }
+    }
+
+    /// Tests that the `type` getter returns the string TSSymbol name.
+    #[test]
+    fn type_getter() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
+
+        let lang_js = get_tree_sitter_language(&Language::JavaScript);
+        // (Included to alert if tree_sitter grammar changes the symbol ids)
+        const EXPECTED: (u16, &str) = (149, "variable_declarator");
+        assert_eq!(lang_js.node_kind_for_id(EXPECTED.0), Some(EXPECTED.1));
+
+        let ts_sym_map = MirroredTsSymbolMap::new(scope, &lang_js);
+        let v8_tsm = ts_sym_map.as_local(scope);
+        attach_as_global(scope, v8_tsm, "__RUST_BRIDGE__ts_symbol_lookup");
+
+        let base_ts_node = TreeSitterNode::<Instance> {
+            id: 2,
+            start_line: 456,
+            start_col: 5,
+            end_line: 456,
+            end_col: 32,
+            node_type_id: EXPECTED.0,
+            _pd: PhantomData,
+        };
+        let v8_ts_node = js_class.new_instance(scope, base_ts_node);
+        attach_as_global(scope, v8_ts_node, "TS_NODE");
+
+        let code = "TS_NODE.type;";
+        let ret_value = try_execute(scope, code).unwrap();
+        assert_eq!(ret_value.to_rust_string_lossy(scope), EXPECTED.1);
+
+        // And if the TSNode is mutated to have an invalid _typeId, it should return an empty string.
+        let code = "TS_NODE._typeId = 99999; TS_NODE.type;";
+        let ret_value = try_execute(scope, code).unwrap();
+        assert_eq!(ret_value.to_rust_string_lossy(scope), "");
     }
 }

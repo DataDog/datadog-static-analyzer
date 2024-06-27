@@ -2,7 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-const { op_ts_node_text } = Deno.core.ops;
+import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
+
+const { op_ts_node_children, op_ts_node_text } = Deno.core.ops;
 
 /**
  * A non-zero integer assigned by the Rust static-analysis-kernel.
@@ -143,8 +145,27 @@ export class TreeSitterNode {
     get type() {
         // Note: the map lookup should only return undefined if either `this._typeId` or the symbol map were mutated.
         // Although that should never happen, we handle it by returning an empty string.
-        // return globalThis.__RUST_BRIDGE__ts_symbol_lookup.get(this._typeId) ?? "";
-        return "unimplemented"; // (The above line will be uncommented when the TsSymbol bridge is enabled in the runtime)
+        return globalThis.__RUST_BRIDGE__ts_symbol_lookup.get(this._typeId) ?? "";
+    }
+
+    /**
+     * A getter to return the children of this tree-sitter node.
+     * NOTE: This is deprecated, because it is a compatibility layer to support the stella API.
+     * Do not rely on this, as it will be removed.
+     *
+     * @returns {Array<TreeSitterNode>}
+     * @deprecated
+     */
+    get children() {
+        const childIds = op_ts_node_children(this.id);
+        if (childIds === undefined) {
+            return SEALED_EMPTY_ARRAY;
+        }
+        const children = [];
+        for (const childId of childIds) {
+            children.push(globalThis.__RUST_BRIDGE__ts_node.get(childId))
+        }
+        return children;
     }
 }
 

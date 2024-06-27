@@ -93,6 +93,11 @@ impl FileContextGo {
         }
     }
 
+    /// Clears the internal [`MirroredIndexMap`] of any package aliases.
+    pub fn clear(&mut self, scope: &mut HandleScope) {
+        self.packages_aliased.clear(scope);
+    }
+
     /// Returns a reference to the [`v8::Global`] map backing the package to alias map.
     pub(crate) fn package_alias_v8_map(&self) -> &v8::Global<v8::Map> {
         self.packages_aliased.v8_map()

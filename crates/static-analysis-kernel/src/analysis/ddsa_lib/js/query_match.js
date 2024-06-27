@@ -19,6 +19,20 @@ export class QueryMatch {
     }
 
     /**
+     * Returns the node with the given capture name, following semantics from {@link QueryMatch._getId}
+     * @param {string} name
+     * @returns {TreeSitterNode | undefined}
+     */
+    get(name) {
+        const nodeId = this._getId(name);
+        if (nodeId === undefined) {
+            return undefined;
+        }
+        // Note: the Rust bridge guarantees that this map element will be present (assuming `_captures` was not mutated).
+        return globalThis.__RUST_BRIDGE__ts_node.get(nodeId);
+    }
+
+    /**
      * Returns the id of the node with the given capture name. If there are multiple matching captures,
      * only the last will be returned, and the rest will be silently ignored.
      * @param {string} name
@@ -28,7 +42,7 @@ export class QueryMatch {
      * This is implemented as `O(N)` iteration instead of `O(1)` lookup because the expected number of
      * capture names is small (e.g. < 10).
      */
-    get(name) {
+    _getId(name) {
         const len = this._captures?.length ?? 0;
         for (let i = 0; i < len; i++) {
             const item = this._captures[i];
@@ -46,6 +60,27 @@ export class QueryMatch {
     }
 
     /**
+     * Returns an array of the nodes with the given capture name, following semantics from {@link QueryMatch._getManyIds}
+     * @param {string} name
+     * @returns {Array<TreeSitterNode> | undefined}
+     */
+    getMany(name) {
+        const nodeIds = this._getManyIds(name);
+        if (nodeIds === undefined) {
+            return undefined;
+        }
+        const nodes = [];
+        const len = nodeIds.length;
+        for (let i = 0; i < len; i++) {
+            const nodeId = nodeIds[i];
+            // Note: the Rust bridge guarantees that this map element will be present (assuming `_captures` was not mutated).
+            const node = globalThis.__RUST_BRIDGE__ts_node.get(nodeId);
+            nodes.push(node);
+        }
+        return nodes;
+    }
+
+    /**
      * Returns an array of the ids of nodes with the given capture name.
      * If this is called on a capture that is a `SingleCapture` instead of a `MultiCapture`, the capture
      * will be turned in an array as the sole element.
@@ -56,7 +91,7 @@ export class QueryMatch {
      * This is implemented as `O(N)` iteration instead of `O(1)` lookup because the expected number of
      * capture names is small (e.g. < 10).
      */
-    getMany(name) {
+    _getManyIds(name) {
         const len = this._captures?.length ?? 0;
         for (let i = 0; i < len; i++) {
             const item = this._captures[i];
@@ -69,54 +104,5 @@ export class QueryMatch {
             }
         }
         return undefined;
-    }
-}
-
-/**
- * A compatibility layer to support object-style key lookup for capture names on a {@link QueryMatch}.
- *
- * ```js
- * // QueryMatchCompat layer:
- * // Note that there is no support for `getMany`.
- * const cap = captures["capture_name"];
- * ```
- * This is considered "deprecated", and this will eventually be removed, requiring rules to use:
- * ```js
- * // "Official" access pattern
- * const cap = captures.get("capture_name");
- * const caps = captures.getMany("capture_name");
- * ```
- * @deprecated
- */
-export class QueryMatchCompat {
-    /**
-     * @param {QueryMatch} queryMatchInstance
-     */
-    constructor(queryMatchInstance) {
-        return new Proxy(queryMatchInstance, {
-            get(target, p, _receiver) {
-                switch (p) {
-                    // We need to special-case "get" and "getMany" because there could be a capture name that collides, e.g
-                    // `(identifier) @get` or `(function_declaration) @getMany`.
-                    // In this (edge) case, the standard `.get("...")` and `.getMany("...")` functions will not be accessible.
-                    case "get":
-                    case "getMany": {
-                        let value = target.get(p);
-                        if (value === undefined) {
-                            // If undefined, then the code is invoking `.get("...")`, so forward the call to that function,
-                            // binding it to ensure the proper `this` context.
-                            return target[p].bind(target);
-                        } else {
-                            // Otherwise, return the capture with the name of `p`.
-                            return value;
-                        }
-                    }
-                    default:
-                        // Because this property name does not collide, we know it can only be a capture name lookup
-                        // using the (deprecated) object property lookup syntax.
-                        return target.get(p);
-                }
-            },
-        });
     }
 }

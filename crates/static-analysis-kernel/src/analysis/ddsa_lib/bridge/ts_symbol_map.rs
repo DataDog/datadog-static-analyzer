@@ -25,6 +25,8 @@ impl TsSymbolMapBridge {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] map for a specific language.
+    /// The map will always be (`!undefined`) because it is lazily computed and cached if it
+    /// doesn't already exist.
     pub fn get_map<'s>(
         &self,
         scope: &mut HandleScope<'s>,
@@ -52,7 +54,7 @@ enum NameOrSymbol {
 ///
 /// Only "visible" and "named" nodes are included in this map.
 #[derive(Debug)]
-struct MirroredTsSymbolMap(MirroredIndexMap<NameOrSymbol, NameOrSymbol>);
+pub(crate) struct MirroredTsSymbolMap(MirroredIndexMap<NameOrSymbol, NameOrSymbol>);
 
 impl MirroredTsSymbolMap {
     pub fn new(scope: &mut HandleScope, ts_language: &tree_sitter::Language) -> Self {
@@ -88,8 +90,8 @@ impl MirroredTsSymbolMap {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::bridge::ts_symbol_map::TsSymbolMapBridge;
-    use crate::analysis::ddsa_lib::common::{attach_as_global, v8_interned};
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::common::v8_interned;
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
     use crate::analysis::tree_sitter::get_tree_sitter_language;
     use crate::model::common::Language;
     use deno_core::v8;

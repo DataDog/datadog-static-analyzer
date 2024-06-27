@@ -49,7 +49,12 @@ export function buildEdit(startLine, startCol, endLine, endCol, editType, conten
 }
 
 export function addError(error) {
-  stellaAllErrors.push(error);
+  /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+  if (globalThis.__ENV_STELLA__ === true) {
+    stellaAllErrors.push(error);
+  } else {
+    globalThis.__RUST_BRIDGE__violation.push(error);
+  }
 }
 
 // helper function getCode
@@ -85,4 +90,48 @@ export function getCodeForNode(node, code) {
 export function _cleanExecute(closure) {
   stellaAllErrors.length = 0;
   return closure();
+}
+
+/**
+ * An object that, when accessed, lazily fetches the filename from the DDSA runtime context.
+ * @augments String
+ * @deprecated
+ */
+export class VisitArgFilenameCompat {
+  constructor() {
+    return new Proxy({ inner: undefined }, {
+      get(target, p, _receiver) {
+        // The RootContext maintains a cache, so we can re-assign the getter's return value each time without allocating.
+        target.inner = globalThis.__RUST_BRIDGE__context.filename;
+
+        const propValue = target.inner[p];
+        if (typeof propValue === "function") {
+          return propValue.bind(target.inner);
+        }
+        return propValue;
+      },
+    });
+  }
+}
+
+/**
+ * An object that, when accessed, lazily fetches the file contents from the DDSA runtime context.
+ * @augments String
+ * @deprecated
+ */
+export class VisitArgCodeCompat {
+  constructor() {
+    return new Proxy({ inner: undefined }, {
+      get(target, p, _receiver) {
+        // The RootContext maintains a cache, so we can re-assign the getter's return value each time without allocating.
+        target.inner = globalThis.__RUST_BRIDGE__context.fileContents;
+
+        const propValue = target.inner[p];
+        if (typeof propValue === "function") {
+          return propValue.bind(target.inner);
+        }
+        return propValue;
+      },
+    });
+  }
 }

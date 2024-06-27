@@ -12,6 +12,8 @@ pub type NodeId = u32;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DDSAJsRuntimeError {
+    #[error("execution error: {reason}")]
+    Execution { reason: String },
     #[error("expected `{name}` to exist within the v8 context")]
     VariableNotFound { name: String },
     #[error("type should be \"{expected}\", not \"{got}\"")]
@@ -24,6 +26,8 @@ pub enum DDSAJsRuntimeError {
         identifier: &'static str,
         expected: &'static str,
     },
+    #[error("unable to interpret JavaScript: `{reason}`")]
+    Interpreter { reason: String },
     /// A (shorthand) generic error used to fail a test. The test itself will have the appropriate context.
     #[cfg(test)]
     #[error("cfg(test): unspecified")]
@@ -232,17 +236,112 @@ pub fn set_key_value<G>(
     v8_object.set(scope, v8_key.into(), v8_value);
 }
 
-/// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
-/// any previous value.
-pub fn attach_as_global<'s, T>(
-    scope: &mut HandleScope<'s>,
-    v8_item: impl v8::Handle<Data = T>,
-    name: &str,
-) where
-    v8::Local<'s, v8::Value>: From<v8::Local<'s, T>>,
-{
-    let v8_local = v8::Local::new(scope, v8_item);
-    let global = scope.get_current_context().global(scope);
-    let v8_key = v8_string(scope, name);
-    global.set(scope, v8_key.into(), v8_local.into());
+/// Creates a `v8::Global` [`UnboundScript`](v8::UnboundScript) from the given code.
+pub fn compile_script(
+    scope: &mut HandleScope,
+    code: &str,
+) -> Result<v8::Global<v8::UnboundScript>, DDSAJsRuntimeError> {
+    let code_str = v8_string(scope, code);
+    let tc_scope = &mut v8::TryCatch::new(scope);
+    let script_result = v8::Script::compile(tc_scope, code_str, None);
+
+    let script = script_result.ok_or_else(|| {
+        let exception = tc_scope
+            .exception()
+            .expect("return value should only be `None` if an error was caught");
+        let reason = exception.to_rust_string_lossy(tc_scope);
+        tc_scope.reset();
+        DDSAJsRuntimeError::Interpreter { reason }
+    })?;
+
+    let unbound_script = script.get_unbound_script(tc_scope);
+    Ok(v8::Global::new(tc_scope, unbound_script))
+}
+
+pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Context>);
+
+/// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
+///
+/// If provided, a `config_default_v8_context` can configure the default `v8::Context`
+/// that will be used as the base for all newly-created `v8::Context`s within the
+/// runtime's `v8::Isolate`.
+pub fn create_base_runtime(
+    extensions: Vec<deno_core::Extension>,
+    config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
+) -> deno_core::JsRuntime {
+    if let Some(config_fn) = config_default_v8_context {
+        // If a function is provided to configure the default v8::Context, first create a v8::Snapshot,
+        // mutate the default context, and then create a new JsRuntime with that snapshot.
+        let mut snapshot_runtime =
+            deno_core::JsRuntimeForSnapshot::new(Default::default(), Default::default());
+        {
+            let scope = &mut snapshot_runtime.handle_scope();
+            let default_ctx = scope.get_current_context();
+            config_fn(scope, default_ctx);
+        }
+        let snapshot = snapshot_runtime.snapshot();
+        deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+            extensions,
+            startup_snapshot: Some(deno_core::Snapshot::JustCreated(snapshot)),
+            ..Default::default()
+        })
+    } else {
+        deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+            extensions,
+            ..Default::default()
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::ddsa_lib::common::{
+        compile_script, create_base_runtime, v8_interned, DDSAJsRuntimeError,
+    };
+    use crate::analysis::ddsa_lib::test_utils::try_execute;
+    use crate::analysis::ddsa_lib::JsRuntime;
+
+    #[test]
+    fn compile_script_invalid() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let invalid_js = r#"
+const invalidSyntax = const;
+"#;
+        let err = compile_script(&mut runtime.v8_handle_scope(), invalid_js).unwrap_err();
+        let DDSAJsRuntimeError::Interpreter { reason } = err else {
+            panic!("error variant should be `Interpreter`");
+        };
+        assert_eq!(reason, "SyntaxError: Unexpected token 'const'");
+    }
+
+    #[test]
+    fn compile_script_valid() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let invalid_js = r#"
+const validSyntax = 123;
+"#;
+        assert!(compile_script(&mut runtime.v8_handle_scope(), invalid_js).is_ok());
+    }
+
+    /// Tests that `create_base_runtime` can modify the default v8::Context for the runtime's v8 isolate.
+    #[test]
+    fn create_base_runtime_mutate_ctx() {
+        let mut runtime = create_base_runtime(vec![], None);
+        // We use the ES6 `Map` constructor because it will always be present
+        let code = "Map;";
+
+        let value = try_execute(&mut runtime.handle_scope(), code).unwrap();
+        assert!(value.is_object());
+
+        let mut runtime = create_base_runtime(
+            vec![],
+            Some(Box::new(|scope, default_ctx| {
+                let key = v8_interned(scope, "Map");
+                let global_proxy = default_ctx.global(scope);
+                global_proxy.delete(scope, key.into());
+            })),
+        );
+        let value = try_execute(&mut runtime.handle_scope(), code).unwrap_err();
+        assert_eq!(value, "ReferenceError: Map is not defined".to_string());
+    }
 }

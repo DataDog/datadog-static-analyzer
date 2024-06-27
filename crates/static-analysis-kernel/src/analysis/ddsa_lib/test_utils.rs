@@ -6,7 +6,9 @@
 //       their module, we work around this by exposing the following functions to all compilation profiles.
 //       They should only be used in unit tests.
 
-use crate::analysis::ddsa_lib::common::{iter_v8_array, load_function, v8_string};
+use crate::analysis::ddsa_lib::common::{
+    iter_v8_array, load_function, v8_interned, v8_string, v8_uint,
+};
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use deno_core::v8::HandleScope;
 use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
@@ -75,7 +77,10 @@ const BASE_INSTANCE_PROTO_PROPS: &[&str] = &[
 
 /// A function that inspects a [`v8::Object`] and returns a list of all property names
 /// (excluding property names from the object's prototype chain).
-fn js_all_props(scope: &mut HandleScope, value: &impl Deref<Target = v8::Object>) -> Vec<String> {
+pub(crate) fn js_all_props(
+    scope: &mut HandleScope,
+    value: &impl Deref<Target = v8::Object>,
+) -> Vec<String> {
     use std::collections::HashSet;
     /// Helper function to enumerate all properties in an object.
     fn get_all_props(scope: &mut HandleScope, object: &v8::Object) -> HashSet<String> {
@@ -190,4 +195,76 @@ for (const [name, obj] of Object.entries({})) {{
         .esm_entry_point(specifier)
         .ops(prod_ops)
         .build()
+}
+
+/// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
+/// any previous value.
+pub(crate) fn attach_as_global<'s, T>(
+    scope: &mut HandleScope<'s>,
+    v8_item: impl v8::Handle<Data = T>,
+    name: &str,
+) where
+    v8::Local<'s, v8::Value>: From<v8::Local<'s, T>>,
+{
+    let v8_local = v8::Local::new(scope, v8_item);
+    let global = scope.get_current_context().global(scope);
+    let v8_key = v8_string(scope, name);
+    global.set(scope, v8_key.into(), v8_local.into());
+}
+
+/// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
+/// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
+pub(crate) fn make_stub_tsn_bridge<'s>(
+    scope: &mut HandleScope<'s>,
+    node_ids: &[u32],
+) -> v8::Local<'s, v8::Map> {
+    let stub_tsn_bridge = v8::Map::new(scope);
+    let s_key_id = v8_interned(scope, "id");
+    for &node_id in node_ids {
+        let stub_ts_node = v8::Object::new(scope);
+        let v8_node_id = v8_uint(scope, node_id);
+        stub_ts_node.set(scope, s_key_id.into(), v8_node_id.into());
+        let s_key_abc = v8_interned(scope, "abc");
+        let v8_value = v8_interned(scope, "def");
+        stub_ts_node.set(scope, s_key_abc.into(), v8_value.into());
+        stub_tsn_bridge.set(scope, v8_node_id.into(), stub_ts_node.into());
+    }
+    stub_tsn_bridge
+}
+
+/// Creates a stub [`v8::Object`] that represents a `RootContext`.
+pub(crate) fn make_stub_root_context<'s>(
+    scope: &mut HandleScope<'s>,
+    arguments: &[(&str, &str)],
+    filename: &str,
+    file_contents: &str,
+) -> v8::Local<'s, v8::Object> {
+    use crate::analysis::ddsa_lib::common::{load_function, v8_string};
+
+    let v8_root_ctx = v8::Object::new(scope);
+
+    let rule_ctx_class = load_function(scope, "RuleContext").unwrap();
+    let rule_ctx_class = rule_ctx_class.open(scope);
+    let v8_arguments = v8::Map::new(scope);
+    for &(name, value) in arguments {
+        let s_key = v8_interned(scope, name);
+        let v8_value = v8_string(scope, value);
+        v8_arguments.set(scope, s_key.into(), v8_value.into());
+    }
+    let v8_rule_ctx = rule_ctx_class
+        .new_instance(scope, &[v8_arguments.into()][..])
+        .unwrap();
+
+    let s_key_rule_ctx = v8_interned(scope, "ruleCtx");
+    v8_root_ctx.set(scope, s_key_rule_ctx.into(), v8_rule_ctx.into());
+
+    let s_key_filename = v8_interned(scope, "filename");
+    let v8_filename = v8_string(scope, filename);
+    v8_root_ctx.set(scope, s_key_filename.into(), v8_filename.into());
+
+    let s_key_file_contents = v8_interned(scope, "fileContents");
+    let v8_file_contents = v8_string(scope, file_contents);
+    v8_root_ctx.set(scope, s_key_file_contents.into(), v8_file_contents.into());
+
+    v8_root_ctx
 }

@@ -134,6 +134,7 @@ fn execute_rule_internal(
     let js_code = format!(
         r#"
 _cleanExecute(() => {{
+__ENV_STELLA__ = true;
 // Note: variables prefixed with "GLOBAL_" are defined by the static analysis kernel directly via the v8 API.
 
 // The rule's JavaScript code

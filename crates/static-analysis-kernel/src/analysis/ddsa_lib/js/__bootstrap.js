@@ -4,14 +4,17 @@
 
 "use strict";
 
+import {DDSA_Console} from "ext:ddsa_lib/utility";
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
-import {QueryMatch, QueryMatchCompat} from "ext:ddsa_lib/query_match";
+import {QueryMatch} from "ext:ddsa_lib/query_match";
+import {QueryMatchCompat} from "ext:ddsa_lib/query_match_compat";
 import {RootContext} from "ext:ddsa_lib/context_root";
 import {RuleContext} from "ext:ddsa_lib/context_rule";
 import {TreeSitterNode} from "ext:ddsa_lib/ts_node";
 // TODO(JF): These are only used by the Rust runtime, which currently expects them in global scope, but
 //           these should be hidden inside another object, not `globalThis`.
+globalThis.DDSA_Console = DDSA_Console;
 globalThis.FileContext = FileContext;
 globalThis.FileContextGo = FileContextGo;
 globalThis.QueryMatch = QueryMatch;
@@ -29,5 +32,4 @@ for (const [name, obj] of Object.entries(stellaCompat)) {
 }
 ///////////
 
-import {DDSA_Console} from "ext:ddsa_lib/utility";
 globalThis.console = new DDSA_Console();
