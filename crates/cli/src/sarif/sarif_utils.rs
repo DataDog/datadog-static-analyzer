@@ -8,13 +8,14 @@ use git2::{BlameOptions, Repository};
 use kernel::constants::CARGO_VERSION;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use serde_sarif::sarif::{
-    self, ArtifactChangeBuilder, ArtifactLocationBuilder, Fix, FixBuilder, LocationBuilder,
+    self, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder, LocationBuilder,
     MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder, Replacement,
     ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif, SarifBuilder,
     Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
 use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
+use kernel::model::common::Position;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
 use kernel::model::violation::Violation;
 use kernel::model::{
@@ -386,6 +387,25 @@ fn generate_tool_section(rules: &[SarifRule], options: &SarifGenerationOptions) 
     Ok(ToolBuilder::default().driver(driver).build()?)
 }
 
+fn is_valid_position(position: &Position) -> bool {
+    position.line > 0 && position.col > 0
+}
+
+/// Check that the violation is valid and must be included
+fn is_valid_violation(violation: &Violation) -> bool {
+    if !is_valid_position(&violation.start) || !is_valid_position(&violation.end) {
+        return false;
+    }
+
+    // make sure that no violation has an invalid fix
+    return violation.fixes.iter().all(|f| {
+        f.edits.iter().all(|e| {
+            is_valid_position(&e.start)
+                && e.end.clone().map(|p| is_valid_position(&p)).unwrap_or(true)
+        })
+    });
+}
+
 /// Convert our severity enumeration into the corresponding SARIF values.
 /// The main discrepancy here is that Notice maps to note.
 /// See [this document](https://github.com/oasis-tcs/sarif-spec/blob/main/Documents/CommitteeSpecifications/2.1.0/sarif-schema-2.1.0.json#L1566)
@@ -503,108 +523,122 @@ fn generate_results(
             }
 
             let options = options_orig.clone();
-            rule_result.violations().iter().map(move |violation| {
-                // if we find the rule for this violation, get the id, level and category
-                let location = LocationBuilder::default()
-                    .physical_location(
-                        PhysicalLocationBuilder::default()
-                            .artifact_location(
-                                ArtifactLocationBuilder::default()
-                                    .uri(encode_filename(rule_result.file_path().to_string()))
-                                    .build()
-                                    .unwrap(),
-                            )
-                            .region(
-                                RegionBuilder::default()
-                                    .start_line(violation.start.line)
-                                    .start_column(violation.start.col)
-                                    .end_line(violation.end.line)
-                                    .end_column(violation.end.col)
-                                    .build()?,
-                            )
-                            .build()?,
-                    )
-                    .build()?;
+            rule_result
+                .violations()
+                .iter()
+                .filter(|violation| {
+                    let is_valid = is_valid_violation(violation);
+                    if !is_valid && options_orig.debug {
+                        eprintln!(
+                            "Invalid violations detected, check the rule {}",
+                            rule_result.rule_name()
+                        )
+                    }
+                    is_valid
+                })
+                .map(move |violation| {
+                    // if we find the rule for this violation, get the id, level and category
+                    let location = LocationBuilder::default()
+                        .physical_location(
+                            PhysicalLocationBuilder::default()
+                                .artifact_location(
+                                    ArtifactLocationBuilder::default()
+                                        .uri(encode_filename(rule_result.file_path().to_string()))
+                                        .build()
+                                        .unwrap(),
+                                )
+                                .region(
+                                    RegionBuilder::default()
+                                        .start_line(violation.start.line)
+                                        .start_column(violation.start.col)
+                                        .end_line(violation.end.line)
+                                        .end_column(violation.end.col)
+                                        .build()?,
+                                )
+                                .build()?,
+                        )
+                        .build()?;
 
-                let fixes: Vec<Fix> = violation
-                    .fixes
-                    .iter()
-                    .map(|fix| {
-                        let replacements: Vec<Replacement> =
-                            fix.edits.iter().map(IntoSarif::into_sarif).collect();
+                    let fixes: Vec<sarif::Fix> = violation
+                        .fixes
+                        .iter()
+                        .map(|fix| {
+                            let replacements: Vec<Replacement> =
+                                fix.edits.iter().map(IntoSarif::into_sarif).collect();
 
-                        let changes = ArtifactChangeBuilder::default()
-                            .artifact_location(
-                                ArtifactLocationBuilder::default()
-                                    .uri(encode_filename(rule_result.file_path().to_string()))
-                                    .build()?,
-                            )
-                            .replacements(replacements)
-                            .build()?;
-                        Ok(FixBuilder::default()
-                            .description(
-                                MessageBuilder::default()
-                                    .text(fix.description.clone())
-                                    .build()?,
-                            )
-                            .artifact_changes(vec![changes])
-                            .build()?)
-                    })
-                    .collect::<Result<Vec<_>>>()?;
+                            let changes = ArtifactChangeBuilder::default()
+                                .artifact_location(
+                                    ArtifactLocationBuilder::default()
+                                        .uri(encode_filename(rule_result.file_path().to_string()))
+                                        .build()?,
+                                )
+                                .replacements(replacements)
+                                .build()?;
+                            Ok(FixBuilder::default()
+                                .description(
+                                    MessageBuilder::default()
+                                        .text(fix.description.clone())
+                                        .build()?,
+                                )
+                                .artifact_changes(vec![changes])
+                                .build()?)
+                        })
+                        .collect::<Result<Vec<_>>>()?;
 
-                let sha_option = if options.add_git_info {
-                    get_sha_for_line(
-                        rule_result.file_path(),
-                        violation.start.line as usize,
-                        &options,
-                    )
-                } else {
-                    None
-                };
-
-                let fingerprint_option = get_fingerprint_for_violation(
-                    rule_result.rule_name().to_string(),
-                    violation,
-                    Path::new(options.repository_directory.as_str()),
-                    Path::new(rule_result.file_path()),
-                    options.debug,
-                );
-
-                let partial_fingerprints: BTreeMap<String, String> =
-                    match (sha_option, fingerprint_option) {
-                        (Some(sha), Some(fp)) => BTreeMap::from([
-                            (SARIF_PROPERTY_SHA.to_string(), sha),
-                            (SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(), fp),
-                        ]),
-                        (None, Some(fp)) => {
-                            BTreeMap::from([(SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(), fp)])
-                        }
-                        (Some(sha), None) => {
-                            BTreeMap::from([(SARIF_PROPERTY_SHA.to_string(), sha)])
-                        }
-                        _ => BTreeMap::new(),
+                    let sha_option = if options.add_git_info {
+                        get_sha_for_line(
+                            rule_result.file_path(),
+                            violation.start.line as usize,
+                            &options,
+                        )
+                    } else {
+                        None
                     };
 
-                Ok(result_builder
-                    .clone()
-                    .rule_id(rule_result.rule_name())
-                    .locations([location])
-                    .fixes(fixes)
-                    .message(
-                        MessageBuilder::default()
-                            .text(violation.message.clone())
-                            .build()
-                            .unwrap(),
-                    )
-                    .properties(
-                        PropertyBagBuilder::default()
-                            .tags(tags.clone())
-                            .build()
-                            .unwrap(),
-                    )
-                    .partial_fingerprints(partial_fingerprints)
-                    .build()?)
-            })
+                    let fingerprint_option = get_fingerprint_for_violation(
+                        rule_result.rule_name().to_string(),
+                        violation,
+                        Path::new(options.repository_directory.as_str()),
+                        Path::new(rule_result.file_path()),
+                        options.debug,
+                    );
+
+                    let partial_fingerprints: BTreeMap<String, String> =
+                        match (sha_option, fingerprint_option) {
+                            (Some(sha), Some(fp)) => BTreeMap::from([
+                                (SARIF_PROPERTY_SHA.to_string(), sha),
+                                (SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(), fp),
+                            ]),
+                            (None, Some(fp)) => BTreeMap::from([(
+                                SARIF_PROPERTY_DATADOG_FINGERPRINT.to_string(),
+                                fp,
+                            )]),
+                            (Some(sha), None) => {
+                                BTreeMap::from([(SARIF_PROPERTY_SHA.to_string(), sha)])
+                            }
+                            _ => BTreeMap::new(),
+                        };
+
+                    Ok(result_builder
+                        .clone()
+                        .rule_id(rule_result.rule_name())
+                        .locations([location])
+                        .fixes(fixes)
+                        .message(
+                            MessageBuilder::default()
+                                .text(violation.message.clone())
+                                .build()
+                                .unwrap(),
+                        )
+                        .properties(
+                            PropertyBagBuilder::default()
+                                .tags(tags.clone())
+                                .build()
+                                .unwrap(),
+                        )
+                        .partial_fingerprints(partial_fingerprints)
+                        .build()?)
+                })
         })
         .collect()
 }
@@ -659,6 +693,7 @@ mod tests {
     use valico::json_schema;
 
     use crate::secrets::ValidationStatus;
+    use kernel::model::violation::Fix;
     use kernel::model::{
         common::{Language, Position, PositionBuilder},
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
@@ -673,6 +708,65 @@ mod tests {
         let mut scope = json_schema::Scope::new();
         let schema = scope.compile_and_return(j_schema, true).expect("schema");
         schema.validate(v).is_valid()
+    }
+
+    #[test]
+    fn test_is_valid_violation() {
+        // bad location in the violation location
+        assert!(!is_valid_violation(&Violation {
+            start: Position { line: 0, col: 1 },
+            end: Position { line: 42, col: 42 },
+            message: "bad stuff".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![]
+        }));
+
+        // good location in the violation location and no fixes
+        assert!(is_valid_violation(&Violation {
+            start: Position { line: 1, col: 1 },
+            end: Position { line: 42, col: 42 },
+            message: "bad stuff".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![]
+        }));
+
+        // bad location in the fixes location
+        assert!(!is_valid_violation(&Violation {
+            start: Position { line: 1, col: 1 },
+            end: Position { line: 42, col: 42 },
+            message: "bad stuff".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![Fix {
+                description: "fix".to_string(),
+                edits: vec![Edit {
+                    start: Position { line: 0, col: 1 },
+                    end: None,
+                    edit_type: EditType::Add,
+                    content: Some("foo".to_string())
+                }]
+            }]
+        }));
+
+        // good location everywhere
+        assert!(is_valid_violation(&Violation {
+            start: Position { line: 1, col: 1 },
+            end: Position { line: 42, col: 42 },
+            message: "bad stuff".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![Fix {
+                description: "fix".to_string(),
+                edits: vec![Edit {
+                    start: Position { line: 1, col: 1 },
+                    end: None,
+                    edit_type: EditType::Add,
+                    content: Some("foo".to_string())
+                }]
+            }]
+        }));
     }
 
     // test to check the correct generation of a SARIF report with all the default
