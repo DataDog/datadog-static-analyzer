@@ -84,6 +84,7 @@ mod tests {
             "type",
             "start",
             "end",
+            "children",
         ];
         assert!(js_instance_eq(TreeSitterNodeFn::CLASS_NAME, expected));
         let expected = &[];

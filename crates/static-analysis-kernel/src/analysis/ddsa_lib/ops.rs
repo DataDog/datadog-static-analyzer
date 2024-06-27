@@ -2,9 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::ddsa_lib::common::NodeId;
+use crate::analysis::ddsa_lib::common::{v8_uint, NodeId};
 use crate::analysis::ddsa_lib::{bridge, runtime, RawTSNode};
-use deno_core::{op2, OpState};
+use deno_core::{op2, v8, OpState};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -69,6 +69,41 @@ pub fn op_ts_node_text(state: &OpState, #[smi] node_id: u32) -> Option<String> {
     tree_text
         .get(ts_node.start_byte()..ts_node.end_byte())
         .map(ToString::to_string)
+}
+
+/// Given a tree-sitter node (via its `node_id`), this function traverses the tree to find the
+/// children of the node, inserting them into the `TsNodeBridge`. Nodes are returned as a
+/// `v8::Uint32Array` of node ids.
+///
+/// If the node doesn't exist, or it has no children, `None` is returned.
+#[op2]
+pub fn op_ts_node_children<'s>(
+    state: &OpState,
+    scope: &mut v8::HandleScope<'s>,
+    #[smi] node_id: u32,
+) -> Option<v8::Local<'s, v8::Uint32Array>> {
+    let ts_node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>();
+
+    let safe_raw_ts_node = OpSafeRawTSNode::try_new(&ts_node_bridge.borrow(), node_id)?;
+    let ts_node = safe_raw_ts_node.to_node();
+    let mut tree_cursor = ts_node.walk();
+
+    let children = ts_node.children(&mut tree_cursor);
+    let count = children.len();
+    if count == 0 {
+        None
+    } else {
+        let ids_buf = v8::ArrayBuffer::new(scope, 4 * count);
+        let ids_array = v8::Uint32Array::new(scope, ids_buf, 0, count)
+            .expect("v8 Uint32Array should be able to be created");
+        let mut bridge_ref = ts_node_bridge.borrow_mut();
+        for (i, child) in children.enumerate() {
+            let nid = bridge_ref.insert(scope, child);
+            let nid = v8_uint(scope, nid);
+            ids_array.set_index(scope, i as u32, nid.into());
+        }
+        Some(ids_array)
+    }
 }
 
 /// A newtype wrapper over a [`RawTSNode`] that guarantees safe generation of a [`tree_sitter::Node`].
