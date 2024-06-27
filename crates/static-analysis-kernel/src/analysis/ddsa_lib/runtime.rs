@@ -57,6 +57,10 @@ pub struct JsRuntime {
 
 impl JsRuntime {
     pub fn try_new() -> Result<Self, DDSAJsRuntimeError> {
+        Self::try_new_compat(false)
+    }
+
+    pub fn try_new_compat(is_stella: bool) -> Result<Self, DDSAJsRuntimeError> {
         let mut runtime = base_js_runtime();
 
         // Construct the bridges and attach their underlying `v8:Global` object to the
@@ -115,8 +119,10 @@ impl JsRuntime {
                 .expect("v8::Value should be the global object");
 
             true_global.set_prototype(scope, v8_ddsa_object.into());
-            // Freeze the true global
-            true_global.set_integrity_level(scope, v8::IntegrityLevel::Frozen);
+            // Freeze the true global (NOTE: as a temporary scaffold, we conditionally do this.
+            if !is_stella {
+                true_global.set_integrity_level(scope, v8::IntegrityLevel::Frozen);
+            }
 
             let v8_ddsa_global = v8::Global::new(scope, v8_ddsa_object);
             (
