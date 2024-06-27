@@ -1,15 +1,37 @@
+use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
+use crate::analysis::ddsa_lib::runtime::ExecutionResult;
+use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::file_context::common::get_file_context;
 use crate::analysis::generated_content::is_generated_file;
 use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::arguments::ArgumentProvider;
-use crate::model::analysis::{AnalysisOptions, FileIgnoreBehavior, LinesToIgnore};
+use crate::model::analysis::{
+    AnalysisOptions, FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
+};
 use crate::model::common::Language;
 use crate::model::config_file::split_path;
 use crate::model::rule::{RuleInternal, RuleResult};
 use std::borrow::Borrow;
 use std::collections::HashMap;
-use std::time::Instant;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+/// The duration an individual execution of `v8` may run before it will be forcefully halted.
+const JAVASCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_millis(5000);
+
+thread_local! {
+    /// A thread-local `JsRuntime`
+    pub static DEFAULT_JS_RUNTIME: std::cell::RefCell<JsRuntime> = {
+        let runtime = JsRuntime::try_new().expect("runtime should have all data required to init");
+        std::cell::RefCell::new(runtime)
+    };
+    /// A thread-local `JsRuntime`, using a stella workaround to allow for mutable `globalThis`.
+    pub static DEFAULT_STELLA_RUNTIME: std::cell::RefCell<JsRuntime> = {
+        let runtime = JsRuntime::try_new_compat(true).expect("runtime should have all data required to init");
+        std::cell::RefCell::new(runtime)
+    };
+}
 
 /// Split the code and extract all the logic that reports to lines to ignore.
 /// If a no-dd-sa statement occurs on the first line, it applies to the whole file.
@@ -110,8 +132,48 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
 pub fn analyze<I>(
     language: &Language,
     rules: I,
-    filename: &str,
-    code: &str,
+    filename: &Arc<str>,
+    code: &Arc<str>,
+    argument_provider: &ArgumentProvider,
+    analysis_option: &AnalysisOptions,
+) -> Vec<RuleResult>
+where
+    I: IntoIterator,
+    I::Item: Borrow<RuleInternal>,
+{
+    if analysis_option.use_ddsa {
+        DEFAULT_JS_RUNTIME.with_borrow_mut(|runtime| {
+            analyze_with(
+                runtime,
+                language,
+                rules,
+                filename,
+                code,
+                argument_provider,
+                analysis_option,
+            )
+        })
+    } else {
+        DEFAULT_STELLA_RUNTIME.with_borrow_mut(|runtime| {
+            analyze_with(
+                runtime,
+                language,
+                rules,
+                filename,
+                code,
+                argument_provider,
+                analysis_option,
+            )
+        })
+    }
+}
+
+pub fn analyze_with<I>(
+    runtime: &mut JsRuntime,
+    language: &Language,
+    rules: I,
+    filename: &Arc<str>,
+    code: &Arc<str>,
     argument_provider: &ArgumentProvider,
     analysis_option: &AnalysisOptions,
 ) -> Vec<RuleResult>
@@ -129,77 +191,127 @@ where
 
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
-    let parsing_time = Instant::now();
+    let now = Instant::now();
+    let Some(tree) = get_tree(code, language) else {
+        if analysis_option.use_debug {
+            eprintln!("error when parsing source file {filename}");
+        }
+        return vec![];
+    };
+    let tree = Arc::new(tree);
+    let cst_parsing_time = now.elapsed();
 
-    let tree = get_tree(code, language);
+    let split_filename = split_path(filename.as_ref());
 
-    let parsing_time_ms = parsing_time.elapsed().as_millis();
+    let file_context =
+        (!analysis_option.use_ddsa).then(|| get_file_context(&tree, language, &code.to_string()));
 
-    let split_filename = split_path(filename);
-
-    tree.map_or_else(
-        || {
+    rules
+        .into_iter()
+        .map(|rule| {
+            let rule = rule.borrow();
             if analysis_option.use_debug {
-                eprintln!("error when parsing source file {filename}");
+                eprintln!("Apply rule {} file {}", rule.name, filename);
             }
-            vec![]
-        },
-        |tree| {
-            let file_context = get_file_context(&tree, language, &code.to_string());
-            rules
-                .into_iter()
-                .map(|rule| {
-                    let rule = rule.borrow();
-                    if analysis_option.use_debug {
-                        eprintln!("Apply rule {} file {}", rule.name, filename);
-                    }
 
-                    let query_node_time = Instant::now();
+            if analysis_option.use_ddsa {
+                let res = runtime.execute_rule(
+                    code,
+                    &tree,
+                    filename,
+                    rule,
+                    &argument_provider.get_arguments(&split_filename, &rule.name),
+                    Some(JAVASCRIPT_EXECUTION_TIMEOUT),
+                );
 
-                    let nodes = get_query_nodes(
-                        &tree,
-                        &rule.tree_sitter_query,
-                        filename,
-                        code,
-                        &argument_provider.get_arguments(&split_filename, &rule.name),
-                    );
-
-                    let query_node_time_ms = query_node_time.elapsed().as_millis();
-
-                    if nodes.is_empty() {
-                        RuleResult {
-                            rule_name: rule.name.clone(),
-                            filename: filename.to_string(),
-                            violations: vec![],
-                            errors: vec![],
-                            execution_error: None,
-                            execution_time_ms: 0,
-                            output: None,
-                            parsing_time_ms,
-                            query_node_time_ms,
-                        }
-                    } else {
-                        let mut rule_result = execute_rule(
-                            rule,
-                            nodes,
-                            filename.to_string(),
-                            analysis_option.clone(),
-                            &file_context,
-                        );
-
-                        // filter violations that have been ignored
-                        rule_result.violations.retain(|v| {
+                // NOTE: This is a translation layer to map Result<T, E> to a `RuleResult` struct.
+                // Eventually, `analyze` should be refactored to also use a `Result`, and then this will no longer be required.
+                let (violations, errors, execution_error, console_output, timing) = match res {
+                    Ok(execution) => {
+                        let ExecutionResult {
+                            mut violations,
+                            console_lines,
+                            timing,
+                        } = execution;
+                        let console_output = (!console_lines.is_empty()
+                            && analysis_option.log_output)
+                            .then_some(console_lines.join("\n"));
+                        violations.retain(|v| {
                             !lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line)
                         });
-                        rule_result.query_node_time_ms = query_node_time_ms;
-                        rule_result.parsing_time_ms = parsing_time_ms;
-
-                        rule_result
+                        (violations, vec![], None, console_output, timing)
                     }
-                })
-                .collect()
-        },
-    )
+                    Err(err) => {
+                        let r_f = format!("{}:{}", rule.name, filename);
+                        let (err_kind, execution_error) = match err {
+                            DDSAJsRuntimeError::JavaScriptTimeout { timeout } => {
+                                if analysis_option.use_debug {
+                                    eprintln!(
+                                        "rule:file {} TIMED OUT ({} ms)",
+                                        r_f,
+                                        timeout.as_millis()
+                                    );
+                                }
+                                (ERROR_RULE_TIMEOUT, None)
+                            }
+                            other_err => {
+                                let reason = other_err.to_string();
+                                if analysis_option.use_debug {
+                                    eprintln!(
+                                        "rule:file {} execution error, message: {}",
+                                        r_f, reason
+                                    );
+                                }
+                                (ERROR_RULE_EXECUTION, Some(reason))
+                            }
+                        };
+                        let errors = vec![err_kind.to_string()];
+                        (vec![], errors, execution_error, None, Default::default())
+                    }
+                };
+                RuleResult {
+                    rule_name: rule.name.clone(),
+                    filename: filename.to_string(),
+                    violations,
+                    errors,
+                    execution_error,
+                    output: console_output,
+                    execution_time_ms: timing.execution.as_millis(),
+                    parsing_time_ms: cst_parsing_time.as_millis(),
+                    query_node_time_ms: timing.ts_query.as_millis(),
+                }
+            } else {
+                let query_node_time = Instant::now();
+
+                let nodes = get_query_nodes(
+                    &tree,
+                    &rule.tree_sitter_query,
+                    filename.as_ref(),
+                    code.as_ref(),
+                    &argument_provider.get_arguments(&split_filename, &rule.name),
+                );
+                let query_node_time_ms = query_node_time.elapsed().as_millis();
+
+                let mut rule_result = execute_rule(
+                    runtime,
+                    rule,
+                    nodes,
+                    filename.to_string(),
+                    analysis_option.clone(),
+                    file_context.as_ref().expect("should have been set"),
+                );
+
+                // filter violations that have been ignored
+                rule_result.violations.retain(|v| {
+                    !lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line)
+                });
+                rule_result.query_node_time_ms = query_node_time_ms;
+                rule_result.parsing_time_ms = cst_parsing_time.as_millis();
+
+                rule_result
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -254,16 +366,12 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
-        };
+        let analysis_options = AnalysisOptions::default();
         let results = analyze(
             &Language::Python,
             &vec![rule],
-            "myfile.py",
-            PYTHON_CODE,
+            &Arc::from("myfile.py"),
+            &Arc::from(PYTHON_CODE),
             &ArgumentProvider::new(),
             &analysis_options,
         );
@@ -330,16 +438,12 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
-        };
+        let analysis_options = AnalysisOptions::default();
         let results = analyze(
             &Language::Python,
             &vec![rule1, rule2],
-            "myfile.py",
-            PYTHON_CODE,
+            &Arc::from("myfile.py"),
+            &Arc::from(PYTHON_CODE),
             &ArgumentProvider::new(),
             &analysis_options,
         );
@@ -431,16 +535,12 @@ for(var i = 0; i <= 10; i--){}
             tree_sitter_query: get_query(tree_sitter_query, &Language::JavaScript).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
-        };
+        let analysis_options = AnalysisOptions::default();
         let results = analyze(
             &Language::JavaScript,
             &vec![rule1],
-            "myfile.js",
-            js_code,
+            &Arc::from("myfile.js"),
+            &Arc::from(js_code),
             &ArgumentProvider::new(),
             &analysis_options,
         );
@@ -486,16 +586,12 @@ def foo():
             tree_sitter_query: get_query(tree_sitter_query, &Language::Python).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
-        };
+        let analysis_options = AnalysisOptions::default();
         let results = analyze(
             &Language::Python,
             &vec![rule1],
-            "myfile.py",
-            python_code,
+            &Arc::from("myfile.py"),
+            &Arc::from(python_code),
             &ArgumentProvider::new(),
             &analysis_options,
         );
@@ -541,16 +637,12 @@ def foo(arg1):
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
-        };
+        let analysis_options = AnalysisOptions::default();
         let results = analyze(
             &Language::Python,
             &vec![rule],
-            "myfile.py",
-            c,
+            &Arc::from("myfile.py"),
+            &Arc::from(c),
             &ArgumentProvider::new(),
             &analysis_options,
         );
@@ -718,14 +810,13 @@ function visit(node, filename, code) {
 
         let analysis_options = AnalysisOptions {
             log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
+            ..Default::default()
         };
         let results = analyze(
             &Language::Go,
             &vec![rule],
-            "myfile.go",
-            code,
+            &Arc::from("myfile.go"),
+            &Arc::from(code),
             &ArgumentProvider::new(),
             &analysis_options,
         );
@@ -883,11 +974,7 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
-        };
+        let analysis_options = AnalysisOptions::default();
         let mut argument_provider = ArgumentProvider::new();
         argument_provider.add_argument("rule1", &split_path("myfile.py"), "my-argument", "101");
         argument_provider.add_argument("rule1", &split_path("myfile.py"), "another-arg", "101");
@@ -895,8 +982,8 @@ function visit(node, filename, code) {
         let results = analyze(
             &Language::Python,
             &vec![rule1, rule2],
-            "myfile.py",
-            PYTHON_CODE,
+            &Arc::from("myfile.py"),
+            &Arc::from(PYTHON_CODE),
             &argument_provider,
             &analysis_options,
         );
@@ -935,11 +1022,7 @@ function visit(query, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Starlark).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions {
-            log_output: true,
-            use_debug: false,
-            ignore_generated_files: false,
-        };
+        let analysis_options = AnalysisOptions::default();
 
         let starlark_code = r#"
 def foo():
@@ -949,8 +1032,8 @@ def foo():
         let results = analyze(
             &Language::Starlark,
             &vec![rule],
-            "myfile.star",
-            starlark_code,
+            &Arc::from("myfile.star"),
+            &Arc::from(starlark_code),
             &ArgumentProvider::new(),
             &analysis_options,
         );
