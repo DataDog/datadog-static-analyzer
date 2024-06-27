@@ -1,7 +1,6 @@
-use std::fmt;
-
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 #[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum OutputFormat {
