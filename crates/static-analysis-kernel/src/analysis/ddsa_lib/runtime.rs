@@ -393,7 +393,8 @@ impl JsRuntime {
     fn format_rule_script(rule_code: &str) -> String {
         format!(
             "\
-'use strict';
+// NOTE: The commenting out of the next line is temporary scaffolding used during the transition to `ddsa_lib`.
+// 'use strict';
 
 (() => {{
 
