@@ -315,6 +315,9 @@ impl JsRuntime {
     where
         T: Fn(&mut v8::TryCatch<v8::HandleScope>, v8::Local<v8::Value>) -> U,
     {
+        // Ensure the console has been cleared
+        self.console.borrow_mut().0.clear();
+
         let scope = &mut self.runtime.handle_scope();
         // We re-use the same v8::Context for performance, and we use a combination of closures and
         // a frozen global object to achieve equivalent encapsulation to creating a new v8::Context.
