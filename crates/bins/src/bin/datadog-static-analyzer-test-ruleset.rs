@@ -10,6 +10,7 @@ use kernel::model::rule_test::RuleTest;
 use kernel::utils::decode_base64_string;
 use std::env;
 use std::process::exit;
+use std::sync::Arc;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -19,6 +20,7 @@ fn print_usage(program: &str, opts: Options) {
 fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
     let rule_internal = rule.to_rule_internal().unwrap();
     let code = decode_base64_string(test.code_base64.to_string()).unwrap();
+    let code = Arc::from(code);
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug: true,
@@ -28,8 +30,8 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
     let analyze_result = analyze(
         &rule.language,
         &rules,
-        test.filename.as_str(),
-        code.as_str(),
+        &Arc::from(test.filename.clone()),
+        &code,
         &ArgumentProvider::new(),
         &analysis_options,
     );

@@ -155,7 +155,7 @@ impl JsRuntime {
         rule: &RuleInternal,
         rule_arguments: &HashMap<String, String>,
         timeout: Option<Duration>,
-    ) -> Result<Vec<violation::Violation>, DDSAJsRuntimeError> {
+    ) -> Result<ExecutionResult, DDSAJsRuntimeError> {
         let script_cache = Rc::clone(&self.script_cache);
         let mut script_cache_ref = script_cache.borrow_mut();
         if !script_cache_ref.contains_key(&rule.name) {
@@ -167,6 +167,8 @@ impl JsRuntime {
             .get(&rule.name)
             .expect("cache should have been populated");
 
+        let now = Instant::now();
+
         let ts_query_cursor = Rc::clone(&self.ts_query_cursor);
         let mut ts_qc = ts_query_cursor.borrow_mut();
         let mut query_cursor = rule.tree_sitter_query.with_cursor(&mut ts_qc);
@@ -174,6 +176,10 @@ impl JsRuntime {
             .matches(source_tree.root_node(), source_text.as_ref())
             .filter(|captures| !captures.is_empty())
             .collect::<Vec<_>>();
+
+        let ts_query_time = now.elapsed();
+        let now = Instant::now();
+
         let js_violations = self.execute_rule_internal(
             source_text,
             source_tree,
@@ -184,10 +190,24 @@ impl JsRuntime {
             rule_arguments,
             timeout,
         )?;
-        Ok(js_violations
+
+        let execution_time = now.elapsed();
+
+        let violations = js_violations
             .into_iter()
             .map(|v| v.into_violation(rule.severity, rule.category))
-            .collect::<Vec<_>>())
+            .collect::<Vec<_>>();
+
+        let timing = ExecutionTimingCompat {
+            ts_query: ts_query_time,
+            execution: execution_time,
+        };
+        let console_lines = self.console.borrow_mut().drain().collect::<Vec<_>>();
+        Ok(ExecutionResult {
+            violations,
+            console_lines,
+            timing,
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -373,6 +393,7 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
     ///
     /// # Panics
     /// Panics if the `RefCell` can't be borrowed mutably.
+    #[allow(private_interfaces)]
     pub fn console_compat(&mut self) -> RefMut<'_, JsConsole> {
         self.console.borrow_mut()
     }
@@ -463,6 +484,25 @@ fn spawn_watchdog_thread(v8_handle: v8::IsolateHandle) -> Arc<(Mutex<JsExecution
         }
     });
     state_pair
+}
+
+/// The result of a ddsa JavaScript execution.
+#[derive(Debug)]
+pub struct ExecutionResult {
+    pub violations: Vec<violation::Violation>,
+    pub console_lines: Vec<String>,
+    pub timing: ExecutionTimingCompat,
+}
+
+/// This struct is a temporary solution to provide instrumentation-parity with the stella runtime,
+/// which manually tracked spans for certain CPU-intensive actions.
+///
+/// We will eventually be migrating to using the `tracing` crate instead of passing along
+/// structs and timestamps like this, but until we do, this struct implements manual spans.
+#[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub struct ExecutionTimingCompat {
+    pub ts_query: Duration,
+    pub execution: Duration,
 }
 
 /// A struct used to communicate state from a `JsRuntime` to a watchdog thread that calls

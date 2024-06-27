@@ -15,6 +15,18 @@ pub struct AnalysisOptions {
     pub log_output: bool,
     pub use_debug: bool,
     pub ignore_generated_files: bool,
+    pub use_ddsa: bool,
+}
+
+impl Default for AnalysisOptions {
+    fn default() -> Self {
+        Self {
+            log_output: false,
+            use_debug: false,
+            ignore_generated_files: true,
+            use_ddsa: false,
+        }
+    }
 }
 
 #[derive(PartialEq, Debug)]

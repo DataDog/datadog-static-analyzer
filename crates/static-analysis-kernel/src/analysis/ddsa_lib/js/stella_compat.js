@@ -4,25 +4,6 @@ import {Violation} from "ext:ddsa_lib/violation";
 
 globalThis.stellaAllErrors = [];
 
-export function StellaError(startLine, startCol, endLine, endCol, message, severity, category) {
-  this.start = {
-    line: startLine,
-    col: startCol,
-  },
-    this.end = {
-      line: endLine,
-      col: endCol,
-    },
-    this.message = message;
-  this.severity = "NONE";
-  this.category = "SAFETY";
-  this.fixes = [];
-  this.addFix = function (fix) {
-    this.fixes.push(fix);
-    return this;
-  }
-}
-
 export function buildError(startLine, startCol, endLine, endCol, message, severity, category) {
   // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
   if (typeof message === 'object') message = message.toString();
@@ -92,7 +73,12 @@ export function getCode(start, end, code) {
 
 // helper function getCodeForNode
 export function getCodeForNode(node, code) {
-  return getCode(node.start, node.end, code);
+  /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
+  if (globalThis.__ENV_STELLA__ === true) {
+    return getCode(node.start, node.end, code);
+  } else {
+    return node.text;
+  }
 }
 
 // We re-use the same v8 isolate across multiple rule executions. Because the user's JavaScript can mutate variables

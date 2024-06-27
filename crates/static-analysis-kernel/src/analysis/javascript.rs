@@ -6,7 +6,6 @@ use crate::model::violation::Violation;
 use deno_core::serde_v8;
 use deno_core::v8;
 use deno_core::v8::NewStringType::Internalized;
-use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -18,13 +17,6 @@ use serde::{Deserialize, Serialize};
 
 /// The duration an individual execution of `v8` may run before it will be forcefully halted.
 const JAVASCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_millis(5000);
-
-thread_local! {
-    static JS_RUNTIME: RefCell<JsRuntime> = {
-        let runtime = JsRuntime::try_new_compat(true).expect("runtime should have all data required to init");
-        RefCell::new(runtime)
-    };
-}
 
 use crate::analysis::ddsa_lib::js::ViolationConverter;
 
@@ -57,6 +49,7 @@ struct StellaExecution {
 // execute a rule. It is the exposed function to execute a rule and start the underlying
 // JS runtime.
 pub fn execute_rule(
+    runtime: &mut JsRuntime,
     rule: &RuleInternal,
     match_nodes: Vec<MatchNode>,
     filename: String,
@@ -65,11 +58,11 @@ pub fn execute_rule(
 ) -> RuleResult {
     let execution_start = Instant::now();
 
-    let (res, console_output) = JS_RUNTIME.with_borrow_mut(|runtime| {
+    let (res, console_output) = {
         let res = execute_rule_internal(runtime, rule, &match_nodes, &filename, file_context);
         let console_output = runtime.console_compat().drain().collect::<Vec<_>>();
         (res, console_output)
-    });
+    };
     let execution_time_ms = execution_start.elapsed().as_millis();
 
     // NOTE: This is a translation layer to map Result<T, E> to a `RuleResult` struct.
@@ -275,12 +268,36 @@ return stellaAllErrors;
 
 #[cfg(test)]
 mod tests {
+    use super::execute_rule as shimmed_execute;
     use super::*;
+    use crate::analysis::analyze::DEFAULT_STELLA_RUNTIME;
     use crate::analysis::file_context::common::get_empty_file_context;
     use crate::analysis::tree_sitter::{get_query, get_query_nodes, get_tree};
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use std::collections::HashMap;
+
+    /// A shim around `execute` that handles borrowing the `JsRuntime`. This allows us to avoid
+    /// changing the name across all the tests (`javascript.rs` will eventually be deleted, so this
+    /// shim is just until we can delete it)
+    fn execute_rule(
+        rule: &RuleInternal,
+        match_nodes: Vec<MatchNode>,
+        filename: String,
+        analysis_options: AnalysisOptions,
+        file_context: &FileContext,
+    ) -> RuleResult {
+        DEFAULT_STELLA_RUNTIME.with_borrow_mut(|runtime| {
+            shimmed_execute(
+                runtime,
+                rule,
+                match_nodes,
+                filename,
+                analysis_options,
+                file_context,
+            )
+        })
+    }
 
     #[test]
     fn test_execute_rule() {
@@ -328,11 +345,7 @@ mod tests {
             &rule,
             nodes,
             "foo.py".to_string(),
-            AnalysisOptions {
-                use_debug: true,
-                log_output: true,
-                ignore_generated_files: false,
-            },
+            AnalysisOptions::default(),
             &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
@@ -389,11 +402,7 @@ def foo(arg1):
             &rule,
             nodes,
             "foo.py".to_string(),
-            AnalysisOptions {
-                use_debug: true,
-                log_output: true,
-                ignore_generated_files: false,
-            },
+            AnalysisOptions::default(),
             &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
@@ -452,11 +461,7 @@ def foo(arg1):
             &rule,
             nodes,
             "foo.py".to_string(),
-            AnalysisOptions {
-                use_debug: true,
-                log_output: true,
-                ignore_generated_files: false,
-            },
+            AnalysisOptions::default(),
             &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
@@ -553,9 +558,8 @@ def foo(arg1):
             nodes.clone(),
             "foo.py".to_string(),
             AnalysisOptions {
-                use_debug: true,
                 log_output: true,
-                ignore_generated_files: false,
+                ..Default::default()
             },
             &get_empty_file_context(),
         );
@@ -571,9 +575,8 @@ def foo(arg1):
             nodes.clone(),
             "foo.py".to_string(),
             AnalysisOptions {
-                use_debug: true,
                 log_output: true,
-                ignore_generated_files: false,
+                ..Default::default()
             },
             &get_empty_file_context(),
         );
@@ -588,9 +591,8 @@ def foo(arg1):
             nodes.clone(),
             "foo.py".to_string(),
             AnalysisOptions {
-                use_debug: true,
                 log_output: true,
-                ignore_generated_files: false,
+                ..Default::default()
             },
             &get_empty_file_context(),
         );
@@ -605,9 +607,8 @@ def foo(arg1):
             nodes.clone(),
             "foo.py".to_string(),
             AnalysisOptions {
-                use_debug: true,
                 log_output: true,
-                ignore_generated_files: false,
+                ..Default::default()
             },
             &get_empty_file_context(),
         );
@@ -622,9 +623,8 @@ def foo(arg1):
             nodes.clone(),
             "foo.py".to_string(),
             AnalysisOptions {
-                use_debug: true,
                 log_output: true,
-                ignore_generated_files: false,
+                ..Default::default()
             },
             &get_empty_file_context(),
         );
@@ -687,11 +687,7 @@ def foo(arg1):
             &rule,
             nodes,
             "foo.py".to_string(),
-            AnalysisOptions {
-                use_debug: true,
-                log_output: true,
-                ignore_generated_files: false,
-            },
+            AnalysisOptions::default(),
             &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
@@ -747,11 +743,7 @@ def foo(arg1):
             &rule,
             nodes,
             "foo.py".to_string(),
-            AnalysisOptions {
-                use_debug: true,
-                log_output: true,
-                ignore_generated_files: false,
-            },
+            AnalysisOptions::default(),
             &get_empty_file_context(),
         );
         assert_eq!("myrule", rule_execution.rule_name);
