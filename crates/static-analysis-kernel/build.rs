@@ -112,6 +112,7 @@ fn main() {
             commit_hash: "f1e5a09b8d02f8209a68249c93f0ad647b228e6e".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
         },
         TreeSitterProject {
             name: "tree-sitter-json".to_string(),
