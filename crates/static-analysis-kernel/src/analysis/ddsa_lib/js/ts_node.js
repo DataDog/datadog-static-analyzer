@@ -158,7 +158,7 @@ export class TreeSitterNode {
      */
     get children() {
         const childIds = op_ts_node_named_children(this.id);
-        if (childIds === undefined) {
+        if (childIds === null) {
             return SEALED_EMPTY_ARRAY;
         }
         const children = [];
