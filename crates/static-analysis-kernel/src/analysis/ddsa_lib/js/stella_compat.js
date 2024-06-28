@@ -24,14 +24,20 @@ export function StellaError(startLine, startCol, endLine, endCol, message, sever
 }
 
 export function buildError(startLine, startCol, endLine, endCol, message, severity, category) {
+  // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
+  if (typeof message === 'object') message = message.toString();
   return Violation.new(startLine, startCol, endLine, endCol, message);
 }
 
 export function buildFix(message, list) {
+  // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
+  if (typeof message === 'object') message = message.toString();
   return Fix.new(message, list);
 }
 
 export function buildEditUpdate(startLine, startCol, endLine, endCol, content) {
+  // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
+  if (typeof content === 'object') content = content.toString();
   return Edit.newUpdate(startLine, startCol, endLine, endCol, content);
 }
 
@@ -41,10 +47,14 @@ export function buildEditRemove(startLine, startCol, endLine, endCol) {
 
 
 export function buildEditAdd(startLine, startCol, content) {
+  // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
+  if (typeof content === 'object') content = content.toString();
   return Edit.newAdd(startLine, startCol, content);
 }
 
 export function buildEdit(startLine, startCol, endLine, endCol, editType, content) {
+  // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
+  if (typeof content === 'object') content = content.toString();
   return new Edit(startLine, startCol, endLine, endCol, editType.toUpperCase(), content);
 }
 
