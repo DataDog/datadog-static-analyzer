@@ -106,6 +106,15 @@ pub fn op_ts_node_named_children<'s>(
     }
 }
 
+/// An op to test the [`deno_core::op2`] macro's serialization of `Option`.
+///
+/// Returns `Some(123)` if `true` is passed in, or `None` if `false` is passed in.
+//  Note: Due to the op2 macro implementation, we can't mark this `[cfg(test)]`
+#[op2]
+pub(crate) fn cfg_test_op_rust_option(return_some: bool) -> Option<u32> {
+    return_some.then_some(123)
+}
+
 /// A newtype wrapper over a [`RawTSNode`] that guarantees safe generation of a [`tree_sitter::Node`].
 ///
 /// Whereas `RawTSNode` is not inherently safe to convert to a `tree_sitter::Node`, because of how
@@ -130,5 +139,24 @@ impl OpSafeRawTSNode {
         //    the `tree_sitter::Tree` exists (because it is owned by the `ddsa_lib::RootContext` on the `bridge::ContextBridge`).
         // 3. We never mutate the `tree_sitter::Tree` or any related nodes.
         unsafe { self.0.to_node() }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+
+    /// A [`deno_core::op2`] should serialize [`Option::None`] to [`v8::null`], not [`v8::undefined`].
+    /// This test is mostly for explicit documentation, as we don't expect any upstream changes to this.
+    #[test]
+    fn none_serialization_to_null() {
+        let mut rt = cfg_test_runtime();
+        let scope = &mut rt.handle_scope();
+        let res = try_execute(scope, "Deno.core.ops.cfg_test_op_rust_option(true);").unwrap();
+        assert_eq!(res.uint32_value(scope).unwrap(), 123);
+
+        let res = try_execute(scope, "Deno.core.ops.cfg_test_op_rust_option(false);").unwrap();
+        assert!(res.is_null());
+        assert!(!res.is_undefined());
     }
 }
