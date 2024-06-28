@@ -178,7 +178,7 @@ assert(stubNodes[1].id === 20);
         assert_eq!(result, Ok("undefined".to_string()));
     }
 
-    /// `QueryMatch` returns `undefined` for an empty capture list. `<QueryMatchCompat>.capturesList` should return an empty array.
+    /// `QueryMatch` returns `undefined` for an empty capture list. `<QueryMatchCompat>.capturesList` should also return undefined.
     #[test]
     fn compat_layer_captures_list_empty() {
         let mut runtime = cfg_test_runtime();
@@ -195,7 +195,7 @@ assert(stubNodes[1].id === 20);
         let code = r#"
 const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const stubNodes = QUERY_MATCH.capturesList["cap_name"];
-assert(Array.isArray(stubNodes) && stubNodes.length === 0);
+assert(stubNodes === undefined);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));

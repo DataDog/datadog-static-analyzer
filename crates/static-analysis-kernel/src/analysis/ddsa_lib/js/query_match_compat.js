@@ -46,7 +46,7 @@ export class QueryMatchCompat {
                         // `capturesList` is not commonly called, so lazily create this Proxy.
                         return new Proxy(target, {
                             get(target, p, _receiver) {
-                                return target.getMany(p) ?? [];
+                                return target.getMany(p);
                             },
                         });
                     case "context":
