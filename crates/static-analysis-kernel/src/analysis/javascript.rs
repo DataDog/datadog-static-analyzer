@@ -21,7 +21,7 @@ const JAVASCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_millis(5000);
 
 thread_local! {
     static JS_RUNTIME: RefCell<JsRuntime> = {
-        let runtime = JsRuntime::try_new().expect("runtime should have all data required to init");
+        let runtime = JsRuntime::try_new_compat(true).expect("runtime should have all data required to init");
         RefCell::new(runtime)
     };
 }
