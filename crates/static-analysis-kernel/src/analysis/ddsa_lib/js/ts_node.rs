@@ -43,7 +43,7 @@ impl<T> TreeSitterNode<T> {
             start_col: normalize_ts_point_num(start_col),
             end_line: normalize_ts_point_num(end_line),
             end_col: normalize_ts_point_num(end_col),
-            node_type_id: node.grammar_id(),
+            node_type_id: node.kind_id(),
             _pd: PhantomData,
         }
     }
@@ -141,6 +141,30 @@ mod tests {
         assert_eq!(tree_sitter_node.start_col, 1);
         assert_eq!(tree_sitter_node.end_line, 1);
         assert_eq!(tree_sitter_node.end_col, 15);
+    }
+
+    /// Tests that we use the [`tree_sitter::Node::kind_id`] instead of the [`tree_sitter::Node::grammar_id`], which
+    /// has subtle differences.
+    #[rustfmt::skip]
+    #[test]
+    fn ts_node_kind_id() {
+        let lang = get_tree_sitter_language(&Language::JavaScript);
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&lang).unwrap();
+
+        let text = r#"{ keyName: "value" }"#;
+        let tree = parser.parse(text, None).unwrap();
+
+        let query = tree_sitter::Query::new(&lang, "(pair key: (_) @cap)").unwrap();
+        let mut cursor = tree_sitter::QueryCursor::new();
+        let ts_node = cursor.matches(&query, tree.root_node(), text.as_bytes()).next().unwrap().captures.first().unwrap().node;
+        // First make sure this test is properly constructed (an upstream tree_sitter grammar change
+        // may invalidate this, so we need to confirm).
+        // This should resolve to `assert_ne!("identifier", "property_identifier")`
+        assert_ne!(ts_node.grammar_name(), ts_node.kind());
+
+        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node(0, ts_node);
+        assert_eq!(tree_sitter_node.node_type_id, ts_node.kind_id());
     }
 
     /// Tests that the getter for `start` and `end` is lazily instantiated and returned.
