@@ -7,7 +7,6 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::model::rule::{RuleCategory, RuleSeverity};
-use crate::path_restrictions::PathRestrictions;
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
