@@ -29,7 +29,7 @@ impl DiffAware for PathPattern {
             .map(|v| v.to_string())
             .unwrap_or("".to_string());
 
-        return format!("{}:{}", glob, prefix);
+        format!("{}:{}", glob, prefix)
     }
 }
 
@@ -62,7 +62,7 @@ impl DiffAware for PathConfig {
             .collect::<Vec<String>>()
             .join(",");
 
-        return format!("{}:{}", only, ignore);
+        format!("{}:{}", only, ignore)
     }
 }
 

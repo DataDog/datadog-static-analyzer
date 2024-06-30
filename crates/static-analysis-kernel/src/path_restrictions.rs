@@ -23,7 +23,7 @@ impl DiffAware for RestrictionsForRuleset {
         rules.sort();
         let rules_str = rules.join(",");
 
-        return format!("{}:{}", paths, rules_str);
+        format!("{}:{}", paths, rules_str)
     }
 }
 
@@ -43,7 +43,7 @@ impl DiffAware for PathRestrictions {
             .collect::<Vec<String>>();
         res.sort();
 
-        return res.join(",");
+        res.join(",")
     }
 }
 
