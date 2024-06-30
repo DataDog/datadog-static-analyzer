@@ -18,15 +18,15 @@ impl DiffAware for ArgumentProvider {
             .flat_map(|(rule, subtree)| {
                 subtree.iter().flat_map(|(st, v)| {
                     st.into_iter().flat_map(|path_component| {
-                        v.into_iter()
+                        v.iter()
                             .map(|(arg1, arg2)| {
-                                return format!(
+                                format!(
                                     "{}:{}:{}:{}",
                                     rule.clone(),
                                     &path_component.generate_diff_aware_digest(),
                                     arg1.clone(),
                                     arg2.clone()
-                                );
+                                )
                             })
                             .collect::<Vec<String>>()
                     })
