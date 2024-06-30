@@ -1,3 +1,4 @@
+use crate::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
@@ -6,6 +7,7 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use crate::model::rule::{RuleCategory, RuleSeverity};
+use crate::path_restrictions::PathRestrictions;
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
@@ -15,6 +17,23 @@ pub struct PathPattern {
     pub prefix: PathBuf,
 }
 
+impl DiffAware for PathPattern {
+    fn generate_diff_aware_digest(&self) -> String {
+        let glob = self
+            .glob
+            .as_ref()
+            .map(|v| v.glob().to_string())
+            .unwrap_or("".to_string());
+        let prefix = self
+            .prefix
+            .to_str()
+            .map(|v| v.to_string())
+            .unwrap_or("".to_string());
+
+        return format!("{}:{}", glob, prefix);
+    }
+}
+
 // Lists of directories and glob patterns to include/exclude from the analysis.
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct PathConfig {
@@ -22,6 +41,30 @@ pub struct PathConfig {
     pub only: Option<Vec<PathPattern>>,
     // Do not analyze any of these directories and patterns.
     pub ignore: Vec<PathPattern>,
+}
+
+impl DiffAware for PathConfig {
+    fn generate_diff_aware_digest(&self) -> String {
+        let only = self
+            .only
+            .as_ref()
+            .map(|v| {
+                v.iter()
+                    .map(|w| w.generate_diff_aware_digest())
+                    .collect::<Vec<String>>()
+                    .join(",")
+            })
+            .unwrap_or("".to_string());
+
+        let ignore = self
+            .ignore
+            .iter()
+            .map(|v| v.generate_diff_aware_digest())
+            .collect::<Vec<String>>()
+            .join(",");
+
+        return format!("{}:{}", only, ignore);
+    }
 }
 
 // A type that stores values that depend on the position in the repository tree.

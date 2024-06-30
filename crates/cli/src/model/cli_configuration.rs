@@ -6,6 +6,8 @@ use crate::git_utils::get_branch;
 use kernel::arguments::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
+
+use kernel::model::diff_aware::DiffAware;
 use kernel::model::rule::Rule;
 use kernel::path_restrictions::PathRestrictions;
 
@@ -36,16 +38,16 @@ pub struct CliConfiguration {
     pub ignore_generated_files: bool,
 }
 
-impl CliConfiguration {
+impl DiffAware for CliConfiguration {
     /// Generate a digest to include in SARIF files to indicate what configuration and rules were used
     /// to run the analysis. To compute the digest, we take the attributes that are important to
     /// run and replicate the analysis such as the ignored paths and rules.
-    pub fn generate_diff_aware_digest(&self) -> String {
+    fn generate_diff_aware_digest(&self) -> String {
         let mut rules_string: Vec<String> = self
             .clone()
             .rules
             .iter()
-            .map(|r| r.get_config_hash_string())
+            .map(|r| r.generate_diff_aware_digest())
             .collect();
 
         // Important: always make sure the rules string are in the same order so that it does
@@ -54,7 +56,7 @@ impl CliConfiguration {
 
         // println!("rules string: {}", rules_string.join("|"));
         let full_config_string = format!(
-            "{}:{}:{}:{}::{}:{}",
+            "{}:{}:{}:{}::{}:{}:{}",
             self.path_config.ignore.join(","),
             self.path_config
                 .only
@@ -63,12 +65,15 @@ impl CliConfiguration {
             self.ignore_gitignore,
             rules_string.join(","),
             self.max_file_size_kb,
-            self.source_subdirectories.join(",")
+            self.source_subdirectories.join(","),
+            self.path_restrictions.generate_diff_aware_digest(),
         );
         // compute the hash using sha2
         format!("{:x}", Sha256::digest(full_config_string.as_bytes()))
     }
+}
 
+impl CliConfiguration {
     /// Generate the diff-aware data from the configuration. It attempts to read
     /// the repository from the directory, get the repository information to get
     /// diff-aware data. If we are not in a repository or cannot get the data
@@ -170,7 +175,7 @@ mod tests {
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "aadc07afa2ab7afb253e52a9be80bf7a756f953ce1f6de80f8717f0fa9584360"
+            "9271c93630cc971d489eba01264408eb804c27c384c9ca09bc02486f2e616d75"
         );
     }
 }

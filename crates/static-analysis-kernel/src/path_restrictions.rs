@@ -1,7 +1,31 @@
 use indexmap::IndexMap;
 
 use crate::model::config_file::{PathConfig, RulesetConfig};
+use crate::model::diff_aware::DiffAware;
 use std::collections::HashMap;
+
+#[derive(Default, Clone)]
+struct RestrictionsForRuleset {
+    /// Per-rule path restrictions.
+    rules: HashMap<String, PathConfig>,
+    /// Path restrictions for this ruleset.
+    paths: PathConfig,
+}
+
+impl DiffAware for RestrictionsForRuleset {
+    fn generate_diff_aware_digest(&self) -> String {
+        let paths = self.paths.generate_diff_aware_digest();
+        let mut rules: Vec<String> = self
+            .rules
+            .iter()
+            .map(|(k, v)| format!("{}:{}", k, v.generate_diff_aware_digest()))
+            .collect::<Vec<String>>();
+        rules.sort();
+        let rules_str = rules.join(",");
+
+        return format!("{}:{}", paths, rules_str);
+    }
+}
 
 /// An object that provides operations to filter rules by the path of the file to check.
 #[derive(Default, Clone)]
@@ -10,12 +34,17 @@ pub struct PathRestrictions {
     rulesets: HashMap<String, RestrictionsForRuleset>,
 }
 
-#[derive(Default, Clone)]
-struct RestrictionsForRuleset {
-    /// Per-rule path restrictions.
-    rules: HashMap<String, PathConfig>,
-    /// Path restrictions for this ruleset.
-    paths: PathConfig,
+impl DiffAware for PathRestrictions {
+    fn generate_diff_aware_digest(&self) -> String {
+        let mut res: Vec<String> = self
+            .rulesets
+            .iter()
+            .map(|(k, v)| format!("{}:{}", k, v.generate_diff_aware_digest()))
+            .collect::<Vec<String>>();
+        res.sort();
+
+        return res.join(",");
+    }
 }
 
 impl PathRestrictions {
@@ -63,6 +92,7 @@ fn split_rule_name(name: &str) -> (&str, &str) {
 #[cfg(test)]
 mod tests {
     use crate::model::config_file::{PathConfig, RuleConfig, RulesetConfig};
+    use crate::model::diff_aware::DiffAware;
     use crate::path_restrictions::PathRestrictions;
 
     // By default, everything is included.
@@ -187,6 +217,93 @@ mod tests {
             !restrictions.rule_applies("a-ruleset/test-but-not-code", "test/code/proto_test.go")
         );
         assert!(restrictions.rule_applies("a-ruleset/any-ruleset", "test/code/proto_test.go"));
+    }
+
+    #[test]
+    fn rule_restrictions_generate_diff_aware_digest() {
+        let mut config1 = indexmap::IndexMap::new();
+        config1.insert(
+            "a-ruleset".to_string(),
+            RulesetConfig {
+                paths: PathConfig::default(),
+                rules: indexmap::IndexMap::from([(
+                    "ignores-test2".to_string(),
+                    RuleConfig {
+                        paths: PathConfig {
+                            ignore: vec!["test2/**".to_string().into()],
+                            only: None,
+                        },
+                        arguments: Default::default(),
+                        severity: None,
+                        category: None,
+                    },
+                )]),
+            },
+        );
+        config1.insert(
+            "b-ruleset".to_string(),
+            RulesetConfig {
+                paths: PathConfig::default(),
+                rules: indexmap::IndexMap::from([(
+                    "ignores-test".to_string(),
+                    RuleConfig {
+                        paths: PathConfig {
+                            ignore: vec!["test/**".to_string().into()],
+                            only: None,
+                        },
+                        arguments: Default::default(),
+                        severity: None,
+                        category: None,
+                    },
+                )]),
+            },
+        );
+
+        let mut config2 = indexmap::IndexMap::new();
+        config2.insert(
+            "b-ruleset".to_string(),
+            RulesetConfig {
+                paths: PathConfig::default(),
+                rules: indexmap::IndexMap::from([(
+                    "ignores-test".to_string(),
+                    RuleConfig {
+                        paths: PathConfig {
+                            ignore: vec!["test/**".to_string().into()],
+                            only: None,
+                        },
+                        arguments: Default::default(),
+                        severity: None,
+                        category: None,
+                    },
+                )]),
+            },
+        );
+        config2.insert(
+            "a-ruleset".to_string(),
+            RulesetConfig {
+                paths: PathConfig::default(),
+                rules: indexmap::IndexMap::from([(
+                    "ignores-test2".to_string(),
+                    RuleConfig {
+                        paths: PathConfig {
+                            ignore: vec!["test2/**".to_string().into()],
+                            only: None,
+                        },
+                        arguments: Default::default(),
+                        severity: None,
+                        category: None,
+                    },
+                )]),
+            },
+        );
+
+        let restrictions1 = PathRestrictions::from_ruleset_configs(&config1);
+        let restrictions2 = PathRestrictions::from_ruleset_configs(&config2);
+        assert_eq!("a-ruleset:::ignores-test2::test2/**:test2/**,b-ruleset:::ignores-test::test/**:test/**".to_string(), restrictions1.generate_diff_aware_digest());
+        assert_eq!(
+            restrictions1.generate_diff_aware_digest(),
+            restrictions2.generate_diff_aware_digest()
+        );
     }
 
     // Can combine inclusion and exclusions for rules and rulesets.
