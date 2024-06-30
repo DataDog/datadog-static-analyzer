@@ -169,6 +169,12 @@ impl PathConfig {
 #[derive(Debug, PartialEq, Eq, Hash, Default, Clone)]
 pub struct PathComponent(String);
 
+impl DiffAware for PathComponent {
+    fn generate_diff_aware_digest(&self) -> String {
+        self.0.clone()
+    }
+}
+
 // The key for operations on BySubtree.
 pub type SplitPath = Vec<PathComponent>;
 

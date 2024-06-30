@@ -56,7 +56,7 @@ impl DiffAware for CliConfiguration {
 
         // println!("rules string: {}", rules_string.join("|"));
         let full_config_string = format!(
-            "{}:{}:{}:{}::{}:{}:{}",
+            "{}:{}:{}:{}::{}:{}:{}:{}",
             self.path_config.ignore.join(","),
             self.path_config
                 .only
@@ -67,6 +67,7 @@ impl DiffAware for CliConfiguration {
             self.max_file_size_kb,
             self.source_subdirectories.join(","),
             self.path_restrictions.generate_diff_aware_digest(),
+            self.argument_provider.generate_diff_aware_digest()
         );
         // compute the hash using sha2
         format!("{:x}", Sha256::digest(full_config_string.as_bytes()))
@@ -175,7 +176,7 @@ mod tests {
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "9271c93630cc971d489eba01264408eb804c27c384c9ca09bc02486f2e616d75"
+            "e62e95f2662c983b01ac932709b760718815ae1ca777de9eec51b72d90b8ddd6"
         );
     }
 }

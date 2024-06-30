@@ -1,4 +1,5 @@
 use crate::model::config_file::{BySubtree, ConfigFile, SplitPath};
+use crate::model::diff_aware::DiffAware;
 use std::collections::HashMap;
 
 type Argument = (String, String);
@@ -7,6 +8,38 @@ type Argument = (String, String);
 // Used to extract rule arguments in the analyzer.
 pub struct ArgumentProvider {
     by_rule: HashMap<String, BySubtree<Vec<Argument>>>,
+}
+
+impl DiffAware for ArgumentProvider {
+    fn generate_diff_aware_digest(&self) -> String {
+        let mut arguments_config = self
+            .by_rule
+            .iter()
+            .flat_map(|(rule, subtree)| {
+                subtree.iter().flat_map(|(st, v)| {
+                    st.into_iter().flat_map(|path_component| {
+                        v.into_iter()
+                            .map(|(arg1, arg2)| {
+                                return format!(
+                                    "{}:{}:{}:{}",
+                                    rule.clone(),
+                                    &path_component.generate_diff_aware_digest(),
+                                    arg1.clone(),
+                                    arg2.clone()
+                                );
+                            })
+                            .collect::<Vec<String>>()
+                    })
+                })
+            })
+            .collect::<Vec<String>>();
+
+        // Make sure that regardless of the order of the arguments, we have the same
+        // string run after run.
+        arguments_config.sort();
+
+        arguments_config.join(",")
+    }
 }
 
 impl ArgumentProvider {
@@ -201,6 +234,26 @@ mod tests {
                 ("arg2".to_string(), "first_2".to_string()),
                 ("arg3".to_string(), "first_3".to_string())
             ])
+        );
+    }
+
+    #[test]
+    fn test_argument_generate_diff_aware() {
+        let mut argument_provider1 = ArgumentProvider::new();
+        argument_provider1.add_argument("rule", &split_path("a/b/c"), "arg1", "second_1");
+        argument_provider1.add_argument("rule", &split_path("a"), "arg2", "first_2");
+
+        assert_eq!(
+            "rule:a:arg1:second_1,rule:a:arg2:first_2,rule:b:arg1:second_1,rule:c:arg1:second_1",
+            argument_provider1.generate_diff_aware_digest()
+        );
+        let mut argument_provider2 = ArgumentProvider::new();
+        argument_provider2.add_argument("rule", &split_path("a"), "arg2", "first_2");
+        argument_provider2.add_argument("rule", &split_path("a/b/c"), "arg1", "second_1");
+
+        assert_eq!(
+            argument_provider1.generate_diff_aware_digest(),
+            argument_provider2.generate_diff_aware_digest()
         );
     }
 }
