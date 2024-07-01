@@ -23,6 +23,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_hcl() -> tree_sitter::Language;
         fn tree_sitter_yaml() -> tree_sitter::Language;
         fn tree_sitter_starlark() -> tree_sitter::Language;
+        fn tree_sitter_bash() -> tree_sitter::Language;
     }
 
     match language {
@@ -41,6 +42,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::TypeScript => unsafe { tree_sitter_tsx() },
         Language::Yaml => unsafe { tree_sitter_yaml() },
         Language::Starlark => unsafe { tree_sitter_starlark() },
+        Language::Bash => unsafe { tree_sitter_bash() },
     }
 }
 
@@ -560,6 +562,16 @@ container_image(
         let t = get_tree(source_code, &Language::Starlark);
         assert!(t.is_some());
         assert_eq!("module", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_bash_get_tree() {
+        let source_code = r#"
+echo "Hello, World!"
+"#;
+        let t = get_tree(source_code, &Language::Bash);
+        assert!(t.is_some());
+        assert_eq!("program", t.unwrap().root_node().kind());
     }
 
     // test the number of node we should retrieve when executing a rule
