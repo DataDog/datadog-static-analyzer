@@ -1009,6 +1009,39 @@ function visit(captures) {
         assert_eq!(console_lines[1], expected_nested);
     }
 
+    /// Tests that `TreeSitterFieldChildNode` serializes to a human-friendly representation via the DDSA_Console.
+    #[test]
+    fn ddsa_console_ts_node_field_name() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let text = "function echo(a, b) { /* ... */ }";
+        let filename = "some_filename.js";
+        let tsq_with_fields = r#"
+(function_declaration) @cap_name
+"#;
+        let tsq_no_fields = r#"
+((function_declaration
+    (formal_parameters) @cap_name))
+"#;
+        let rule_code = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    console.log(node.children[0]);
+}
+"#;
+        // A child with a field id should serialize the fieldName.
+        shorthand_execute_rule_internal(&mut rt, text, filename, tsq_with_fields, rule_code, None)
+            .unwrap();
+        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        let expected = r#"{"type":"identifier","fieldName":"name","start":{"line":1,"col":10},"end":{"line":1,"col":14},"text":"echo"}"#;
+        assert_eq!(console_lines[0], expected);
+        // A child without a field id should omit the property.
+        shorthand_execute_rule_internal(&mut rt, text, filename, tsq_no_fields, rule_code, None)
+            .unwrap();
+        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        let expected = r#"{"type":"identifier","start":{"line":1,"col":15},"end":{"line":1,"col":16},"text":"a"}"#;
+        assert_eq!(console_lines[0], expected);
+    }
+
     /// Tests that `op_ts_node_named_children` returns only named children.
     #[test]
     fn op_ts_node_named_children() {
@@ -1046,5 +1079,42 @@ function visit(captures) {
             .unwrap();
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         assert_eq!(console_lines[0], "[]");
+    }
+
+    /// Tests that a child node can have a `fieldName`, but that not all child nodes do.
+    #[test]
+    fn child_node_with_field() {
+        // (Assertion included to alert if upstream tree-sitter grammar unexpectedly alters metadata)
+        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
+        assert_eq!(ts_lang.field_name_for_id(26).unwrap(), "name");
+
+        let mut rt = JsRuntime::try_new().unwrap();
+        let text = "function echo(a, b) { /* ... */ }";
+        let filename = "some_filename.js";
+        let tsq_with_fields = r#"
+(function_declaration) @cap_name
+"#;
+        let tsq_no_fields = r#"
+((function_declaration
+    (formal_parameters) @cap_name))
+"#;
+        let code = r#"
+function visit(captures) {
+    const node = captures.get("cap_name");
+    const firstChild = node.children[0];
+    console.log(firstChild._fieldId, firstChild.fieldName);
+}
+"#;
+        // Some children should have a fieldName
+        shorthand_execute_rule_internal(&mut rt, text, filename, tsq_with_fields, code, None)
+            .unwrap();
+        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(console_lines[0], "26 name");
+
+        // Others do not
+        shorthand_execute_rule_internal(&mut rt, text, filename, tsq_no_fields, code, None)
+            .unwrap();
+        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(console_lines[0], "undefined undefined");
     }
 }

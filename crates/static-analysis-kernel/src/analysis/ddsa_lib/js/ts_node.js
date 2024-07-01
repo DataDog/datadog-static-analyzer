@@ -154,19 +154,87 @@ export class TreeSitterNode {
      * NOTE: This is deprecated, because it is a compatibility layer to support the stella API.
      * Do not rely on this, as it will be removed.
      *
-     * @returns {Array<TreeSitterNode>}
+     * @returns {Array<TreeSitterNode | TreeSitterFieldChildNode>}
      * @deprecated
      */
     get children() {
-        const childIds = op_ts_node_named_children(this.id);
-        if (childIds === null) {
+        const childTuples = op_ts_node_named_children(this.id);
+        if (childTuples === null) {
             return SEALED_EMPTY_ARRAY;
         }
         const children = [];
-        for (const childId of childIds) {
-            children.push(globalThis.__RUST_BRIDGE__ts_node.get(childId))
+        const len = childTuples.length;
+        for (let i = 0; i < len; i += 2) {
+            const node = globalThis.__RUST_BRIDGE__ts_node.get(childTuples[i]);
+            const fieldId = childTuples[i + 1];
+            // Only allocate a new `TreeSitterFieldChildNode` if the node has a field name (indicated by a non-zero fieldId).
+            if (fieldId > 0) {
+                children.push(new TreeSitterFieldChildNode(node, fieldId));
+            } else {
+                children.push(node);
+            }
         }
         return children;
+    }
+}
+
+/**
+ * The non-zero tree-sitter u16 field id for a child node in relation to a parent.
+ * @typedef {number} FieldId
+ */
+
+/**
+ * An object with the same interface as a {@link TreeSitterNode} that is the child of another node, and
+ * additionally is tagged with a field name.
+ * It does not mutate the `TreeSitterNode` that it wraps.
+ *
+ * @extends TreeSitterNode
+ */
+export class TreeSitterFieldChildNode {
+    static [Symbol.hasInstance](instance) {
+        // Because we set the prototype to the wrapped object, we lose the ability to call instanceof on `TreeSitterFieldChildNode`.
+        // To implement it, we use the fact `TreeSitterFieldChildNode` uniquely has `_fieldId`.
+        return instance instanceof TreeSitterNode && instance._fieldId !== undefined;
+    }
+
+    /**
+     * @param {TreeSitterNode} tsNode The `TreeSitterNode` that will be wrapped.
+     * @param {number} fieldId The field id of this child node.
+     */
+    constructor(tsNode, fieldId) {
+        /**
+         * The field id of this child node.
+         * @type {FieldId}
+         * @private
+         * */
+        this._fieldId = fieldId;
+
+        /**
+         * The field name associated with this child.
+         * @type {string}
+         * @readonly
+         */
+        // NOTE: We need to use `Object.defineProperty` so we can assign the property to this specific instance.
+        // We can't use the `get` keyword, like:
+        //
+        // class TreeSitterFieldChildNode {
+        //     get fieldName() { /* ... */ }
+        // }
+        //
+        // because `fieldName` would then be assigned to the prototype, not the instance. That wouldn't work for us because
+        // at the end of this constructor, we assign the prototype to the wrapped `TreeSitterNode`.
+        Object.defineProperty(this, "fieldName", {
+            get() {
+                // Note: This will only return `undefined` if the `_fieldId` field is mutated. Because this is an unsupported
+                // edge case, it's excluded from the type signature for clarity.
+                return globalThis.__RUST_BRIDGE__context.tsLangCtx.field.get(this._fieldId);
+            },
+            enumerable: false,
+            configurable: false,
+        });
+
+        // (Note: The use of `?? {}` is only because the Rust unit tests inspect the instance by invoking the constructor with no params)
+        Object.setPrototypeOf(this, tsNode ?? {});
     }
 }
 
