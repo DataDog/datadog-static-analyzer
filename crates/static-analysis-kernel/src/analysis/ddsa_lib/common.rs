@@ -6,6 +6,7 @@ use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::fmt::Debug;
 use std::ops::Deref;
+use std::time::Duration;
 
 /// A unique `u32` id used to identify a tree-sitter node sent from Rust to v8.
 pub type NodeId = u32;
@@ -14,6 +15,8 @@ pub type NodeId = u32;
 pub enum DDSAJsRuntimeError {
     #[error("execution error: {reason}")]
     Execution { reason: String },
+    #[error("JavaScript execution timeout")]
+    JavaScriptTimeout { timeout: Duration },
     #[error("expected `{name}` to exist within the v8 context")]
     VariableNotFound { name: String },
     #[error("type should be \"{expected}\", not \"{got}\"")]
