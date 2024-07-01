@@ -113,14 +113,33 @@ fn make_request(
     }
 }
 
+fn perform_request(request_builder: RequestBuilder) -> Result<reqwest::blocking::Response> {
+    let mut server_response = None;
+    let mut retry_time = 1;
+    for _ in 0..5 {
+        match request_builder.try_clone().unwrap().send() {
+            Ok(r) => server_response = Some(r),
+            Err(_) => {
+                eprintln!("Error when querying the datadog server");
+                std::thread::sleep(std::time::Duration::from_secs(retry_time));
+                retry_time *= 2; // Exponential backoff
+            }
+        }
+    }
+    let Some(server_response) = server_response else {
+        return Err(anyhow!("Error when querying the datadog server"));
+    };
+
+    Ok(server_response)
+}
+
 // get rules from one ruleset at datadog
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
 // the rulesets. We then extract all the rulesets
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
     let path = format!("rulesets/{ruleset_name}?include_tests=false&include_testing_rules=true");
-    let server_response = make_request(RequestMethod::Get, &path, use_staging, false)?
-        .send()
-        .expect("error when querying the datadog server");
+    let req = make_request(RequestMethod::Get, &path, use_staging, false)?;
+    let server_response = perform_request(req)?;
 
     let status_code = server_response.status();
     let response_text = &server_response.text()?;
@@ -165,7 +184,7 @@ pub fn get_default_rulesets_name_for_language(
     )?
     .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
 
-    let server_response = request_builder.send()?;
+    let server_response = perform_request(request_builder)?;
 
     let response_text = &server_response.text()?;
     let api_response = serde_json::from_str::<ApiResponseDefaultRuleset>(response_text);
@@ -230,17 +249,17 @@ pub fn get_diff_aware_information(arguments: &DiffAwareRequestArguments) -> Resu
         },
     };
 
-    let server_response = make_request(RequestMethod::Post, "analysis/diff-aware", false, true)?
-        .json(&request_payload)
-        .send()
-        .expect("error when querying the datadog server");
+    let req = make_request(RequestMethod::Post, "analysis/diff-aware", false, true)?
+        .json(&request_payload);
+    let server_response = perform_request(req)?;
 
-    let status = server_response.status();
+    let status_code = server_response.status();
     let response_text = &server_response.text()?;
+
     let api_response = serde_json::from_str::<DiffAwareResponse>(response_text);
 
-    if !&status.is_success() {
-        return Err(anyhow!("server returned error {}", &status.as_u16()));
+    if !&status_code.is_success() {
+        return Err(anyhow!("server returned error {}", &status_code.as_u16()));
     }
 
     match api_response {
