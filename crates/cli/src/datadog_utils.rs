@@ -122,26 +122,26 @@ fn perform_request(
     path: &str,
     debug: bool,
 ) -> Result<reqwest::blocking::Response> {
-    let mut server_response;
+    let mut server_response = None;
     let mut retry_time = 1;
     for _ in 0..5 {
         match request_builder.try_clone().unwrap().send() {
             Ok(r) => {
-                server_response = Ok(r);
+                server_response = Some(Ok(r));
                 break;
             }
             Err(e) => {
-                server_response = Err(e);
                 if debug {
                     eprintln!("Error when querying the datadog server at {path}: {e}");
                 }
+                server_response = Some(Err(e));
                 std::thread::sleep(std::time::Duration::from_secs(retry_time));
                 retry_time *= 2; // Exponential backoff
             }
         }
     }
 
-    match server_response {
+    match server_response.unwrap() {
         Ok(r) => Ok(r),
         Err(e) => Err(anyhow!(
             "Error when querying the datadog server at {path}: {e}"
