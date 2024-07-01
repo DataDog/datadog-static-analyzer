@@ -10,6 +10,7 @@ use crate::analysis::ddsa_lib::common::{
     iter_v8_array, load_function, v8_interned, v8_string, v8_uint,
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
+use crate::model::common::Language;
 use deno_core::v8::HandleScope;
 use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
 use std::ops::Deref;
@@ -129,15 +130,14 @@ pub(crate) fn try_execute<'s>(
     })
 }
 
-/// Creates a JavaScript [`tree_sitter::Tree`] from the given input.
-pub(crate) fn parse_js(javascript_code: impl AsRef<str>) -> tree_sitter::Tree {
+/// Creates a [`tree_sitter::Tree`] from the given input and language.
+pub(crate) fn parse_code(code: impl AsRef<str>, language: Language) -> tree_sitter::Tree {
     use crate::analysis::tree_sitter::get_tree_sitter_language;
-    use crate::model::common::Language;
     let mut parser = tree_sitter::Parser::new();
     parser
-        .set_language(&get_tree_sitter_language(&Language::JavaScript))
+        .set_language(&get_tree_sitter_language(&language))
         .unwrap();
-    parser.parse(javascript_code.as_ref(), None).unwrap()
+    parser.parse(code.as_ref(), None).unwrap()
 }
 
 /// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.

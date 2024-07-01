@@ -157,7 +157,7 @@ mod tests {
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
     use crate::analysis::ddsa_lib::common::v8_string;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, parse_js, try_execute,
+        attach_as_global, cfg_test_runtime, parse_code, try_execute,
     };
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
@@ -174,7 +174,7 @@ mod tests {
         let scope = &mut runtime.handle_scope();
         let contents_1: Arc<str> = Arc::from("const fileContents = '11111'");
         let filename_1: Arc<str> = Arc::from("11111.js");
-        let tree_1 = Arc::new(parse_js(contents_1.as_ref()));
+        let tree_1 = Arc::new(parse_code(contents_1.as_ref(), Language::JavaScript));
         let mut bridge = ContextBridge::try_new(scope).unwrap();
         assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
         assert!(bridge.root.js.get_filename_cache(scope).is_none());
@@ -189,7 +189,7 @@ mod tests {
         assert_eq!(bridge.root.js.get_filename_cache(scope).unwrap(), filename_1.to_string());
         let contents_2: Arc<str> = Arc::from("const fileContents = '22222'");
         let filename_2: Arc<str> = Arc::from("22222.js");
-        let tree_2 = Arc::new(parse_js(contents_2.as_ref()));
+        let tree_2 = Arc::new(parse_code(contents_2.as_ref(), Language::JavaScript));
         bridge.set_root_context(scope, &tree_2, &contents_2, &filename_2);
         assert!(bridge.root.js.get_file_contents_cache(scope).is_none());
         assert!(bridge.root.js.get_filename_cache(scope).is_none());
