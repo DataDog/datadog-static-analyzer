@@ -35,10 +35,14 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
 ];
 
 // Get all the rules from different rulesets from Datadog
-pub fn get_rules_from_rulesets(rulesets_name: &[String], use_staging: bool) -> Result<Vec<Rule>> {
+pub fn get_rules_from_rulesets(
+    rulesets_name: &[String],
+    use_staging: bool,
+    debug: bool,
+) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = Vec::new();
     for ruleset_name in rulesets_name {
-        rules.extend(get_ruleset(ruleset_name, use_staging)?.rules);
+        rules.extend(get_ruleset(ruleset_name, use_staging, debug)?.rules);
     }
     Ok(rules)
 }
@@ -113,21 +117,35 @@ fn make_request(
     }
 }
 
-fn perform_request(request_builder: RequestBuilder) -> Result<reqwest::blocking::Response> {
+fn perform_request(
+    request_builder: RequestBuilder,
+    path: &str,
+    debug: bool,
+) -> Result<reqwest::blocking::Response> {
     let mut server_response = None;
+    let mut err = None;
     let mut retry_time = 1;
     for _ in 0..5 {
         match request_builder.try_clone().unwrap().send() {
-            Ok(r) => server_response = Some(r),
-            Err(_) => {
-                eprintln!("Error when querying the datadog server");
+            Ok(r) => {
+                server_response = Some(r);
+                break;
+            }
+            Err(e) => {
+                err = Some(e);
+                if debug {
+                    eprintln!("Error when querying the datadog server at {path}: {e}");
+                }
                 std::thread::sleep(std::time::Duration::from_secs(retry_time));
                 retry_time *= 2; // Exponential backoff
             }
         }
     }
     let Some(server_response) = server_response else {
-        return Err(anyhow!("Error when querying the datadog server"));
+        return Err(anyhow!(
+            "Error when querying the datadog server at {path}: {}",
+            err.unwrap()
+        ));
     };
 
     Ok(server_response)
@@ -135,11 +153,11 @@ fn perform_request(request_builder: RequestBuilder) -> Result<reqwest::blocking:
 
 // get rules from one ruleset at datadog
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
-// the rulesets. We then extract all the rulesets
-pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
+// the rulesets. We then extract all the r,ulesets
+pub fn get_ruleset(ruleset_name: &str, use_staging: bool, debug: bool) -> Result<RuleSet> {
     let path = format!("rulesets/{ruleset_name}?include_tests=false&include_testing_rules=true");
     let req = make_request(RequestMethod::Get, &path, use_staging, false)?;
-    let server_response = perform_request(req)?;
+    let server_response = perform_request(req, &path, debug)?;
 
     let status_code = server_response.status();
     let response_text = &server_response.text()?;
@@ -175,16 +193,14 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
 pub fn get_default_rulesets_name_for_language(
     language: String,
     use_staging: bool,
+    debug: bool,
 ) -> Result<Vec<String>> {
-    let request_builder = make_request(
-        RequestMethod::Get,
-        &format!("default-rulesets/{}", language),
-        use_staging,
-        false,
-    )?
-    .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
+    let path = format!("default-rulesets/{}", language);
 
-    let server_response = perform_request(request_builder)?;
+    let request_builder = make_request(RequestMethod::Get, &path, use_staging, false)?
+        .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
+
+    let server_response = perform_request(request_builder, &path, debug)?;
 
     let response_text = &server_response.text()?;
     let api_response = serde_json::from_str::<ApiResponseDefaultRuleset>(response_text);
@@ -204,15 +220,15 @@ pub fn get_default_rulesets_name_for_language(
 
 /// Get all the default rulesets available at DataDog. Take all the language
 /// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
-pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
+pub fn get_all_default_rulesets(use_staging: bool, debug: bool) -> Result<Vec<RuleSet>> {
     let mut result: Vec<RuleSet> = vec![];
 
     for language in DEFAULT_RULESETS_LANGUAGES {
         let ruleset_names =
-            get_default_rulesets_name_for_language(language.to_string(), use_staging)?;
+            get_default_rulesets_name_for_language(language.to_string(), use_staging, debug)?;
 
         for ruleset_name in ruleset_names {
-            result.push(get_ruleset(ruleset_name.as_str(), use_staging)?);
+            result.push(get_ruleset(ruleset_name.as_str(), use_staging, debug)?);
         }
     }
     Ok(result)
@@ -232,7 +248,10 @@ pub fn get_all_default_rulesets(use_staging: bool) -> Result<Vec<RuleSet>> {
 /// to analyze and the base sha (e.g. the sha we used in the past to find
 /// the list of files). This information will later be added in the
 /// results.
-pub fn get_diff_aware_information(arguments: &DiffAwareRequestArguments) -> Result<DiffAwareData> {
+pub fn get_diff_aware_information(
+    arguments: &DiffAwareRequestArguments,
+    debug: bool,
+) -> Result<DiffAwareData> {
     let request_uuid = Uuid::new_v4().to_string();
 
     let request_payload = DiffAwareRequest {
@@ -249,9 +268,9 @@ pub fn get_diff_aware_information(arguments: &DiffAwareRequestArguments) -> Resu
         },
     };
 
-    let req = make_request(RequestMethod::Post, "analysis/diff-aware", false, true)?
-        .json(&request_payload);
-    let server_response = perform_request(req)?;
+    let path = "analysis/diff-aware";
+    let req = make_request(RequestMethod::Post, path, false, true)?.json(&request_payload);
+    let server_response = perform_request(req, path, debug)?;
 
     let status_code = server_response.status();
     let response_text = &server_response.text()?;
