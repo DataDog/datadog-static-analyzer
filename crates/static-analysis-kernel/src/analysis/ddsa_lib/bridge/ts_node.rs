@@ -2,14 +2,13 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::ddsa_lib::common::{v8_uint, Class, DDSAJsRuntimeError, NodeId};
+use crate::analysis::ddsa_lib::common::{v8_uint, Class, DDSAJsRuntimeError, Instance, NodeId};
 use crate::analysis::ddsa_lib::js::TreeSitterNode;
 use crate::analysis::ddsa_lib::v8_ds::MirroredIndexMap;
 use crate::analysis::ddsa_lib::{js, RawTSNode};
 use crate::analysis::tree_sitter::{TSCaptureContent, TSQueryCapture};
 use deno_core::v8;
 use deno_core::v8::HandleScope;
-use std::marker::PhantomData;
 
 /// A stateful bridge holding a collection of [`RawTsNode`].
 #[derive(Debug)]
@@ -84,24 +83,7 @@ impl TsNodeBridge {
         node: tree_sitter::Node,
         id: NodeId,
     ) -> v8::Local<'s, v8::Object> {
-        let tree_sitter::Point {
-            row: start_line,
-            column: start_col,
-        } = node.start_position();
-        let tree_sitter::Point {
-            row: end_line,
-            column: end_col,
-        } = node.end_position();
-        let ts_node = TreeSitterNode {
-            id,
-            // NOTE: We normalize the 0-based `tree_sitter::Point` to be 1-based.
-            start_line: start_line as u32 + 1,
-            start_col: start_col as u32 + 1,
-            end_line: end_line as u32 + 1,
-            end_col: end_col as u32 + 1,
-            node_type_id: node.grammar_id(),
-            _pd: PhantomData,
-        };
+        let ts_node = TreeSitterNode::<Instance>::from_ts_node(id, node);
         self.js_class.new_instance(scope, ts_node)
     }
 
@@ -170,7 +152,7 @@ impl TsNodeBridge {
 mod tests {
     use crate::analysis::ddsa_lib::bridge::ts_node::TsNodeBridge;
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
-    use crate::analysis::ddsa_lib::common::{get_field, v8_interned};
+    use crate::analysis::ddsa_lib::common::get_field;
     use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
     use crate::analysis::ddsa_lib::RawTSNode;
     use crate::analysis::tree_sitter::get_tree_sitter_language;
@@ -321,40 +303,6 @@ mod tests {
         assert!(bridge.v8_get(scope, 1).is_none());
         assert_eq!(bridge.insert(scope, foo), 0);
         assert!(bridge.v8_get(scope, 1).is_none());
-    }
-
-    /// Tests that the line and column number of the node is 1-based. This test is necessary because
-    /// [`tree_sitter::Point`] is 0-based, whereas we prefer a 1-based number.
-    #[test]
-    fn ts_node_line_col_one_based() {
-        let (mut runtime, bridge, mut parser) = setup_bridge();
-        let scope = &mut runtime.handle_scope();
-        let mut bridge = bridge.borrow_mut();
-
-        let tree = parser.parse(r#"const val = foo(bar, baz);"#);
-        let foo = tree.find_first("foo", "_");
-
-        assert_eq!(foo.start_position().row, 0);
-        assert_eq!(foo.start_position().column, 12);
-        assert_eq!(foo.end_position().row, 0);
-        assert_eq!(foo.end_position().column, 15);
-
-        let nid = bridge.insert(scope, foo);
-        let s_start_line = v8_interned(scope, "_startLine");
-        let s_start_col = v8_interned(scope, "_startCol");
-        let s_end_line = v8_interned(scope, "_endLine");
-        let s_end_col = v8_interned(scope, "_endCol");
-
-        let v8_node = bridge.v8_get(scope, nid).unwrap();
-        let start_line = v8_node.get(scope, s_start_line.into()).unwrap();
-        let start_col = v8_node.get(scope, s_start_col.into()).unwrap();
-        let end_line = v8_node.get(scope, s_end_line.into()).unwrap();
-        let end_col = v8_node.get(scope, s_end_col.into()).unwrap();
-
-        assert_eq!(start_line.uint32_value(scope).unwrap(), 1);
-        assert_eq!(start_col.uint32_value(scope).unwrap(), 13);
-        assert_eq!(end_line.uint32_value(scope).unwrap(), 1);
-        assert_eq!(end_col.uint32_value(scope).unwrap(), 16);
     }
 
     /// The text that the node spans can be retrieved.

@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::common::{
-    load_function, v8_uint, Class, DDSAJsRuntimeError, Instance,
+    load_function, v8_uint, Class, DDSAJsRuntimeError, Instance, NodeId,
 };
 use deno_core::v8;
 use deno_core::v8::HandleScope;
@@ -12,13 +12,41 @@ use std::marker::PhantomData;
 /// A deserialized JavaScript object representation of a [`tree_sitter::Node`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 pub struct TreeSitterNode<T> {
-    pub id: u32,
-    pub start_line: u32,
-    pub start_col: u32,
-    pub end_line: u32,
-    pub end_col: u32,
-    pub node_type_id: u16,
-    pub _pd: PhantomData<T>,
+    id: u32,
+    start_line: u32,
+    start_col: u32,
+    end_line: u32,
+    end_col: u32,
+    /// The type of node this is. This corresponds to [`tree_sitter::Node::kind_id`].
+    node_type_id: u16,
+    _pd: PhantomData<T>,
+}
+
+impl<T> TreeSitterNode<T> {
+    /// Converts the provided [`tree_sitter::Node`] into a `TreeSitterNode`, assigning the provided id.
+    pub fn from_ts_node(id: NodeId, node: tree_sitter::Node) -> Self {
+        // NOTE: We normalize the 0-based `tree_sitter::Point` to be 1-based.
+        fn normalize_ts_point_num(num: usize) -> u32 {
+            num as u32 + 1
+        }
+        let tree_sitter::Point {
+            row: start_line,
+            column: start_col,
+        } = node.start_position();
+        let tree_sitter::Point {
+            row: end_line,
+            column: end_col,
+        } = node.end_position();
+        Self {
+            id,
+            start_line: normalize_ts_point_num(start_line),
+            start_col: normalize_ts_point_num(start_col),
+            end_line: normalize_ts_point_num(end_line),
+            end_col: normalize_ts_point_num(end_col),
+            node_type_id: node.grammar_id(),
+            _pd: PhantomData,
+        }
+    }
 }
 
 /// A function representing the ES6 class `TreeSitterNode`.
@@ -89,6 +117,30 @@ mod tests {
         assert!(js_instance_eq(TreeSitterNodeFn::CLASS_NAME, expected));
         let expected = &[];
         assert!(js_class_eq(TreeSitterNodeFn::CLASS_NAME, expected));
+    }
+
+    /// Tests that the line and column number of the node is 1-based. This test is necessary because
+    /// [`tree_sitter::Point`] is 0-based, whereas we use a 1-based number.
+    #[test]
+    fn ts_node_line_col_one_based() {
+        let lang = get_tree_sitter_language(&Language::JavaScript);
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&lang).unwrap();
+
+        let tree = parser.parse(r#"foo(bar, baz);"#, None).unwrap();
+        let root = tree.root_node();
+
+        assert_eq!(root.start_position().row, 0);
+        assert_eq!(root.start_position().column, 0);
+        assert_eq!(root.end_position().row, 0);
+        assert_eq!(root.end_position().column, 14);
+
+        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node(0, root);
+
+        assert_eq!(tree_sitter_node.start_line, 1);
+        assert_eq!(tree_sitter_node.start_col, 1);
+        assert_eq!(tree_sitter_node.end_line, 1);
+        assert_eq!(tree_sitter_node.end_col, 15);
     }
 
     /// Tests that the getter for `start` and `end` is lazily instantiated and returned.
