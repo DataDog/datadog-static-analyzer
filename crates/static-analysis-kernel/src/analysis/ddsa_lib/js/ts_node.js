@@ -99,7 +99,7 @@ export class TreeSitterNode {
     get text() {
         if (this.__js_cachedText === undefined) {
             const opResult = op_ts_node_text(this.id);
-            if (opResult === undefined) {
+            if (opResult === null) {
                 // If there was a serialization error, default to an empty string.
                 this.__js_cachedText = "";
             } else {
