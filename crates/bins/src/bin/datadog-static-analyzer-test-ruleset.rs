@@ -88,7 +88,7 @@ fn main() {
     let use_ddsa = matches.opt_present("ddsa-runtime");
     let mut num_failures = 0;
     for ruleset in rulesets {
-        match get_ruleset(ruleset.as_str(), use_staging) {
+        match get_ruleset(ruleset.as_str(), use_staging, true) {
             Ok(r) => {
                 println!("Testing ruleset {}", r.name);
                 for rule in r.rules.clone() {

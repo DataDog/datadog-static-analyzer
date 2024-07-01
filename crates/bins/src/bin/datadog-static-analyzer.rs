@@ -347,7 +347,7 @@ fn main() -> Result<()> {
         let overrides = RuleOverrides::from_config_file(&conf);
 
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
-        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging)
+        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
             .context("error when reading rules from API")?;
         rules.extend(rules_from_api.into_iter().map(|rule| Rule {
             severity: overrides.severity(&rule.name, rule.severity),
@@ -375,7 +375,7 @@ fn main() -> Result<()> {
             );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             let rulesets_from_api =
-                get_all_default_rulesets(use_staging).expect("cannot get default rules");
+                get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
 
             rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
         } else {
@@ -491,7 +491,7 @@ fn main() -> Result<()> {
                     );
                 }
 
-                match get_diff_aware_information(&params) {
+                match get_diff_aware_information(&params, configuration.use_debug) {
                     Ok(d) => {
                         if configuration.use_debug {
                             println!(
