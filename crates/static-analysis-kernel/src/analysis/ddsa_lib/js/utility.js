@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-import {TreeSitterNode} from "ext:ddsa_lib/ts_node";
+import {TreeSitterNode, TreeSitterFieldChildNode} from "ext:ddsa_lib/ts_node";
 const { op_console_push } = Deno.core.ops;
 
 export class DDSA_Console {
@@ -60,7 +60,9 @@ export class DDSA_Console {
      * @constructor
      */
     static JSONReplacer(key, value) {
-        if (value instanceof TreeSitterNode) {
+        if (value instanceof TreeSitterFieldChildNode) {
+            return asDebugFieldChild(value);
+        } else if (value instanceof TreeSitterNode) {
             return asDebugTsNode(value);
         }
         return value;
@@ -75,6 +77,28 @@ export class DDSA_Console {
  * @param {Position} end
  * @param {string} text
  */
+
+/**
+ * A human-friendly representation of a {@link TreeSitterFieldChildNode}, helpful for debugging a rule.
+ * @typedef DebugTreeSitterFieldChildNode
+ * @param {string} fieldName
+ * @extends {TreeSitterNode}
+ */
+
+/**
+ * Converts a {@link TreeSitterFieldChildNode} to a {@link DebugTreeSitterFieldChildNode}.
+ * @param {TreeSitterFieldChildNode} childNode
+ * @returns {DebugTreeSitterFieldChildNode}
+ */
+function asDebugFieldChild(childNode) {
+    const dNode = asDebugTsNode(childNode);
+    // Spread the object to use a custom property ordering.
+    return {
+        type: dNode.type,
+        fieldName: childNode.fieldName,
+        ...dNode,
+    };
+}
 
 /**
  * Converts a {@link TreeSitterNode} to a {@link DebugTreeSitterNode}.

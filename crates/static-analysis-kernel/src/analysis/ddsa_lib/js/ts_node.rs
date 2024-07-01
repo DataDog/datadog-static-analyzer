@@ -81,10 +81,17 @@ impl TreeSitterNodeFn<Class> {
     }
 }
 
+/// The name of the ES6 class that wraps a `TreeSitterNode`, providing additional metadata about
+/// the node as a child of another node.
+///
+/// This is only constructed in JavaScript, so we only track the name here.
+const FIELD_CHILD_NODE_CLASS_NAME: &str = "TreeSitterFieldChildNode";
+
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{v8_interned, Class, Instance};
+    use crate::analysis::ddsa_lib::common::{v8_interned, v8_string, Class, Instance};
     use crate::analysis::ddsa_lib::context::ts_lang;
+    use crate::analysis::ddsa_lib::js::ts_node::FIELD_CHILD_NODE_CLASS_NAME;
     use crate::analysis::ddsa_lib::js::{TreeSitterNode, TreeSitterNodeFn};
     use crate::analysis::ddsa_lib::test_utils::{
         attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_root_context,
@@ -118,6 +125,16 @@ mod tests {
         assert!(js_instance_eq(TreeSitterNodeFn::CLASS_NAME, expected));
         let expected = &[];
         assert!(js_class_eq(TreeSitterNodeFn::CLASS_NAME, expected));
+
+        let expected = &[
+            // Variables
+            "_fieldId",
+            // Methods
+            "fieldName",
+        ];
+        assert!(js_instance_eq(FIELD_CHILD_NODE_CLASS_NAME, expected));
+        let expected = &[];
+        assert!(js_class_eq(FIELD_CHILD_NODE_CLASS_NAME, expected));
     }
 
     /// Tests that the line and column number of the node is 1-based. This test is necessary because
@@ -259,5 +276,46 @@ mod tests {
         let code = "TS_NODE._typeId = 99999; TS_NODE.type;";
         let ret_value = try_execute(scope, code).unwrap();
         assert_eq!(ret_value.to_rust_string_lossy(scope), "");
+    }
+
+    /// Tests that a [`FIELD_CHILD_NODE_CLASS_NAME`] wraps a [`TreeSitterNodeFn::CLASS_NAME`] with additional metadata,
+    /// but that it provides all the same properties as the node itself.
+    #[test]
+    fn field_child_interface() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
+
+        let lang_js = get_tree_sitter_language(&Language::JavaScript);
+        // (Assertion included to alert if upstream tree-sitter grammar unexpectedly alters metadata)
+        assert_eq!(lang_js.field_name_for_id(30), Some("optional_chain"));
+
+        let base_ts_node = TreeSitterNode::<Instance> {
+            id: 2,
+            start_line: 1,
+            start_col: 5,
+            end_line: 1,
+            end_col: 12,
+            node_type_id: 0, // Unused
+            _pd: PhantomData,
+        };
+        let v8_ts_node = js_class.new_instance(scope, base_ts_node);
+        attach_as_global(scope, v8_ts_node, "TS_NODE");
+
+        // We test the prototype, and then ensure properties and getters have the correct "this" context.
+        let code = r#"
+const assert = (val, msg) => { if (!val) throw new Error(msg); };
+
+const child = new TreeSitterFieldChildNode(TS_NODE, 30);
+assert(child instanceof TreeSitterNode, "should be a TreeSitterNode instance");
+assert(child instanceof TreeSitterFieldChildNode, "should (also) be a TreeSitterFieldChildNode");
+assert(child._startLine === 1, "_startLine value incorrect");
+assert(child._startCol === 5, "_startCol value incorrect");
+assert(child.start.col === 5, "start getter value incorrect");
+assert(child._fieldId === 30, "_fieldId value incorrect");
+123;
+"#;
+        let res = try_execute(scope, code).unwrap();
+        assert!(res.is_uint32() && res.uint32_value(scope).unwrap() == 123);
     }
 }

@@ -72,8 +72,19 @@ pub fn op_ts_node_text(state: &OpState, #[smi] node_id: u32) -> Option<String> {
 }
 
 /// Given a tree-sitter node (via its `node_id`), this function traverses the tree to find the
-/// named children of the node, inserting them into the `TsNodeBridge`. Nodes are returned as a
-/// `v8::Uint32Array` of node ids.
+/// named children of the node, inserting them into the `TsNodeBridge`.
+///
+/// Nodes are returned as a `v8::Uint32Array` of tuples: (NodeId, FieldId):
+/// ```text
+/// |             Node A              |             Node B              |
+/// |    NodeId A    |    FieldId A   |    NodeId B    |    FieldId B   |
+///  ________________ ________________ ________________ ________________
+/// |                |                |                |                |
+/// 0                1                2                3
+///      32 bits          32 bits          32 bits          32 bits
+/// ```
+/// A NodeId is always at an even index. Its corresponding FieldId is always at the (n + 1) index.
+/// If there is no FieldId, the uint32 will be 0.
 ///
 /// If the node doesn't exist, or it has no named children, `None` is returned.
 #[op2]
@@ -86,23 +97,43 @@ pub fn op_ts_node_named_children<'s>(
 
     let safe_raw_ts_node = OpSafeRawTSNode::try_new(&ts_node_bridge.borrow(), node_id)?;
     let ts_node = safe_raw_ts_node.to_node();
-    let mut tree_cursor = ts_node.walk();
 
-    let children = ts_node.named_children(&mut tree_cursor);
-    let count = children.len();
+    let count = ts_node.named_child_count();
     if count == 0 {
         None
     } else {
-        let ids_buf = v8::ArrayBuffer::new(scope, 4 * count);
-        let ids_array = v8::Uint32Array::new(scope, ids_buf, 0, count)
+        let ids_buf = v8::ArrayBuffer::new(scope, 4 * count * 2);
+        let uint_array = v8::Uint32Array::new(scope, ids_buf, 0, count * 2)
             .expect("v8 Uint32Array should be able to be created");
         let mut bridge_ref = ts_node_bridge.borrow_mut();
-        for (i, child) in children.enumerate() {
-            let nid = bridge_ref.insert(scope, child);
+
+        let mut cursor = ts_node.walk();
+        // This logic is extracted from `tree_sitter::Node::named_children`. We don't use the function
+        // directly because of the way its API mutably borrows the cursor, which would prevent us from
+        // inspecting values like the cursor's current field_id.
+        cursor.goto_first_child();
+        for i in 0..count {
+            while !cursor.node().is_named() {
+                if !cursor.goto_next_sibling() {
+                    break;
+                }
+            }
+            let child_node = cursor.node();
+
+            let nid = bridge_ref.insert(scope, child_node);
             let nid = v8_uint(scope, nid);
-            ids_array.set_index(scope, i as u32, nid.into());
+            let nid_index = i * 2;
+            uint_array.set_index(scope, nid_index as u32, nid.into());
+            // The array buffer is zero-initialized, so we only have to write the field_id if it exists.
+            if let Some(fid) = cursor.field_id() {
+                let fid = v8_uint(scope, fid.get() as u32);
+                uint_array.set_index(scope, (nid_index + 1) as u32, fid.into());
+            }
+
+            cursor.goto_next_sibling();
         }
-        Some(ids_array)
+
+        Some(uint_array)
     }
 }
 
