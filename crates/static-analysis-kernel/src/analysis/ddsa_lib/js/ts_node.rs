@@ -83,11 +83,12 @@ impl TreeSitterNodeFn<Class> {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::bridge::MirroredTsSymbolMap;
     use crate::analysis::ddsa_lib::common::{v8_interned, Class, Instance};
+    use crate::analysis::ddsa_lib::context::ts_lang;
     use crate::analysis::ddsa_lib::js::{TreeSitterNode, TreeSitterNodeFn};
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_root_context,
+        try_execute,
     };
     use crate::analysis::tree_sitter::get_tree_sitter_language;
     use crate::model::common::Language;
@@ -223,7 +224,7 @@ mod tests {
         }
     }
 
-    /// Tests that the `type` getter returns the string TSSymbol name.
+    /// Tests that the `type` getter returns the node type as a name string.
     #[test]
     fn type_getter() {
         let mut runtime = cfg_test_runtime();
@@ -231,13 +232,12 @@ mod tests {
         let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
 
         let lang_js = get_tree_sitter_language(&Language::JavaScript);
-        // (Included to alert if tree_sitter grammar changes the symbol ids)
+        // (Included to alert if tree_sitter grammar changes the node kind ids)
         const EXPECTED: (u16, &str) = (149, "variable_declarator");
         assert_eq!(lang_js.node_kind_for_id(EXPECTED.0), Some(EXPECTED.1));
 
-        let ts_sym_map = MirroredTsSymbolMap::new(scope, &lang_js);
-        let v8_tsm = ts_sym_map.as_local(scope);
-        attach_as_global(scope, v8_tsm, "__RUST_BRIDGE__ts_symbol_lookup");
+        let stub_root_ctx = make_stub_root_context(scope, &[], "", "", Some(&lang_js));
+        attach_as_global(scope, stub_root_ctx, "__RUST_BRIDGE__context");
 
         let base_ts_node = TreeSitterNode::<Instance> {
             id: 2,

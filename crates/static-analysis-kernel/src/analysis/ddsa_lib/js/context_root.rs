@@ -18,6 +18,7 @@ pub struct RootContext<T> {
     // Cached keys
     s_file_ctx: v8::Global<v8::String>,
     s_rule_ctx: v8::Global<v8::String>,
+    s_ts_lang_ctx: v8::Global<v8::String>,
     s_filename: v8::Global<v8::String>,
     s_file_contents: v8::Global<v8::String>,
     _pd: PhantomData<T>,
@@ -41,6 +42,8 @@ impl RootContext<Instance> {
         let s_file_ctx = v8::Global::new(scope, s_file_ctx);
         let s_rule_ctx = v8_interned(scope, "ruleCtx");
         let s_rule_ctx = v8::Global::new(scope, s_rule_ctx);
+        let s_ts_lang_ctx = v8_interned(scope, "tsLangCtx");
+        let s_ts_lang_ctx = v8::Global::new(scope, s_ts_lang_ctx);
         let s_filename = v8_interned(scope, "__js_cachedFilename");
         let s_filename = v8::Global::new(scope, s_filename);
         let s_file_contents = v8_interned(scope, "__js_cachedFileContents");
@@ -49,6 +52,7 @@ impl RootContext<Instance> {
             v8_object,
             s_file_ctx,
             s_rule_ctx,
+            s_ts_lang_ctx,
             s_filename,
             s_file_contents,
             _pd: PhantomData,
@@ -87,6 +91,21 @@ impl RootContext<Instance> {
             });
         } else {
             set_undefined(&self.v8_object, scope, &self.s_file_ctx);
+        }
+    }
+
+    /// Sets the tree-sitter Language context.
+    pub fn set_ts_lang_ctx(
+        &self,
+        scope: &mut HandleScope,
+        ts_lang_ctx: Option<&js::TsLanguageContext<Instance>>,
+    ) {
+        if let Some(ts_lang_ctx) = ts_lang_ctx {
+            set_key_value(&self.v8_object, scope, &self.s_ts_lang_ctx, |inner| {
+                ts_lang_ctx.as_local(inner).into()
+            });
+        } else {
+            set_undefined(&self.v8_object, scope, &self.s_ts_lang_ctx);
         }
     }
 
@@ -171,6 +190,7 @@ mod tests {
             "__js_cachedFileContents",
             "fileCtx",
             "ruleCtx",
+            "tsLangCtx",
             // Methods
             "fileContents",
             "filename",

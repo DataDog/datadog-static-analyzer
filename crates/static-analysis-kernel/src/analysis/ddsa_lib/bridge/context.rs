@@ -8,6 +8,7 @@ use crate::analysis::ddsa_lib::js;
 use crate::model::common::Language;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
+use std::ops::Deref;
 use std::sync::Arc;
 
 /// A [`ddsa_lib`] Context and its corresponding [`js`] Context.
@@ -23,6 +24,7 @@ pub struct ContextBridge {
     root: Linked<ddsa_lib::RootContext, js::RootContext<Instance>>,
     rule: Linked<ddsa_lib::RuleContext, js::RuleContext<Instance>>,
     file: Linked<ddsa_lib::FileContext, js::FileContext<Instance>>,
+    ts_lang: Linked<ddsa_lib::TsLanguageContext, js::TsLanguageContext<Instance>>,
 }
 
 impl ContextBridge {
@@ -31,6 +33,8 @@ impl ContextBridge {
     /// * [`js::RootContext::CLASS_NAME`]
     /// * [`js::RuleContext::CLASS_NAME`]
     /// * [`js::FileContext::CLASS_NAME`]
+    /// * [`js::TsLanguageContext::CLASS_NAME`]
+    ///
     ///
     /// Note that individual [`ddsa_lib::FileContext`] instances may require their own class functions
     /// to be present in the scope, and these contexts can be viewed at [`Self::init_all_file_ctx`].
@@ -38,6 +42,7 @@ impl ContextBridge {
         let js_root_ctx = js::RootContext::try_new(scope)?;
         let js_rule_ctx = js::RuleContext::try_new(scope)?;
         let js_file_ctx = js::FileContext::try_new(scope)?;
+        let js_ts_lang_ctx = js::TsLanguageContext::try_new(scope)?;
 
         let root = Linked {
             ddsa: ddsa_lib::RootContext::default(),
@@ -51,6 +56,10 @@ impl ContextBridge {
             ddsa: ddsa_lib::FileContext::default(),
             js: js_file_ctx,
         };
+        let ts_lang = Linked {
+            ddsa: ddsa_lib::TsLanguageContext::default(),
+            js: js_ts_lang_ctx,
+        };
         // Initialize the contexts
         rule.js
             .set_arguments_map(scope, Some(rule.ddsa.arguments_map()));
@@ -58,8 +67,14 @@ impl ContextBridge {
         // Attach the `ruleCtx` and `fileCtx` to the root context.
         root.js.set_rule_ctx(scope, Some(&rule.js));
         root.js.set_file_ctx(scope, Some(&file.js));
+        root.js.set_ts_lang_ctx(scope, Some(&ts_lang.js));
 
-        Ok(Self { root, rule, file })
+        Ok(Self {
+            root,
+            rule,
+            file,
+            ts_lang,
+        })
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
@@ -79,12 +94,30 @@ impl ContextBridge {
         filename: &Arc<str>,
     ) -> bool {
         let mut was_new_tree = false;
+        let mut was_new_ts_lang = false;
         // NOTE:
         // We know that two trees are equal if their root node is the same because
         // we never mutate trees (or nodes).
         if self.root.ddsa.get_tree().map(|ex| ex.root_node().id()) != Some(tree.root_node().id()) {
-            self.root.ddsa.set_tree(Arc::clone(tree));
             was_new_tree = true;
+            let previous_tree = self.root.ddsa.set_tree(Arc::clone(tree));
+            if previous_tree.is_none() {
+                was_new_ts_lang = true
+            } else if let Some(prev_tree) = previous_tree {
+                was_new_ts_lang = prev_tree.language().deref() != tree.language().deref();
+            }
+        }
+        // If the existing language was different from the one for this tree, update the context.
+        if was_new_ts_lang {
+            let metadata = self
+                .ts_lang
+                .ddsa
+                .get_metadata(scope, tree.language().deref());
+            self.ts_lang.js.set_metadata(
+                scope,
+                Some(metadata.node_kind_map.v8_map()),
+                Some(metadata.field_map.v8_map()),
+            )
         }
         // Because trees and file contents go hand-in-hand, we can avoid a relatively expensive string
         // comparison by just using the `new_tree` boolean for control flow.
@@ -157,14 +190,39 @@ mod tests {
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
     use crate::analysis::ddsa_lib::common::v8_string;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, parse_code, try_execute,
+        attach_as_global, cfg_test_runtime, format_ts_lang_pointer, parse_code, try_execute,
+        KEY_TS_LANGUAGE_PTR,
     };
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
+    use deno_core::v8;
     use std::cell::RefCell;
     use std::collections::HashMap;
+    use std::ops::Deref;
     use std::rc::Rc;
     use std::sync::Arc;
+
+    /// A function that performs an `assert!` that the [`js::TsLanguageContext`](crate::analysis::ddsa_lib::js::TsLanguageContext)
+    /// on the bridge contains metadata for the expected `tree_sitter::Language`.
+    fn assert_ts_lang_ctx(
+        scope: &mut v8::HandleScope,
+        bridge: &ContextBridge,
+        expected: &tree_sitter::Language,
+    ) {
+        let s_lang_ptr = v8_string(scope, KEY_TS_LANGUAGE_PTR);
+        let lang_address = format_ts_lang_pointer(expected);
+
+        let field_map = bridge.ts_lang.js.get_prop_field(scope);
+        let node_type_map = bridge.ts_lang.js.get_prop_node_type(scope);
+
+        for v8_map in [field_map, node_type_map] {
+            let entry_value = v8_map.get(scope, s_lang_ptr.into()).unwrap();
+            assert_eq!(entry_value.to_rust_string_lossy(scope), lang_address);
+            // Assert that this map has been populated: we check that it's over 1 because
+            // we artificially inserted the `s_lang_ptr` entry.
+            assert!(v8_map.size() > 1);
+        }
+    }
 
     /// Ensures that the file content and filename cache is cleared every time they are set.
     #[rustfmt::skip]
@@ -223,6 +281,35 @@ mod tests {
             let v8_key = v8_string(scope, key);
             assert_eq!(v8_args_map.get(scope, v8_key.into()).unwrap().to_rust_string_lossy(scope), value);
         }
+    }
+
+    /// Tests that the tree-sitter language context is updated when the `RootContext` is set.
+    #[test]
+    fn set_root_context_ts_lang() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+        let mut bridge = ContextBridge::try_new(scope).unwrap();
+
+        // First assert that the TsLanguageContext is uninitialized
+        assert_eq!(bridge.ts_lang.js.get_prop_node_type(scope).size(), 0);
+        assert_eq!(bridge.ts_lang.js.get_prop_field(scope).size(), 0);
+
+        // Then set the RootContext for a JavaScript tree.
+        let contents_1: Arc<str> = Arc::from("const fileContents = '11111'");
+        let filename_1: Arc<str> = Arc::from("11111.js");
+        let tree_1 = Arc::new(parse_code(contents_1.as_ref(), Language::JavaScript));
+        bridge.set_root_context(scope, &tree_1, &contents_1, &filename_1);
+        // Assert that it gets initialized for the JavaScript tree-sitter language.
+        assert_ts_lang_ctx(scope, &bridge, tree_1.language().deref());
+
+        // Then set the RootContext for a non-JavaScript tree.
+        let contents_2: Arc<str> = Arc::from("fileContents = '22222'");
+        let filename_2: Arc<str> = Arc::from("22222.py");
+        let tree_2 = Arc::new(parse_code(contents_2.as_ref(), Language::Python));
+        assert_ne!(tree_1.language().deref(), tree_2.language().deref());
+        bridge.set_root_context(scope, &tree_2, &contents_2, &filename_2);
+        // Assert that it gets reassigned to the Python tree-sitter language.
+        assert_ts_lang_ctx(scope, &bridge, tree_2.language().deref());
     }
 
     #[rustfmt::skip]

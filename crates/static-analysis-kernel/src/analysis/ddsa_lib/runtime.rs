@@ -4,7 +4,7 @@
 
 use crate::analysis;
 use crate::analysis::ddsa_lib::bridge::{
-    ContextBridge, QueryMatchBridge, TsNodeBridge, TsSymbolMapBridge, ViolationBridge,
+    ContextBridge, QueryMatchBridge, TsNodeBridge, ViolationBridge,
 };
 use crate::analysis::ddsa_lib::common::{
     compile_script, create_base_runtime, v8_interned, v8_string, DDSAJsRuntimeError, Instance,
@@ -25,7 +25,6 @@ use std::time::{Duration, Instant};
 const BRIDGE_CONTEXT: &str = "__RUST_BRIDGE__context";
 const BRIDGE_QUERY_MATCH: &str = "__RUST_BRIDGE__query_match";
 const BRIDGE_TS_NODE: &str = "__RUST_BRIDGE__ts_node";
-const BRIDGE_TS_SYMBOL: &str = "__RUST_BRIDGE__ts_symbol_lookup";
 const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
 const STELLA_COMPAT_FILENAME: &str = "STELLA_COMPAT_FILENAME";
 const STELLA_COMPAT_FILE_CONTENTS: &str = "STELLA_COMPAT_FILE_CONTENTS";
@@ -47,7 +46,6 @@ pub struct JsRuntime {
     bridge_context: Rc<RefCell<ContextBridge>>,
     bridge_query_match: QueryMatchBridge,
     bridge_ts_node: Rc<RefCell<TsNodeBridge>>,
-    bridge_ts_symbol_map: Rc<TsSymbolMapBridge>,
     bridge_violation: ViolationBridge,
     /// A map from a rule's name to its compiled `v8::UnboundScript`.
     script_cache: Rc<RefCell<HashMap<String, v8::Global<v8::UnboundScript>>>>,
@@ -56,8 +54,6 @@ pub struct JsRuntime {
     // v8-specific
     /// A [`v8::Object`] that has been set as the prototype of the `JsRuntime`'s default context's global object.
     v8_ddsa_global: v8::Global<v8::Object>,
-    // Cached strings
-    s_bridge_ts_symbol_lookup: v8::Global<v8::String>,
 }
 
 impl JsRuntime {
@@ -70,7 +66,7 @@ impl JsRuntime {
 
         // Construct the bridges and attach their underlying `v8:Global` object to the
         // default context's `globalThis` variable.
-        let (context, query_match, ts_node, ts_symbols, violation, v8_ddsa_global) = {
+        let (context, query_match, ts_node, violation, v8_ddsa_global) = {
             let scope = &mut runtime.handle_scope();
             let v8_ddsa_object = v8::Object::new(scope);
 
@@ -90,13 +86,6 @@ impl JsRuntime {
             let key_tsn = v8_interned(scope, BRIDGE_TS_NODE);
             v8_ddsa_object.set(scope, key_tsn.into(), v8_ts_node_map.into());
             let ts_node = Rc::new(RefCell::new(ts_node));
-
-            let ts_symbols = TsSymbolMapBridge::new();
-            let ts_symbols = Rc::new(ts_symbols);
-            // The actual v8::Map containing the language-specific symbols will be populated when a rule is executed.
-            let key_sym = v8_interned(scope, BRIDGE_TS_SYMBOL);
-            let v8_undefined = v8::undefined(scope);
-            v8_ddsa_object.set(scope, key_sym.into(), v8_undefined.into());
 
             let violation = ViolationBridge::new(scope);
             let v8_violation_array = violation.as_local(scope);
@@ -130,27 +119,13 @@ impl JsRuntime {
             }
 
             let v8_ddsa_global = v8::Global::new(scope, v8_ddsa_object);
-            (
-                context,
-                query_match,
-                ts_node,
-                ts_symbols,
-                violation,
-                v8_ddsa_global,
-            )
-        };
-
-        let s_bridge_ts_symbol_lookup = {
-            let scope = &mut runtime.handle_scope();
-            let v8_string = v8_interned(scope, BRIDGE_TS_SYMBOL);
-            v8::Global::new(scope, v8_string)
+            (context, query_match, ts_node, violation, v8_ddsa_global)
         };
 
         let op_state = runtime.op_state();
         let mut op_state = op_state.borrow_mut();
         op_state.put(Rc::clone(&context));
         op_state.put(Rc::clone(&ts_node));
-        op_state.put(Rc::clone(&ts_symbols));
 
         let console = Rc::new(RefCell::new(JsConsole::new()));
         op_state.put(Rc::clone(&console));
@@ -165,12 +140,10 @@ impl JsRuntime {
             bridge_context: context,
             bridge_query_match: query_match,
             bridge_ts_node: ts_node,
-            bridge_ts_symbol_map: ts_symbols,
             bridge_violation: violation,
             script_cache: Rc::new(RefCell::new(HashMap::new())),
             ts_query_cursor: Rc::new(RefCell::new(tree_sitter::QueryCursor::new())),
             v8_ddsa_global,
-            s_bridge_ts_symbol_lookup,
         })
     }
 
@@ -235,14 +208,6 @@ impl JsRuntime {
             }
 
             let scope = &mut self.runtime.handle_scope();
-
-            // Change the global object's pointer to the TSSymbolMap to the one for this specific language.
-            let v8_ts_symbol_map = self
-                .bridge_ts_symbol_map
-                .get_map(scope, &source_tree.language());
-            let opened = self.v8_ddsa_global.open(scope);
-            let key_sym = v8::Local::new(scope, &self.s_bridge_ts_symbol_lookup);
-            opened.set(scope, key_sym.into(), v8_ts_symbol_map.into());
 
             // Push data from Rust to v8
             // Update the DDSA context metadata
