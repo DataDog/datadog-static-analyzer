@@ -208,7 +208,7 @@ assert(Array.isArray(stubNodes) && stubNodes.length === 0);
         let mut runtime = cfg_test_runtime();
 
         let scope = &mut runtime.handle_scope();
-        let stub_root_context = make_stub_root_context(scope, &[("arg_name1", "123")], COMPAT_FILENAME, COMPAT_FILE_CONTENTS);
+        let stub_root_context = make_stub_root_context(scope, &[("arg_name1", "123")], COMPAT_FILENAME, COMPAT_FILE_CONTENTS, None);
         attach_as_global(scope, stub_root_context, "__RUST_BRIDGE__context");
 
         let js_class = QueryMatchCompat::try_new(scope).unwrap();

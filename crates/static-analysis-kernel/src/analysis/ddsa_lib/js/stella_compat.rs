@@ -108,7 +108,7 @@ thisStringRepresents('The file contents');\
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
 
-        let stub_root_context = make_stub_root_context(scope, &[], CTX_FILENAME, "");
+        let stub_root_context = make_stub_root_context(scope, &[], CTX_FILENAME, "", None);
         attach_as_global(scope, stub_root_context, "__RUST_BRIDGE__context");
 
         let v8_filename_proxy = VisitArgFilenameCompat::try_new(scope).unwrap();
@@ -132,7 +132,7 @@ assert(__FILENAME_PROXY__.includes("name"), "method invocation doesn't work");
         let mut runtime = cfg_test_runtime();
         let scope = &mut runtime.handle_scope();
 
-        let stub_root_context = make_stub_root_context(scope, &[], "", CTX_FILE_CONTENTS);
+        let stub_root_context = make_stub_root_context(scope, &[], "", CTX_FILE_CONTENTS, None);
         attach_as_global(scope, stub_root_context, "__RUST_BRIDGE__context");
 
         let v8_filename_proxy = VisitArgCodeCompat::try_new(scope).unwrap();

@@ -232,12 +232,13 @@ pub(crate) fn make_stub_tsn_bridge<'s>(
     stub_tsn_bridge
 }
 
-/// Creates a stub [`v8::Object`] that represents a `RootContext`.
+/// Creates a stub [`v8::Object`] that partially implements the interface for a `RootContext`.
 pub(crate) fn make_stub_root_context<'s>(
     scope: &mut HandleScope<'s>,
     arguments: &[(&str, &str)],
     filename: &str,
     file_contents: &str,
+    _ts_language: Option<&tree_sitter::Language>,
 ) -> v8::Local<'s, v8::Object> {
     use crate::analysis::ddsa_lib::common::{load_function, v8_string};
 
