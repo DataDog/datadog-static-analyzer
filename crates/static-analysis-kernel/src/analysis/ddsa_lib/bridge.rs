@@ -8,9 +8,5 @@ mod query_match;
 pub use query_match::QueryMatchBridge;
 mod ts_node;
 pub use ts_node::TsNodeBridge;
-mod ts_symbol_map;
-#[cfg(test)]
-pub(crate) use ts_symbol_map::MirroredTsSymbolMap;
-pub use ts_symbol_map::TsSymbolMapBridge;
 mod violation;
 pub use violation::ViolationBridge;

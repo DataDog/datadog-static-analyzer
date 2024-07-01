@@ -10,3 +10,5 @@ mod root;
 pub use root::RootContext;
 mod rule;
 pub use rule::RuleContext;
+pub(crate) mod ts_lang;
+pub use ts_lang::TsLanguageContext;

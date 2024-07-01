@@ -14,8 +14,9 @@ export class RootContext {
     /**
      * @param {FileContext} fileCtx
      * @param {RuleContext} ruleCtx
+     * @param {TsLanguageContext} tsLangCtx
      */
-    constructor(fileCtx, ruleCtx) {
+    constructor(fileCtx, ruleCtx, tsLangCtx) {
         /**
          * The filename of the file being analyzed within this context. This is intended to be an internal
          * field. External callers should use the {@link RootContext.filename} getter.
@@ -42,6 +43,12 @@ export class RootContext {
          * @private
          */
         this.ruleCtx = ruleCtx;
+        /**
+         * An object that provides metadata specific to a tree-sitter Language.
+         * @type {TsLanguageContext}
+         * @private
+         */
+        this.tsLangCtx = tsLangCtx;
     }
 
     /**

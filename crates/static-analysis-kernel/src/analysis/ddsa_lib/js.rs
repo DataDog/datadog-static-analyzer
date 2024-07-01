@@ -15,6 +15,8 @@ mod context_root;
 pub(crate) use context_root::RootContext;
 mod context_rule;
 pub(crate) use context_rule::RuleContext;
+mod context_ts_lang;
+pub(crate) use context_ts_lang::TsLanguageContext;
 mod edit;
 pub(crate) use edit::*;
 mod fix;

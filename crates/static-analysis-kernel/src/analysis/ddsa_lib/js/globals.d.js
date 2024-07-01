@@ -20,13 +20,6 @@ import {Violation} from "ext:ddsa_lib/violation";
  */
 
 /**
- * A lookup that maps the display name of a tree-sitter node's type to its `TSSymbol`. This is grammar-specific.
- * @name __RUST_BRIDGE__ts_symbol_lookup
- * @type {Map<string | NodeTypeId, NodeTypeId | string>}
- * @global
- */
-
-/**
  * The context for a rule execution.
  * @name __RUST_BRIDGE__context
  * @type {RootContext}

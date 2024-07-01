@@ -10,6 +10,7 @@ use crate::analysis::ddsa_lib::common::{
     iter_v8_array, load_function, v8_interned, v8_string, v8_uint,
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
+use crate::model::common::Language;
 use deno_core::v8::HandleScope;
 use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
 use std::ops::Deref;
@@ -129,15 +130,14 @@ pub(crate) fn try_execute<'s>(
     })
 }
 
-/// Creates a JavaScript [`tree_sitter::Tree`] from the given input.
-pub(crate) fn parse_js(javascript_code: impl AsRef<str>) -> tree_sitter::Tree {
+/// Creates a [`tree_sitter::Tree`] from the given input and language.
+pub(crate) fn parse_code(code: impl AsRef<str>, language: Language) -> tree_sitter::Tree {
     use crate::analysis::tree_sitter::get_tree_sitter_language;
-    use crate::model::common::Language;
     let mut parser = tree_sitter::Parser::new();
     parser
-        .set_language(&get_tree_sitter_language(&Language::JavaScript))
+        .set_language(&get_tree_sitter_language(&language))
         .unwrap();
-    parser.parse(javascript_code.as_ref(), None).unwrap()
+    parser.parse(code.as_ref(), None).unwrap()
 }
 
 /// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.
@@ -212,6 +212,16 @@ pub(crate) fn attach_as_global<'s, T>(
     global.set(scope, v8_key.into(), v8_local.into());
 }
 
+/// A string used as a `v8::Map` key to determine the identity of a `tree_sitter::Language` within v8.
+pub(crate) const KEY_TS_LANGUAGE_PTR: &str = "CFG_TEST_TS_LANGUAGE_PTR";
+
+/// Formats the memory address of the raw pointer that the provided `tree_sitter::Language` wraps,
+/// for example: `0x104ec9e20`. This can be used to determine equivalence of two `tree_sitter::Language` within v8.
+pub(crate) fn format_ts_lang_pointer(ts_language: &tree_sitter::Language) -> String {
+    // We can clone the `ts_language` because a clone still has the same raw pointer as the original.
+    format!("{:p}", ts_language.clone().into_raw())
+}
+
 /// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
 /// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
 pub(crate) fn make_stub_tsn_bridge<'s>(
@@ -232,12 +242,13 @@ pub(crate) fn make_stub_tsn_bridge<'s>(
     stub_tsn_bridge
 }
 
-/// Creates a stub [`v8::Object`] that represents a `RootContext`.
+/// Creates a stub [`v8::Object`] that partially implements the interface for a `RootContext`.
 pub(crate) fn make_stub_root_context<'s>(
     scope: &mut HandleScope<'s>,
     arguments: &[(&str, &str)],
     filename: &str,
     file_contents: &str,
+    ts_language: Option<&tree_sitter::Language>,
 ) -> v8::Local<'s, v8::Object> {
     use crate::analysis::ddsa_lib::common::{load_function, v8_string};
 
@@ -265,6 +276,22 @@ pub(crate) fn make_stub_root_context<'s>(
     let s_key_file_contents = v8_interned(scope, "fileContents");
     let v8_file_contents = v8_string(scope, file_contents);
     v8_root_ctx.set(scope, s_key_file_contents.into(), v8_file_contents.into());
+
+    if let Some(ts_language) = ts_language {
+        let metadata = crate::analysis::ddsa_lib::ts_lang::Metadata::new(scope, ts_language);
+        let v8_ts_lang_obj = v8::Object::new(scope);
+
+        let s_key_node_type = v8_interned(scope, "nodeType");
+        let v8_node_type_map = metadata.node_kind_map.as_local(scope);
+        v8_ts_lang_obj.set(scope, s_key_node_type.into(), v8_node_type_map.into());
+
+        let s_key_field = v8_interned(scope, "field");
+        let v8_field_map = metadata.field_map.as_local(scope);
+        v8_ts_lang_obj.set(scope, s_key_field.into(), v8_field_map.into());
+
+        let s_key_tsl_ctx = v8_interned(scope, "tsLangCtx");
+        v8_root_ctx.set(scope, s_key_tsl_ctx.into(), v8_ts_lang_obj.into());
+    }
 
     v8_root_ctx
 }
