@@ -122,17 +122,16 @@ fn perform_request(
     path: &str,
     debug: bool,
 ) -> Result<reqwest::blocking::Response> {
-    let mut server_response = None;
-    let mut err = None;
+    let mut server_response;
     let mut retry_time = 1;
     for _ in 0..5 {
         match request_builder.try_clone().unwrap().send() {
             Ok(r) => {
-                server_response = Some(r);
+                server_response = Ok(r);
                 break;
             }
             Err(e) => {
-                err = Some(e);
+                server_response = Err(e);
                 if debug {
                     eprintln!("Error when querying the datadog server at {path}: {e}");
                 }
@@ -141,14 +140,13 @@ fn perform_request(
             }
         }
     }
-    let Some(server_response) = server_response else {
-        return Err(anyhow!(
-            "Error when querying the datadog server at {path}: {}",
-            err.unwrap()
-        ));
-    };
 
-    Ok(server_response)
+    match server_response {
+        Ok(r) => Ok(r),
+        Err(e) => Err(anyhow!(
+            "Error when querying the datadog server at {path}: {e}"
+        )),
+    }
 }
 
 // get rules from one ruleset at datadog
