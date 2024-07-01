@@ -22,7 +22,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_tsx() -> tree_sitter::Language;
         fn tree_sitter_hcl() -> tree_sitter::Language;
         fn tree_sitter_yaml() -> tree_sitter::Language;
-
+        fn tree_sitter_starlark() -> tree_sitter::Language;
     }
 
     match language {
@@ -40,6 +40,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Terraform => unsafe { tree_sitter_hcl() },
         Language::TypeScript => unsafe { tree_sitter_tsx() },
         Language::Yaml => unsafe { tree_sitter_yaml() },
+        Language::Starlark => unsafe { tree_sitter_starlark() },
     }
 }
 
@@ -545,6 +546,20 @@ rulesets:
         let t = get_tree(source_code, &Language::Yaml);
         assert!(t.is_some());
         assert_eq!("stream", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_starlark_get_tree() {
+        let source_code = r#"
+load("@io_bazel_rules_docker//container:container.bzl", "container_image")
+container_image(
+    name = "base",
+    base = "@io_bazel_rules_docker//images/ubuntu-1604:latest",
+)
+"#;
+        let t = get_tree(source_code, &Language::Starlark);
+        assert!(t.is_some());
+        assert_eq!("module", t.unwrap().root_node().kind());
     }
 
     // test the number of node we should retrieve when executing a rule

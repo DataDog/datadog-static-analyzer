@@ -2,7 +2,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// Executes a [Command], returning true if the command finished with exit status 0, otherwise false
+/// Executes a [`Command`], returning true if the command finished with exit status 0, otherwise false
 fn run<F>(name: &str, mut configure: F) -> bool
 where
     F: FnMut(&mut Command) -> &mut Command,
@@ -174,6 +174,16 @@ fn main() {
             repository: "https://github.com/alex-pinkus/tree-sitter-swift.git".to_string(),
             build_dir: "src".into(),
             commit_hash: "b1b66955d420d5cf5ff268ae552f0d6e43ff66e1".to_string(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
+        },
+        TreeSitterProject {
+            name: "tree-sitter-starlark".to_string(),
+            compilation_unit: "tree-sitter-starlark".to_string(),
+            repository: "https://github.com/tree-sitter-grammars/tree-sitter-starlark.git"
+                .to_string(),
+            build_dir: "src".into(),
+            commit_hash: "018d0e09d9d0f0dd6740a37682b8ee4512e8b2ac".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },

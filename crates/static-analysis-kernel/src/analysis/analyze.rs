@@ -21,6 +21,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut line_number = 1u32;
     let disabling_patterns = match language {
         Language::Python
+        | Language::Starlark
         | Language::Dockerfile
         | Language::Ruby
         | Language::Terraform
@@ -905,5 +906,57 @@ function visit(node, filename, code) {
         assert_eq!(result1.violations.len(), 1);
         assert!(result1.violations[0].message.contains("argument = 101"));
         assert_eq!(result2.violations.len(), 0);
+    }
+
+    #[test]
+    fn test_execution_for_starlark() {
+        let rule_code = r#"
+function visit(query, filename, code) {
+    const functionName = query.captures.name;
+    if (functionName) {
+        const error = buildError(
+            functionName.start.line, functionName.start.col,
+            functionName.end.line, functionName.end.col,
+            `invalid name`
+        );
+        addError(error);
+    }
+}"#;
+
+        let rule = RuleInternal {
+            name: "rule1".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Starlark,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Starlark).unwrap(),
+        };
+
+        let analysis_options = AnalysisOptions {
+            log_output: true,
+            use_debug: false,
+            ignore_generated_files: false,
+        };
+
+        let starlark_code = r#"
+def foo():
+    pass
+"#;
+
+        let results = analyze(
+            &Language::Starlark,
+            &vec![rule],
+            "myfile.star",
+            starlark_code,
+            &ArgumentProvider::new(),
+            &analysis_options,
+        );
+
+        assert_eq!(results.len(), 1);
+        let result = results.get(0).unwrap();
+        assert_eq!(result.violations.len(), 1);
+        assert_eq!(result.violations[0].message, "invalid name");
     }
 }
