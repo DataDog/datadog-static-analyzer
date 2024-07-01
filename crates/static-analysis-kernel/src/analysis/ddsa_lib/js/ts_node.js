@@ -99,9 +99,10 @@ export class TreeSitterNode {
     get text() {
         if (this.__js_cachedText === undefined) {
             const opResult = op_ts_node_text(this.id);
-            if (opResult === undefined) {
-                // If there was a serialization error, default to an empty string.
-                this.__js_cachedText = "";
+            if (opResult === null) {
+                // This branch is only accessible if this node's `id` is mutated such that a non-existent id
+                // is passed into the op. In this case, return undefined.
+                return undefined;
             } else {
                 this.__js_cachedText = opResult;
             }
@@ -158,7 +159,7 @@ export class TreeSitterNode {
      */
     get children() {
         const childIds = op_ts_node_named_children(this.id);
-        if (childIds === undefined) {
+        if (childIds === null) {
             return SEALED_EMPTY_ARRAY;
         }
         const children = [];

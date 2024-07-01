@@ -346,4 +346,34 @@ const def = 456;
             assert_eq!(res.to_rust_string_lossy(scope).as_str(), *text);
         }
     }
+
+    /// Tests that if a rule mutates the internal node id (which it "should" never do), calling
+    /// the text getter returns an empty string instead of panicking.
+    #[test]
+    fn get_invalid_node_text() {
+        let (mut runtime, ts_node_bridge, mut parser) = setup_bridge();
+        let file_contents = "const abc = 123;";
+        let tree = parser.parse(file_contents);
+        let file_contents = Arc::<str>::from(file_contents);
+        let file_name = Arc::<str>::from("file_name.js");
+
+        // The provider of the text is the "context", so we need to create and populate that first.
+        let ctx_bridge = setup_context_bridge(&mut runtime);
+        let scope = &mut runtime.handle_scope();
+        let ts_node_map = ts_node_bridge.borrow().as_local(scope);
+        attach_as_global(scope, ts_node_map, "TS_NODES");
+        ctx_bridge
+            .borrow_mut()
+            .set_root_context(scope, &tree.0, &file_contents, &file_name);
+        let node_0 = tree.find_first("abc", "identifier");
+        ts_node_bridge.borrow_mut().insert(scope, node_0);
+
+        let code = "\
+const node = TS_NODES.get(0);
+node.id = 123456789;
+node.text;
+";
+        let value = try_execute(scope, code).unwrap();
+        assert!(value.is_undefined());
+    }
 }

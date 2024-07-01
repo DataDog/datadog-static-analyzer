@@ -1074,5 +1074,12 @@ function visit(captures) {
         // We should've newly pushed the captured node's 3 children to the bridge.
         assert_eq!(rt.bridge_ts_node.borrow().len(), 4);
         assert_eq!(console_lines[0], r#"["a","b","c"]"#);
+
+        // Check a node with no children.
+        let source = "function echo() {}";
+        shorthand_execute_rule_internal(&mut rt, source, filename, ts_query, get_children, None)
+            .unwrap();
+        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(console_lines[0], "[]");
     }
 }
