@@ -100,8 +100,9 @@ export class TreeSitterNode {
         if (this.__js_cachedText === undefined) {
             const opResult = op_ts_node_text(this.id);
             if (opResult === null) {
-                // If there was a serialization error, default to an empty string.
-                this.__js_cachedText = "";
+                // This branch is only accessible if this node's `id` is mutated such that a non-existent id
+                // is passed into the op. In this case, return undefined.
+                return undefined;
             } else {
                 this.__js_cachedText = opResult;
             }

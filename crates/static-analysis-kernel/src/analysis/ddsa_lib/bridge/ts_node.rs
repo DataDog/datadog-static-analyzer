@@ -374,6 +374,6 @@ node.id = 123456789;
 node.text;
 ";
         let value = try_execute(scope, code).unwrap();
-        assert!(value.is_string() && &value.to_rust_string_lossy(scope) == "");
+        assert!(value.is_undefined());
     }
 }
