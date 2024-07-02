@@ -30,6 +30,7 @@ use getopts::Options;
 use indicatif::ProgressBar;
 use kernel::arguments::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
+use kernel::model::diff_aware::DiffAware;
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;

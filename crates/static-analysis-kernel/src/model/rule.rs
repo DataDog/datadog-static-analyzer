@@ -3,6 +3,7 @@ use base64::engine::general_purpose;
 use base64::Engine;
 
 use crate::analysis::tree_sitter::{get_query, TSQuery};
+use crate::model::diff_aware::DiffAware;
 use crate::model::rule_test::RuleTest;
 use crate::model::violation::Violation;
 use anyhow::anyhow;
@@ -180,6 +181,15 @@ pub struct RuleInternal {
     pub tree_sitter_query: TSQuery,
 }
 
+impl DiffAware for Rule {
+    /// Produce a string that is used to get the config_hash. The generated string should change
+    /// if we think that the rules change and may trigger new results.
+    fn generate_diff_aware_digest(&self) -> String {
+        let pattern_string = self.pattern.clone().unwrap_or("no pattern".to_string());
+        format!("{}:{}:{}", self.name, pattern_string, self.code_base64).to_string()
+    }
+}
+
 impl Rule {
     pub fn get_url(&self) -> String {
         format!(
@@ -261,13 +271,6 @@ impl Rule {
         let mut hasher = sha2::Sha256::new();
         hasher.update(self.code_base64.clone().as_bytes());
         format!("{:x}", hasher.finalize())
-    }
-
-    /// Produce a string that is used to get the config_hash. The generated string should change
-    /// if we think that the rules change and may trigger new results.
-    pub fn get_config_hash_string(&self) -> String {
-        let pattern_string = self.pattern.clone().unwrap_or("no pattern".to_string());
-        format!("{}:{}:{}", self.name, pattern_string, self.code_base64).to_string()
     }
 }
 
