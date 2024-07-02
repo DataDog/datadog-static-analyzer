@@ -24,7 +24,6 @@ use cli::model::datadog_api::DiffAwareData;
 use cli::sarif::sarif_utils::{
     generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
-use cli::secrets::{SecretResult, SecretRule};
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
@@ -229,17 +228,6 @@ fn main() -> Result<()> {
         "add-git-info",
         "add Git information to the SARIF report",
     );
-    #[cfg(feature = "secrets")]
-    {
-        opts.optflag("", "secrets-scan", "run the secret scanner");
-        opts.optflag("", "secrets-validate", "attempt to validate secrets");
-        opts.optopt(
-            "",
-            "secrets-rules",
-            "path to a YAML file containing secrets scanner rules",
-            "/path/to/secrets-rules.yml",
-        );
-    }
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -280,14 +268,6 @@ fn main() -> Result<()> {
         None => {
             vec![]
         }
-    };
-    let scan_for_secrets = cfg!(feature = "secrets") && matches.opt_present("secrets-scan");
-    let validate_secrets = cfg!(feature = "secrets") && matches.opt_present("secrets-validate");
-    let secrets_rule_file = if cfg!(feature = "secrets") {
-        use std::path::PathBuf;
-        matches.opt_str("secrets-rules").map(PathBuf::from)
-    } else {
-        None
     };
 
     let output_format = match matches.opt_str("f") {
@@ -457,9 +437,6 @@ fn main() -> Result<()> {
         max_file_size_kb,
         use_staging,
         show_performance_statistics: enable_performance_statistics,
-        scan_for_secrets,
-        validate_secrets,
-        secrets_rule_file: secrets_rule_file.clone(),
         ignore_generated_files,
     };
 
@@ -584,142 +561,6 @@ fn main() -> Result<()> {
                 .join(",")
         );
     }
-
-    ////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////
-    // Secrets Test
-    #[allow(unused_mut)]
-    let mut detected_secrets = Vec::<SecretResult>::new();
-    #[allow(unused_mut)]
-    let mut secrets_rules = Vec::<SecretRule>::new();
-    #[cfg(feature = "secrets")]
-    if scan_for_secrets && secrets_rule_file.is_some() {
-        use cli::secrets::{as_position, ValidationStatus};
-        use secrets::core::validator::Candidate;
-        use secrets::ScannerBuilder;
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-        use std::time::Duration;
-
-        let rule_file = secrets_rule_file.expect("should have been checked");
-        let scanner = ScannerBuilder::new()
-            .yaml_file_multi_rule(rule_file)
-            .try_build()
-            .context("failed to initialize secrets scanner")?;
-
-        for rule_info in scanner.rules() {
-            secrets_rules.push(rule_info.clone().into());
-        }
-
-        let scanner = Arc::new(scanner);
-        println!("scanning {} files for secrets", files_to_analyze.len());
-        let progress_bar =
-            (!configuration.use_debug).then(|| ProgressBar::new(files_to_analyze.len() as u64));
-
-        let start_timestamp = Instant::now();
-        let candidates = files_to_analyze
-            .par_iter()
-            .filter_map(|path| {
-                let scan_result = scanner.scan_file(path);
-                if let Some(pb) = &progress_bar {
-                    pb.inc(1);
-                }
-                // Silently drop files that can't be read, or that caused scan errors.
-                scan_result.map_err(drop).ok()
-            })
-            .flatten()
-            .collect::<Vec<_>>();
-
-        let elapsed = start_timestamp.elapsed();
-        println!(
-            "Secrets scan found {} candidates in {} file(s) in {:.1}s",
-            candidates.len(),
-            files_to_analyze.len(),
-            elapsed.as_secs_f32()
-        );
-
-        let mut final_results =
-            Vec::<(Candidate, ValidationStatus)>::with_capacity(candidates.len());
-
-        let start_timestamp = Instant::now();
-        if validate_secrets && !candidates.is_empty() {
-            let num_validations = candidates.len();
-            println!("Starting validation for {} candidates", num_validations);
-            if let Some(pb) = &progress_bar {
-                pb.inc_length(num_validations as u64)
-            }
-
-            let timed_out = Arc::new(AtomicBool::new(false));
-            let timed_out_clone = Arc::clone(&timed_out);
-            std::thread::spawn(move || {
-                // Set a target time out. Note that this is only a suggestion, as it only prevents new jobs from
-                // being spawned (a currently-active HTTP job can halt overall execution).
-                std::thread::sleep(Duration::from_secs(30));
-                timed_out_clone.store(true, Ordering::Relaxed);
-            });
-
-            // Although this job is I/O bound, we use `rayon` to reduce 3rd-party dependencies
-            let val_results = candidates
-                .into_par_iter()
-                .map(|candidate| {
-                    let attempt = if timed_out.load(Ordering::Relaxed) {
-                        None
-                    } else {
-                        Some(scanner.validate_candidate(&candidate))
-                    };
-                    if let Some(pb) = &progress_bar {
-                        pb.inc(1);
-                    }
-                    // If we either timed out, or the attempt resulted in an Err, mark candidate as Unvalidated.
-                    let status = attempt.map_or(ValidationStatus::Unvalidated, |res| {
-                        res.map_or(ValidationStatus::Unvalidated, |vr| vr.category().into())
-                    });
-                    (candidate, status)
-                })
-                .collect::<Vec<_>>();
-            for val_result in val_results {
-                final_results.push(val_result);
-            }
-        } else {
-            for candidate in candidates {
-                final_results.push((candidate, ValidationStatus::Unvalidated))
-            }
-        }
-
-        let mut valid_count = 0;
-        for (candidate, status) in final_results {
-            if matches!(status, ValidationStatus::Valid(_)) {
-                valid_count += 1;
-            }
-            let rel_path = candidate
-                .source
-                .strip_prefix(directory_path)
-                .expect("should be child path");
-            detected_secrets.push(SecretResult::new(
-                candidate.rule_match.rule_id.to_string(),
-                rel_path.to_string_lossy(),
-                status,
-                as_position(candidate.rule_match.matched.point_span.start()),
-                as_position(candidate.rule_match.matched.point_span.end()),
-            ));
-        }
-
-        if validate_secrets {
-            println!(
-                "Secrets validation detected {} valid secret(s) in {} file(s) using {} rule(s) in {:.1}s",
-                valid_count,
-                files_to_analyze.len(),
-                scanner.rule_count(),
-                start_timestamp.elapsed().as_secs_f32()
-            );
-        }
-
-        if let Some(pb) = &progress_bar {
-            pb.finish();
-        }
-    }
-    ////////////////////////////////////////////////////////////////////////////////////////
-    ////////////////////////////////////////////////////////////////////////////////////////
 
     let mut number_of_rules_used = 0;
     // Finally run the analysis
@@ -921,26 +762,18 @@ fn main() -> Result<()> {
             serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => {
-            let mut rules: Vec<SarifRule> = configuration
+            let rules: Vec<SarifRule> = configuration
                 .rules
                 .iter()
                 .cloned()
                 .map(|r| r.into())
                 .collect();
-            let mut results = all_rule_results
+            let results = all_rule_results
                 .iter()
                 .cloned()
                 .map(SarifRuleResult::try_from)
                 .collect::<Result<Vec<_>, _>>()
                 .map_err(anyhow::Error::msg)?;
-
-            rules.extend(secrets_rules.into_iter().map(SarifRule::from));
-            let detected_secrets = detected_secrets
-                .into_iter()
-                .map(SarifRuleResult::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(anyhow::Error::msg)?;
-            results.extend(detected_secrets);
 
             match generate_sarif_report(
                 &rules,
