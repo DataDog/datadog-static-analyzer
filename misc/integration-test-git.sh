@@ -7,12 +7,18 @@
 
 cargo build -r --bin datadog-static-analyzer
 
+if [ "$USE_DDSA" = "true" ]; then
+    runtime_flag="--ddsa-runtime"
+else
+    runtime_flag=""
+fi
+
 ## First, test a repository to check that the commit that indicates the repo information for a violation
 echo "Checking rosie tests"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}"
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x -g
+./target/release/datadog-static-analyzer "${runtime_flag}" --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x -g
 if [ $? -ne 0 ]; then
   echo "fail to analyze rosie-tests"
   exit 1

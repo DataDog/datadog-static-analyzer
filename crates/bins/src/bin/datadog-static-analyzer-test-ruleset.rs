@@ -17,7 +17,7 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
+fn test_rule(rule: &Rule, test: &RuleTest, use_ddsa: bool) -> Result<String> {
     let rule_internal = rule.to_rule_internal().unwrap();
     let code = decode_base64_string(test.code_base64.to_string()).unwrap();
     let code = Arc::from(code);
@@ -25,6 +25,7 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
         log_output: true,
         use_debug: true,
         ignore_generated_files: false,
+        use_ddsa,
     };
     let rules = vec![rule_internal];
     let analyze_result = analyze(
@@ -68,6 +69,7 @@ fn main() {
     opts.optflag("h", "help", "print this help");
     opts.optflag("s", "staging", "use staging");
     opts.optflag("t", "include-testing-rules", "include testing rules");
+    opts.optflag("", "ddsa-runtime", "(internal use) use the ddsa runtime");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -83,6 +85,7 @@ fn main() {
 
     let use_staging = matches.opt_present("s");
     let rulesets = matches.opt_strs("r");
+    let use_ddsa = matches.opt_present("ddsa-runtime");
     let mut num_failures = 0;
     for ruleset in rulesets {
         match get_ruleset(ruleset.as_str(), use_staging) {
@@ -92,7 +95,7 @@ fn main() {
                     println!("   rule {} ... ", rule.name);
                     let c = rule.clone();
                     for t in rule.tests {
-                        match test_rule(&c, &t) {
+                        match test_rule(&c, &t, use_ddsa) {
                             Ok(_) => {
                                 println!("      test {} passed", t.filename);
                             }
