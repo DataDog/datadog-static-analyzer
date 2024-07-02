@@ -34,6 +34,9 @@ parser.add_option(
 parser.add_option(
     "-s", "--server-bin", dest="serverbin", help="path to server binary",
 )
+parser.add_option(
+    "-d", "--ddsa-runtime", dest="use_ddsa", default=False, action = 'store_true'
+)
 
 (options, args) = parser.parse_args()
 
@@ -135,13 +138,18 @@ def start_server():
     MAX_PINGS = 5
     port = -1
     pid = -1
+
+    ddsa_flag = ""
+    if options.use_ddsa:
+        ddsa_flag = "--ddsa-runtime"
+
     for _ in range(MAX_STARTS):
         port = get_free_port()
         if port is None:
             continue
         try:
             pid = os.spawnl(
-                os.P_NOWAIT, options.serverbin, options.serverbin, "-p", str(port)
+                os.P_NOWAIT, options.serverbin, options.serverbin, "-p", str(port), ddsa_flag
             )
             break
         except:
