@@ -210,6 +210,15 @@ impl JsRuntime {
         })
     }
 
+    /// Clears the [`v8::UnboundScript`] cache for the given rule name, returning `true` if a script
+    /// existed and was removed from the cache, or `false` if it didn't exist.
+    ///
+    /// # Panics
+    /// Panics if the `script_cache` has an existing borrow.
+    pub fn clear_rule_cache(&self, rule_name: &str) -> bool {
+        self.script_cache.borrow_mut().remove(rule_name).is_some()
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn execute_rule_internal(
         &mut self,

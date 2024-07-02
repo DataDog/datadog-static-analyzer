@@ -5,7 +5,7 @@ use crate::constants::{
 use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use crate::model::violation::violation_to_server;
-use kernel::analysis::analyze::analyze;
+use kernel::analysis::analyze::{analyze, DEFAULT_JS_RUNTIME};
 use kernel::arguments::ArgumentProvider;
 use kernel::config_file::parse_config_file;
 use kernel::model::analysis::AnalysisOptions;
@@ -181,6 +181,19 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .map(|r| r.name.as_str())
         .collect::<Vec<&str>>()
         .join(", ");
+
+    let use_ddsa = USE_DDSA_RUNTIME.get().copied().unwrap_or(false);
+    // NOTE: We would ideally handle this more elegantly, but for now, always clear the cache
+    // for the incoming rules before making a request. This is needed because during rule authoring,
+    // the rule will change, despite its name being the same (and the cache is keyed only by the rule name).
+    if use_ddsa {
+        DEFAULT_JS_RUNTIME.with_borrow(|runtime| {
+            for rule in &rules {
+                runtime.clear_rule_cache(&rule.name);
+            }
+        });
+    }
+
     // execute the rule. If we fail to convert, return an error.
     let rule_results = analyze(
         &request.language,
@@ -225,7 +238,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::analysis_request::ServerRule;
+    use crate::model::analysis_request::{AnalysisRequestOptions, ServerRule};
     use kernel::model::{
         common::Language,
         rule::{RuleCategory, RuleSeverity, RuleType},
@@ -737,5 +750,55 @@ rulesets:
             RuleSeverity::Error,
             response.rule_responses[0].violations[0].severity
         );
+    }
+
+    /// Tests that subsequent requests to analyze a rule with the same name can have different code.
+    /// (i.e. the cache is properly cleared).
+    #[test]
+    fn test_subsequent_rule_execution() {
+        USE_DDSA_RUNTIME.set(true).unwrap();
+        let base_rule =
+            ServerRule{
+                    name: "ruleset/rule-name".to_string(),
+                    short_description_base64: None,
+                    description_base64: None,
+                    category: Some(RuleCategory::BestPractices),
+                    severity: Some(RuleSeverity::Warning),
+                    language: Language::Python,
+                    rule_type: RuleType::TreeSitterQuery,
+                    entity_checked: None,
+                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaWRfbm9kZSJdOwoJY29uc29sZS5sb2coZ2V0Q29kZUZvck5vZGUoY2FwdHVyZWQsIGNvZGUpKTsKfQ==".to_string(),
+                    checksum: Some("f7e512c599b80f91b3e483f40c63192156cc3ad8cf53efae87315d0db22755c4".to_string()),
+                    pattern: None,
+                    tree_sitter_query_base64: Some("KGFzc2lnbm1lbnQKCWxlZnQ6IChpZGVudGlmaWVyKSBAaWRfbm9kZQoJcmlnaHQ6IChpbnRlZ2VyKSBAaW50X25vZGUp".to_string()),
+                    arguments: vec![],
+                };
+
+        let request = AnalysisRequest {
+            filename: "myfile.py".to_string(),
+            language: Language::Python,
+            file_encoding: "utf-8".to_string(),
+            code_base64: "dmFyX25hbWUgPSAxMjM=".to_string(),
+            configuration_base64: None,
+            options: Some(AnalysisRequestOptions {
+                use_tree_sitter: None,
+                log_output: Some(true),
+            }),
+            rules: vec![base_rule.clone()],
+        };
+        let response = process_analysis_request(request.clone());
+        // We should've logged the `id_node`
+        assert_eq!(
+            response.rule_responses[0].output,
+            Some("var_name".to_string())
+        );
+        // Mutate the rule so it logs the `int_node`
+        let mut duplicate_req = request.clone();
+        duplicate_req.rules[0].code_base64 = "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaW50X25vZGUiXTsKCWNvbnNvbGUubG9nKGdldENvZGVGb3JOb2RlKGNhcHR1cmVkLCBjb2RlKSk7Cn0=".to_string();
+        duplicate_req.rules[0].checksum =
+            Some("640fed003ec8fbf094681128baecd08af1b211d8a25b6f91a3fe5d50b7120cad".to_string());
+        let response = process_analysis_request(duplicate_req);
+        // We should've logged the `int_node`
+        assert_eq!(response.rule_responses[0].output, Some("123".to_string()));
     }
 }
