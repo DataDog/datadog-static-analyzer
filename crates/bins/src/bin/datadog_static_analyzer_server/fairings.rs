@@ -111,7 +111,6 @@ pub struct TraceSpan {
     /// An HTTP request id.
     ///
     /// Note: This could either be an arbitrary user-supplied string or auto-generated as a UUID v4
-    ///
     #[allow(dead_code)]
     pub request_id: String,
 }

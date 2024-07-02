@@ -1,28 +1,18 @@
 Component,Origin,License,Copyright
 anyhow,https://crates.io/crates/anyhow,MIT,Copyright (c) 2019 David Tolnay
 base64,https://github.com/marshallpierce/rust-base64,Apache-2.0,Copyright (c) 2015 Alice Maz
-bitflags,https://github.com/bitflags/bitflags,MIT,Copyright (c) 2014 The Rust Project Developers
-boost,https://www.boost.org/,BSL-1.0,Copyright (c) 2003-Present The original authors
-bstr,https://github.com/BurntSushi/bstr,MIT,Copyright (c) 2018-2019 Andrew Gallant
-cmake-rs,https://github.com/rust-lang/cmake-rs,MIT,Copyright (c) 2014 Alex Crichton
 csv,https://github.com/BurntSushi/rust-csv,MIT,Copyright (c) 2015 Andrew Gallant
 deno-core,https://github.com/denoland/deno,MIT,Copyright 2018-2023 the Deno authors
 git2,https://crates.io/crates/git2,MIT,Copyright (c) 2014 Alex Crichton
 globset,https://crates.io/crates/globset,MIT,Copyright (c) 2015 Andrew Gallant
-governor,https://github.com/boinkor-net/governor,MIT,Copyright (c) 2023 Andreas Fuchs
-httpmock,https://github.com/alexliesenfeld/httpmock,MIT,Copyright (c) 2019 Alexander Liesenfeld
-hyperscan,https://github.com/intel/hyperscan,BSD-3-Clause,Copyright (c) 2015 Intel Corporation
 indexmap,https://github.com/indexmap-rs/indexmap,MIT and Apache-2.0,Copyright (c) 2016-2017 bluss
 indicatif,https://crates.io/crates/indicatif,MIT,Copyright (c) 2017 Armin Ronacher <armin.ronacher@active-4.com>
 itertools,https://github.com/rust-itertools/itertools,MIT,Copyright 2015 itertools Developers
 num_cpus,https://github.com/seanmonstar/num_cpus,MIT, Copyright (c) 2015 Sean McArthur
-pcre,https://sourceforge.net/projects/pcre/files/pcre/,BSD-3-Clause,Copyright (c) 1997-2021 University of Cambridge
-pcre2,https://github.com/BurntSushi/rust-pcre2,MIT,Copyright (c) 2017 Andrew Gallant
 percent-encoding,https://github.com/servo/rust-url/,MIT, Copyright (c) 2013-2022 The rust-url developers
 prettytable-rs,https://github.com/phsym/prettytable-rs/,BSD-3-Clause,Copyright (c) 2022 Pierre-Henri Symoneaux
 rayon,https://crates.io/crates/rayon,MIT,Copyright (c) 2010 The Rust Project Developers
 rocket,https://github.com/SergioBenitez/Rocket,Apache-2.0,Copyright 2016 Sergio Benitez
-rust-bindgen,https://github.com/rust-lang/rust-bindgen,BSD-3-Clause,Copyright (c) 2013 Jyun-Yan You
 tree-sitter,https://github.com/tree-sitter/tree-sitter,MIT,2014 Max Brunsfeld
 sarif-rs,https://github.com/psastras/sarif-rs,MIT,Copyright (c) 2021 Paul Sastrasinh
 sequence_trie,https://docs.rs/sequence_trie/,MIT,Copyright (c) 2016 Michael Sproul and contributors.
@@ -34,9 +24,6 @@ tempfile,https://crates.io/crates/tempfile,Apache-2.0,Copyright (c) 2015 Steven 
 thiserror,https://github.com/dtolnay/thiserror,MIT,Copyright (c) 2019 David Tolnay
 tracing,https://crates.io/crates/tracing,MIT,Copyright (c) 2019 Tokio Contributors
 tracing-subscriber,https://crates.io/crates/tracing-subscriber,MIT,Copyright (c) 2019 Tokio Contributors
-ureq,https://github.com/algesten/ureq,MIT,Copyright (c) 2019 Martin Algesten
-url,https://github.com/servo/rust-url,MIT,Copyright (c) 2013-2022 The rust-url developers
 uuid,https://crates.io/crates/uuid,MIT,Copyright 2018 The Uuid Developers
 valico,https://github.com/s-panferov/valico,MIT,Copyright (c) 2014 Stanislav Panferov
-vectorscan,https://github.com/VectorCamp/vectorscan,BSD-3-Clause,Copyright (c) 2020 VectorCamp PC
 walkdir,https://github.com/BurntSushi/walkdir,MIT,Copyright (c) 2015 Andrew Gallant
