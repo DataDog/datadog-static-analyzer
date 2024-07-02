@@ -12,9 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
       - name: Upload versions
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: versions.json
   upload-assets:
@@ -36,10 +36,10 @@ jobs:
             os: windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-build-env
       - name: Install Stable + Rustfmt + Clippy
-        uses: actions-rs/toolchain@v1
+        uses: moonrepo/setup-rust@v1
         with:
           toolchain: stable
           override: true
