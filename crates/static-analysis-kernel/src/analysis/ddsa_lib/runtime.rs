@@ -345,14 +345,14 @@ impl JsRuntime {
 
 (() => {{
 
-for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
-    visit(queryMatch, globalThis.STELLA_COMPAT_FILENAME, globalThis.STELLA_COMPAT_FILE_CONTENTS);
-}}
-
 // The rule's JavaScript code
 //////////////////////////////
 {}
 //////////////////////////////
+
+for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
+    visit(queryMatch, globalThis.STELLA_COMPAT_FILENAME, globalThis.STELLA_COMPAT_FILE_CONTENTS);
+}}
 
 }})();
 ",
@@ -843,6 +843,35 @@ function visit(captures) {
             _pd: Default::default(),
         };
         assert_eq!(*violation, expected);
+    }
+
+    /// Tests that a rule can define variables before the visit function and have them accessible.
+    #[test]
+    fn execute_rule_internal_init_order() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        let text = "const someName = 123;";
+        let filename = "some_filename.js";
+        let ts_query = "(identifier) @cap_name";
+        let rule = r#"
+const someValue = 123;
+
+function visit(captures) {
+    console.log(someValue);
+}
+"#;
+        // In pseudo code, we call:
+        //
+        // for (const capture of captures) {
+        //     visit(capture);
+        // }
+        //
+        // If this for statement came _before_ the rule's code, any "root level" variables
+        // defined will not have been initialized yet, causing an error (functions are always
+        // evaluated before variables, so the `visit` function _will_ be initialized, though)
+        let _ =
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
+        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(console_lines[0], "123");
     }
 
     /// Tests that an error during JavaScript execution doesn't leave a bridge in a dirty state
