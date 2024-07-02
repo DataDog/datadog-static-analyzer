@@ -32,9 +32,6 @@ pub struct CliConfiguration {
     pub max_file_size_kb: u64,
     pub use_staging: bool,
     pub show_performance_statistics: bool,
-    pub scan_for_secrets: bool,
-    pub validate_secrets: bool,
-    pub secrets_rule_file: Option<std::path::PathBuf>,
     pub ignore_generated_files: bool,
 }
 
@@ -169,9 +166,6 @@ mod tests {
             max_file_size_kb: 1,
             use_staging: false,
             show_performance_statistics: false,
-            scan_for_secrets: false,
-            validate_secrets: false,
-            secrets_rule_file: None,
             ignore_generated_files: false,
         };
         assert_eq!(
