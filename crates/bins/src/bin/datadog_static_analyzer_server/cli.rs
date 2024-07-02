@@ -1,6 +1,7 @@
 use getopts::Options;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use rocket::{Build, Rocket, Shutdown};
+use server::request::USE_DDSA_RUNTIME;
 use std::sync::mpsc::{channel, Sender};
 use std::time::Duration;
 use std::{env, process, thread};
@@ -32,6 +33,7 @@ fn get_opts() -> Options {
     opts.optflag("e", "enable-shutdown", "enables the shutdown endpoint");
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the tool version");
+    opts.optflag("", "ddsa-runtime", "(internal use) use the ddsa runtime");
     opts
 }
 
@@ -86,6 +88,10 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
             rocket_configuration.address = addr.parse().expect("should be able to parse addr");
         }
     }
+
+    USE_DDSA_RUNTIME
+        .set(matches.opt_present("ddsa-runtime"))
+        .expect("should not have been init yet");
 
     // channel used to send the shutdown handler so that we can exit the server gracefully
     let (tx, rx) = channel();

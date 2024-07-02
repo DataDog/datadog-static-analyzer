@@ -13,7 +13,9 @@ use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use kernel::utils::decode_base64_string;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+pub static USE_DDSA_RUNTIME: OnceLock<bool> = OnceLock::new();
 
 #[tracing::instrument(skip_all)]
 pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
@@ -193,6 +195,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
+            use_ddsa: USE_DDSA_RUNTIME.get().copied().unwrap_or(false),
         },
     );
 
