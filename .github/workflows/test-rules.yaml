@@ -13,9 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Stable + Rustfmt + Clippy
-        uses: moonrepo/setup-rust@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-            channel: stable
+            toolchain: stable
             components: clippy
       - uses: ./.github/actions/rust-cache
         with:
@@ -37,9 +37,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Stable + Rustfmt + Clippy
-        uses: moonrepo/setup-rust@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          channel: stable
+          toolchain: stable
           components: clippy
       - uses: ./.github/actions/rust-cache
         with:

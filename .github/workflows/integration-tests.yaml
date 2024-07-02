@@ -25,9 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
-        uses: moonrepo/setup-rust@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          channel: stable
+          toolchain: stable
           profile: default
       - uses: ./.github/actions/rust-cache
         with:

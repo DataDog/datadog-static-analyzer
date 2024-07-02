@@ -9,9 +9,9 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
     - name: Install Stable + Rustfmt + Clippy
-      uses: moonrepo/setup-rust@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
-        channel: stable
+        toolchain: stable
         components: clippy
     - name: cargo install sbom
       run: cargo install --version 0.8.4 cargo-sbom
