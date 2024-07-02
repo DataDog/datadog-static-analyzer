@@ -52,6 +52,8 @@ pub enum Language {
     Yaml,
     #[serde(rename = "STARLARK")]
     Starlark,
+    #[serde(rename = "BASH")]
+    Bash,
 }
 
 #[allow(dead_code)]
@@ -71,6 +73,7 @@ pub static ALL_LANGUAGES: &[Language] = &[
     Language::Terraform,
     Language::Yaml,
     Language::Starlark,
+    Language::Bash,
 ];
 
 impl fmt::Display for Language {
@@ -91,6 +94,7 @@ impl fmt::Display for Language {
             Self::TypeScript => "typescript",
             Self::Yaml => "yaml",
             Self::Starlark => "starlark",
+            Self::Bash => "bash",
         };
         write!(f, "{s}")
     }
