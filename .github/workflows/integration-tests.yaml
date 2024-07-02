@@ -20,7 +20,8 @@ jobs:
           - { file: './misc/integration-test-docker.sh', gha_alias: 'Docker' }
           - { file: './misc/integration-test-js-ts.sh', gha_alias: 'JavaScript/TypeScript' }
           - { file: './misc/integration-test-filter-rules.sh', gha_alias: 'Per-Path Rule Filtering' }
-    name: Run integration test - ${{ matrix.scripts.gha_alias }}
+        runtime: ["stella", "ddsa"]
+    name: Run integration test - ${{ matrix.scripts.gha_alias }} - Runtime ${{ matrix.runtime }}
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -35,3 +36,5 @@ jobs:
           cargo-cache-key: release
       - name: Execute script
         run: ${{ matrix.scripts.file }}
+        env:
+          USE_DDSA: ${{ matrix.runtime == 'ddsa' && 'true' || '' }}

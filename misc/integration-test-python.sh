@@ -2,6 +2,12 @@
 
 cargo build -r --bin datadog-static-analyzer
 
+if [ "$USE_DDSA" = "true" ]; then
+    runtime_flag="--ddsa-runtime"
+else
+    runtime_flag=""
+fi
+
 ## A Python repository
 echo "Checking django repository"
 REPO_DIR=$(mktemp -d)
@@ -10,7 +16,7 @@ git clone --depth=1 https://github.com/gothinkster/django-realworld-example-app.
 
 # Test without the static-analysis.datadog.yml file
 rm -f "${REPO_DIR}/static-analysis.datadog.yml"
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x
+./target/release/datadog-static-analyzer "${runtime_flag}" --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze django repository"
@@ -33,7 +39,7 @@ echo " - python-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-django" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x
+./target/release/datadog-static-analyzer "${runtime_flag}" --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze django repository"
@@ -50,7 +56,7 @@ if [ "$RES" -lt "18" ]; then
 fi
 
 # Test that --fail-on-any-violation returns a non-zero return code
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x --fail-on-any-violation=none,notice,warning,error
+./target/release/datadog-static-analyzer "${runtime_flag}" --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x --fail-on-any-violation=none,notice,warning,error
 
 if [ $? -eq 0 ]; then
   echo "static analyzer reports 0 when it should not"

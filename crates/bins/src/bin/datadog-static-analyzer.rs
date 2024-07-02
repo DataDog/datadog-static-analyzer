@@ -36,6 +36,7 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
+use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 use std::{env, fs};
 
@@ -225,6 +226,7 @@ fn main() -> Result<()> {
         "add-git-info",
         "add Git information to the SARIF report",
     );
+    opts.optflag("", "ddsa-runtime", "(internal use) use the ddsa runtime");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -441,10 +443,12 @@ fn main() -> Result<()> {
 
     let mut all_rule_results = vec![];
 
+    let use_ddsa = matches.opt_present("ddsa-runtime");
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug,
         ignore_generated_files,
+        use_ddsa,
     };
 
     // verify rule checksum
@@ -606,21 +610,23 @@ fn main() -> Result<()> {
                     .unwrap()
                     .to_str()
                     .expect("path contains non-Unicode characters");
+                let relative_path: Arc<str> = Arc::from(relative_path);
                 let mut selected_rules = rules_for_language
                     .iter()
                     .filter(|r| {
                         configuration
                             .path_restrictions
-                            .rule_applies(&r.name, relative_path)
+                            .rule_applies(&r.name, relative_path.as_ref())
                     })
                     .peekable();
                 let res = if selected_rules.peek().is_none() {
                     vec![]
                 } else if let Ok(file_content) = fs::read_to_string(&path) {
+                    let file_content = Arc::from(file_content);
                     analyze(
                         language,
                         selected_rules,
-                        relative_path,
+                        &relative_path,
                         &file_content,
                         &configuration.argument_provider,
                         &analysis_options,

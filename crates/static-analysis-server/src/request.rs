@@ -13,6 +13,9 @@ use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use kernel::utils::decode_base64_string;
+use std::sync::{Arc, OnceLock};
+
+pub static USE_DDSA_RUNTIME: OnceLock<bool> = OnceLock::new();
 
 #[tracing::instrument(skip_all)]
 pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
@@ -147,14 +150,14 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     };
 
     // let's try to decode the code
-    let code_decoded_attempt = decode_base64_string(request.code_base64);
-    if code_decoded_attempt.is_err() {
+    let Ok(code_decoded_attempt) = decode_base64_string(request.code_base64) else {
         tracing::info!("Validation error: code is not a base64 string");
         return AnalysisResponse {
             rule_responses: vec![],
             errors: vec![ERROR_CODE_NOT_BASE64.to_string()],
         };
-    }
+    };
+    let code_decoded_attempt: Arc<str> = Arc::from(code_decoded_attempt);
 
     // We check each rule and if the checksum is correct or not. If one rule does not
     // have a valid checksum, we return an error.
@@ -182,8 +185,8 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     let rule_results = analyze(
         &request.language,
         &rules,
-        &request.filename,
-        code_decoded_attempt.unwrap().as_str(),
+        &Arc::from(request.filename),
+        &code_decoded_attempt,
         &argument_provider,
         &AnalysisOptions {
             use_debug: false,
@@ -192,6 +195,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
+            use_ddsa: USE_DDSA_RUNTIME.get().copied().unwrap_or(false),
         },
     );
 

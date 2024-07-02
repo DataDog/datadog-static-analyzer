@@ -2,6 +2,12 @@
 
 cargo build -r --bin datadog-static-analyzer
 
+if [ "$USE_DDSA" = "true" ]; then
+    runtime_flag="--ddsa-runtime"
+else
+    runtime_flag=""
+fi
+
 echo "Checking juice shop"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
@@ -19,7 +25,7 @@ echo " - tsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - javascript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - typescript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
+./target/release/datadog-static-analyzer "${runtime_flag}" --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze juice-shop"
