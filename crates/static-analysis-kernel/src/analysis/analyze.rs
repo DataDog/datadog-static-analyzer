@@ -25,7 +25,8 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         | Language::Dockerfile
         | Language::Ruby
         | Language::Terraform
-        | Language::Yaml => {
+        | Language::Yaml
+        | Language::Bash => {
             vec!["#no-dd-sa", "#datadog-disable"]
         }
         Language::JavaScript | Language::TypeScript => {

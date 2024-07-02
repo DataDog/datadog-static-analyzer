@@ -1,3 +1,4 @@
+use crate::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
@@ -15,6 +16,23 @@ pub struct PathPattern {
     pub prefix: PathBuf,
 }
 
+impl DiffAware for PathPattern {
+    fn generate_diff_aware_digest(&self) -> String {
+        let glob = self
+            .glob
+            .as_ref()
+            .map(|v| v.glob().to_string())
+            .unwrap_or("".to_string());
+        let prefix = self
+            .prefix
+            .to_str()
+            .map(|v| v.to_string())
+            .unwrap_or("".to_string());
+
+        format!("{}:{}", glob, prefix)
+    }
+}
+
 // Lists of directories and glob patterns to include/exclude from the analysis.
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct PathConfig {
@@ -22,6 +40,30 @@ pub struct PathConfig {
     pub only: Option<Vec<PathPattern>>,
     // Do not analyze any of these directories and patterns.
     pub ignore: Vec<PathPattern>,
+}
+
+impl DiffAware for PathConfig {
+    fn generate_diff_aware_digest(&self) -> String {
+        let only = self
+            .only
+            .as_ref()
+            .map(|v| {
+                v.iter()
+                    .map(|w| w.generate_diff_aware_digest())
+                    .collect::<Vec<String>>()
+                    .join(",")
+            })
+            .unwrap_or("".to_string());
+
+        let ignore = self
+            .ignore
+            .iter()
+            .map(|v| v.generate_diff_aware_digest())
+            .collect::<Vec<String>>()
+            .join(",");
+
+        format!("{}:{}", only, ignore)
+    }
 }
 
 // A type that stores values that depend on the position in the repository tree.
@@ -126,6 +168,12 @@ impl PathConfig {
 // An opaque path component.
 #[derive(Debug, PartialEq, Eq, Hash, Default, Clone)]
 pub struct PathComponent(String);
+
+impl DiffAware for PathComponent {
+    fn generate_diff_aware_digest(&self) -> String {
+        self.0.clone()
+    }
+}
 
 // The key for operations on BySubtree.
 pub type SplitPath = Vec<PathComponent>;
