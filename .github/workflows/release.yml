@@ -40,8 +40,7 @@ jobs:
       - name: Install Stable + Rustfmt + Clippy
         uses: moonrepo/setup-rust@v1
         with:
-          toolchain: stable
-          override: true
+          channel: stable
           components: rustfmt, clippy
         # Set the current SHA as the version so that it's exposed on the server.
       - name: Install cross-compilation tools

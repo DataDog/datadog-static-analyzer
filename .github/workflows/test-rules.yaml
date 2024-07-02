@@ -15,10 +15,8 @@ jobs:
       - name: Install Stable + Rustfmt + Clippy
         uses: moonrepo/setup-rust@v1
         with:
-            toolchain: stable
+            channel: stable
             components: clippy
-            override: true
-            default: true
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu
@@ -41,10 +39,8 @@ jobs:
       - name: Install Stable + Rustfmt + Clippy
         uses: moonrepo/setup-rust@v1
         with:
-          toolchain: stable
+          channel: stable
           components: clippy
-          override: true
-          default: true
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu

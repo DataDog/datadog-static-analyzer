@@ -32,7 +32,7 @@ jobs:
       - name: Install Rust toolchain
         uses: moonrepo/setup-rust@v1
         with:
-          toolchain: stable
+          channel: stable
           profile: minimal
       - uses: ./.github/actions/rust-cache
         with:
