@@ -82,10 +82,6 @@ fn print_configuration(configuration: &CliConfiguration) {
         "subdirectories      : {}",
         configuration.source_subdirectories.clone().join(",")
     );
-    #[cfg(feature = "secrets")]
-    println!("scan for secrets    : {}", configuration.scan_for_secrets);
-    #[cfg(feature = "secrets")]
-    println!("validate secrets    : {}", configuration.validate_secrets);
 
     println!("output file         : {}", configuration.output_file);
     println!("output format       : {}", output_format_str);
