@@ -19,7 +19,6 @@ jobs:
             components: clippy
             override: true
             default: true
-      - uses: ./.github/actions/setup-build-env
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu
@@ -46,7 +45,6 @@ jobs:
           components: clippy
           override: true
           default: true
-      - uses: ./.github/actions/setup-build-env
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu

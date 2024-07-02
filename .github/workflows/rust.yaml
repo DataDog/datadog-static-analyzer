@@ -34,7 +34,6 @@ jobs:
         with:
           toolchain: stable
           profile: minimal
-      - uses: ./.github/actions/setup-build-env
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: ${{ matrix.config.target }}
