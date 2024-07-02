@@ -345,13 +345,12 @@ mod tests {
     use std::env;
     use std::path::Path;
 
-    use kernel::arguments::ArgumentProvider;
     use tempfile::{tempdir, TempDir};
 
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::common::Position;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
-    use kernel::path_restrictions::PathRestrictions;
+    use kernel::rule_config::RuleConfigProvider;
 
     use super::*;
 
@@ -494,8 +493,7 @@ mod tests {
             output_file: "foo".to_string(),
             num_cpus: 2, // of cpus to use for parallelism
             rules: vec![],
-            path_restrictions: PathRestrictions::default(),
-            argument_provider: ArgumentProvider::new(),
+            rule_config_provider: RuleConfigProvider::default(),
             max_file_size_kb: 1,
             use_staging: false,
             show_performance_statistics: false,
