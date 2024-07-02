@@ -18,6 +18,7 @@ pub struct FileContext<T> {
     _pd: PhantomData<T>,
     // Individual language support:
     pub ctx_go: Option<js::FileContextGo<Instance>>,
+    pub ctx_tf: Option<js::FileContextTerraform<Instance>>,
 }
 
 impl FileContext<Instance> {
@@ -37,6 +38,7 @@ impl FileContext<Instance> {
             v8_object,
             _pd,
             ctx_go: None,
+            ctx_tf: None,
         })
     }
 
@@ -49,6 +51,22 @@ impl FileContext<Instance> {
             v8::Local::new(inner, ctx_go.v8_object()).into()
         });
         self.ctx_go = Some(ctx_go);
+    }
+
+    // Initializes support for `terraform`, linking a [`js::FileContextTerraform`] to this
+    // `FileContext`.
+    pub fn initialize_tf(
+        &mut self,
+        scope: &mut HandleScope,
+        ctx_tf: js::FileContextTerraform<Instance>,
+    ) {
+        let s_tf = v8_string(scope, "terraform");
+        // (Convert to `Global` just to satisfy the interface)
+        let s_tf = v8::Global::new(scope, s_tf);
+        set_key_value(&self.v8_object, scope, &s_tf, |inner| {
+            v8::Local::new(inner, ctx_tf.v8_object()).into()
+        });
+        self.ctx_tf = Some(ctx_tf);
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
@@ -72,6 +90,7 @@ mod tests {
         let instance_expected = &[
             // Variables
             "go",
+            "terraform",
         ];
         assert!(js_instance_eq(FileContext::CLASS_NAME, instance_expected));
         let class_expected = &[];

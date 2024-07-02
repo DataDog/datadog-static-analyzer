@@ -164,6 +164,14 @@ impl ContextBridge {
         } else if let Some(go) = self.file.ddsa.go_mut() {
             go.clear(scope);
         }
+
+        if language == Language::Terraform {
+            if let Some(tf) = self.file.ddsa.tf_mut() {
+                tf.update_state(scope, tree, file_contents.as_ref());
+            }
+        } else if let Some(tf) = self.file.ddsa.tf_mut() {
+            tf.clear(scope);
+        }
     }
 
     /// Returns a reference to the underlying `ddsa_lib::RootContext`.
@@ -177,10 +185,15 @@ impl ContextBridge {
         file: &mut Linked<ddsa_lib::FileContext, js::FileContext<Instance>>,
     ) -> Result<(), DDSAJsRuntimeError> {
         let ddsa_go = ddsa_lib::FileContextGo::new(scope);
+        let ddsa_tf = ddsa_lib::FileContextTerraform::new(scope)?;
         let js_go = js::FileContextGo::try_new(scope)?;
+        let js_tf = js::FileContextTerraform::try_new(scope)?;
         js_go.set_pkg_alias_map(scope, Some(ddsa_go.package_alias_v8_map()));
+        js_tf.set_module_resource_array(scope, Some(ddsa_tf.resources_v8_array()));
         file.js.initialize_go(scope, js_go);
+        file.js.initialize_tf(scope, js_tf);
         file.ddsa.set_go(ddsa_go);
+        file.ddsa.set_tf(ddsa_tf);
         Ok(())
     }
 }
@@ -348,5 +361,52 @@ FILE_CTX_BRIDGE.go.getResolvedPackage("mrand");
         // The JavaScript code does not mutate the map.
         let bridge = bridge.borrow_mut();
         assert_eq!(bridge.file.ddsa.go().unwrap().package_alias_v8_map().open(scope).size(), 2);
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    /// Tests that terraform resources are eagerly calculated by calling `set_file_context`.
+    fn test_fetch_terraform_resources_eagerly() {
+        let mut runtime = cfg_test_runtime();
+        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        attach_as_global(
+            &mut runtime.handle_scope(),
+            bridge.file.js.v8_object(),
+            "FILE_CTX_BRIDGE",
+        );
+        let bridge = Rc::new(RefCell::new(bridge));
+        runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
+        let scope = &mut runtime.handle_scope();
+
+        let filename = Arc::<str>::from("filename.tf");
+        let file_contents = r#"
+resource "aws_instance" "web" {
+    ami           = "ami-1234567890"
+    instance_type = "t2.micro"
+}
+
+resource "google_compute_instance" "db" {
+    project      = "my-project"
+    name         = "db"
+    machine_type = "n1-standard-1"
+}"#;
+
+        let tree = Arc::new(get_tree(file_contents, &Language::Terraform).unwrap());
+        let file_contents = Arc::<str>::from(file_contents);
+        let mut mut_bridge = bridge.borrow_mut();
+        assert_eq!(mut_bridge.file.ddsa.tf().unwrap().resources_v8_array().open(scope).length(), 0);
+        mut_bridge.set_root_context(scope, &tree, &file_contents, &filename);
+        assert_eq!(mut_bridge.file.ddsa.tf().unwrap().resources_v8_array().open(scope).length(), 0);
+        mut_bridge.set_file_context(scope, Language::Terraform, &tree, &file_contents);
+        assert_eq!(mut_bridge.file.ddsa.tf().unwrap().resources_v8_array().open(scope).length(), 2);
+        let code = r#"
+FILE_CTX_BRIDGE.terraform.resources.map(r => `${r.type}:${r.name}`).join(',');
+"#;
+        drop(mut_bridge);
+        let result = try_execute(scope, code).unwrap();
+        assert_eq!(
+            result.to_rust_string_lossy(scope),
+            "aws_instance:web,google_compute_instance:db"
+        );
     }
 }

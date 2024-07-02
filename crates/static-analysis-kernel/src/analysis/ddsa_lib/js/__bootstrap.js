@@ -7,6 +7,7 @@
 import {DDSA_Console} from "ext:ddsa_lib/utility";
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
+import {FileContextTerraform, TerraformResource} from "ext:ddsa_lib/context_file_tf";
 import {QueryMatch} from "ext:ddsa_lib/query_match";
 import {QueryMatchCompat} from "ext:ddsa_lib/query_match_compat";
 import {RootContext} from "ext:ddsa_lib/context_root";
@@ -18,6 +19,8 @@ import {TsLanguageContext} from "ext:ddsa_lib/context_ts_lang";
 globalThis.DDSA_Console = DDSA_Console;
 globalThis.FileContext = FileContext;
 globalThis.FileContextGo = FileContextGo;
+globalThis.FileContextTerraform = FileContextTerraform;
+globalThis.TerraformResource = TerraformResource;
 globalThis.QueryMatch = QueryMatch;
 globalThis.QueryMatchCompat = QueryMatchCompat;
 globalThis.RootContext = RootContext;

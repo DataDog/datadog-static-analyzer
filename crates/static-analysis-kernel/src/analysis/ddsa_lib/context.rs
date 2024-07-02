@@ -6,6 +6,8 @@ mod file;
 pub use file::FileContext;
 pub(crate) mod file_go;
 pub use file_go::FileContextGo;
+pub(crate) mod file_tf;
+pub use file_tf::FileContextTerraform;
 mod root;
 pub use root::RootContext;
 mod rule;
