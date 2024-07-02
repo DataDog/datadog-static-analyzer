@@ -71,7 +71,6 @@ jobs:
           # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
           archive: 'datadog-static-analyzer-$target'
-          features: datadog-static-analyzer/secrets
       - name: Release the server
         uses: taiki-e/upload-rust-binary-action@v1
         with:
@@ -90,4 +89,3 @@ jobs:
           # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
           archive: 'datadog-static-analyzer-server-$target'
-          features: datadog-static-analyzer/secrets
