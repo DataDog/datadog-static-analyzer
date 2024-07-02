@@ -46,7 +46,7 @@ export class QueryMatchCompat {
                         // `capturesList` is not commonly called, so lazily create this Proxy.
                         return new Proxy(target, {
                             get(target, p, _receiver) {
-                                return target.getMany(p) ?? [];
+                                return target.getMany(p);
                             },
                         });
                     case "context":
@@ -64,6 +64,8 @@ export class QueryMatchCompat {
                                         return globalThis.__RUST_BRIDGE__context.fileContents;
                                     case "filename":
                                         return globalThis.__RUST_BRIDGE__context.filename;
+                                    case "packages":
+                                        return globalThis.__RUST_BRIDGE__context.fileCtx.go.packages;
                                     default:
                                         return undefined;
                                 }
