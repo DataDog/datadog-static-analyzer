@@ -2,7 +2,6 @@ use kernel::model::common::Language;
 use kernel::model::rule::{Argument, EntityChecked, Rule, RuleCategory, RuleSeverity, RuleType};
 use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
-use secrets::model::secret_rule::SecretRule;
 use serde::{Deserialize, Serialize};
 
 // Data for diff-aware scanning
@@ -200,9 +199,24 @@ pub struct StaticAnalysisRulesAPIResponse {
     pub data: APIResponseRuleset,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiAttributes {
+    pub name: String,
+    pub description: String,
+    pub pattern: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiType {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "attributes")]
+    pub attributes: SecretRuleApiAttributes,
+}
+
 #[derive(Deserialize, Clone)]
 pub struct StaticAnalysisSecretsAPIResponse {
-    pub data: Vec<SecretRule>,
+    pub data: Vec<SecretRuleApiType>,
 }
 
 #[derive(Deserialize)]

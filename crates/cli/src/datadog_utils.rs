@@ -57,7 +57,16 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
     let api_response = serde_json::from_str::<StaticAnalysisSecretsAPIResponse>(response_text);
 
     match api_response {
-        Ok(d) => Ok(d.data),
+        Ok(d) => Ok(d
+            .data
+            .iter()
+            .map(|v| SecretRule {
+                id: v.id.clone(),
+                name: v.attributes.name.clone(),
+                description: v.attributes.description.clone(),
+                pattern: v.attributes.pattern.clone(),
+            })
+            .collect()),
         Err(e) => {
             eprintln!("Error when parsing the secret rules {e:?}");
             eprintln!("{response_text}");

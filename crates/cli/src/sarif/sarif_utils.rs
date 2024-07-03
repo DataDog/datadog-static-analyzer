@@ -171,12 +171,14 @@ impl IntoSarif for &SecretRule {
 
     fn into_sarif(self) -> Self::SarifType {
         let mut builder = sarif::ReportingDescriptorBuilder::default();
-        builder.id(&self.name);
+        builder.id(&self.id);
+
+        builder.name(&self.name);
 
         let description = sarif::MultiformatMessageStringBuilder::default()
             .text(std::str::from_utf8(self.description.as_bytes()).unwrap())
             .build()
-            .unwrap();
+            .expect(format!("secret rule {} should have a description", self.id).as_str());
         builder.full_description(description);
 
         builder.build().unwrap()

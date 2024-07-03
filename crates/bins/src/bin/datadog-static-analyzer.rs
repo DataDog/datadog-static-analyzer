@@ -784,7 +784,7 @@ fn main() -> Result<()> {
                 .collect();
 
             let secrets_rules_sarif: Vec<SarifRule> =
-                secrets_rules.iter().cloned().map(|r| r.into()).collect();
+                secrets_rules.into_iter().map(|r| r.into()).collect();
 
             let results = all_rule_results
                 .iter()
