@@ -7,14 +7,12 @@ jobs:
     name: Datadog SBOM Generation and Upload
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
     - name: Install Stable + Rustfmt + Clippy
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
         components: clippy
-        override: true
-        default: true
     - name: cargo install sbom
       run: cargo install --version 0.8.4 cargo-sbom
     - name: cargo generate sbom
