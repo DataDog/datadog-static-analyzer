@@ -27,7 +27,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          channel: stable
+          toolchain: stable
           profile: default
       - uses: ./.github/actions/rust-cache
         with:
