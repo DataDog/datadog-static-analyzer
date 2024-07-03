@@ -37,9 +37,8 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
 
 // Get secrets rules from the static analysis API
 pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
-    let server_response = make_request(RequestMethod::Get, "secrets/rules", use_staging, true)?
-        .send()
-        .expect("error when querying the datadog server");
+    let server_response =
+        make_request(RequestMethod::Get, "secrets/rules", use_staging, true)?.send()?;
 
     let status_code = server_response.status();
     let response_text = &server_response.text()?;
