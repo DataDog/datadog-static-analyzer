@@ -18,6 +18,14 @@ datadog-static-analyzer is the static analyzer engine for Datadog [static analys
 datadog-static-analyzer --directory /path/to/directory --output report.csv --format csv
 ```
 
+#### Using Docker
+
+```shell
+docker run ghcr.io/datadog/datadog-static-analyzer:latest -v /path/to/directory:/data --directory /data --output /data/report.csv --format csv
+```
+
+For more information on the Docker container, see the documentation [here](./doc/docker-container.md).
+
 If you encounter an issue, read the [Frequently Asked Questions](FAQ.md) first, it may contain
 the solution to your problem.
 
