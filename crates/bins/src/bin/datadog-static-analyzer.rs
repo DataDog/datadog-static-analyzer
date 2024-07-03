@@ -38,7 +38,7 @@ use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
 use std::sync::Arc;
-use std::time::{Instant, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
 
 fn print_usage(program: &str, opts: Options) {
@@ -453,6 +453,7 @@ fn main() -> Result<()> {
     print_configuration(&configuration);
 
     let mut all_rule_results = vec![];
+    let mut all_stats = AnalysisStatistics::new();
 
     let use_ddsa = matches.opt_present("ddsa-runtime");
     let analysis_options = AnalysisOptions {
@@ -613,47 +614,89 @@ fn main() -> Result<()> {
         }
 
         // take the relative path for the analysis
-        let rule_results: Vec<RuleResult> = files_for_language
+        let (stats, rule_results) = files_for_language
             .into_par_iter()
-            .flat_map(|path| {
-                let relative_path = path
-                    .strip_prefix(directory_path)
-                    .unwrap()
-                    .to_str()
-                    .expect("path contains non-Unicode characters");
-                let relative_path: Arc<str> = Arc::from(relative_path);
-                let mut selected_rules = rules_for_language
-                    .iter()
-                    .filter(|r| {
-                        configuration
-                            .path_restrictions
-                            .rule_applies(&r.name, relative_path.as_ref())
-                    })
-                    .peekable();
-                let res = if selected_rules.peek().is_none() {
-                    vec![]
-                } else if let Ok(file_content) = fs::read_to_string(&path) {
-                    let file_content = Arc::from(file_content);
-                    analyze(
-                        language,
-                        selected_rules,
-                        &relative_path,
-                        &file_content,
-                        &configuration.argument_provider,
-                        &analysis_options,
-                    )
-                } else {
-                    eprintln!("error when getting content of path {}", &path.display());
-                    vec![]
-                };
+            .fold(
+                || (AnalysisStatistics::new(), Vec::<RuleResult>::new()),
+                |(mut stats, mut fold_results), path| {
+                    let relative_path = path
+                        .strip_prefix(directory_path)
+                        .unwrap()
+                        .to_str()
+                        .expect("path contains non-Unicode characters");
+                    let relative_path: Arc<str> = Arc::from(relative_path);
+                    let mut selected_rules = rules_for_language
+                        .iter()
+                        .filter(|r| {
+                            configuration
+                                .path_restrictions
+                                .rule_applies(&r.name, relative_path.as_ref())
+                        })
+                        .peekable();
+                    let res = if selected_rules.peek().is_none() {
+                        vec![]
+                    } else if let Ok(file_content) = fs::read_to_string(&path) {
+                        let file_content = Arc::from(file_content);
+                        let mut results = analyze(
+                            language,
+                            selected_rules,
+                            &relative_path,
+                            &file_content,
+                            &configuration.argument_provider,
+                            &analysis_options,
+                        );
+                        results.retain_mut(|r| {
+                            // We'll drop all `RuleResult` that don't contain violations
+                            let should_retain = !r.violations.is_empty();
 
-                if let Some(pb) = &progress_bar {
-                    pb.inc(1);
-                }
-                res
-            })
-            .collect();
-        all_rule_results.append(rule_results.clone().as_mut());
+                            // Register the timings:
+                            // (The `RuleResult` vector for `errors` contains exactly 0 or 1 elements)
+                            if let Some(err) = r.errors.first() {
+                                if err == ERROR_RULE_TIMEOUT {
+                                    stats.mark_timeout(&r.filename, &r.rule_name);
+                                } else {
+                                    stats.mark_error(&r.filename, &r.rule_name);
+                                }
+                            }
+                            let exe_time = Duration::from_millis(r.execution_time_ms as u64);
+                            stats.execution(&r.rule_name, exe_time);
+                            let query_time = Duration::from_millis(r.query_node_time_ms as u64);
+                            stats.query(&r.rule_name, query_time);
+                            // For stats: re-use the RuleResult's allocation if it's going to be dropped anyway.
+                            let filename = if should_retain {
+                                r.filename.clone()
+                            } else {
+                                std::mem::take(&mut r.filename)
+                            };
+                            stats.parse(filename, Duration::from_millis(r.parsing_time_ms as u64));
+
+                            should_retain
+                        });
+                        results
+                    } else {
+                        eprintln!("error when getting content of path {}", &path.display());
+                        vec![]
+                    };
+
+                    if let Some(pb) = &progress_bar {
+                        pb.inc(1);
+                    }
+                    fold_results.extend(res);
+
+                    (stats, fold_results)
+                },
+            )
+            .reduce(
+                || (AnalysisStatistics::new(), Vec::<RuleResult>::new()),
+                |mut base, other| {
+                    let (other_stats, other_results) = other;
+                    base.0 += other_stats;
+                    base.1.extend(other_results);
+                    base
+                },
+            );
+        all_rule_results.extend(rule_results);
+        all_stats += stats;
 
         if let Some(pb) = &progress_bar {
             pb.finish();
@@ -680,89 +723,68 @@ fn main() -> Result<()> {
     // If the performance statistics are enabled, we show the total execution time per rule
     // and the rule that timed-out.
     if enable_performance_statistics {
-        let mut rules_execution_time_ms: HashMap<String, u128> = HashMap::new();
-
-        // first, get the rule execution time
-        for rule_result in &all_rule_results {
-            let current_value = rules_execution_time_ms
-                .get(&rule_result.rule_name)
-                .unwrap_or(&0u128);
-            let new_value =
-                current_value + rule_result.execution_time_ms + rule_result.query_node_time_ms;
-            rules_execution_time_ms.insert(rule_result.rule_name.clone(), new_value);
+        // The time spent performing a tree-sitter query and running the JavaScript
+        let mut analysis_times =
+            Vec::<(&str, Duration, Duration)>::with_capacity(all_stats.agg_execution_time.len());
+        for (rule, execution) in &all_stats.agg_execution_time {
+            let query = all_stats
+                .agg_query_time
+                .get(rule)
+                .expect("query should exist if execution does");
+            analysis_times.push((rule.as_str(), query.time, execution.time));
         }
 
         println!("All rules execution time");
         println!("------------------------");
-        // Show execution time, in sorted order
-        for v in rules_execution_time_ms
-            .iter()
-            .sorted_by(|a, b| Ord::cmp(b.1, a.1))
-            .as_slice()
-        {
-            println!("rule {:?} total analysis time {:?} ms", v.0, v.1);
+        // Sort by total analysis time, descending
+        analysis_times.sort_by_key(|&(_, query, execution)| std::cmp::Reverse(query + execution));
+
+        for &(name, query, execution) in &analysis_times {
+            let total_millis = (query + execution).as_millis();
+            println!("rule {:?} total analysis time {:?} ms", name, total_millis);
         }
 
         println!("Top 100 slowest rules breakdown");
         println!("-------------------------------");
-        // Show execution time, in sorted order
-        for v in rules_execution_time_ms
-            .iter()
-            .sorted_by(|a, b| Ord::cmp(b.1, a.1))
-            .take(100)
-        {
-            let rule_name = v.0;
-            let mut query_node_time_ms: u128 = 0;
-            let mut execution_time_ms: u128 = 0;
-            let mut total_time_ms: u128 = 0;
-
-            for rule_result in &all_rule_results {
-                if rule_result.rule_name.eq(rule_name) {
-                    query_node_time_ms += rule_result.query_node_time_ms;
-                    execution_time_ms += rule_result.execution_time_ms;
-                    total_time_ms = total_time_ms
-                        + rule_result.query_node_time_ms
-                        + rule_result.execution_time_ms;
-                }
-            }
+        // Show execution time breakdown in descending order.
+        for &(name, query, execution) in analysis_times.iter().take(100) {
+            let total = (query + execution).as_millis();
+            let query = query.as_millis();
+            let execution = execution.as_millis();
             println!(
                 "rule {:?}, total time {:?} ms, query node time {:?} ms, execution time {:?} ms",
-                rule_name, total_time_ms, query_node_time_ms, execution_time_ms
+                name, total, query, execution
             );
         }
 
-        println!("Top 100 slowest files to parse");
-        println!("------------------------------");
-        let mut parsing_time_ms: HashMap<String, u128> = HashMap::new();
-
-        // organize the map to have the parsing time by file
-        for rule_result in &all_rule_results {
-            if !parsing_time_ms.contains_key(&rule_result.filename) {
-                parsing_time_ms.insert(rule_result.filename.clone(), rule_result.parsing_time_ms);
-            }
-        }
-
-        for v in parsing_time_ms
+        analysis_times
             .iter()
-            .sorted_by(|a, b| Ord::cmp(b.1, a.1))
             .take(100)
-        {
-            println!("file {:?}, parsing time {:?} ms", v.0, v.1);
+            .for_each(|&(name, query, execution)| {
+                let total_millis = (query + execution).as_millis();
+                println!(
+                    "rule {:?}, total time {:?} ms, query node time {:?} ms, execution time {:?} ms",
+                    name, total_millis, query.as_millis(), execution.as_millis()
+                );
+            });
+
+        println!("Top {} slowest files to parse", STATS_MAX_PARSE_TIMES);
+        println!("------------------------------");
+        for (time, filename) in all_stats.file_parse_time.iter().rev() {
+            let time = time.as_millis();
+            println!("file {:?}, parsing time {:?} ms", filename, time);
         }
 
         // show the rules that timed out
         println!("Rule timed out");
         println!("--------------");
-        let rules_timed_out: Vec<RuleResult> = all_rule_results
-            .clone()
-            .into_iter()
-            .filter(|r| r.errors.contains(&ERROR_RULE_TIMEOUT.to_string()))
-            .collect();
-        if rules_timed_out.is_empty() {
+        if all_stats.execution_timeouts.is_empty() {
             println!("No rule timed out");
         }
-        for v in rules_timed_out {
-            println!("Rule {} timed out on file {}", v.rule_name, v.filename);
+        for (rule_name, files) in &all_stats.execution_timeouts {
+            for filename in files {
+                println!("Rule {} timed out on file {}", rule_name, filename);
+            }
         }
     }
 
@@ -838,4 +860,237 @@ fn choose_cpu_count(user_input: Option<usize>) -> usize {
     let logical_cores = num_cpus::get();
     let cores = user_input.unwrap_or(DEFAULT_MAX_CPUS);
     usize::min(logical_cores, cores)
+}
+
+// The `AnalysisStatistics` struct is "tacked" onto this file here.
+// We'll eventually refactor this to be implemented with tracing and the subscriber pattern.
+// Thus, this should be seen as a temporary implementation.
+
+type RuleName = String;
+type FileName = String;
+
+/// The maximum number of file parse times to store in an [`AnalysisStatistic`] `file_parse_time` heap.
+const STATS_MAX_PARSE_TIMES: usize = 100;
+
+/// A struct containing statistics about an analysis.
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+pub struct AnalysisStatistics {
+    /// The per-rule aggregate amount of time spent on a v8 execution.
+    agg_execution_time: HashMap<RuleName, Aggregate>,
+    /// The per-rule aggregate amount of time spent on performing tree-sitter queries.
+    agg_query_time: HashMap<RuleName, Aggregate>,
+    /// The per-rule list of filenames that timed out.
+    execution_timeouts: HashMap<RuleName, Vec<FileName>>,
+    /// The per-rule list of filenames that caused an execution error.
+    execution_errors: HashMap<RuleName, Vec<FileName>>,
+    /// A max heap of the per-file amount of time spent on tree-sitter tree parsing.
+    file_parse_time: std::collections::BTreeSet<(Duration, FileName)>,
+}
+
+impl AnalysisStatistics {
+    /// Creates a new, empty `AnalysisStatistics`.
+    pub fn new() -> Self {
+        Self {
+            ..Default::default()
+        }
+    }
+
+    /// Adds the execution time for the given `rule_name` to its aggregate.
+    pub fn execution(&mut self, rule_name: &str, elapsed: Duration) {
+        Self::increment_aggregate(rule_name, elapsed, &mut self.agg_execution_time);
+    }
+
+    /// Adds the tree-sitter query time for the given `rule_name` to its aggregate.
+    pub fn query(&mut self, rule_name: &str, elapsed: Duration) {
+        Self::increment_aggregate(rule_name, elapsed, &mut self.agg_query_time);
+    }
+
+    /// Adds the filename and tree parse duration to the tree-sitter parse time max heap.
+    pub fn parse(&mut self, filename: impl Into<String>, elapsed: Duration) {
+        self.file_parse_time.insert((elapsed, filename.into()));
+        if self.file_parse_time.len() > STATS_MAX_PARSE_TIMES {
+            // Remove the smallest element
+            self.file_parse_time.pop_first();
+        }
+    }
+
+    /// Marks that a file timed out for a specific rule.
+    pub fn mark_timeout(&mut self, filename: &str, rule_name: &str) {
+        Self::push_filename(filename, rule_name, &mut self.execution_timeouts);
+    }
+
+    /// Marks that a JavaScript execution error occurred for a specific file/rule.
+    pub fn mark_error(&mut self, filename: &str, rule_name: &str) {
+        Self::push_filename(filename, rule_name, &mut self.execution_errors);
+    }
+
+    fn push_filename(
+        filename: &str,
+        rule_name: &str,
+        target: &mut HashMap<RuleName, Vec<FileName>>,
+    ) {
+        if let Some(timeouts) = target.get_mut(rule_name) {
+            timeouts.push(filename.to_string());
+        } else {
+            target.insert(rule_name.to_string(), vec![filename.to_string()]);
+        }
+    }
+
+    fn increment_aggregate(key: &str, elapsed: Duration, target: &mut HashMap<String, Aggregate>) {
+        if let Some(stat) = target.get_mut(key) {
+            stat.sample_count += 1;
+            stat.time += elapsed;
+        } else {
+            target.insert(
+                key.to_string(),
+                Aggregate {
+                    sample_count: 1,
+                    time: elapsed,
+                },
+            );
+        }
+    }
+}
+
+/// An aggregated statistic
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+struct Aggregate {
+    pub sample_count: usize,
+    pub time: Duration,
+}
+
+impl std::ops::AddAssign for Aggregate {
+    fn add_assign(&mut self, rhs: Self) {
+        self.sample_count += rhs.sample_count;
+        self.time += rhs.time;
+    }
+}
+
+impl std::ops::AddAssign for AnalysisStatistics {
+    fn add_assign(&mut self, rhs: Self) {
+        for (key, value) in rhs.agg_execution_time {
+            self.agg_execution_time
+                .entry(key)
+                .and_modify(|existing| *existing += value)
+                .or_insert(value);
+        }
+        for (key, value) in rhs.agg_query_time {
+            self.agg_query_time
+                .entry(key)
+                .and_modify(|existing| *existing += value)
+                .or_insert(value);
+        }
+        for (key, values) in rhs.execution_timeouts {
+            self.execution_timeouts
+                .entry(key)
+                .and_modify(|existing| existing.extend_from_slice(&values))
+                .or_insert(values);
+        }
+        for (key, values) in rhs.execution_errors {
+            self.execution_errors
+                .entry(key)
+                .and_modify(|existing| existing.extend_from_slice(&values))
+                .or_insert(values);
+        }
+        for (duration, filename) in rhs.file_parse_time {
+            self.parse(filename, duration);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Aggregate, AnalysisStatistics, FileName, STATS_MAX_PARSE_TIMES};
+    use std::collections::{BTreeSet, HashMap};
+    use std::time::Duration;
+
+    /// Tests that the combining of `AnalysisStatistics` is logically correct
+    #[test]
+    fn statistics_combine() {
+        fn s(str: &str) -> String {
+            str.to_string()
+        }
+        /// A shorthand for building a HashMap entry for `Aggregate`
+        fn agg(rule: &str, secs: u64, count: usize) -> (String, Aggregate) {
+            let aggregate = Aggregate {
+                sample_count: count,
+                time: Duration::from_secs(secs),
+            };
+            (rule.to_string(), aggregate)
+        }
+        /// A shorthand for building a HashMap entry for a string vec.
+        fn files(rule: &str, filenames: &[&str]) -> (String, Vec<FileName>) {
+            let filenames = filenames.iter().map(ToString::to_string).collect();
+            (rule.to_string(), filenames)
+        }
+
+        let stats1 = AnalysisStatistics {
+            agg_execution_time: HashMap::from([agg("rs/rule1", 6, 3), agg("rs/rule2", 5, 3)]),
+            agg_query_time: HashMap::from([agg("rs/rule1", 2, 3), agg("rs/rule2", 2, 3)]),
+            execution_timeouts: HashMap::from([files("rs/rule1", &["file1.js", "file2.js"])]),
+            execution_errors: HashMap::from([files("rs/rule2", &["err1.js"])]),
+            file_parse_time: BTreeSet::from([
+                (Duration::from_secs(1), s("file1.js")),
+                (Duration::from_secs(2), s("file2.js")),
+                (Duration::from_secs(3), s("err1.js")),
+            ]),
+        };
+        let stats2 = AnalysisStatistics {
+            agg_execution_time: HashMap::from([agg("rs/rule1", 10, 2), agg("rs/rule2", 14, 2)]),
+            agg_query_time: HashMap::from([agg("rs/rule1", 2, 2), agg("rs/rule2", 1, 2)]),
+            execution_timeouts: HashMap::from([files("rs/rule2", &["file3.js"])]),
+            execution_errors: HashMap::from([files("rs/rule2", &["err2.js"])]),
+            file_parse_time: BTreeSet::from([
+                (Duration::from_secs(1), s("file3.js")),
+                (Duration::from_secs(3), s("err2.js")),
+            ]),
+        };
+        let expected = AnalysisStatistics {
+            agg_execution_time: HashMap::from([agg("rs/rule1", 16, 5), agg("rs/rule2", 19, 5)]),
+            agg_query_time: HashMap::from([agg("rs/rule1", 4, 5), agg("rs/rule2", 3, 5)]),
+            execution_timeouts: HashMap::from([
+                files("rs/rule1", &["file1.js", "file2.js"]),
+                files("rs/rule2", &["file3.js"]),
+            ]),
+            execution_errors: HashMap::from([files("rs/rule2", &["err1.js", "err2.js"])]),
+            file_parse_time: BTreeSet::from([
+                (Duration::from_secs(1), s("file1.js")),
+                (Duration::from_secs(2), s("file2.js")),
+                (Duration::from_secs(3), s("err1.js")),
+                (Duration::from_secs(1), s("file3.js")),
+                (Duration::from_secs(3), s("err2.js")),
+            ]),
+        };
+        // For dev expedience, we don't implement Add, so structure the test to use AddAssign
+        let mut test1 = stats1.clone();
+        test1 += stats2;
+        assert_eq!(test1, expected);
+    }
+
+    /// Tests that the `file_parse_time` heap respects the configured max limit.
+    #[test]
+    fn file_parse_time_stat_limit() {
+        let mut stats = AnalysisStatistics::default();
+        for i in 0..(STATS_MAX_PARSE_TIMES * 2) {
+            let index = i + 1;
+            let duration = Duration::from_secs(index as u64);
+            stats.parse(format!("file-{}", index), duration)
+        }
+        assert_eq!(stats.file_parse_time.len(), STATS_MAX_PARSE_TIMES);
+
+        // Min element
+        let expected_min = STATS_MAX_PARSE_TIMES + 1;
+        let expected_min_str = format!("file-{}", expected_min);
+        assert_eq!(
+            stats.file_parse_time.iter().next().unwrap(),
+            &(Duration::from_secs(expected_min as u64), expected_min_str)
+        );
+        // Max element
+        let expected_max = STATS_MAX_PARSE_TIMES * 2;
+        let expected_max_str = format!("file-{}", expected_max);
+        assert_eq!(
+            stats.file_parse_time.iter().next_back().unwrap(),
+            &(Duration::from_secs(expected_max as u64), expected_max_str)
+        );
+    }
 }
