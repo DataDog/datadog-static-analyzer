@@ -34,6 +34,8 @@ default = []
 cli = { path = "../cli" }
 kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
 server = { package = "static-analysis-server", path = "../static-analysis-server" }
+secrets = { package = "secrets", path = "../secrets" }
+
 # workspace
 anyhow = { workspace = true }
 itertools = { workspace = true }

@@ -195,8 +195,28 @@ impl APIResponseRuleset {
 }
 
 #[derive(Deserialize, Clone)]
-pub struct APIResponse {
+pub struct StaticAnalysisRulesAPIResponse {
     pub data: APIResponseRuleset,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiAttributes {
+    pub name: String,
+    pub description: String,
+    pub pattern: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiType {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "attributes")]
+    pub attributes: SecretRuleApiAttributes,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct StaticAnalysisSecretsAPIResponse {
+    pub data: Vec<SecretRuleApiType>,
 }
 
 #[derive(Deserialize)]
@@ -211,7 +231,7 @@ pub struct APIError {
     pub detail: Option<String>,
 }
 
-impl APIResponse {
+impl StaticAnalysisRulesAPIResponse {
     pub fn into_ruleset(self) -> RuleSet {
         self.data.into_ruleset()
     }
@@ -271,7 +291,7 @@ mod tests {
                 }
             }
         });
-        let res = serde_json::from_value::<APIResponse>(data);
+        let res = serde_json::from_value::<StaticAnalysisRulesAPIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
         assert_eq!(1, ruleset.rules.len());
         let rule = ruleset.rules.get(0).unwrap();
@@ -307,7 +327,7 @@ mod tests {
                 }
             }
         });
-        let res = serde_json::from_value::<APIResponse>(data);
+        let res = serde_json::from_value::<StaticAnalysisRulesAPIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
         assert_eq!(0, ruleset.rules.len());
     }

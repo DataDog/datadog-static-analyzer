@@ -33,6 +33,7 @@ pub struct CliConfiguration {
     pub use_staging: bool,
     pub show_performance_statistics: bool,
     pub ignore_generated_files: bool,
+    pub secrets_enabled: bool,
 }
 
 impl DiffAware for CliConfiguration {
@@ -167,6 +168,7 @@ mod tests {
             use_staging: false,
             show_performance_statistics: false,
             ignore_generated_files: false,
+            secrets_enabled: false,
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
