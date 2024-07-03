@@ -11,12 +11,13 @@ use anyhow::{anyhow, Result};
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
 use reqwest::blocking::RequestBuilder;
+use secrets::model::secret_rule::SecretRule;
 use uuid::Uuid;
 
 use crate::model::datadog_api::{
-    APIResponse, ApiResponseDefaultRuleset, DiffAwareData, DiffAwareRequest,
-    DiffAwareRequestArguments, DiffAwareRequestData, DiffAwareRequestDataAttributes,
-    DiffAwareResponse,
+    ApiResponseDefaultRuleset, DiffAwareData, DiffAwareRequest, DiffAwareRequestArguments,
+    DiffAwareRequestData, DiffAwareRequestDataAttributes, DiffAwareResponse,
+    StaticAnalysisRulesAPIResponse, StaticAnalysisSecretsAPIResponse,
 };
 
 const STAGING_DATADOG_HOSTNAME: &str = "api.datad0g.com";
@@ -33,6 +34,37 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "RUBY",
     "TYPESCRIPT",
 ];
+
+// Get secrets rules from the static analysis API
+pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
+    let server_response = make_request(RequestMethod::Get, "secrets/rules", use_staging, true)?
+        .send()
+        .expect("error when querying the datadog server");
+
+    let status_code = server_response.status();
+    let response_text = &server_response.text()?;
+
+    if !status_code.is_success() {
+        let error = serde_json::from_str::<APIErrorResponse>(response_text)?;
+        let error_msg = error.errors.into_iter().next().map_or_else(
+            || format!("Unknown error {status_code}"),
+            |e| format!("Error: {}", e.detail.unwrap_or(e.title)),
+        );
+        eprintln!("{error_msg}");
+        return Err(anyhow!(error_msg));
+    }
+
+    let api_response = serde_json::from_str::<StaticAnalysisSecretsAPIResponse>(response_text);
+
+    match api_response {
+        Ok(d) => Ok(d.data),
+        Err(e) => {
+            eprintln!("Error when parsing the secret rules {e:?}");
+            eprintln!("{response_text}");
+            Err(anyhow!("error {e:?}"))
+        }
+    }
+}
 
 // Get all the rules from different rulesets from Datadog
 pub fn get_rules_from_rulesets(rulesets_name: &[String], use_staging: bool) -> Result<Vec<Rule>> {
@@ -135,7 +167,7 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool) -> Result<RuleSet> {
         return Err(anyhow!(error_msg));
     }
 
-    let api_response = serde_json::from_str::<APIResponse>(response_text);
+    let api_response = serde_json::from_str::<StaticAnalysisRulesAPIResponse>(response_text);
 
     match api_response {
         Ok(d) => {

@@ -9,6 +9,7 @@ default = []
 [dependencies]
 # local
 kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
+secrets = { package = "secrets", path = "../secrets" }
 # workspace
 anyhow = { workspace = true }
 base64 = { workspace = true }

@@ -23,6 +23,7 @@ use kernel::model::{
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
 };
+use secrets::model::secret_rule::SecretRule;
 
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::datadog_api::DiffAwareData;
@@ -47,30 +48,35 @@ pub struct SarifReportMetadata {
 #[derive(Debug, Clone)]
 pub enum SarifRule {
     StaticAnalysis(Rule),
+    SecretRule(SecretRule),
 }
 
 impl SarifRule {
     fn name(&self) -> &str {
         match self {
             SarifRule::StaticAnalysis(r) => r.name.as_str(),
+            SarifRule::SecretRule(r) => r.name.as_str(),
         }
     }
 
     fn category(&self) -> RuleCategory {
         match self {
             SarifRule::StaticAnalysis(r) => r.category,
+            SarifRule::SecretRule(_) => RuleCategory::Security,
         }
     }
 
     fn cwe(&self) -> Option<&str> {
         match self {
             SarifRule::StaticAnalysis(r) => r.cwe.as_deref(),
+            SarifRule::SecretRule(_) => None,
         }
     }
 
     fn severity(&self) -> RuleSeverity {
         match self {
             SarifRule::StaticAnalysis(r) => r.severity,
+            SarifRule::SecretRule(_) => RuleSeverity::Error,
         }
     }
 
@@ -81,6 +87,7 @@ impl SarifRule {
     fn is_testing(&self) -> bool {
         match self {
             SarifRule::StaticAnalysis(r) => r.is_testing,
+            SarifRule::SecretRule(_) => false,
         }
     }
 }
@@ -91,6 +98,7 @@ impl IntoSarif for &SarifRule {
     fn into_sarif(self) -> Self::SarifType {
         match self {
             SarifRule::StaticAnalysis(r) => r.into_sarif(),
+            SarifRule::SecretRule(r) => r.into_sarif(),
         }
     }
 }
@@ -98,6 +106,12 @@ impl IntoSarif for &SarifRule {
 impl From<Rule> for SarifRule {
     fn from(value: Rule) -> Self {
         Self::StaticAnalysis(value)
+    }
+}
+
+impl From<SecretRule> for SarifRule {
+    fn from(value: SecretRule) -> Self {
+        Self::SecretRule(value)
     }
 }
 
@@ -150,6 +164,23 @@ pub struct SarifGenerationOptions {
     pub diff_aware_parameters: Option<DiffAwareData>,
     pub repository_directory: String,
     pub execution_time_secs: u64,
+}
+
+impl IntoSarif for &SecretRule {
+    type SarifType = sarif::ReportingDescriptor;
+
+    fn into_sarif(self) -> Self::SarifType {
+        let mut builder = sarif::ReportingDescriptorBuilder::default();
+        builder.id(&self.name);
+
+        let description = sarif::MultiformatMessageStringBuilder::default()
+            .text(std::str::from_utf8(self.description.as_bytes()).unwrap())
+            .build()
+            .unwrap();
+        builder.full_description(description);
+
+        builder.build().unwrap()
+    }
 }
 
 impl IntoSarif for &Rule {

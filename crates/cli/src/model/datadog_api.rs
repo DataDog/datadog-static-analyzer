@@ -2,6 +2,7 @@ use kernel::model::common::Language;
 use kernel::model::rule::{Argument, EntityChecked, Rule, RuleCategory, RuleSeverity, RuleType};
 use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
+use secrets::model::secret_rule::SecretRule;
 use serde::{Deserialize, Serialize};
 
 // Data for diff-aware scanning
@@ -195,8 +196,13 @@ impl APIResponseRuleset {
 }
 
 #[derive(Deserialize, Clone)]
-pub struct APIResponse {
+pub struct StaticAnalysisRulesAPIResponse {
     pub data: APIResponseRuleset,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct StaticAnalysisSecretsAPIResponse {
+    pub data: Vec<SecretRule>,
 }
 
 #[derive(Deserialize)]
@@ -211,7 +217,7 @@ pub struct APIError {
     pub detail: Option<String>,
 }
 
-impl APIResponse {
+impl StaticAnalysisRulesAPIResponse {
     pub fn into_ruleset(self) -> RuleSet {
         self.data.into_ruleset()
     }
@@ -271,7 +277,7 @@ mod tests {
                 }
             }
         });
-        let res = serde_json::from_value::<APIResponse>(data);
+        let res = serde_json::from_value::<StaticAnalysisRulesAPIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
         assert_eq!(1, ruleset.rules.len());
         let rule = ruleset.rules.get(0).unwrap();
@@ -307,7 +313,7 @@ mod tests {
                 }
             }
         });
-        let res = serde_json::from_value::<APIResponse>(data);
+        let res = serde_json::from_value::<StaticAnalysisRulesAPIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
         assert_eq!(0, ruleset.rules.len());
     }

@@ -33,6 +33,7 @@ pub struct CliConfiguration {
     pub use_staging: bool,
     pub show_performance_statistics: bool,
     pub ignore_generated_files: bool,
+    pub secrets_enabled: bool,
 }
 
 impl DiffAware for CliConfiguration {

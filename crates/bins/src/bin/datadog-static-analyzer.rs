@@ -1,6 +1,7 @@
 use cli::config_file::read_config_file;
 use cli::datadog_utils::{
     get_all_default_rulesets, get_diff_aware_information, get_rules_from_rulesets,
+    get_secrets_rules,
 };
 use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
@@ -33,6 +34,7 @@ use kernel::model::diff_aware::DiffAware;
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
+use secrets::model::secret_rule::SecretRule;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
@@ -85,6 +87,7 @@ fn print_configuration(configuration: &CliConfiguration) {
     );
 
     println!("output file         : {}", configuration.output_file);
+    println!("secrets enabled     : {}", configuration.secrets_enabled);
     println!("output format       : {}", output_format_str);
     println!("ignore paths        : {}", ignore_paths_str);
     println!("only paths          : {}", only_paths_str);
@@ -201,6 +204,7 @@ fn main() -> Result<()> {
         "diff-aware",
         "enable diff-aware scanning (only for Datadog users)",
     );
+    opts.optflag("", "secrets", "enable secrets detection (BETA)");
     opts.optmulti(
         "p",
         "ignore-path",
@@ -258,6 +262,7 @@ fn main() -> Result<()> {
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
     let print_violations = matches.opt_present("print-violations");
+    let secrets_enabled = matches.opt_present("secrets");
     // if --fail-on-any-violation is specified, get the list of severities to exit with a non-zero code
     let fail_any_violation_severities = match matches.opt_str("fail-on-any-violation") {
         Some(f) => f
@@ -385,6 +390,12 @@ fn main() -> Result<()> {
         }
     }
 
+    let secrets_rules = if secrets_enabled {
+        get_secrets_rules(use_staging)?
+    } else {
+        vec![]
+    };
+
     // add ignore path from the options
     path_config
         .ignore
@@ -437,6 +448,7 @@ fn main() -> Result<()> {
         use_staging,
         show_performance_statistics: enable_performance_statistics,
         ignore_generated_files,
+        secrets_enabled,
     };
 
     print_configuration(&configuration);
@@ -765,12 +777,16 @@ fn main() -> Result<()> {
             serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => {
-            let rules: Vec<SarifRule> = configuration
+            let static_rules_sarif: Vec<SarifRule> = configuration
                 .rules
                 .iter()
                 .cloned()
                 .map(|r| r.into())
                 .collect();
+
+            let secrets_rules_sarif: Vec<SarifRule> =
+                secrets_rules.iter().cloned().map(|r| r.into()).collect();
+
             let results = all_rule_results
                 .iter()
                 .cloned()
@@ -779,7 +795,7 @@ fn main() -> Result<()> {
                 .map_err(anyhow::Error::msg)?;
 
             match generate_sarif_report(
-                &rules,
+                &[static_rules_sarif, secrets_rules_sarif].concat(),
                 &results,
                 &directory_to_analyze,
                 SarifReportMetadata {
