@@ -34,7 +34,6 @@ use kernel::model::diff_aware::DiffAware;
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
-use secrets::model::secret_rule::SecretRule;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
