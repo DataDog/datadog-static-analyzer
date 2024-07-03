@@ -243,13 +243,13 @@ impl JsRuntime {
             let mut ctx_bridge = self.bridge_context.borrow_mut();
             let was_new_tree =
                 ctx_bridge.set_root_context(scope, source_tree, source_text, file_name);
-            // If the tree was new, clear the TsNodeBridge, as it contains nodes for the old tree.
             if was_new_tree {
+                // If the tree was new, clear the TsNodeBridge, as it contains nodes for the old tree.
                 self.bridge_ts_node.borrow_mut().clear(scope);
+                // Set the file context
+                ctx_bridge.set_file_context(scope, language, source_tree, source_text);
             }
 
-            // Set a file context, if applicable
-            ctx_bridge.set_file_context(scope, language, source_tree, source_text);
             // Add any rule arguments
             ctx_bridge.set_rule_arguments(scope, rule_arguments);
             // Push the query matches:
@@ -580,7 +580,7 @@ mod tests {
     };
     use crate::analysis::ddsa_lib::test_utils::try_execute;
     use crate::analysis::ddsa_lib::{js, JsRuntime};
-    use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
+    use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
     use crate::model::common::Language;
     use deno_core::v8;
     use std::collections::HashMap;
@@ -951,6 +951,163 @@ function visit(captures) {
         assert_eq!(rt.bridge_query_match.len(), 0);
         assert_eq!(rt.violation_bridge_v8_len(), 0);
         assert_eq!(rt.bridge_ts_node.borrow().len(), 3);
+    }
+
+    /// Definitions:
+    /// * `A`: a [`Language`] with [`ddsa_lib::FileContext`].
+    /// * `B`: a `Language` _without_ a `ddsa_lib::FileContext`.
+    ///
+    /// Tests that when the file changes between two calls to `execute_rule_internal`:
+    /// 1. `A -> A`: The file context is updated in-place
+    /// 2. `(A -> B) || (B -> A)`: The file context of `B` is `None`, and the file context of `A` is `Some`.
+    /// 2. `B -> B`: No file context is set.
+    #[test]
+    fn execute_rule_internal_file_context_transition() {
+        // Make sure our definitions for `A` and `B` as described above hold.
+        // (We currently don't have a cleaner/more robust way to test this)
+        {
+            let mut rt = JsRuntime::try_new().unwrap();
+            let scope = &mut rt.v8_handle_scope();
+            let script_a = "__RUST_BRIDGE__context.fileCtx.go === undefined;";
+            assert!(!try_execute(scope, script_a).unwrap().is_true());
+            let script_b = "__RUST_BRIDGE__context.fileCtx.javascript === undefined;";
+            assert!(try_execute(scope, script_b).unwrap().is_true());
+        }
+
+        /// A shorthand helper to perform a call to [`JsRuntime::execute_rule_internal`] in order to
+        /// inspect the side effects on `rt`. The Ok(...) return value is ignored.
+        fn execute_for_side_effects(
+            rt: &mut JsRuntime,
+            language: Language,
+            text: &str,
+        ) -> Result<(), DDSAJsRuntimeError> {
+            // We're not using the `visit` function: we just want to run `execute_rule_internal` and
+            // inspect its side effects on the `ddsa_lib::FileContext`. We console log a value just
+            // to be able to assert that the rule was actually invoked.
+            let rule_code = "function visit(captures) { console.log(123); }";
+            let rule_code = JsRuntime::format_rule_script(rule_code);
+            let rule_script = compile_script(&mut rt.v8_handle_scope(), &rule_code).unwrap();
+
+            let text = Arc::<str>::from(text);
+            let tree = Arc::new(get_tree(text.as_ref(), &language).unwrap());
+
+            // An arbitrary tree-sitter query that should create at least one match.
+            let ts_query = "(identifier) @cap_name";
+            let ts_lang = get_tree_sitter_language(&language);
+            let ts_query = TSQuery::try_new(&ts_lang, ts_query).unwrap();
+            let captures = ts_query
+                .cursor()
+                .matches(tree.root_node(), text.as_ref())
+                .filter(|captures| !captures.is_empty())
+                .collect::<Vec<_>>();
+            let _ = rt.execute_rule_internal(
+                &text,
+                &tree,
+                &Arc::<str>::from("test_doesnt_use_filename"),
+                language,
+                &rule_script,
+                &captures,
+                &HashMap::new(),
+                None,
+            )?;
+            let lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+            assert_eq!(lines[0], "123");
+            Ok(())
+        }
+
+        /// `assert!`s that the FileContextGo's package alias map contains only the provided aliases
+        fn assert_go_ctx_values(rt: &JsRuntime, aliases: &[&str]) {
+            let bridge = rt.bridge_context.borrow();
+            let pkg_map = bridge.ddsa_file_ctx().go().unwrap().package_alias_map();
+            for &alias in aliases {
+                assert!(pkg_map.get_full(alias).is_some());
+            }
+            assert_eq!(pkg_map.len(), aliases.len());
+        }
+
+        /// Builds a sample go file with the specified imports.
+        fn make_go_code(imports: &[&str]) -> String {
+            let import_list = imports
+                .iter()
+                .map(|&name| format!("import \"{}\"", name))
+                .collect::<Vec<_>>()
+                .join("\n");
+            format!(
+                "\
+package main
+{}
+func main() {{
+    fmt.Println(\"hello\")
+}}
+",
+                import_list
+            )
+        }
+
+        let js_code_1 = "const someJavaScriptCode = 123;";
+        let js_code_2 = "const isDifferentCode = true;";
+
+        // Case 1: A -> A
+        ///////////////////////////////////////////////////////////////////////
+        {
+            let mut rt = JsRuntime::try_new().unwrap();
+
+            let go_imports_1 = &["fmt", "pkgname"];
+            let go_code_1 = make_go_code(go_imports_1);
+            execute_for_side_effects(&mut rt, Language::Go, &go_code_1).unwrap();
+            assert_go_ctx_values(&rt, go_imports_1);
+
+            let go_imports_2 = &["otherpkg"];
+            let go_code_2 = make_go_code(go_imports_2);
+            execute_for_side_effects(&mut rt, Language::Go, &go_code_2).unwrap();
+            // The FileContextGo should have been updated in-place
+            assert_go_ctx_values(&rt, go_imports_2);
+        }
+
+        // Case 2: A -> B
+        ///////////////////////////////////////////////////////////////////////
+        {
+            let mut rt = JsRuntime::try_new().unwrap();
+
+            let go_imports = &["fmt", "pkgname"];
+            let go_code = make_go_code(go_imports);
+            execute_for_side_effects(&mut rt, Language::Go, &go_code).unwrap();
+            assert_go_ctx_values(&rt, go_imports);
+
+            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_1).unwrap();
+            // The FileContextGo should have been cleared
+            assert_go_ctx_values(&rt, &[]);
+        }
+
+        // Case 2: B -> A
+        ///////////////////////////////////////////////////////////////////////
+        {
+            let mut rt = JsRuntime::try_new().unwrap();
+
+            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_1).unwrap();
+            // The FileContextGo should be empty
+            assert_go_ctx_values(&rt, &[]);
+
+            let go_imports = &["fmt", "pkgname"];
+            let go_code = make_go_code(go_imports);
+            execute_for_side_effects(&mut rt, Language::Go, &go_code).unwrap();
+            // The FileContextGo should have been updated in-place
+            assert_go_ctx_values(&rt, go_imports);
+        }
+
+        // Case 3: B -> B
+        ///////////////////////////////////////////////////////////////////////
+        {
+            let mut rt = JsRuntime::try_new().unwrap();
+
+            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_1).unwrap();
+            // The FileContextGo should be empty
+            assert_go_ctx_values(&rt, &[]);
+
+            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_2).unwrap();
+            // The FileContextGo should be empty
+            assert_go_ctx_values(&rt, &[]);
+        }
     }
 
     /// Tests that we don't call out to v8 to execute JavaScript if there are no `query_matches`.
