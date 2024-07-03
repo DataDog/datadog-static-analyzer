@@ -117,7 +117,12 @@ impl ContextBridge {
                 scope,
                 Some(metadata.node_kind_map.v8_map()),
                 Some(metadata.field_map.v8_map()),
-            )
+            );
+            // For now, in the interest of simplicity, we just clear all file contexts when the
+            // language changes (as opposed to only clearing the context for the preceding language).
+            // This really has no performance impact, as the number of times we'll change languages
+            // has an upper bound of the count of [`crate::model::common::Language`] variants.
+            self.clear_file_contexts(scope);
         }
         // Because trees and file contents go hand-in-hand, we can avoid a relatively expensive string
         // comparison by just using the `new_tree` boolean for control flow.
@@ -146,7 +151,10 @@ impl ContextBridge {
         }
     }
 
-    /// Updates the file contexts that have been initialized, given the file.
+    /// Updates the file context for the specific `Language`.
+    ///
+    /// NOTE: It's up to the caller to ensure [`Self::clear_file_contexts`] has been called,
+    /// as this function does not clear existing contexts.
     pub fn set_file_context(
         &mut self,
         scope: &mut HandleScope,
@@ -154,22 +162,27 @@ impl ContextBridge {
         tree: &tree_sitter::Tree,
         file_contents: &Arc<str>,
     ) {
-        // Because we allocate all Mirrored v8 data structures ahead of time, the role of this function
-        // is to clear out the ones that no longer apply.
-        // A file can only have a single file context.
-        if language == Language::Go {
-            if let Some(go) = self.file.ddsa.go_mut() {
-                go.update_state(scope, tree, file_contents.as_ref());
+        match language {
+            Language::Go => {
+                if let Some(go) = self.file.ddsa.go_mut() {
+                    go.update_state(scope, tree, file_contents.as_ref());
+                }
             }
-        } else if let Some(go) = self.file.ddsa.go_mut() {
+            Language::Terraform => {
+                if let Some(tf) = self.file.ddsa.tf_mut() {
+                    tf.update_state(scope, tree, file_contents.as_ref());
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Clears all file contexts
+    fn clear_file_contexts(&mut self, scope: &mut HandleScope) {
+        if let Some(go) = self.file.ddsa.go_mut() {
             go.clear(scope);
         }
-
-        if language == Language::Terraform {
-            if let Some(tf) = self.file.ddsa.tf_mut() {
-                tf.update_state(scope, tree, file_contents.as_ref());
-            }
-        } else if let Some(tf) = self.file.ddsa.tf_mut() {
+        if let Some(tf) = self.file.ddsa.tf_mut() {
             tf.clear(scope);
         }
     }
@@ -195,6 +208,12 @@ impl ContextBridge {
         file.ddsa.set_go(ddsa_go);
         file.ddsa.set_tf(ddsa_tf);
         Ok(())
+    }
+
+    /// Provides a reference to the `ddsa_lib::FileContext` for inspection in tests.
+    #[cfg(test)]
+    pub fn ddsa_file_ctx(&self) -> &ddsa_lib::FileContext {
+        &self.file.ddsa
     }
 }
 

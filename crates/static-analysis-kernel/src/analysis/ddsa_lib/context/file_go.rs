@@ -102,6 +102,12 @@ impl FileContextGo {
     pub(crate) fn package_alias_v8_map(&self) -> &v8::Global<v8::Map> {
         self.packages_aliased.v8_map()
     }
+
+    /// Returns a reference to the `MirroredIndexMap` containing the package to alias map.
+    #[cfg(test)]
+    pub fn package_alias_map(&self) -> &MirroredIndexMap<String, String> {
+        &self.packages_aliased
+    }
 }
 
 #[cfg(test)]
