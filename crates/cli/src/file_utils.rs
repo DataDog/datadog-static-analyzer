@@ -500,6 +500,7 @@ mod tests {
             use_staging: false,
             show_performance_statistics: false,
             ignore_generated_files: false,
+            secrets_enabled: false,
         };
         assert_eq!(0, filter_files_by_size(&files1, &cli_configuration).len());
 
