@@ -713,7 +713,7 @@ fn main() -> Result<()> {
                     find_secrets(
                         &sds_scanner,
                         &secrets_rules,
-                        &relative_path,
+                        relative_path,
                         &file_content,
                         &analysis_options,
                     )
