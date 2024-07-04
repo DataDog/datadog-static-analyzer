@@ -4,6 +4,7 @@
 
 use crate::model::secret_result::{SecretResult, SecretResultMatch};
 use crate::model::secret_rule::SecretRule;
+use anyhow::anyhow;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use itertools::Itertools;
@@ -28,7 +29,27 @@ pub struct Result {
     pub end: Position,
 }
 
-/// Find secrets in code
+/// Get position of an offset in a code and return a [[Position]]. This code should
+/// ultimately be more efficient as we grow the platform, it's considered as "good enough" for now.
+pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
+    let mut line_number = 1;
+    let mut bytes_reads = 0;
+
+    for line in content.lines() {
+        if offset >= bytes_reads && offset <= bytes_reads + line.len() {
+            let c = offset - bytes_reads + 1;
+            return Ok(Position {
+                line: line_number,
+                col: c as u32,
+            });
+        }
+        line_number = line_number + 1;
+        bytes_reads = bytes_reads + line.len() + 1;
+    }
+    return Err(anyhow!("line not found"));
+}
+
+/// Find secrets in code. This is the main entrypoint for our SDS integration.
 pub fn find_secrets(
     scanner: &Scanner,
     sds_rules: &[SecretRule],
@@ -48,8 +69,10 @@ pub fn find_secrets(
         .map(|sds_match| Result {
             rule_id: sds_rules[sds_match.rule_index].id.clone(),
             rule_index: sds_match.rule_index,
-            start: Position { line: 1, col: 1 },
-            end: Position { line: 1, col: 1 },
+            start: get_position_in_string(code, sds_match.start_index)
+                .expect("cannot get position"),
+            end: get_position_in_string(code, sds_match.end_index_exclusive)
+                .expect("cannot get position"),
         })
         .group_by(|v| v.rule_index)
         .into_iter()
@@ -66,4 +89,24 @@ pub fn find_secrets(
                 .collect(),
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_get_position_in_string() {
+        let s = "FOO\nBAR\nBAZ";
+        let p1 = get_position_in_string(s, 0).expect("get the pos");
+        assert_eq!(1, p1.line);
+        assert_eq!(1, p1.col);
+
+        let p2 = get_position_in_string(s, 4).expect("get the pos");
+        assert_eq!(2, p2.line);
+        assert_eq!(1, p2.col);
+
+        assert!(get_position_in_string(s, 40000).is_err());
+    }
 }
