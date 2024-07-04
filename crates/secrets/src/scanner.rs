@@ -13,7 +13,7 @@ use sds::{RuleConfig, Scanner};
 /// our API.
 ///
 /// Once the scanner is built, use scanner.scan() to find secrets.
-pub fn build_sds_scanner(rules: &Vec<SecretRule>) -> Scanner {
+pub fn build_sds_scanner(rules: &[SecretRule]) -> Scanner {
     let sds_rules = rules
         .iter()
         .map(|r| r.convert_to_sds_ruleconfig())
