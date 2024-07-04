@@ -55,6 +55,7 @@ pub fn find_secrets(
         .into_iter()
         .map(|(k, vals)| SecretResult {
             rule_id: sds_rules[k].clone().id,
+            rule_name: sds_rules[k].clone().name,
             filename: filename.to_string(),
             message: sds_rules[k].clone().description,
             matches: vals

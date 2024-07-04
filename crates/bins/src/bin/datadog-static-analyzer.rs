@@ -8,7 +8,8 @@ use cli::file_utils::{
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
 use cli::rule_utils::{
-    count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
+    convert_secret_result_to_rule_result, count_violations_by_severities, get_languages_for_rules,
+    get_rulesets_from_file,
 };
 use common::analysis_options::AnalysisOptions;
 use itertools::Itertools;
@@ -840,9 +841,17 @@ fn main() -> Result<()> {
     }
 
     let value = match configuration.output_format {
-        OutputFormat::Csv => csv::generate_csv_results(&all_rule_results),
+        OutputFormat::Csv => csv::generate_csv_results(&all_rule_results, &secrets_results),
         OutputFormat::Json => {
-            serde_json::to_string(&all_rule_results).expect("error when getting the JSON report")
+            let combined_results = [
+                secrets_results
+                    .iter()
+                    .map(|s| convert_secret_result_to_rule_result(s))
+                    .collect(),
+                all_rule_results.clone(),
+            ]
+            .concat();
+            serde_json::to_string(&combined_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => {
             let static_rules_sarif: Vec<SarifRule> = configuration

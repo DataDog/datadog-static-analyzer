@@ -1,7 +1,9 @@
 use anyhow::Result;
 use kernel::model::common::Language;
-use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
+use kernel::model::rule::{Rule, RuleCategory, RuleResult, RuleSeverity};
 use kernel::model::ruleset::RuleSet;
+use kernel::model::violation::Violation;
+use secrets::model::secret_result::SecretResult;
 use std::collections::HashSet;
 use std::{fs::File, io::BufReader};
 
@@ -34,6 +36,32 @@ pub fn count_violations_by_severities(
                 .count()
         })
         .sum()
+}
+
+/// Transform a secret result into a rule result, which is required for output purposes.
+pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> RuleResult {
+    RuleResult {
+        rule_name: secret_result.rule_name.clone(),
+        filename: secret_result.filename.clone(),
+        errors: vec![],
+        execution_error: None,
+        execution_time_ms: 0,
+        parsing_time_ms: 0,
+        query_node_time_ms: 0,
+        output: None,
+        violations: secret_result
+            .matches
+            .iter()
+            .map(|v| Violation {
+                start: v.start,
+                end: v.end,
+                message: secret_result.message.clone(),
+                severity: RuleSeverity::Error,
+                category: RuleCategory::Security,
+                fixes: vec![],
+            })
+            .collect(),
+    }
 }
 
 #[cfg(test)]

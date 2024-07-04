@@ -14,6 +14,7 @@ pub struct SecretResultMatch {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretResult {
     pub rule_id: String,
+    pub rule_name: String,
     pub filename: String,
     pub message: String,
     pub matches: Vec<SecretResultMatch>,

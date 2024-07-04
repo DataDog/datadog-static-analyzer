@@ -1,7 +1,11 @@
 use csv::Writer;
-use kernel::model::rule::RuleResult;
+use kernel::model::rule::{RuleCategory, RuleResult, RuleSeverity};
+use secrets::model::secret_result::SecretResult;
 
-pub fn generate_csv_results(rule_results: &Vec<RuleResult>) -> String {
+pub fn generate_csv_results(
+    rule_results: &Vec<RuleResult>,
+    secrets_results: &[SecretResult],
+) -> String {
     let mut wtr = Writer::from_writer(vec![]);
     wtr.write_record([
         "filename",
@@ -24,6 +28,23 @@ pub fn generate_csv_results(rule_results: &Vec<RuleResult>) -> String {
                 v.category.to_string(),
                 v.severity.to_string(),
                 v.message.to_string(),
+                v.start.line.to_string(),
+                v.start.col.to_string(),
+                v.end.line.to_string(),
+                v.end.col.to_string(),
+            ])
+            .expect("csv serialization without issue for violation");
+        }
+    }
+
+    for r in secrets_results {
+        for v in &r.matches {
+            wtr.write_record(&[
+                r.filename.to_string(),
+                r.rule_name.to_string(),
+                RuleCategory::Security.to_string(),
+                RuleSeverity::Error.to_string(),
+                r.message.to_string(),
                 v.start.line.to_string(),
                 v.start.col.to_string(),
                 v.end.line.to_string(),
