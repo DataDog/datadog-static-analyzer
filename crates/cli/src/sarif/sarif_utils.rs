@@ -53,10 +53,11 @@ pub enum SarifRule {
 }
 
 impl SarifRule {
-    fn name(&self) -> &str {
+    /// The rule identifier, which is how we identify a rule in the SARIF file and find it's index
+    fn id(&self) -> &str {
         match self {
             SarifRule::StaticAnalysis(r) => r.name.as_str(),
-            SarifRule::SecretRule(r) => r.name.as_str(),
+            SarifRule::SecretRule(r) => r.id.as_str(),
         }
     }
 
@@ -151,6 +152,13 @@ impl SarifRuleResult {
     fn rule_name(&self) -> &str {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
+            SarifRuleResult::Secret(r) => r.rule_name.as_str(),
+        }
+    }
+
+    fn rule_id(&self) -> &str {
+        match self {
+            SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
             SarifRuleResult::Secret(r) => r.rule_id.as_str(),
         }
     }
@@ -208,6 +216,12 @@ impl IntoSarif for &SecretRule {
             .build()
             .expect("secret rules should have a description");
         builder.full_description(description);
+
+        let props = PropertyBagBuilder::default()
+            .tags(vec![SarifRule::rule_type_tag("SECRETS")])
+            .build()
+            .unwrap();
+        builder.properties(props);
 
         builder.build().unwrap()
     }
@@ -489,10 +503,7 @@ fn generate_results(
             let mut result_builder = ResultBuilder::default();
             let mut tags = vec![];
 
-            if let Some(rule_index) = rules
-                .iter()
-                .position(|r| r.name() == rule_result.rule_name())
-            {
+            if let Some(rule_index) = rules.iter().position(|r| r.id() == rule_result.rule_id()) {
                 let rule = &rules[rule_index];
                 let category = format!("DATADOG_CATEGORY:{}", rule.category()).to_uppercase();
 
@@ -610,7 +621,7 @@ fn generate_results(
 
                     Ok(result_builder
                         .clone()
-                        .rule_id(rule_result.rule_name())
+                        .rule_id(rule_result.rule_id())
                         .locations([location])
                         .fixes(fixes)
                         .message(
