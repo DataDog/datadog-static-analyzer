@@ -39,8 +39,8 @@ pub struct ServerViolation {
 /// Transform an edit from the kernel into an edit that is surfaced by the server.
 pub fn edit_to_server(edit: &Edit) -> ServerEdit {
     ServerEdit {
-        start: edit.start.clone(),
-        end: edit.end.clone(),
+        start: edit.start,
+        end: edit.end,
         edit_type: edit.edit_type,
         content: edit.content.clone(),
     }
