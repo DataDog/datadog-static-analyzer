@@ -846,7 +846,7 @@ fn main() -> Result<()> {
             let combined_results = [
                 secrets_results
                     .iter()
-                    .map(|s| convert_secret_result_to_rule_result(s))
+                    .map(convert_secret_result_to_rule_result)
                     .collect(),
                 all_rule_results.clone(),
             ]
