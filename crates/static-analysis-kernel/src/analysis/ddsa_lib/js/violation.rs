@@ -7,9 +7,9 @@ use crate::analysis::ddsa_lib::common::{
 };
 use crate::analysis::ddsa_lib::js::fix::{Fix, FixConverter};
 use crate::analysis::ddsa_lib::v8_ds::V8Converter;
-use crate::model::common::Position;
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use crate::model::violation;
+use common::model::position::Position;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::marker::PhantomData;

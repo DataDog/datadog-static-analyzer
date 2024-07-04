@@ -1,4 +1,4 @@
-use kernel::model::common::Position;
+use common::model::position::Position;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
 
 use derive_builder::Builder;

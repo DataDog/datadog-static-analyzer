@@ -10,10 +10,11 @@ use cli::file_utils::{
 use cli::rule_utils::{
     count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
 };
+use common::analysis_options::AnalysisOptions;
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::analysis::{AnalysisOptions, ERROR_RULE_TIMEOUT};
+use kernel::model::analysis::ERROR_RULE_TIMEOUT;
 use kernel::model::common::{Language, OutputFormat};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 
@@ -34,6 +35,8 @@ use kernel::model::diff_aware::DiffAware;
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
+use secrets::model::secret_result::SecretResult;
+use secrets::scanner::{build_sds_scanner, find_secrets};
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
@@ -677,6 +680,72 @@ fn main() -> Result<()> {
         nb_violations, total_files_analyzed, number_of_rules_used, execution_time_secs
     );
 
+    // Secrets detection
+    let mut secrets_results: Vec<SecretResult> = vec![];
+    if secrets_enabled {
+        let secrets_start_timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let secrets_files = files_to_analyze.clone();
+        let progress_bar = if !configuration.use_debug {
+            Some(ProgressBar::new(secrets_files.len() as u64))
+        } else {
+            None
+        };
+
+        let sds_scanner = build_sds_scanner(&secrets_rules);
+
+        let nb_secrets_rules: usize = secrets_rules.len();
+        let nb_secrets_files = secrets_files.len();
+
+        secrets_results = secrets_files
+            .into_par_iter()
+            .flat_map(|path| {
+                let relative_path = path
+                    .strip_prefix(directory_path)
+                    .unwrap()
+                    .to_str()
+                    .expect("path contains non-Unicode characters");
+                let res = if let Ok(file_content) = fs::read_to_string(&path) {
+                    let file_content = Arc::from(file_content);
+                    find_secrets(
+                        &sds_scanner,
+                        &secrets_rules,
+                        &relative_path,
+                        &file_content,
+                        &analysis_options,
+                    )
+                } else {
+                    eprintln!("error when getting content of path {}", &path.display());
+                    vec![]
+                };
+                if let Some(pb) = &progress_bar {
+                    pb.inc(1);
+                }
+                res
+            })
+            .collect();
+
+        let nb_secrets_found: u32 = secrets_results.iter().map(|x| x.matches.len() as u32).sum();
+
+        if let Some(pb) = &progress_bar {
+            pb.finish();
+        }
+
+        let secrets_end_timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let secrets_execution_time_secs = secrets_end_timestamp - secrets_start_timestamp;
+
+        println!(
+            "Found {} secret(s) in {} file(s) using {} rule(s) within {} sec(s)",
+            nb_secrets_found, nb_secrets_files, nb_secrets_rules, secrets_execution_time_secs
+        );
+    }
+
     // If the performance statistics are enabled, we show the total execution time per rule
     // and the rule that timed-out.
     if enable_performance_statistics {
@@ -786,7 +855,14 @@ fn main() -> Result<()> {
             let secrets_rules_sarif: Vec<SarifRule> =
                 secrets_rules.into_iter().map(|r| r.into()).collect();
 
-            let results = all_rule_results
+            let static_analysis_results = all_rule_results
+                .iter()
+                .cloned()
+                .map(SarifRuleResult::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)?;
+
+            let secret_results = secrets_results
                 .iter()
                 .cloned()
                 .map(SarifRuleResult::try_from)
@@ -795,7 +871,7 @@ fn main() -> Result<()> {
 
             match generate_sarif_report(
                 &[static_rules_sarif, secrets_rules_sarif].concat(),
-                &results,
+                &[static_analysis_results, secret_results].concat(),
                 &directory_to_analyze,
                 SarifReportMetadata {
                     add_git_info,

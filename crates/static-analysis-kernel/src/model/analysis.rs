@@ -1,4 +1,4 @@
-use crate::model::common::Position;
+use common::model::position::Position;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
@@ -8,26 +8,6 @@ use std::collections::HashMap;
 pub const ERROR_RULE_TIMEOUT: &str = "rule-timeout";
 pub const ERROR_RULE_EXECUTION: &str = "error-execution";
 pub const ERROR_INVALID_QUERY: &str = "error-invalid-query";
-
-// Used internally to pass options to the analysis
-#[derive(Clone, Deserialize, Debug, Serialize, Builder)]
-pub struct AnalysisOptions {
-    pub log_output: bool,
-    pub use_debug: bool,
-    pub ignore_generated_files: bool,
-    pub use_ddsa: bool,
-}
-
-impl Default for AnalysisOptions {
-    fn default() -> Self {
-        Self {
-            log_output: false,
-            use_debug: false,
-            ignore_generated_files: true,
-            use_ddsa: false,
-        }
-    }
-}
 
 #[derive(PartialEq, Debug)]
 pub enum FileIgnoreBehavior {

@@ -7,11 +7,12 @@ use crate::analysis::javascript::execute_rule;
 use crate::analysis::tree_sitter::{get_query_nodes, get_tree};
 use crate::arguments::ArgumentProvider;
 use crate::model::analysis::{
-    AnalysisOptions, FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
+    FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
 };
 use crate::model::common::Language;
 use crate::model::config_file::split_path;
 use crate::model::rule::{RuleInternal, RuleResult};
+use common::analysis_options::AnalysisOptions;
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;

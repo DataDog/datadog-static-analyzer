@@ -1,6 +1,6 @@
 use cli::datadog_utils::get_ruleset;
+use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::analyze;
-use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::Rule;
 
 use anyhow::{Error, Result};

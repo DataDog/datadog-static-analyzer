@@ -1,8 +1,7 @@
-use crate::model::analysis::{
-    AnalysisOptions, MatchNode, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
-};
+use crate::model::analysis::{MatchNode, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT};
 use crate::model::rule::{RuleInternal, RuleResult};
 use crate::model::violation::Violation;
+use common::analysis_options::AnalysisOptions;
 use deno_core::serde_v8;
 use deno_core::v8;
 use deno_core::v8::NewStringType::Internalized;

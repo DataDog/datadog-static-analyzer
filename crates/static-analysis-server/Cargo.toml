@@ -5,6 +5,7 @@ version.workspace = true
 
 [dependencies]
 # local
+common = { package = "common", path = "../common" }
 kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
 # workspace
 anyhow = { workspace = true }

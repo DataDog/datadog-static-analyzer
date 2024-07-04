@@ -10,6 +10,7 @@ default = []
 # local
 kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
 secrets = { package = "secrets", path = "../secrets" }
+common = { package = "common", path = "../common" }
 # workspace
 anyhow = { workspace = true }
 base64 = { workspace = true }

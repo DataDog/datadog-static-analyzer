@@ -5,10 +5,10 @@ use crate::constants::{
 use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use crate::model::violation::violation_to_server;
+use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::{analyze, DEFAULT_JS_RUNTIME};
 use kernel::arguments::ArgumentProvider;
 use kernel::config_file::parse_config_file;
-use kernel::model::analysis::AnalysisOptions;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;

@@ -15,14 +15,15 @@ use serde_sarif::sarif::{
 };
 
 use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
-use kernel::model::common::Position;
+use common::model::position::Position;
+use common::model::position::PositionBuilder;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
 use kernel::model::violation::Violation;
 use kernel::model::{
-    common::PositionBuilder,
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
 };
+use secrets::model::secret_result::SecretResult;
 use secrets::model::secret_rule::SecretRule;
 
 use crate::file_utils::get_fingerprint_for_violation;
@@ -118,24 +119,39 @@ impl From<SecretRule> for SarifRule {
 #[derive(Debug, Clone)]
 pub enum SarifRuleResult {
     StaticAnalysis(RuleResult),
+    Secret(SecretResult),
 }
 
 impl SarifRuleResult {
-    fn violations(&self) -> &[Violation] {
+    fn violations(&self) -> Vec<Violation> {
         match self {
-            SarifRuleResult::StaticAnalysis(r) => r.violations.as_slice(),
+            SarifRuleResult::StaticAnalysis(r) => r.violations.clone(),
+            SarifRuleResult::Secret(secret_result) => secret_result
+                .matches
+                .iter()
+                .map(|r| Violation {
+                    start: r.start,
+                    end: r.end,
+                    message: secret_result.message.clone(),
+                    severity: RuleSeverity::Error,
+                    category: RuleCategory::Security,
+                    fixes: vec![],
+                })
+                .collect::<Vec<Violation>>(),
         }
     }
 
     fn file_path(&self) -> &str {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.filename.as_str(),
+            SarifRuleResult::Secret(r) => r.filename.as_str(),
         }
     }
 
     fn rule_name(&self) -> &str {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
+            SarifRuleResult::Secret(r) => r.rule_id.as_str(),
         }
     }
 }
@@ -148,6 +164,18 @@ impl TryFrom<RuleResult> for SarifRuleResult {
             Err(format!("path `{}` must be relative", &value.filename))
         } else {
             Ok(Self::StaticAnalysis(value))
+        }
+    }
+}
+
+impl TryFrom<SecretResult> for SarifRuleResult {
+    type Error = String;
+
+    fn try_from(value: SecretResult) -> std::result::Result<Self, Self::Error> {
+        if Path::new(&value.filename).is_absolute() {
+            Err(format!("path `{}` must be relative", &value.filename))
+        } else {
+            Ok(Self::Secret(value))
         }
     }
 }
@@ -455,8 +483,8 @@ fn encode_filename(filename: String) -> String {
 
 // Generate the tool section that reports all the rules being run
 fn generate_results(
-    rules: &[SarifRule],
-    rules_results: &[SarifRuleResult],
+    rules: Vec<SarifRule>,
+    rules_results: Vec<SarifRuleResult>,
     options_orig: SarifGenerationOptions,
 ) -> Result<Vec<SarifResult>> {
     rules_results
@@ -489,9 +517,9 @@ fn generate_results(
             }
 
             let options = options_orig.clone();
-            rule_result
-                .violations()
-                .iter()
+            let violations = rule_result.violations();
+            violations
+                .into_iter()
                 .filter(|violation| {
                     let is_valid = is_valid_violation(violation);
                     if !is_valid && options_orig.debug {
@@ -563,7 +591,7 @@ fn generate_results(
 
                     let fingerprint_option = get_fingerprint_for_violation(
                         rule_result.rule_name().to_string(),
-                        violation,
+                        &violation,
                         Path::new(options.repository_directory.as_str()),
                         Path::new(rule_result.file_path()),
                         options.debug,
@@ -643,7 +671,11 @@ pub fn generate_sarif_report(
 
     let run = RunBuilder::default()
         .tool(generate_tool_section(rules, &options)?)
-        .results(generate_results(rules, rules_results, options)?)
+        .results(generate_results(
+            rules.to_vec(),
+            rules_results.to_vec(),
+            options,
+        )?)
         .build()?;
 
     Ok(SarifBuilder::default()
@@ -655,15 +687,15 @@ pub fn generate_sarif_report(
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_eq;
-    use serde_json::{from_str, Value};
-    use valico::json_schema;
-
+    use common::model::position::{Position, PositionBuilder};
     use kernel::model::violation::Fix;
     use kernel::model::{
-        common::{Language, Position, PositionBuilder},
+        common::Language,
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
+    use serde_json::{from_str, Value};
+    use valico::json_schema;
 
     use super::*;
 

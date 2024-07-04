@@ -7,6 +7,7 @@ version.workspace = true
 # workspace
 anyhow = { workspace = true }
 base64 = { workspace = true }
+common = { package = "common", path = "../common" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 derive_builder = { workspace = true }
