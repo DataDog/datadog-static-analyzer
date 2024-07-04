@@ -15,7 +15,7 @@ use sds::{RuleConfig, Scanner};
 /// Once the scanner is built, use scanner.scan() to find secrets.
 pub fn build_sds_scanner(rules: &Vec<SecretRule>) -> Scanner {
     let sds_rules = rules
-        .into_iter()
+        .iter()
         .map(|r| r.convert_to_sds_ruleconfig())
         .collect::<Vec<RuleConfig>>();
     Scanner::new(&sds_rules).unwrap()
@@ -31,7 +31,7 @@ pub struct Result {
 /// Find secrets in code
 pub fn find_secrets(
     scanner: &Scanner,
-    sds_rules: &Vec<SecretRule>,
+    sds_rules: &[SecretRule],
     filename: &str,
     code: &str,
     _options: &AnalysisOptions,
