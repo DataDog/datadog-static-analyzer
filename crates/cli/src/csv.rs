@@ -67,29 +67,32 @@ mod tests {
     // execution time must be more than 0
     #[test]
     fn test_export_csv() {
-        let res_no_result = generate_csv_results(&vec![]);
+        let res_no_result = generate_csv_results(&vec![], &vec![]);
         assert_eq!(
             res_no_result,
             "filename,rule,category,severity,message,start_line,start_col,end_line,end_col\n"
         );
-        let res_with_result = generate_csv_results(&vec![RuleResult {
-            rule_name: "myrule".to_string(),
-            filename: "filename".to_string(),
-            violations: vec![Violation {
-                start: common::model::position::Position { line: 10, col: 12 },
-                end: common::model::position::Position { line: 12, col: 10 },
-                message: "message".to_string(),
-                severity: RuleSeverity::Error,
-                category: RuleCategory::Performance,
-                fixes: vec![],
+        let res_with_result = generate_csv_results(
+            &vec![RuleResult {
+                rule_name: "myrule".to_string(),
+                filename: "filename".to_string(),
+                violations: vec![Violation {
+                    start: common::model::position::Position { line: 10, col: 12 },
+                    end: common::model::position::Position { line: 12, col: 10 },
+                    message: "message".to_string(),
+                    severity: RuleSeverity::Error,
+                    category: RuleCategory::Performance,
+                    fixes: vec![],
+                }],
+                errors: vec![],
+                execution_error: None,
+                output: None,
+                execution_time_ms: 10,
+                query_node_time_ms: 0,
+                parsing_time_ms: 0,
             }],
-            errors: vec![],
-            execution_error: None,
-            output: None,
-            execution_time_ms: 10,
-            query_node_time_ms: 0,
-            parsing_time_ms: 0,
-        }]);
+            &vec![],
+        );
         assert_eq!(res_with_result, "filename,rule,category,severity,message,start_line,start_col,end_line,end_col\nfilename,myrule,performance,error,message,10,12,12,10\n");
     }
 }
