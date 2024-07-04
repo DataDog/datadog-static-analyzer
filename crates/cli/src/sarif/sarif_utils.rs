@@ -397,8 +397,7 @@ fn is_valid_violation(violation: &Violation) -> bool {
     // make sure that no violation has an invalid fix
     return violation.fixes.iter().all(|f| {
         f.edits.iter().all(|e| {
-            is_valid_position(&e.start)
-                && e.end.clone().map(|p| is_valid_position(&p)).unwrap_or(true)
+            is_valid_position(&e.start) && e.end.map(|p| is_valid_position(&p)).unwrap_or(true)
         })
     });
 }
