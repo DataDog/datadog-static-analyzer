@@ -57,8 +57,8 @@ pub fn fix_to_server(fix: &Fix) -> ServerFix {
 /// Transform a violation from the kernel data model into what is surfaced by the server.
 pub fn violation_to_server(violation: &Violation) -> ServerViolation {
     ServerViolation {
-        start: violation.start.clone(),
-        end: violation.end.clone(),
+        start: violation.start,
+        end: violation.end,
         message: violation.message.clone(),
         severity: violation.severity,
         category: violation.category,

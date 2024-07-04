@@ -291,7 +291,6 @@ impl IntoSarif for &Edit {
                         .start_column(self.start.col)
                         .end_line(
                             self.end
-                                .clone()
                                 .unwrap_or(
                                     PositionBuilder::default().line(0).col(0).build().unwrap(),
                                 )
@@ -299,7 +298,6 @@ impl IntoSarif for &Edit {
                         )
                         .end_column(
                             self.end
-                                .clone()
                                 .unwrap_or(
                                     PositionBuilder::default().line(0).col(0).build().unwrap(),
                                 )
@@ -317,7 +315,6 @@ impl IntoSarif for &Edit {
                         .start_column(self.start.col)
                         .end_line(
                             self.end
-                                .clone()
                                 .unwrap_or(
                                     PositionBuilder::default().line(0).col(0).build().unwrap(),
                                 )
@@ -325,7 +322,6 @@ impl IntoSarif for &Edit {
                         )
                         .end_column(
                             self.end
-                                .clone()
                                 .unwrap_or(
                                     PositionBuilder::default().line(0).col(0).build().unwrap(),
                                 )
