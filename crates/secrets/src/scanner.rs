@@ -43,10 +43,10 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
                 col: c as u32,
             });
         }
-        line_number = line_number + 1;
+        line_number += 1;
         bytes_reads = bytes_reads + line.len() + 1;
     }
-    return Err(anyhow!("line not found"));
+    Err(anyhow!("line not found"))
 }
 
 /// Find secrets in code. This is the main entrypoint for our SDS integration.
