@@ -40,7 +40,6 @@ pub fn generate_csv_results(rule_results: &Vec<RuleResult>) -> String {
 mod tests {
     use super::*;
 
-    use kernel::model::common::Position;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
     use kernel::model::violation::Violation;
 
@@ -56,8 +55,8 @@ mod tests {
             rule_name: "myrule".to_string(),
             filename: "filename".to_string(),
             violations: vec![Violation {
-                start: Position { line: 10, col: 12 },
-                end: Position { line: 12, col: 10 },
+                start: common::model::position::Position { line: 10, col: 12 },
+                end: common::model::position::Position { line: 12, col: 10 },
                 message: "message".to_string(),
                 severity: RuleSeverity::Error,
                 category: RuleCategory::Performance,

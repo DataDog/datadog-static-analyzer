@@ -38,7 +38,7 @@ pub fn count_violations_by_severities(
 
 #[cfg(test)]
 mod tests {
-    use kernel::model::common::Position;
+    use common::model::position::Position;
     use kernel::model::violation::Violation;
     use kernel::model::{
         common::Language,
