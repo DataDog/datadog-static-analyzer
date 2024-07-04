@@ -17,6 +17,7 @@ pub struct SecretRule {
 }
 
 impl SecretRule {
+    /// Convert the rule into a configuration usable by SDS.
     pub fn convert_to_sds_ruleconfig(&self) -> RuleConfig {
         RuleConfig::builder(&self.pattern)
             .match_action(MatchAction::None)

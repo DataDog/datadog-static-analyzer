@@ -719,7 +719,10 @@ fn main() -> Result<()> {
                         &analysis_options,
                     )
                 } else {
-                    eprintln!("error when getting content of path {}", &path.display());
+                    // this is generally because the file is binary.
+                    if use_debug {
+                        eprintln!("error when getting content of path {}", &path.display());
+                    }
                     vec![]
                 };
                 if let Some(pb) = &progress_bar {
