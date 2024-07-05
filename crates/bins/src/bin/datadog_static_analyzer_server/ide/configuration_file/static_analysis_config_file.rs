@@ -22,6 +22,9 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
 
     fn try_from(base64_str: String) -> Result<Self, Self::Error> {
         let content = decode_base64_string(base64_str)?;
+        if content.trim().is_empty() {
+            return Ok(Self(ConfigFile::default()));
+        }
         let config = parse_config_file(&content)?;
         Ok(config.into())
     }
@@ -340,6 +343,21 @@ rulesets:
 - ruleset1
 - ruleset2
 - a-ruleset3
+";
+            assert_eq!(config.trim(), expected.trim());
+        }
+
+        #[test]
+        fn it_works_empty_content() {
+            let config = StaticAnalysisConfigFile::with_added_rulesets(
+                &["ruleset1"],
+                Some(to_encoded_content("\n")),
+            )
+            .unwrap();
+            let expected = r"
+schema-version: v1
+rulesets:
+- ruleset1
 ";
             assert_eq!(config.trim(), expected.trim());
         }
