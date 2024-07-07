@@ -9,6 +9,7 @@ use kernel::{
 use std::{borrow::Cow, fmt::Debug, ops::Deref};
 use tracing::instrument;
 
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct StaticAnalysisConfigFile(ConfigFile);
 
 impl From<ConfigFile> for StaticAnalysisConfigFile {
@@ -23,7 +24,7 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
     fn try_from(base64_str: String) -> Result<Self, Self::Error> {
         let content = decode_base64_string(base64_str)?;
         if content.trim().is_empty() {
-            return Ok(Self(ConfigFile::default()));
+            return Ok(Self::default());
         }
         let config = parse_config_file(&content)?;
         Ok(config.into())
@@ -764,5 +765,12 @@ rulesets:
             let config = StaticAnalysisConfigFile::try_from(content).unwrap();
             assert!(config.is_onboarding_allowed())
         }
+    }
+
+    #[test]
+    fn try_from_returns_default_config_file_if_empty_string() {
+        let expected = super::StaticAnalysisConfigFile::default();
+        let config = super::StaticAnalysisConfigFile::try_from(String::new()).unwrap();
+        assert_eq!(config, expected);
     }
 }
