@@ -218,7 +218,7 @@ impl IntoSarif for &SecretRule {
         builder.full_description(description);
 
         let props = PropertyBagBuilder::default()
-            .tags(vec![SarifRule::rule_type_tag("SECRETS")])
+            .tags(vec![SarifRule::rule_type_tag("SECRET")])
             .build()
             .unwrap();
         builder.properties(props);
