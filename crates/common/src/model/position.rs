@@ -14,13 +14,13 @@ pub struct Position {
 
 impl Position {
     pub fn is_invalid(&self) -> bool {
-        return self.col == 0 || self.line == 0;
+        self.col == 0 || self.line == 0
     }
 }
 
 impl PartialEq for Position {
     fn eq(&self, other: &Self) -> bool {
-        return other.col == self.col && other.line == self.line;
+        other.col == self.col && other.line == self.line
     }
 }
 
