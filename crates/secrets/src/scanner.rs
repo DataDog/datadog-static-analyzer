@@ -78,7 +78,7 @@ pub fn find_secrets(
                 eprintln!("invalid position in secrets for rule {}", r.rule_id);
                 return false;
             }
-            return true;
+            true
         })
         .group_by(|v| v.rule_index)
         .into_iter()
