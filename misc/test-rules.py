@@ -288,11 +288,12 @@ def test_ruleset_cli(ruleset):
             with open(test_results_file) as results_file:
                 results = results_file.read()
                 test_results = json.loads(results)
-                if len(test_results) == 0:
-                    print(f"rule {rule['name']}, test {test_file} does not create results")
-                    sys.exit(1)
 
-                results_annotations_count = len(test_results[0]['violations'])
+                try:
+                    results_annotations_count = len(test_results[0]['violations'])
+                except IndexError:
+                    # A rule result entry will only be created for a scan that produced at least one violation
+                    results_annotations_count = 0
 
                 if results_annotations_count != test_annotations_count:
                     print(f"number of annotations mismatch for rule {rule['name']}")
