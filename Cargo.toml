@@ -23,7 +23,7 @@ itertools = "0.12.1"
 derive_builder = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde-sarif = "0.4"
+serde-sarif = "0.5"
 serde_yaml = "0.9.21"
 sha2 = "0.10.7"
 tracing = "0.1.40"
