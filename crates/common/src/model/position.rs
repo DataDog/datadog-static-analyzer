@@ -12,6 +12,20 @@ pub struct Position {
     pub col: u32,
 }
 
+impl Position {
+    pub fn is_invalid(&self) -> bool {
+        return self.col == 0 || self.line == 0;
+    }
+}
+
+impl PartialEq for Position {
+    fn eq(&self, other: &Self) -> bool {
+        return other.col == self.col && other.line == self.line;
+    }
+}
+
+pub const INVALID_POSITION: Position = Position { line: 0, col: 0 };
+
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "position (line: {}, col: {})", self.line, self.col)

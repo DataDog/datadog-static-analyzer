@@ -6,7 +6,7 @@ use crate::model::secret_result::{SecretResult, SecretResultMatch};
 use crate::model::secret_rule::SecretRule;
 use anyhow::anyhow;
 use common::analysis_options::AnalysisOptions;
-use common::model::position::Position;
+use common::model::position::{Position, INVALID_POSITION};
 use itertools::Itertools;
 use sds::{RuleConfig, Scanner};
 
@@ -55,7 +55,7 @@ pub fn find_secrets(
     sds_rules: &[SecretRule],
     filename: &str,
     code: &str,
-    _options: &AnalysisOptions,
+    options: &AnalysisOptions,
 ) -> Vec<SecretResult> {
     let mut codemut = code.to_owned();
     let matches = scanner.scan(&mut codemut);
@@ -69,10 +69,16 @@ pub fn find_secrets(
         .map(|sds_match| Result {
             rule_id: sds_rules[sds_match.rule_index].id.clone(),
             rule_index: sds_match.rule_index,
-            start: get_position_in_string(code, sds_match.start_index)
-                .expect("cannot get position"),
+            start: get_position_in_string(code, sds_match.start_index).unwrap_or(INVALID_POSITION),
             end: get_position_in_string(code, sds_match.end_index_exclusive)
-                .expect("cannot get position"),
+                .unwrap_or(INVALID_POSITION),
+        })
+        .filter(|r| {
+            if (r.end.is_invalid() || r.start.is_invalid()) && options.use_debug {
+                eprintln!("invalid position in secrets for rule {}", r.rule_id);
+                return false;
+            }
+            return true;
         })
         .group_by(|v| v.rule_index)
         .into_iter()
@@ -108,5 +114,42 @@ mod tests {
         assert_eq!(1, p2.col);
 
         assert!(get_position_in_string(s, 40000).is_err());
+    }
+
+    #[test]
+    fn test_find_secrets() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            name: "detect a lot of secrets!".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+        }];
+        let scanner = build_sds_scanner(rules.as_slice());
+        let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+        );
+
+        assert_eq!(matches.first().unwrap().matches.len(), 2);
+        assert_eq!(
+            matches.first().unwrap().matches.get(0).unwrap().start,
+            Position { line: 2, col: 1 }
+        );
+        assert_eq!(
+            matches.first().unwrap().matches.get(0).unwrap().end,
+            Position { line: 2, col: 7 }
+        );
+        assert_eq!(
+            matches.first().unwrap().matches.get(1).unwrap().start,
+            Position { line: 3, col: 1 }
+        );
+        assert_eq!(
+            matches.first().unwrap().matches.get(1).unwrap().end,
+            Position { line: 3, col: 7 }
+        );
     }
 }
