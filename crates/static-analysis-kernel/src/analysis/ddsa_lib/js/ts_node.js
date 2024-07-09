@@ -4,7 +4,7 @@
 
 import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
 
-const { op_ts_node_named_children, op_ts_node_text } = Deno.core.ops;
+import { op_ts_node_named_children, op_ts_node_text } from "ext:core/ops";
 
 /**
  * A non-zero integer assigned by the Rust static-analysis-kernel.

@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 import {TreeSitterNode, TreeSitterFieldChildNode} from "ext:ddsa_lib/ts_node";
-const { op_console_push } = Deno.core.ops;
+import { op_console_push } from "ext:core/ops";
 
 export class DDSA_Console {
     /**

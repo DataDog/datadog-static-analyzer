@@ -2,10 +2,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-const {
+import {
     op_current_ts_tree_text,
     op_current_filename,
-} = Deno.core.ops;
+} from "ext:core/ops";
 
 /**
  * Metadata related the execution of a JavaScript rule.
