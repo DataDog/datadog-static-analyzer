@@ -70,15 +70,14 @@ pub fn find_secrets(
             let start = get_position_in_string(code, sds_match.start_index)?;
             let end = get_position_in_string(code, sds_match.end_index_exclusive)?;
 
-            Ok(Result {
+            Ok::<Result, Error>(Result {
                 rule_id: sds_rules[sds_match.rule_index].id.clone(),
                 rule_index: sds_match.rule_index,
                 start,
                 end,
             })
         })
-        .filter(|r| r.is_ok())
-        .map(|r: std::result::Result<Result, Error>| r.unwrap())
+        .flatten()
         .group_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
