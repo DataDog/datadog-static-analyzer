@@ -22,12 +22,6 @@ pub fn build_sds_scanner(rules: &[SecretRule]) -> Scanner {
     Scanner::new(&sds_rules).expect("error when instantiating the scanner")
 }
 
-struct Result {
-    rule_index: usize,
-    start: Position,
-    end: Position,
-}
-
 /// Get position of an offset in a code and return a [[Position]]. This code should
 /// ultimately be more efficient as we grow the platform, it's considered as "good enough" for now.
 pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
@@ -56,6 +50,12 @@ pub fn find_secrets(
     code: &str,
     _options: &AnalysisOptions,
 ) -> Vec<SecretResult> {
+    struct Result {
+        rule_index: usize,
+        start: Position,
+        end: Position,
+    }
+
     let mut codemut = code.to_owned();
     let matches = scanner.scan(&mut codemut);
 
