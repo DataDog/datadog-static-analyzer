@@ -6,22 +6,10 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Deserialize, Debug, Serialize, Clone, Copy, Builder)]
+#[derive(Deserialize, Debug, Serialize, Clone, Copy, Builder, PartialEq)]
 pub struct Position {
     pub line: u32,
     pub col: u32,
-}
-
-impl Position {
-    pub fn is_invalid(&self) -> bool {
-        self.col == 0 || self.line == 0
-    }
-}
-
-impl PartialEq for Position {
-    fn eq(&self, other: &Self) -> bool {
-        other.col == self.col && other.line == self.line
-    }
 }
 
 impl fmt::Display for Position {

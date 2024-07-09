@@ -19,14 +19,13 @@ pub fn build_sds_scanner(rules: &[SecretRule]) -> Scanner {
         .iter()
         .map(|r| r.convert_to_sds_ruleconfig())
         .collect::<Vec<RuleConfig>>();
-    Scanner::new(&sds_rules).unwrap()
+    Scanner::new(&sds_rules).expect("error when instantiating the scanner")
 }
 
-pub struct Result {
-    pub rule_id: String,
-    pub rule_index: usize,
-    pub start: Position,
-    pub end: Position,
+struct Result {
+    rule_index: usize,
+    start: Position,
+    end: Position,
 }
 
 /// Get position of an offset in a code and return a [[Position]]. This code should
@@ -60,10 +59,6 @@ pub fn find_secrets(
     let mut codemut = code.to_owned();
     let matches = scanner.scan(&mut codemut);
 
-    if matches.is_empty() {
-        return vec![];
-    }
-
     matches
         .iter()
         .flat_map(|sds_match| {
@@ -71,7 +66,6 @@ pub fn find_secrets(
             let end = get_position_in_string(code, sds_match.end_index_exclusive)?;
 
             Ok::<Result, Error>(Result {
-                rule_id: sds_rules[sds_match.rule_index].id.clone(),
                 rule_index: sds_match.rule_index,
                 start,
                 end,
