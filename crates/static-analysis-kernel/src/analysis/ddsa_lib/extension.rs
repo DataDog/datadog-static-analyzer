@@ -12,8 +12,6 @@ deno_core::extension!(
         ops::op_current_ts_tree_text,
         ops::op_ts_node_named_children,
         ops::op_ts_node_text,
-        #[cfg(test)]
-        ops::cfg_test_op_rust_option,
     ],
     esm_entry_point = "ext:ddsa_lib/__bootstrap.js",
     esm = [ dir "src/analysis/ddsa_lib/js", "__bootstrap.js" ],
