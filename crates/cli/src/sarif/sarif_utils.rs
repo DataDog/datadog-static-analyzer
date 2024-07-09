@@ -492,8 +492,8 @@ fn encode_filename(filename: String) -> String {
 
 // Generate the tool section that reports all the rules being run
 fn generate_results(
-    rules: Vec<SarifRule>,
-    rules_results: Vec<SarifRuleResult>,
+    rules: &[SarifRule],
+    rules_results: &[SarifRuleResult],
     options_orig: SarifGenerationOptions,
 ) -> Result<Vec<SarifResult>> {
     rules_results
@@ -677,11 +677,7 @@ pub fn generate_sarif_report(
 
     let run = RunBuilder::default()
         .tool(generate_tool_section(rules, &options)?)
-        .results(generate_results(
-            rules.to_vec(),
-            rules_results.to_vec(),
-            options,
-        )?)
+        .results(generate_results(rules, rules_results, options)?)
         .build()?;
 
     Ok(SarifBuilder::default()

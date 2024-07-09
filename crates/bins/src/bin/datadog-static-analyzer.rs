@@ -684,12 +684,9 @@ fn main() -> Result<()> {
     // Secrets detection
     let mut secrets_results: Vec<SecretResult> = vec![];
     if secrets_enabled {
-        let secrets_start_timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let secrets_start = Instant::now();
 
-        let secrets_files = files_to_analyze.clone();
+        let secrets_files = &files_to_analyze;
         let progress_bar = if !configuration.use_debug {
             Some(ProgressBar::new(secrets_files.len() as u64))
         } else {
@@ -702,7 +699,7 @@ fn main() -> Result<()> {
         let nb_secrets_files = secrets_files.len();
 
         secrets_results = secrets_files
-            .into_par_iter()
+            .par_iter()
             .flat_map(|path| {
                 let relative_path = path
                     .strip_prefix(directory_path)
@@ -738,11 +735,7 @@ fn main() -> Result<()> {
             pb.finish();
         }
 
-        let secrets_end_timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let secrets_execution_time_secs = secrets_end_timestamp - secrets_start_timestamp;
+        let secrets_execution_time_secs = secrets_start.elapsed().as_secs();
 
         println!(
             "Found {} secret(s) in {} file(s) using {} rule(s) within {} sec(s)",

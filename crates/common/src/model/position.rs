@@ -24,8 +24,6 @@ impl PartialEq for Position {
     }
 }
 
-pub const INVALID_POSITION: Position = Position { line: 0, col: 0 };
-
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "position (line: {}, col: {})", self.line, self.col)

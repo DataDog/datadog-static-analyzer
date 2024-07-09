@@ -4,9 +4,9 @@
 
 use crate::model::secret_result::{SecretResult, SecretResultMatch};
 use crate::model::secret_rule::SecretRule;
-use anyhow::anyhow;
+use anyhow::{anyhow, Error};
 use common::analysis_options::AnalysisOptions;
-use common::model::position::{Position, INVALID_POSITION};
+use common::model::position::Position;
 use itertools::Itertools;
 use sds::{RuleConfig, Scanner};
 
@@ -55,7 +55,7 @@ pub fn find_secrets(
     sds_rules: &[SecretRule],
     filename: &str,
     code: &str,
-    options: &AnalysisOptions,
+    _options: &AnalysisOptions,
 ) -> Vec<SecretResult> {
     let mut codemut = code.to_owned();
     let matches = scanner.scan(&mut codemut);
@@ -66,20 +66,19 @@ pub fn find_secrets(
 
     matches
         .iter()
-        .map(|sds_match| Result {
-            rule_id: sds_rules[sds_match.rule_index].id.clone(),
-            rule_index: sds_match.rule_index,
-            start: get_position_in_string(code, sds_match.start_index).unwrap_or(INVALID_POSITION),
-            end: get_position_in_string(code, sds_match.end_index_exclusive)
-                .unwrap_or(INVALID_POSITION),
+        .map(|sds_match| {
+            let start = get_position_in_string(code, sds_match.start_index)?;
+            let end = get_position_in_string(code, sds_match.end_index_exclusive)?;
+
+            Ok(Result {
+                rule_id: sds_rules[sds_match.rule_index].id.clone(),
+                rule_index: sds_match.rule_index,
+                start,
+                end,
+            })
         })
-        .filter(|r| {
-            if (r.end.is_invalid() || r.start.is_invalid()) && options.use_debug {
-                eprintln!("invalid position in secrets for rule {}", r.rule_id);
-                return false;
-            }
-            true
-        })
+        .filter(|r| r.is_ok())
+        .map(|r: std::result::Result<Result, Error>| r.unwrap())
         .group_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
