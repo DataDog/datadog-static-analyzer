@@ -66,7 +66,7 @@ pub fn find_secrets(
 
     matches
         .iter()
-        .map(|sds_match| {
+        .flat_map(|sds_match| {
             let start = get_position_in_string(code, sds_match.start_index)?;
             let end = get_position_in_string(code, sds_match.end_index_exclusive)?;
 
@@ -77,7 +77,6 @@ pub fn find_secrets(
                 end,
             })
         })
-        .flatten()
         .group_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
