@@ -31,6 +31,7 @@ test-and-build-arm64:
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
+    RUST_BACKTRACE: 1
   tags:
     - arch:arm64
 
@@ -42,7 +43,7 @@ test-and-build-amd64:
     - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
     - source "$HOME/.cargo/env"
     - cargo build -r
-    - cargo test
+    - cargo test -- --nocapture
     - apt-get install -y python3 python3-requests
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l java
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l javascript
@@ -61,6 +62,7 @@ test-and-build-amd64:
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
+    RUST_BACKTRACE: 1
   tags:
     - arch:amd64
 
