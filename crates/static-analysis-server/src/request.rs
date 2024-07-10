@@ -182,7 +182,11 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .collect::<Vec<&str>>()
         .join(", ");
 
-    let use_ddsa = USE_DDSA_RUNTIME.get().copied().unwrap_or(false);
+    let use_ddsa = if cfg!(test) {
+        true
+    } else {
+        USE_DDSA_RUNTIME.get().copied().unwrap_or(false)
+    };
     // NOTE: We would ideally handle this more elegantly, but for now, always clear the cache
     // for the incoming rules before making a request. This is needed because during rule authoring,
     // the rule will change, despite its name being the same (and the cache is keyed only by the rule name).
@@ -208,7 +212,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
-            use_ddsa: USE_DDSA_RUNTIME.get().copied().unwrap_or(false),
+            use_ddsa,
         },
     );
 
