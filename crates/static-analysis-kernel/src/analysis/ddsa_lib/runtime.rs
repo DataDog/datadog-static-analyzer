@@ -71,7 +71,12 @@ pub fn init_v8(thread_pool_size: u32) {
         std::thread::current().id(),
         std::thread::current().name()
     );
-    let platform = v8::new_default_platform(thread_pool_size, false);
+    let platform = if cfg!(test) {
+        v8::new_unprotected_default_platform(thread_pool_size, false)
+    } else {
+        v8::new_default_platform(thread_pool_size, false)
+    };
+
     let platform = platform.make_shared();
     let _ = current.insert(platform);
 }
