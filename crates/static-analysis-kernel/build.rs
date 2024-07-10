@@ -8,8 +8,8 @@ where
     F: FnMut(&mut Command) -> &mut Command,
 {
     let mut command = Command::new(name);
-    println!("Running {command:?}");
     let configured = configure(&mut command);
+    println!("Running {configured:?}");
     configured
         .status()
         .unwrap_or_else(|_| panic!("failed to execute {configured:?}"))
@@ -211,9 +211,21 @@ fn main() {
             assert!(run("git", |cmd| {
                 cmd.args(["remote", "add", "origin", &proj.repository])
             }));
-            assert!(run("git", |cmd| {
-                cmd.args(["fetch", "-q", "--depth", "1", "origin", &proj.commit_hash])
-            }));
+            assert!({
+                let mut ok = false;
+                let mut retry_time = std::time::Duration::from_secs(1);
+                for _ in 0..5 {
+                    ok = run("git", |cmd| {
+                        cmd.args(["fetch", "-q", "--depth", "1", "origin", &proj.commit_hash])
+                    });
+                    if ok {
+                        break;
+                    }
+                    std::thread::sleep(retry_time);
+                    retry_time *= 2; // Exponential backoff
+                }
+                ok
+            });
             assert!(run("git", |cmd| {
                 cmd.args(["checkout", "-q", "FETCH_HEAD"])
             }));
