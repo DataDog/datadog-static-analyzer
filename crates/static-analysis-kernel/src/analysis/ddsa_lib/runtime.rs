@@ -35,6 +35,8 @@ pub(crate) const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
     "console",
 ];
 
+static V8_PLATFORM: Mutex<Option<v8::SharedRef<v8::Platform>>> = Mutex::new(None);
+
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
     runtime: deno_core::JsRuntime,
@@ -56,13 +58,37 @@ pub struct JsRuntime {
     v8_ddsa_global: v8::Global<v8::Object>,
 }
 
+/// SPIKE: Expose this as an external function just for test purposes.
+///
+/// (Note: we need to enforce that this is called from the main thread).
+pub fn init_v8(thread_pool_size: u32) {
+    let mut current = V8_PLATFORM.lock().unwrap();
+    if current.is_some() {
+        return;
+    }
+    println!(
+        "initializing v8 on thread ({:?}, {:?})",
+        std::thread::current().id(),
+        std::thread::current().name()
+    );
+    let platform = v8::new_default_platform(thread_pool_size, false);
+    let platform = platform.make_shared();
+    let _ = current.insert(platform);
+}
+
 impl JsRuntime {
     pub fn try_new() -> Result<Self, DDSAJsRuntimeError> {
         Self::try_new_compat(false)
     }
 
     pub fn try_new_compat(is_stella: bool) -> Result<Self, DDSAJsRuntimeError> {
-        let mut runtime = base_js_runtime();
+        init_v8(std::thread::available_parallelism().unwrap().get() as u32);
+        let v8_platform = V8_PLATFORM.lock().unwrap().clone().unwrap();
+        let mut runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+            v8_platform: Some(v8_platform),
+            extensions: vec![ddsa_lib::init_ops_and_esm()],
+            ..Default::default()
+        });
 
         // Construct the bridges and attach their underlying `v8:Global` object to the
         // default context's `globalThis` variable.
@@ -258,6 +284,11 @@ impl JsRuntime {
                 .set_data(scope, query_matches, &mut ts_node_bridge);
         }
 
+        println!(
+            "executing js on thread ({:?}, {:?})",
+            std::thread::current().id(),
+            std::thread::current().name()
+        );
         // We use a bridge to pull violations, so we can ignore the return value with a noop handler.
         // However, because we could've timed out or had an error thrown after a mutation of the bridge globals,
         // we can't immediately return here -- the bridges need to be cleared.

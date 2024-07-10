@@ -12,6 +12,7 @@ pub(crate) mod js;
 pub(crate) mod ops;
 #[allow(dead_code)]
 pub(crate) mod runtime;
+pub use runtime::init_v8;
 pub(crate) use runtime::JsRuntime;
 #[allow(dead_code)]
 mod test_utils;

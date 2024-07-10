@@ -28,6 +28,7 @@ use cli::sarif::sarif_utils::{
 use cli::violations_table;
 use getopts::Options;
 use indicatif::ProgressBar;
+use kernel::analysis::ddsa_lib::init_v8;
 use kernel::arguments::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::model::diff_aware::DiffAware;
@@ -612,6 +613,8 @@ fn main() -> Result<()> {
                 files_for_language.len()
             )
         }
+
+        init_v8(num_threads as u32);
 
         // take the relative path for the analysis
         let (stats, rule_results) = files_for_language
