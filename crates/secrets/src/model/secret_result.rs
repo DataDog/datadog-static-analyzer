@@ -5,13 +5,13 @@
 use common::model::position::Position;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct SecretResultMatch {
     pub start: Position,
     pub end: Position,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct SecretResult {
     pub rule_id: String,
     pub rule_name: String,

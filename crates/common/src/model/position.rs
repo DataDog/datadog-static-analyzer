@@ -6,7 +6,7 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Deserialize, Debug, Serialize, Clone, Copy, Builder, PartialEq)]
+#[derive(Deserialize, Debug, Serialize, Clone, Copy, Builder, PartialEq, Eq, Hash)]
 pub struct Position {
     pub line: u32,
     pub col: u32,
