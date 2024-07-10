@@ -334,8 +334,24 @@ def foo(arg1):
     pass
         "#;
 
-    // execution time must be more than 0
     #[test]
+    fn all_tests() {
+        test_execution_time();
+        test_two_rules_executed();
+        test_capture_unnamed_nodes();
+        test_no_unnecessary_execute();
+        test_violation_ignore();
+        test_get_lines_to_ignore_with_tabs_and_no_space_from_comment_symbol();
+        test_get_lines_to_ignore_python();
+        test_get_lines_to_ignore_python_ignore_all_file();
+        test_get_lines_to_ignore_python_ignore_all_file_specific_rules();
+        test_go_file_context();
+        test_get_lines_to_ignore_javascript();
+        test_argument_values();
+        test_execution_for_starlark();
+    }
+
+    // execution time must be more than 0
     fn test_execution_time() {
         let rule_code = r#"
 function visit(node, filename, code) {
@@ -382,7 +398,6 @@ function visit(node, filename, code) {
 
     // execute two rules and check that both rules are executed and their respective
     // results reported.
-    #[test]
     fn test_two_rules_executed() {
         let rule_code1 = r#"
 function visit(node, filename, code) {
@@ -488,7 +503,6 @@ function visit(node, filename, code) {
 
     // execute two rules and check that both rules are executed and their respective
     // results reported.
-    #[test]
     fn test_capture_unnamed_nodes() {
         let rule_code1 = r#"
 function visit(node, filename, code) {
@@ -554,7 +568,6 @@ for(var i = 0; i <= 10; i--){}
     }
 
     // do not execute the visit function when there is no match
-    #[test]
     fn test_no_unnecessary_execute() {
         let rule_code1 = r#"
 function visit(node, filename, code) {
@@ -601,7 +614,6 @@ def foo():
     }
 
     // test showing violation ignore
-    #[test]
     fn test_violation_ignore() {
         let rule_code = r#"
 function visit(node, filename, code) {
@@ -665,7 +677,6 @@ def foo(arg1):
         );
     }
 
-    #[test]
     fn test_get_lines_to_ignore_with_tabs_and_no_space_from_comment_symbol() {
         // no-dd-sa on line 2 so we ignore line 3 for rule
         let rule = "ruleset/rule1";
@@ -680,7 +691,6 @@ def foo(arg1):
         assert_lines_to_ignore(code, Language::Python, rule);
     }
 
-    #[test]
     fn test_get_lines_to_ignore_python() {
         // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
         // no-dd-sa on line 7 so we ignore all rules on line 8
@@ -723,7 +733,6 @@ bar
         );
     }
 
-    #[test]
     fn test_get_lines_to_ignore_python_ignore_all_file() {
         let code = "\
 #no-dd-sa
@@ -739,7 +748,6 @@ def foo():
         ));
     }
 
-    #[test]
     fn test_get_lines_to_ignore_python_ignore_all_file_specific_rules() {
         let code1 = "\
 #no-dd-sa foo/bar
@@ -770,7 +778,6 @@ def foo():
         assert!(lines_to_ignore2.lines_to_ignore.is_empty());
     }
 
-    #[test]
     fn test_go_file_context() {
         let code = r#"
 import (
@@ -829,7 +836,6 @@ function visit(node, filename, code) {
         assert!(output.contains("\"crypto/rand\""));
     }
 
-    #[test]
     fn test_get_lines_to_ignore_javascript() {
         // no-dd-sa ruleset1/rule1 on line 3 so we ignore line 4 for ruleset1/rule1
         // no-dd-sa on line 7 so we ignore all rules on line 8
@@ -937,7 +943,6 @@ line20("foo")
         );
     }
 
-    #[test]
     fn test_argument_values() {
         let rule_code = r#"
 function visit(node, filename, code) {
@@ -996,7 +1001,6 @@ function visit(node, filename, code) {
         assert_eq!(result2.violations.len(), 0);
     }
 
-    #[test]
     fn test_execution_for_starlark() {
         let rule_code = r#"
 function visit(query, filename, code) {
