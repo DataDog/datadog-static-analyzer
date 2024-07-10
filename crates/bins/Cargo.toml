@@ -32,6 +32,7 @@ default = []
 [dependencies]
 # local
 cli = { path = "../cli" }
+common = { package = "common", path = "../common" }
 kernel = { package = "static-analysis-kernel", path = "../static-analysis-kernel" }
 server = { package = "static-analysis-server", path = "../static-analysis-server" }
 secrets = { package = "secrets", path = "../secrets" }

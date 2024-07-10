@@ -1,4 +1,3 @@
-use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -97,17 +96,5 @@ impl fmt::Display for Language {
             Self::Bash => "bash",
         };
         write!(f, "{s}")
-    }
-}
-
-#[derive(Deserialize, Debug, Serialize, Clone, Builder)]
-pub struct Position {
-    pub line: u32,
-    pub col: u32,
-}
-
-impl fmt::Display for Position {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "position (line: {}, col: {})", self.line, self.col)
     }
 }

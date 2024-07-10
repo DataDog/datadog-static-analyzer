@@ -6,8 +6,8 @@ use crate::analysis::ddsa_lib::common::{
     expecting_var, get_field, get_optional_field, v8_type_from, DDSAJsRuntimeError, Instance,
 };
 use crate::analysis::ddsa_lib::v8_ds::V8Converter;
-use crate::model::common::Position;
 use crate::model::violation;
+use common::model::position::Position;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::marker::PhantomData;

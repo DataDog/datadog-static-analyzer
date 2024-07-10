@@ -1,6 +1,7 @@
 use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
-use crate::model::common::{Language, Position};
+use crate::model::common::Language;
 use anyhow::Result;
+use common::model::position::Position;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use sds::{MatchAction, RuleConfig};
 use serde::{Deserialize, Serialize};
 
 // This is the secret rule exposed by SDS
@@ -11,4 +12,13 @@ pub struct SecretRule {
     pub name: String,
     pub description: String,
     pub pattern: String,
+}
+
+impl SecretRule {
+    /// Convert the rule into a configuration usable by SDS.
+    pub fn convert_to_sds_ruleconfig(&self) -> RuleConfig {
+        RuleConfig::builder(&self.pattern)
+            .match_action(MatchAction::None)
+            .build()
+    }
 }

@@ -348,8 +348,8 @@ mod tests {
     use kernel::arguments::ArgumentProvider;
     use tempfile::{tempdir, TempDir};
 
+    use common::model::position::Position;
     use kernel::model::common::OutputFormat::Sarif;
-    use kernel::model::common::Position;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
     use kernel::path_restrictions::PathRestrictions;
 

@@ -1,5 +1,5 @@
-use crate::model::common::Position;
 use crate::model::rule::{RuleCategory, RuleSeverity};
+use common::model::position::Position;
 
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
