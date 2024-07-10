@@ -5,8 +5,6 @@
 use sds::{MatchAction, RuleConfig};
 use serde::{Deserialize, Serialize};
 
-// const SECRET_SEVERITY = Sev
-
 // This is the secret rule exposed by SDS
 #[derive(Clone, Deserialize, Debug, Serialize)]
 pub struct SecretRule {
