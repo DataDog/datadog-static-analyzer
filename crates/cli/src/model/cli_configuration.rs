@@ -1,17 +1,16 @@
-use anyhow::anyhow;
-use git2::Repository;
-use sha2::{Digest, Sha256};
-
 use crate::git_utils::get_branch;
+use anyhow::anyhow;
+use common::model::diff_aware::DiffAware;
+use git2::Repository;
 use kernel::arguments::ArgumentProvider;
 use kernel::model::common::OutputFormat;
 use kernel::model::config_file::PathConfig;
-
-use kernel::model::diff_aware::DiffAware;
-use kernel::model::rule::Rule;
-use kernel::path_restrictions::PathRestrictions;
+use sha2::{Digest, Sha256};
 
 use crate::model::datadog_api::DiffAwareRequestArguments;
+use kernel::model::rule::Rule;
+use kernel::path_restrictions::PathRestrictions;
+use secrets::model::secret_rule::SecretRule;
 
 /// represents the CLI configuration
 #[derive(Clone)]
@@ -34,6 +33,7 @@ pub struct CliConfiguration {
     pub show_performance_statistics: bool,
     pub ignore_generated_files: bool,
     pub secrets_enabled: bool,
+    pub secrets_rules: Vec<SecretRule>,
 }
 
 impl DiffAware for CliConfiguration {
@@ -52,9 +52,18 @@ impl DiffAware for CliConfiguration {
         // not depend on the order the API returned the rules.
         rules_string.sort();
 
+        let mut secrets_rules_string: Vec<String> = self
+            .clone()
+            .secrets_rules
+            .iter()
+            .map(|r| r.generate_diff_aware_digest())
+            .collect();
+
+        secrets_rules_string.sort();
+
         // println!("rules string: {}", rules_string.join("|"));
         let full_config_string = format!(
-            "{}:{}:{}:{}::{}:{}:{}:{}",
+            "{}:{}:{}:{}::{}:{}:{}:{}:{}",
             self.path_config.ignore.join(","),
             self.path_config
                 .only
@@ -65,7 +74,8 @@ impl DiffAware for CliConfiguration {
             self.max_file_size_kb,
             self.source_subdirectories.join(","),
             self.path_restrictions.generate_diff_aware_digest(),
-            self.argument_provider.generate_diff_aware_digest()
+            self.argument_provider.generate_diff_aware_digest(),
+            secrets_rules_string.join(",")
         );
         // compute the hash using sha2
         format!("{:x}", Sha256::digest(full_config_string.as_bytes()))
@@ -169,10 +179,60 @@ mod tests {
             show_performance_statistics: false,
             ignore_generated_files: false,
             secrets_enabled: false,
+            secrets_rules: vec![],
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
             "e62e95f2662c983b01ac932709b760718815ae1ca777de9eec51b72d90b8ddd6"
+        );
+    }
+
+    #[test]
+    fn test_generate_diff_aware_secret_rules_order_does_not_matter() {
+        let secret_rule1 = SecretRule {
+            id: "id1".to_string(),
+            name: "name1".to_string(),
+            description: "description1".to_string(),
+            pattern: "pattern1".to_string(),
+        };
+
+        let secret_rule2 = SecretRule {
+            id: "id2".to_string(),
+            name: "name2".to_string(),
+            description: "description2".to_string(),
+            pattern: "pattern2".to_string(),
+        };
+
+        let cli_configuration_base = CliConfiguration {
+            use_debug: true,
+            use_configuration_file: true,
+            ignore_gitignore: true,
+            source_directory: "bla".to_string(),
+            source_subdirectories: vec![],
+            path_config: PathConfig::default(),
+            rules_file: None,
+            output_format: Sarif, // SARIF or JSON
+            output_file: "foo".to_string(),
+            num_cpus: 2, // of cpus to use for parallelism
+            rules: vec![],
+            path_restrictions: PathRestrictions::default(),
+            argument_provider: ArgumentProvider::new(),
+            max_file_size_kb: 1,
+            use_staging: false,
+            show_performance_statistics: false,
+            ignore_generated_files: false,
+            secrets_enabled: false,
+            secrets_rules: vec![],
+        };
+
+        let mut cli_configuration1 = cli_configuration_base.clone();
+        cli_configuration1.secrets_rules = vec![secret_rule1.clone(), secret_rule2.clone()];
+        let mut cli_configuration2 = cli_configuration_base.clone();
+        cli_configuration2.secrets_rules = vec![secret_rule2.clone(), secret_rule1.clone()];
+
+        assert_eq!(
+            cli_configuration1.generate_diff_aware_digest(),
+            cli_configuration2.generate_diff_aware_digest(),
         );
     }
 }

@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use common::model::diff_aware::DiffAware;
 use sds::{MatchAction, RuleConfig};
 use serde::{Deserialize, Serialize};
 
@@ -20,5 +21,11 @@ impl SecretRule {
         RuleConfig::builder(&self.pattern)
             .match_action(MatchAction::None)
             .build()
+    }
+}
+
+impl DiffAware for SecretRule {
+    fn generate_diff_aware_digest(&self) -> String {
+        format!("{}:{}", self.id, self.pattern).to_string()
     }
 }

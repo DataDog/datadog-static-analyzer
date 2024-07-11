@@ -1,12 +1,11 @@
-use crate::model::diff_aware::DiffAware;
+use crate::model::rule::{RuleCategory, RuleSeverity};
+use common::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
 use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
 use std::borrow::Borrow;
 use std::fmt;
 use std::path::{Path, PathBuf};
-
-use crate::model::rule::{RuleCategory, RuleSeverity};
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.

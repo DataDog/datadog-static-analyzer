@@ -1,7 +1,7 @@
 use indexmap::IndexMap;
 
 use crate::model::config_file::{PathConfig, RulesetConfig};
-use crate::model::diff_aware::DiffAware;
+use common::model::diff_aware::DiffAware;
 use std::collections::HashMap;
 
 #[derive(Default, Clone)]
