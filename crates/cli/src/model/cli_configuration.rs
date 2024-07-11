@@ -183,7 +183,7 @@ mod tests {
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
-            "e62e95f2662c983b01ac932709b760718815ae1ca777de9eec51b72d90b8ddd6"
+            "78fe5ec969b9aa1ea759d6e9bf2acb8a95ddfb5ddb951e6093ed60a88512fd31"
         );
     }
 
