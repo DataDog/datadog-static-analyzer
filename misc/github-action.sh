@@ -1,0 +1,96 @@
+#!/bin/sh -l
+
+########################################################
+# Check variables
+########################################################
+if [ -z "$DD_API_KEY" ]; then
+	echo "DD_API_KEY not set. Please set one and try again."
+	exit 1
+fi
+
+if [ -z "$DD_APP_KEY" ]; then
+	echo "DD_APP_KEY not set. Please set one and try again."
+	exit 1
+fi
+
+if [ -z "$DD_ENV" ]; then
+	echo "DD_ENV not set. Please set this variable and try again."
+	exit 1
+fi
+
+if [ -z "$DD_SERVICE" ]; then
+	echo "DD_SERVICE not set. Please set this variable and try again."
+	exit 1
+fi
+
+if [ -z "$CPU_COUNT" ]; then
+	# the default CPU count is 2
+	CPU_COUNT=2
+fi
+
+if [ "$ENABLE_PERFORMANCE_STATISTICS" = "true" ]; then
+	ENABLE_PERFORMANCE_STATISTICS="--performance-statistics"
+else
+	ENABLE_PERFORMANCE_STATISTICS=""
+fi
+
+if [ "$ENABLE_DEBUG" = "yes" ]; then
+	DEBUG_ARGUMENT_VALUE="yes"
+else
+	DEBUG_ARGUMENT_VALUE="no"
+fi
+
+if [ -n "$SUBDIRECTORY" ]; then
+	for subdirectory in $SUBDIRECTORY; do
+		SUBDIRECTORY_OPTION="$SUBDIRECTORY_OPTION --subdirectory $subdirectory"
+	done
+fi
+
+if [ "$DIFF_AWARE" = "true" ]; then
+	DIFF_AWARE_VALUE="--diff-aware"
+else
+	DIFF_AWARE_VALUE=""
+fi
+
+########################################################
+# Output directory
+########################################################
+echo "Getting output directory"
+OUTPUT_DIRECTORY=$(mktemp -d)
+
+# Check that datadog-ci was installed
+if [ ! -d "$OUTPUT_DIRECTORY" ]; then
+	echo "Output directory ${OUTPUT_DIRECTORY} does not exist"
+	exit 1
+fi
+
+OUTPUT_FILE="$OUTPUT_DIRECTORY/output.sarif"
+
+echo "Done: will output results at $OUTPUT_FILE"
+
+########################################################
+# Execute the tool and upload results
+########################################################
+
+# Navigate to workspace root, so the datadog-ci command can access the git info
+cd $GITHUB_WORKSPACE || exit 1
+git config --global --add safe.directory $GITHUB_WORKSPACE || exit 1
+
+# Only upload git metadata if diff aware is enabled.
+if [ "$DIFF_AWARE" = "true" ]; then
+	echo "Disabling extensions.worktreeConfig"
+	git config --unset extensions.worktreeConfig
+	echo "Done"
+
+	echo "Upload git metadata"
+	datadog-ci git-metadata upload
+	echo "Done"
+fi
+
+echo "Starting Static Analysis"
+datadog-static-analyzer -i "$GITHUB_WORKSPACE" -g -o "$OUTPUT_FILE" -f sarif --cpus "$CPU_COUNT" "$ENABLE_PERFORMANCE_STATISTICS" --debug $DEBUG_ARGUMENT_VALUE $SUBDIRECTORY_OPTION $DIFF_AWARE_VALUE || exit 1
+echo "Done"
+
+echo "Uploading Static Analysis Results to Datadog"
+datadog-ci sarif upload "$OUTPUT_FILE" --service "$DD_SERVICE" --env "$DD_ENV" || exit 1
+echo "Done"
