@@ -22,7 +22,8 @@ RUN cargo build --release --bin datadog-static-analyzer
 
 FROM base
 
-COPY --from=build /app/target/release/datadog-static-analyzer /usr/local/bin/datadog-static-analyzer
+COPY --from=build /app/target/release/datadog-static-analyzer /usr/bin/datadog-static-analyzer
+COPY --from=build /app/misc/github-action.sh /usr/bin/github-action.sh
 
 RUN apt update && apt install -y curl git \
 	&& curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -33,5 +34,5 @@ RUN npm install -g @datadog/datadog-ci \
 	&& datadog-ci --version            \
 	&& datadog-static-analyzer --version
 
-ENTRYPOINT ["/usr/local/bin/datadog-static-analyzer"]
+ENTRYPOINT ["/usr/bin/datadog-static-analyzer"]
 CMD ["--help"]
