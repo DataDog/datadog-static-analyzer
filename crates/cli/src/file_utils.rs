@@ -501,6 +501,7 @@ mod tests {
             show_performance_statistics: false,
             ignore_generated_files: false,
             secrets_enabled: false,
+            secrets_rules: vec![],
         };
         assert_eq!(0, filter_files_by_size(&files1, &cli_configuration).len());
 

@@ -1,5 +1,5 @@
 use crate::model::config_file::{BySubtree, ConfigFile, SplitPath};
-use crate::model::diff_aware::DiffAware;
+use common::model::diff_aware::DiffAware;
 use std::collections::HashMap;
 
 type Argument = (String, String);

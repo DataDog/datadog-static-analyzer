@@ -3,10 +3,10 @@ use base64::engine::general_purpose;
 use base64::Engine;
 
 use crate::analysis::tree_sitter::{get_query, TSQuery};
-use crate::model::diff_aware::DiffAware;
 use crate::model::rule_test::RuleTest;
 use crate::model::violation::Violation;
 use anyhow::anyhow;
+use common::model::diff_aware::DiffAware;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use sha2::Digest;

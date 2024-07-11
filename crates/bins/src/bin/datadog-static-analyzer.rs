@@ -28,11 +28,11 @@ use cli::sarif::sarif_utils::{
     generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
 use cli::violations_table;
+use common::model::diff_aware::DiffAware;
 use getopts::Options;
 use indicatif::ProgressBar;
 use kernel::arguments::ArgumentProvider;
 use kernel::model::config_file::{ConfigFile, PathConfig};
-use kernel::model::diff_aware::DiffAware;
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
@@ -452,6 +452,7 @@ fn main() -> Result<()> {
         show_performance_statistics: enable_performance_statistics,
         ignore_generated_files,
         secrets_enabled,
+        secrets_rules: secrets_rules.clone(),
     };
 
     print_configuration(&configuration);
