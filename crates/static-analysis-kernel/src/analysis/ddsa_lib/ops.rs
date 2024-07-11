@@ -137,6 +137,22 @@ pub fn op_ts_node_named_children<'s>(
     }
 }
 
+#[op2]
+pub fn op_get_js_imports<'s>(
+    state: &OpState,
+    scope: &mut v8::HandleScope<'s>,
+) -> v8::Local<'s, v8::Array> {
+    let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
+    let mut ctx_bridge = ctx_bridge.borrow_mut();
+    let Some(js) = ctx_bridge.ddsa_file_ctx_mut().js_mut() else {
+        return v8::Array::new(scope, 0);
+    };
+    let Ok(nodes) = js.fetch_nodes(scope) else {
+        return v8::Array::new(scope, 0);
+    };
+    nodes.as_local(scope)
+}
+
 /// An op to test the [`deno_core::op2`] macro's serialization of `Option`.
 ///
 /// Returns `Some(123)` if `true` is passed in, or `None` if `false` is passed in.

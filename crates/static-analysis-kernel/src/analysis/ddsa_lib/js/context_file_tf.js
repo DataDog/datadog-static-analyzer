@@ -4,7 +4,7 @@
 
 /**
  * An object representing a resource within a `Terraform` file.
- * @typedef {Object} Resource
+ * @typedef {Object} TerraformResource
  * @property {string} type
  * @property {string} name
  */
@@ -35,7 +35,7 @@ export class FileContextTerraform {
     /**
      * Returns the resources with the given type.
      * @param {string} type
-     * @returns {Resource[]}
+     * @returns {TerraformResource[]}
      */
     getResourcesOfType(type) {
         return this.resources.filter(resource => resource.type === type);

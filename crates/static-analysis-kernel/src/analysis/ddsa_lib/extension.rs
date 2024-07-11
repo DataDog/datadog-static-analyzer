@@ -12,6 +12,7 @@ deno_core::extension!(
         ops::op_current_ts_tree_text,
         ops::op_ts_node_named_children,
         ops::op_ts_node_text,
+        ops::op_get_js_imports,
         #[cfg(test)]
         ops::cfg_test_op_rust_option,
     ],
@@ -22,6 +23,7 @@ deno_core::extension!(
         ("ext:ddsa_lib/context_file", "context_file.js"),
         ("ext:ddsa_lib/context_file_go", "context_file_go.js"),
         ("ext:ddsa_lib/context_file_tf", "context_file_tf.js"),
+        ("ext:ddsa_lib/context_file_js", "context_file_js.js"),
         ("ext:ddsa_lib/context_root", "context_root.js"),
         ("ext:ddsa_lib/context_rule", "context_rule.js"),
         ("ext:ddsa_lib/context_ts_lang", "context_ts_lang.js"),

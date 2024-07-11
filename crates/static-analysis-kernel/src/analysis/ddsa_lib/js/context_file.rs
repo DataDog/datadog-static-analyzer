@@ -19,6 +19,7 @@ pub struct FileContext<T> {
     // Individual language support:
     pub ctx_go: Option<js::FileContextGo<Instance>>,
     pub ctx_tf: Option<js::FileContextTerraform<Instance>>,
+    pub ctx_js: Option<js::FileContextJavaScript<Instance>>,
 }
 
 impl FileContext<Instance> {
@@ -39,6 +40,7 @@ impl FileContext<Instance> {
             _pd,
             ctx_go: None,
             ctx_tf: None,
+            ctx_js: None,
         })
     }
 
@@ -67,6 +69,22 @@ impl FileContext<Instance> {
             v8::Local::new(inner, ctx_tf.v8_object()).into()
         });
         self.ctx_tf = Some(ctx_tf);
+    }
+
+    // Initializes support for `JavaScript`, linking a [`js::FileContextJavaScript`] to this
+    // `FileContext`.
+    pub fn initialize_js(
+        &mut self,
+        scope: &mut HandleScope,
+        ctx_js: js::FileContextJavaScript<Instance>,
+    ) {
+        let s_js = v8_string(scope, "jsImportsPackage");
+        // (Convert to `Global` just to satisfy the interface)
+        let s_js = v8::Global::new(scope, s_js);
+        set_key_value(&self.v8_object, scope, &s_js, |inner| {
+            v8::Local::new(inner, ctx_js.v8_function()).into()
+        });
+        self.ctx_js = Some(ctx_js);
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.

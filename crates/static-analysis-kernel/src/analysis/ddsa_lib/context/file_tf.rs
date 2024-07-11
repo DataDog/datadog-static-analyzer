@@ -87,7 +87,7 @@ impl FileContextTerraform {
         self.resources.clear(scope);
     }
 
-    /// Returns a reference to the [`v8::Global`] map backing the resources.
+    /// Returns a reference to the [`v8::Global`] array backing the resources.
     pub(crate) fn resources_v8_array(&self) -> &v8::Global<v8::Array> {
         self.resources.v8_array()
     }

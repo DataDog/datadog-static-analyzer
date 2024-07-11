@@ -173,6 +173,11 @@ impl ContextBridge {
                     tf.update_state(scope, tree, file_contents.as_ref());
                 }
             }
+            Language::JavaScript => {
+                if let Some(js) = self.file.ddsa.js_mut() {
+                    js.update_state(tree, file_contents.clone());
+                }
+            }
             _ => {}
         }
     }
@@ -198,22 +203,31 @@ impl ContextBridge {
         file: &mut Linked<ddsa_lib::FileContext, js::FileContext<Instance>>,
     ) -> Result<(), DDSAJsRuntimeError> {
         let ddsa_go = ddsa_lib::FileContextGo::new(scope);
+        let ddsa_js = ddsa_lib::FileContextJavaScript::new();
         let ddsa_tf = ddsa_lib::FileContextTerraform::new(scope)?;
         let js_go = js::FileContextGo::try_new(scope)?;
+        let js_js = js::FileContextJavaScript::try_new(scope)?;
         let js_tf = js::FileContextTerraform::try_new(scope)?;
         js_go.set_pkg_alias_map(scope, Some(ddsa_go.package_alias_v8_map()));
         js_tf.set_module_resource_array(scope, Some(ddsa_tf.resources_v8_array()));
         file.js.initialize_go(scope, js_go);
         file.js.initialize_tf(scope, js_tf);
+        file.js.initialize_js(scope, js_js);
         file.ddsa.set_go(ddsa_go);
+        file.ddsa.set_js(ddsa_js);
         file.ddsa.set_tf(ddsa_tf);
         Ok(())
     }
 
-    /// Provides a reference to the `ddsa_lib::FileContext` for inspection in tests.
+    /// Provides a reference to the [`ddsa_lib::FileContext`] for inspection in tests.
     #[cfg(test)]
     pub fn ddsa_file_ctx(&self) -> &ddsa_lib::FileContext {
         &self.file.ddsa
+    }
+
+    /// Provides a mutable reference to the [`ddsa_lib::FileContext`]
+    pub fn ddsa_file_ctx_mut(&mut self) -> &mut ddsa_lib::FileContext {
+        &mut self.file.ddsa
     }
 }
 
@@ -427,5 +441,42 @@ FILE_CTX_BRIDGE.terraform.resources.map(r => `${r.type}:${r.name}`).join(',');
             result.to_rust_string_lossy(scope),
             "aws_instance:web,google_compute_instance:db"
         );
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    /// Tests that JavaScript package imports are eagerly calculated by calling `set_file_context`.
+    fn test_fetch_js_package_imports_eagerly() {
+        let mut runtime = cfg_test_runtime();
+        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        attach_as_global(
+            &mut runtime.handle_scope(),
+            bridge.file.js.v8_object(),
+            "FILE_CTX_BRIDGE",
+        );
+        let bridge = Rc::new(RefCell::new(bridge));
+        runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
+        let scope = &mut runtime.handle_scope();
+
+        let filename = Arc::<str>::from("filename.js");
+        let file_contents = r#"
+            import { foo } from 'bar';
+            import * as baz from 'qux';
+        "#;
+
+        let tree = Arc::new(get_tree(file_contents, &Language::JavaScript).unwrap());
+        let file_contents = Arc::<str>::from(file_contents);
+        let mut mut_bridge = bridge.borrow_mut();
+        mut_bridge.set_root_context(scope, &tree, &file_contents, &filename);
+        mut_bridge.set_file_context(scope, Language::JavaScript, &tree, &file_contents);
+
+        drop(mut_bridge);
+        let code = "FILE_CTX_BRIDGE.jsImportsPackage('bar')";
+        let result = try_execute(scope, code).unwrap();
+        assert_eq!(result.boolean_value(scope), true);
+
+        let code = "FILE_CTX_BRIDGE.jsImportsPackage('not_an_import')";
+        let result = try_execute(scope, code).unwrap();
+        assert_eq!(result.boolean_value(scope), false);
     }
 }
