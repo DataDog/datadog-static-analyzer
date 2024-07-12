@@ -2,25 +2,25 @@ use crate::model::position::Position;
 use bstr::BStr;
 use bstr::ByteSlice;
 
-/// Get position of an offset in a code and return a [[Position]].
+/// Get position of an offset in a code and return a [Position].
 pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
-    if offset > content.len() {
-        anyhow::bail!("offset is larger than content length");
-    }
-
     let bstr = BStr::new(&content);
 
     let mut line_number: u32 = 1;
-
-    for line in bstr.lines_with_terminator() {
+    let lines = bstr.lines_with_terminator();
+    let mut last_end_index: usize = 0;
+    for line in lines {
         let start_index = line.as_ptr() as usize - content.as_ptr() as usize;
         let end_index = start_index + line.len();
 
-        if offset >= start_index && offset < end_index {
+        if (start_index..end_index).contains(&offset) {
             let mut col_number: u32 = 1;
             for (grapheme_start, grapheme_end, _) in line.grapheme_indices() {
+                let grapheme_absolute_start = start_index + grapheme_start;
+                let grapheme_absolute_end = start_index + grapheme_end;
+
                 // It's exactly the index we are looking for.
-                if offset == start_index + grapheme_start {
+                if offset == grapheme_absolute_start {
                     return Ok(Position {
                         line: line_number,
                         col: col_number,
@@ -28,7 +28,7 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
                 }
 
                 // The offset is within the grapheme we are looking for, it's the next col.
-                if offset > start_index + grapheme_start && offset < start_index + grapheme_end {
+                if (grapheme_absolute_start..grapheme_absolute_end).contains(&offset) {
                     return Ok(Position {
                         line: line_number,
                         col: col_number + 1,
@@ -38,7 +38,17 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
             }
         }
         line_number += 1;
+        last_end_index = end_index;
     }
+
+    // We are on the last character
+    if last_end_index > 0 && last_end_index == offset {
+        return Ok(Position {
+            line: line_number,
+            col: 1,
+        });
+    }
+
     Err(anyhow::anyhow!("cannot find position"))
 }
 
@@ -52,7 +62,10 @@ mod tests {
             get_position_in_string("foobarbaz", 3).unwrap(),
             Position::new(1, 4)
         );
+    }
 
+    #[test]
+    fn test_get_position_in_string_out_of_bounds() {
         assert!(get_position_in_string("foobarbaz", 42).is_err());
     }
 
@@ -115,6 +128,19 @@ mod tests {
         assert_eq!(
             get_position_in_string(text, 38).unwrap(),
             Position::new(3, 8)
+        );
+    }
+
+    #[test]
+    fn point_slice_boundary() {
+        let text = "The quick brown\nfox jumps over\nthe lazy dog\n";
+        assert_eq!(
+            get_position_in_string(text, 0).unwrap(),
+            Position::new(1, 1)
+        );
+        assert_eq!(
+            get_position_in_string(text, text.len()).unwrap(),
+            Position::new(4, 1)
         );
     }
 }
