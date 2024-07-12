@@ -12,6 +12,12 @@ pub struct Position {
     pub col: u32,
 }
 
+impl Position {
+    pub fn new(line: u32, col: u32) -> Self {
+        Self { line, col }
+    }
+}
+
 impl fmt::Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "position (line: {}, col: {})", self.line, self.col)

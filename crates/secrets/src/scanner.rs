@@ -7,6 +7,7 @@ use crate::model::secret_rule::SecretRule;
 use anyhow::{anyhow, Error};
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
+use common::utils::position_utils::get_position_in_string;
 use itertools::Itertools;
 use sds::{RuleConfig, Scanner};
 
@@ -20,26 +21,6 @@ pub fn build_sds_scanner(rules: &[SecretRule]) -> Scanner {
         .map(|r| r.convert_to_sds_ruleconfig())
         .collect::<Vec<RuleConfig>>();
     Scanner::new(&sds_rules).expect("error when instantiating the scanner")
-}
-
-/// Get position of an offset in a code and return a [[Position]]. This code should
-/// ultimately be more efficient as we grow the platform, it's considered as "good enough" for now.
-pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
-    let mut line_number = 1;
-    let mut bytes_reads = 0;
-
-    for line in content.lines() {
-        if offset >= bytes_reads && offset <= bytes_reads + line.len() {
-            let c = offset - bytes_reads + 1;
-            return Ok(Position {
-                line: line_number,
-                col: c as u32,
-            });
-        }
-        line_number += 1;
-        bytes_reads = bytes_reads + line.len() + 1;
-    }
-    Err(anyhow!("line not found"))
 }
 
 /// Find secrets in code. This is the main entrypoint for our SDS integration.
