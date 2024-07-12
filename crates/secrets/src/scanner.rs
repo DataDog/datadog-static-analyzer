@@ -4,7 +4,7 @@
 
 use crate::model::secret_result::{SecretResult, SecretResultMatch};
 use crate::model::secret_rule::SecretRule;
-use anyhow::{anyhow, Error};
+use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
