@@ -196,6 +196,15 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
+        TreeSitterProject {
+            name: "tree-sitter-php".to_string(),
+            compilation_unit: "tree-sitter-php".to_string(),
+            repository: "https://github.com/tree-sitter/tree-sitter-php.git".to_string(),
+            build_dir: "php/src".into(),
+            commit_hash: "575a0801f430c8672db70b73493c033a9dcfc328".to_string(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
+        },
     ];
 
     // For each project:

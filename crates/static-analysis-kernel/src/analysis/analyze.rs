@@ -71,6 +71,16 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         Language::Json => {
             vec!["impossiblestringtoreach"]
         }
+        Language::PHP => {
+            vec![
+                "//no-dd-sa",
+                "/*no-dd-sa",
+                "//datadog-disable",
+                "/*datadog-disable",
+                "#no-dd-sa",
+                "#datadog-disable",
+            ]
+        }
     };
     let mut ignore_file_all_rules: bool = false;
     let mut rules_to_ignore: Vec<String> = vec![];
