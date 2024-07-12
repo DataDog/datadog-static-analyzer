@@ -4,6 +4,10 @@ use bstr::ByteSlice;
 
 /// Get position of an offset in a code and return a [Position].
 pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
+    if offset > content.len() {
+        anyhow::bail!("offset is larger than content length");
+    }
+
     let bstr = BStr::new(&content);
 
     let mut line_number: u32 = 1;
