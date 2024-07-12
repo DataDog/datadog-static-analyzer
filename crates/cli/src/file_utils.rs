@@ -30,6 +30,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Yaml, &["yml", "yaml"]),
     (Language::Starlark, &["bzl"]),
     (Language::Bash, &["sh", "bash"]),
+    (Language::PHP, &["php"]),
 ];
 
 static FILE_EXACT_MATCH_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
@@ -697,6 +698,7 @@ mod tests {
         extensions_per_languages.insert(Language::Yaml, 2);
         extensions_per_languages.insert(Language::Starlark, 1);
         extensions_per_languages.insert(Language::Bash, 2);
+        extensions_per_languages.insert(Language::PHP, 1);
 
         for (l, e) in extensions_per_languages {
             assert_eq!(

@@ -25,6 +25,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_yaml() -> tree_sitter::Language;
         fn tree_sitter_starlark() -> tree_sitter::Language;
         fn tree_sitter_bash() -> tree_sitter::Language;
+        fn tree_sitter_php() -> tree_sitter::Language;
     }
 
     match language {
@@ -44,6 +45,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Yaml => unsafe { tree_sitter_yaml() },
         Language::Starlark => unsafe { tree_sitter_starlark() },
         Language::Bash => unsafe { tree_sitter_bash() },
+        Language::PHP => unsafe { tree_sitter_php() },
     }
 }
 
@@ -573,6 +575,20 @@ echo "Hello, World!"
         let t = get_tree(source_code, &Language::Bash);
         assert!(t.is_some());
         assert_eq!("program", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_php_get_tree() {
+        let source_code = r#"
+<?php
+echo "Hello, World!";
+?>
+"#;
+        let t = get_tree(source_code, &Language::PHP);
+        assert!(t.is_some());
+        let t = t.unwrap();
+        assert!(!t.root_node().has_error());
+        assert_eq!("program", t.root_node().kind());
     }
 
     // test the number of node we should retrieve when executing a rule
