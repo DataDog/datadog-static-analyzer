@@ -4,7 +4,7 @@ use bstr::ByteSlice;
 
 /// Get position of an offset in a code and return a [Position].
 pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
-    if offset > content.len() {
+    if offset >= content.len() {
         anyhow::bail!("offset is larger than content length");
     }
 
@@ -12,7 +12,6 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
 
     let mut line_number: u32 = 1;
     let lines = bstr.lines_with_terminator();
-    let mut last_end_index: usize = 0;
     for line in lines {
         let start_index = line.as_ptr() as usize - content.as_ptr() as usize;
         let end_index = start_index + line.len();
@@ -42,15 +41,6 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
             }
         }
         line_number += 1;
-        last_end_index = end_index;
-    }
-
-    // We are on the last character
-    if last_end_index > 0 && last_end_index == offset {
-        return Ok(Position {
-            line: line_number,
-            col: 1,
-        });
     }
 
     Err(anyhow::anyhow!("cannot find position"))
@@ -143,8 +133,8 @@ mod tests {
             Position::new(1, 1)
         );
         assert_eq!(
-            get_position_in_string(text, text.len()).unwrap(),
-            Position::new(4, 1)
+            get_position_in_string(text, text.len() - 1).unwrap(),
+            Position::new(3, 13)
         );
     }
 }
