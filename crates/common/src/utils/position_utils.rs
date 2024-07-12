@@ -30,10 +30,10 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
                         col: col_number + 1,
                     });
                 }
-                col_number = col_number + 1;
+                col_number += 1;
             }
         }
-        line_number = line_number + 1;
+        line_number += 1;
     }
     Err(anyhow::anyhow!("cannot find position"))
 }
