@@ -16,7 +16,9 @@ use crate::model::common::Language;
 /// Terraform-specific file context
 #[derive(Debug)]
 pub struct FileContextJavaScript {
-    query: tree_sitter::Query,
+    js_query: tree_sitter::Query,
+    ts_query: tree_sitter::Query,
+    language: Language,
     tree: Option<tree_sitter::Tree>,
     code: Option<Arc<str>>,
     cached_nodes: Option<Rc<MirroredVec<PackageImport, JSPackageImport<Class>>>>,
@@ -143,23 +145,40 @@ const JS_IMPORTS_QUERY: &str = r#"
 
 impl FileContextJavaScript {
     pub fn new() -> Self {
-        let query = tree_sitter::Query::new(
+        let js_query = tree_sitter::Query::new(
             &get_tree_sitter_language(&Language::JavaScript),
+            JS_IMPORTS_QUERY,
+        )
+        .expect("query has valid syntax");
+        let ts_query = tree_sitter::Query::new(
+            &get_tree_sitter_language(&Language::TypeScript),
             JS_IMPORTS_QUERY,
         )
         .expect("query has valid syntax");
 
         Self {
-            query,
+            js_query,
+            ts_query,
+            language: Language::JavaScript,
             code: None,
             tree: None,
             cached_nodes: None,
         }
     }
 
-    pub fn update_state(&mut self, tree: &tree_sitter::Tree, code: Arc<str>) {
+    #[must_use]
+    fn query(&self) -> &tree_sitter::Query {
+        if self.language == Language::JavaScript {
+            &self.js_query
+        } else {
+            &self.ts_query
+        }
+    }
+
+    pub fn update_state(&mut self, tree: &tree_sitter::Tree, code: Arc<str>, language: Language) {
         self.tree = Some(tree.clone());
         self.code = Some(code);
+        self.language = language;
         self.cached_nodes = None;
     }
 
@@ -192,7 +211,7 @@ impl FileContextJavaScript {
                 .to_string()
         };
 
-        let query_result = query_cursor.matches(&self.query, tree.root_node(), code.as_bytes());
+        let query_result = query_cursor.matches(self.query(), tree.root_node(), code.as_bytes());
         let imports = query_result
             .into_iter()
             .map(|query_match| {
@@ -204,7 +223,7 @@ impl FileContextJavaScript {
                 for capture in query_match.captures {
                     let start = capture.node.byte_range().start;
                     let end = capture.node.byte_range().end;
-                    let capture_name = self.query.capture_names()[capture.index as usize];
+                    let capture_name = self.query().capture_names()[capture.index as usize];
                     match capture_name {
                         "name" => name = Some(normalize_path(code.get(start..end).unwrap())),
                         "imported_as" => {
@@ -409,7 +428,7 @@ mod tests {
 
         for test in tests {
             let tree = get_tree(test.code, &Language::JavaScript).unwrap();
-            ctx_js.update_state(&tree, Arc::from(test.code));
+            ctx_js.update_state(&tree, Arc::from(test.code), Language::JavaScript);
             let imports = ctx_js.fetch_nodes(scope).unwrap();
             assert_eq!(imports.len(), test.expected.len());
 
@@ -432,7 +451,7 @@ mod tests {
                 assert_eq!(import_ptr, import_ptr2);
             }
 
-            ctx_js.update_state(&tree, Arc::from(test.code));
+            ctx_js.update_state(&tree, Arc::from(test.code), Language::TypeScript);
 
             {
                 let imports2 = ctx_js.fetch_nodes(scope).unwrap();

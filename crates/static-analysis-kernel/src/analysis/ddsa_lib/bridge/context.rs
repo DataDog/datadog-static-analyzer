@@ -173,9 +173,9 @@ impl ContextBridge {
                     tf.update_state(scope, tree, file_contents.as_ref());
                 }
             }
-            Language::JavaScript => {
+            Language::JavaScript | Language::TypeScript => {
                 if let Some(js) = self.file.ddsa.js_mut() {
-                    js.update_state(tree, file_contents.clone());
+                    js.update_state(tree, file_contents.clone(), language);
                 }
             }
             _ => {}
@@ -472,6 +472,18 @@ FILE_CTX_BRIDGE.terraform.resources.map(r => `${r.type}:${r.name}`).join(',');
 
         drop(mut_bridge);
         let code = "FILE_CTX_BRIDGE.jsImportsPackage('bar')";
+        let result = try_execute(scope, code).unwrap();
+        assert_eq!(result.boolean_value(scope), true);
+
+        let filename = Arc::<str>::from("filename.ts");
+
+        let tree = Arc::new(get_tree(file_contents.as_ref(), &Language::TypeScript).unwrap());
+        let mut mut_bridge = bridge.borrow_mut();
+        mut_bridge.set_root_context(scope, &tree, &file_contents, &filename);
+        mut_bridge.set_file_context(scope, Language::TypeScript, &tree, &file_contents);
+
+        drop(mut_bridge);
+        let code = "FILE_CTX_BRIDGE.jsImportsPackage('qux')";
         let result = try_execute(scope, code).unwrap();
         assert_eq!(result.boolean_value(scope), true);
 
