@@ -217,6 +217,12 @@ impl IntoSarif for &SecretRule {
             .expect("secret rules should have a description");
         builder.full_description(description);
 
+        let short_description_text = sarif::MultiformatMessageStringBuilder::default()
+            .text(std::str::from_utf8(self.name.as_bytes()).unwrap())
+            .build()
+            .unwrap();
+        builder.short_description(short_description_text);
+
         let props = PropertyBagBuilder::default()
             .tags(vec![SarifRule::rule_type_tag("SECRET")])
             .build()
