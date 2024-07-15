@@ -77,37 +77,51 @@ fn print_configuration(configuration: &CliConfiguration) {
 
     println!("Configuration");
     println!("=============");
-    println!("version             : {}", CARGO_VERSION);
-    println!("revision            : {}", VERSION);
-    println!("config method       : {}", configuration_method);
-    println!("cores available     : {}", num_cpus::get());
-    println!("cores used          : {}", configuration.num_cpus);
-    println!("#rules loaded       : {}", configuration.rules.len());
-    println!("source directory    : {}", configuration.source_directory);
+    println!("version                : {}", CARGO_VERSION);
+    println!("revision               : {}", VERSION);
+    println!("config method          : {}", configuration_method);
+    println!("cores available        : {}", num_cpus::get());
+    println!("cores used             : {}", configuration.num_cpus);
+    println!("#static analysis rules : {}", configuration.rules.len());
+
+    if configuration.secrets_enabled {
+        println!(
+            "#secrets rules loaded  : {}",
+            configuration.secrets_rules.len()
+        );
+    }
+
     println!(
-        "subdirectories      : {}",
+        "source directory       : {}",
+        configuration.source_directory
+    );
+    println!(
+        "subdirectories         : {}",
         configuration.source_subdirectories.clone().join(",")
     );
 
-    println!("output file         : {}", configuration.output_file);
-    println!("secrets enabled     : {}", configuration.secrets_enabled);
-    println!("output format       : {}", output_format_str);
-    println!("ignore paths        : {}", ignore_paths_str);
-    println!("only paths          : {}", only_paths_str);
-    println!("ignore gitignore    : {}", configuration.ignore_gitignore);
+    println!("output file            : {}", configuration.output_file);
+    println!("secrets enabled        : {}", configuration.secrets_enabled);
+    println!("output format          : {}", output_format_str);
+    println!("ignore paths           : {}", ignore_paths_str);
+    println!("only paths             : {}", only_paths_str);
     println!(
-        "use config file     : {}",
+        "ignore gitignore       : {}",
+        configuration.ignore_gitignore
+    );
+    println!(
+        "use config file        : {}",
         configuration.use_configuration_file
     );
-    println!("use debug           : {}", configuration.use_debug);
-    println!("use staging         : {}", configuration.use_staging);
+    println!("use debug              : {}", configuration.use_debug);
+    println!("use staging            : {}", configuration.use_staging);
     println!(
-        "ignore gen files    : {}",
+        "ignore gen files       : {}",
         configuration.ignore_generated_files
     );
-    println!("rules languages     : {}", languages_string.join(","));
+    println!("rules languages        : {}", languages_string.join(","));
     println!(
-        "max file size       : {} kb",
+        "max file size          : {} kb",
         configuration.max_file_size_kb
     );
 }
