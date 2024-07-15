@@ -2,8 +2,6 @@ import {Edit} from "ext:ddsa_lib/edit";
 import {Fix} from "ext:ddsa_lib/fix";
 import {Violation} from "ext:ddsa_lib/violation";
 
-globalThis.stellaAllErrors = [];
-
 export function buildError(startLine, startCol, endLine, endCol, message, severity, category) {
   // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
   if (typeof message === 'object') message = message.toString();
@@ -40,12 +38,7 @@ export function buildEdit(startLine, startCol, endLine, endCol, editType, conten
 }
 
 export function addError(error) {
-  /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
-  if (globalThis.__ENV_STELLA__ === true) {
-    stellaAllErrors.push(error);
-  } else {
-    globalThis.__RUST_BRIDGE__violation.push(error);
-  }
+  globalThis.__RUST_BRIDGE__violation.push(error);
 }
 
 // helper function getCode
@@ -73,19 +66,7 @@ export function getCode(start, end, code) {
 
 // helper function getCodeForNode
 export function getCodeForNode(node, code) {
-  /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
-  if (globalThis.__ENV_STELLA__ === true) {
-    return getCode(node.start, node.end, code);
-  } else {
-    return node.text;
-  }
-}
-
-// We re-use the same v8 isolate across multiple rule executions. Because the user's JavaScript can mutate variables
-// external to its scope, this function allows us to ensure that a closure is executed in a "clean", non-mutated context.
-export function _cleanExecute(closure) {
-  stellaAllErrors.length = 0;
-  return closure();
+  return node.text;
 }
 
 /**

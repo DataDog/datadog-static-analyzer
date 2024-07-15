@@ -13,9 +13,7 @@ use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
 use kernel::path_restrictions::PathRestrictions;
 use kernel::rule_overrides::RuleOverrides;
 use kernel::utils::decode_base64_string;
-use std::sync::{Arc, OnceLock};
-
-pub static USE_DDSA_RUNTIME: OnceLock<bool> = OnceLock::new();
+use std::sync::Arc;
 
 #[tracing::instrument(skip_all)]
 pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
@@ -182,17 +180,14 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .collect::<Vec<&str>>()
         .join(", ");
 
-    let use_ddsa = USE_DDSA_RUNTIME.get().copied().unwrap_or(false);
     // NOTE: We would ideally handle this more elegantly, but for now, always clear the cache
     // for the incoming rules before making a request. This is needed because during rule authoring,
     // the rule will change, despite its name being the same (and the cache is keyed only by the rule name).
-    if use_ddsa {
-        DEFAULT_JS_RUNTIME.with_borrow(|runtime| {
-            for rule in &rules {
-                runtime.clear_rule_cache(&rule.name);
-            }
-        });
-    }
+    DEFAULT_JS_RUNTIME.with_borrow(|runtime| {
+        for rule in &rules {
+            runtime.clear_rule_cache(&rule.name);
+        }
+    });
 
     // execute the rule. If we fail to convert, return an error.
     let rule_results = analyze(
@@ -208,7 +203,6 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
-            use_ddsa: USE_DDSA_RUNTIME.get().copied().unwrap_or(false),
         },
     );
 
@@ -756,7 +750,6 @@ rulesets:
     /// (i.e. the cache is properly cleared).
     #[test]
     fn test_subsequent_rule_execution() {
-        USE_DDSA_RUNTIME.set(true).unwrap();
         let base_rule =
             ServerRule{
                     name: "ruleset/rule-name".to_string(),
