@@ -202,9 +202,6 @@ mod tests {
         fn parse(&mut self, text: &'static str) -> Tree {
             Tree(Arc::new(self.0.parse(text, None).unwrap()), text)
         }
-        fn language(&self) -> tree_sitter::Language {
-            self.0.language().unwrap()
-        }
     }
 
     /// Compares whether a [`TreeSitterNodeObj`] has equivalent data to a [`tree_sitter::Node`].

@@ -70,11 +70,9 @@ mod tests {
     /// Tests the statefulness of the bridge, and that it can be cleared between executions.
     #[test]
     fn violations_bridge_drains() {
-        let mut runtime = cfg_test_runtime();
+        let (mut runtime, mut v_bridge) = setup_bridge("VIOLATIONS");
         let scope = &mut runtime.handle_scope();
-        let mut v_bridge = ViolationBridge::new(scope);
         let v8_v_bridge = v_bridge.as_local(scope);
-        attach_as_global(scope, v8_v_bridge, "VIOLATIONS");
         assert_eq!(v8_v_bridge.length(), 0);
 
         let violations = v_bridge.drain_collect(scope).unwrap();
@@ -98,11 +96,9 @@ VIOLATIONS.push(v);
     /// Tests that the bridge is cleared when `drain_collect` is called, even if there were deserialization errors.
     #[test]
     fn violations_bridge_invalid_obj() {
-        let mut runtime = cfg_test_runtime();
+        let (mut runtime, mut v_bridge) = setup_bridge("VIOLATIONS");
         let scope = &mut runtime.handle_scope();
-        let mut v_bridge = ViolationBridge::new(scope);
         let v8_v_bridge = v_bridge.as_local(scope);
-        attach_as_global(scope, v8_v_bridge, "VIOLATIONS");
         assert_eq!(v8_v_bridge.length(), 0);
 
         let code = r#"

@@ -2,7 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-#[allow(dead_code)]
 pub mod bridge;
 pub mod common;
 pub mod context;
@@ -10,7 +9,6 @@ pub use context::*;
 pub mod extension;
 pub(crate) mod js;
 pub(crate) mod ops;
-#[allow(dead_code)]
 pub(crate) mod runtime;
 pub(crate) use runtime::JsRuntime;
 #[allow(dead_code)]

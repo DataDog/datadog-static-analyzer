@@ -53,6 +53,7 @@ pub struct JsRuntime {
     ts_query_cursor: Rc<RefCell<tree_sitter::QueryCursor>>,
     // v8-specific
     /// A [`v8::Object`] that has been set as the prototype of the `JsRuntime`'s default context's global object.
+    #[allow(dead_code)]
     v8_ddsa_global: v8::Global<v8::Object>,
 }
 
