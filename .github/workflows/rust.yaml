@@ -51,11 +51,3 @@ jobs:
         run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r java-security -r java-best-practices -r java-code-style
       - name: Check Docker rulesets
         run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r docker-best-practices
-      - name: ddsa - Check python rulesets - part1
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- --ddsa-runtime -r python-best-practices -r python-security -r python-code-style -r python-inclusive
-      - name: ddsa - Check python rulesets - part2
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- --ddsa-runtime -r python-django -r python-flask -r python-design
-      - name: ddsa - Check Java rulesets
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- --ddsa-runtime -r java-security -r java-best-practices -r java-code-style
-      - name: ddsa - Check Docker rulesets
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- --ddsa-runtime -r docker-best-practices

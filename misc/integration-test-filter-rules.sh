@@ -2,12 +2,6 @@
 
 cargo build -r --bin datadog-static-analyzer
 
-if [ "$USE_DDSA" = "true" ]; then
-    runtime_flag="--ddsa-runtime"
-else
-    runtime_flag=""
-fi
-
 echo "Checking juice shop"
 REPO_DIR="$(mktemp -d)"
 UNFILTERED_OUTPUT="${REPO_DIR}/results-unfiltered.csv"
@@ -20,7 +14,7 @@ rulesets:
   - typescript-node-security
 EOT
 
-./target/release/datadog-static-analyzer "${runtime_flag}" --directory "${REPO_DIR}" -o "${UNFILTERED_OUTPUT}" -f csv
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${UNFILTERED_OUTPUT}" -f csv
 
 if [ $? -ne 0 ]; then
   echo "failed to analyze juice-shop (without rule filters)"
@@ -43,7 +37,7 @@ rulesets:
           - "data/static"
 EOT
 
-./target/release/datadog-static-analyzer "${runtime_flag}" --directory "${REPO_DIR}" -o "${FILTERED_OUTPUT}" -f csv
+./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${FILTERED_OUTPUT}" -f csv
 
 if [ $? -ne 0 ]; then
   echo "failed to analyze juice-shop (with rule filters)"
