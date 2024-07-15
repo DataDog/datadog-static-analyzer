@@ -217,7 +217,7 @@ impl IntoSarif for &SecretRule {
             .expect("secret rules should have a description");
         builder.full_description(description);
 
-        if self.name.len() > 0 {
+        if !self.name.is_empty() {
             let short_description_text = sarif::MultiformatMessageStringBuilder::default()
                 .text(std::str::from_utf8(self.name.as_bytes()).unwrap())
                 .build()
