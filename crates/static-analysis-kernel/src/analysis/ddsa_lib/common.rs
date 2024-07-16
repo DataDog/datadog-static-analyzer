@@ -104,6 +104,7 @@ pub fn load_function(
 /// # Panics
 /// * Panics if the provided string is not ASCII.
 /// * Panics if `str` is longer than the v8 string length limit.
+#[inline(always)]
 pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
     // This is a debug assertion because `is_ascii()` is O(N), and the `v8_interned` function is called
     // frequently in performance-critical paths.
@@ -117,12 +118,14 @@ pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, 
 ///
 /// # Panics
 /// Panics if `str` is longer than the v8 string length limit.
+#[inline(always)]
 pub fn v8_string<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
     v8::String::new_from_utf8(scope, str.as_bytes(), v8::NewStringType::Normal)
         .expect("str length should be less than v8 limit")
 }
 
 /// A shorthand for creating a [`v8::Integer`].
+#[inline(always)]
 pub fn v8_uint<'s>(scope: &mut HandleScope<'s>, number: u32) -> v8::Local<'s, v8::Integer> {
     v8::Integer::new_from_unsigned(scope, number)
 }
