@@ -247,7 +247,8 @@ fn main() -> Result<()> {
         "add-git-info",
         "add Git information to the SARIF report",
     );
-    opts.optflag("", "ddsa-runtime", "(internal use) use the ddsa runtime");
+    // TODO (JF): Remove this when releasing 0.3.8
+    opts.optflag("", "ddsa-runtime", "(deprecated)");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -474,12 +475,13 @@ fn main() -> Result<()> {
     let mut all_rule_results = vec![];
     let mut all_stats = AnalysisStatistics::new();
 
-    let use_ddsa = matches.opt_present("ddsa-runtime");
+    if matches.opt_present("ddsa-runtime") {
+        println!("[WARNING] the --ddsa-runtime flag is deprecated and will be removed in the next version");
+    }
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug,
         ignore_generated_files,
-        use_ddsa,
     };
 
     // verify rule checksum

@@ -16,7 +16,7 @@ use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
 use deno_core::v8;
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Condvar, Mutex};
@@ -53,15 +53,12 @@ pub struct JsRuntime {
     ts_query_cursor: Rc<RefCell<tree_sitter::QueryCursor>>,
     // v8-specific
     /// A [`v8::Object`] that has been set as the prototype of the `JsRuntime`'s default context's global object.
+    #[allow(dead_code)]
     v8_ddsa_global: v8::Global<v8::Object>,
 }
 
 impl JsRuntime {
     pub fn try_new() -> Result<Self, DDSAJsRuntimeError> {
-        Self::try_new_compat(false)
-    }
-
-    pub fn try_new_compat(is_stella: bool) -> Result<Self, DDSAJsRuntimeError> {
         let mut runtime = base_js_runtime();
 
         // Construct the bridges and attach their underlying `v8:Global` object to the
@@ -113,10 +110,8 @@ impl JsRuntime {
                 .expect("v8::Value should be the global object");
 
             true_global.set_prototype(scope, v8_ddsa_object.into());
-            // Freeze the true global (NOTE: as a temporary scaffold, we conditionally do this.
-            if !is_stella {
-                true_global.set_integrity_level(scope, v8::IntegrityLevel::Frozen);
-            }
+            // Freeze the true global
+            true_global.set_integrity_level(scope, v8::IntegrityLevel::Frozen);
 
             let v8_ddsa_global = v8::Global::new(scope, v8_ddsa_object);
             (context, query_match, ts_node, violation, v8_ddsa_global)
@@ -387,24 +382,6 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
 ",
             rule_code
         )
-    }
-
-    /// Provides a mutable reference to the underlying [`deno_core::JsRuntime`].
-    ///
-    /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
-    pub fn inner_compat(&mut self) -> &mut deno_core::JsRuntime {
-        &mut self.runtime
-    }
-
-    /// Provides a mutable reference to the `console` implementation.
-    ///
-    /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib::JsRuntime`.
-    ///
-    /// # Panics
-    /// Panics if the `RefCell` can't be borrowed mutably.
-    #[allow(private_interfaces)]
-    pub fn console_compat(&mut self) -> RefMut<'_, JsConsole> {
-        self.console.borrow_mut()
     }
 
     /// Provides a [`v8::HandleScope`] for the underlying v8 isolate.

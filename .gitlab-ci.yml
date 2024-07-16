@@ -21,13 +21,6 @@ test-and-build-arm64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l ruby
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l java
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l javascript
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l typescript
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l go
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l ruby
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
@@ -51,13 +44,6 @@ test-and-build-amd64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l ruby
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l java
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l javascript
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l typescript
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l go
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l ruby
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
-    - python3 misc/test-rules.py --ddsa-runtime -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com

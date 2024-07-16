@@ -6,7 +6,6 @@ pub struct AnalysisOptions {
     pub log_output: bool,
     pub use_debug: bool,
     pub ignore_generated_files: bool,
-    pub use_ddsa: bool,
 }
 
 impl Default for AnalysisOptions {
@@ -15,7 +14,6 @@ impl Default for AnalysisOptions {
             log_output: false,
             use_debug: false,
             ignore_generated_files: true,
-            use_ddsa: false,
         }
     }
 }
