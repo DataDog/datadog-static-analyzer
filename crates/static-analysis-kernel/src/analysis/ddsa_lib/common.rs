@@ -94,27 +94,38 @@ pub fn load_function(
     Ok(v8::Global::new(scope, func))
 }
 
-/// Creates a [`Internalized`](v8::string::NewStringType::Internalized) v8 string. There is
-/// extra runtime cost to this.
+/// Creates a [`Internalized`](v8::string::NewStringType::Internalized) v8 string. This incurs
+/// an additional runtime cost (via v8 string hashing), however it prevents allocations of strings
+/// that the v8 runtime has already seen before.
+///
+/// This should only be used for short ASCII strings that are known to be repeatedly used,
+/// like object property names. For performance reasons, this should never be used for user-provided data.
 ///
 /// # Panics
-/// Panics if `str` is longer than the v8 string length limit.
+/// * Panics if the provided string is not ASCII.
+/// * Panics if `str` is longer than the v8 string length limit.
+#[inline(always)]
 pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
+    // This is a debug assertion because `is_ascii()` is O(N), and the `v8_interned` function is called
+    // frequently in performance-critical paths.
+    debug_assert!(str.is_ascii(), "string must be ASCII");
     v8::String::new_from_one_byte(scope, str.as_bytes(), v8::NewStringType::Internalized)
         .expect("str length should be less than v8 limit")
 }
 
 /// Creates a [`Normal`](v8::string::NewStringType::Normal) v8 string, which always allocates memory
-/// to create the string, even if it's been seen by the runtime before.
+/// to create the string, even if it has been seen by the runtime before.
 ///
 /// # Panics
 /// Panics if `str` is longer than the v8 string length limit.
+#[inline(always)]
 pub fn v8_string<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
-    v8::String::new_from_one_byte(scope, str.as_bytes(), v8::NewStringType::Normal)
+    v8::String::new_from_utf8(scope, str.as_bytes(), v8::NewStringType::Normal)
         .expect("str length should be less than v8 limit")
 }
 
 /// A shorthand for creating a [`v8::Integer`].
+#[inline(always)]
 pub fn v8_uint<'s>(scope: &mut HandleScope<'s>, number: u32) -> v8::Local<'s, v8::Integer> {
     v8::Integer::new_from_unsigned(scope, number)
 }
@@ -299,9 +310,9 @@ pub fn create_base_runtime(
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::common::{
-        compile_script, create_base_runtime, v8_interned, DDSAJsRuntimeError,
+        compile_script, create_base_runtime, v8_interned, v8_string, DDSAJsRuntimeError,
     };
-    use crate::analysis::ddsa_lib::test_utils::try_execute;
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
     use crate::analysis::ddsa_lib::JsRuntime;
 
     #[test]
@@ -346,5 +357,52 @@ const validSyntax = 123;
         );
         let value = try_execute(&mut runtime.handle_scope(), code).unwrap_err();
         assert_eq!(value, "ReferenceError: Map is not defined".to_string());
+    }
+
+    // One byte characters
+    const ASCII: &str = "abc!";
+    // One byte characters
+    const LATIN_1_SUPPLEMENT: &str = "®±¶¿Ð";
+    // Greater than one byte characters
+    const WIDE: &str = "🌎";
+
+    /// [`v8_string`] should be able to create strings utilizing the whole UTF-8 range.
+    #[test]
+    fn v8_string_fn_utf8() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+
+        // Round-trip the strings through v8 to ensure a lossless conversion.
+        for (text, is_only_onebyte) in [(ASCII, true), (LATIN_1_SUPPLEMENT, true), (WIDE, false)] {
+            let v8_str = v8_string(scope, text);
+            assert_eq!(v8_str.contains_only_onebyte(), is_only_onebyte);
+            // Despite the function name, in this case, it will be lossless because a String, by definition, is UTF-8.
+            assert_eq!(v8_str.to_rust_string_lossy(scope), text);
+        }
+    }
+
+    /// [`v8_interned`] should be able to create v8 "OneByte" strings from ASCII.
+    #[test]
+    fn v8_interned_fn_ascii() {
+        let mut runtime = cfg_test_runtime();
+        let scope = &mut runtime.handle_scope();
+
+        let v8_str = v8_interned(scope, ASCII);
+        assert!(v8_str.contains_only_onebyte());
+        // Because we asserted `contains_only_onebyte` above, the below will not be a lossy conversion.
+        assert_eq!(v8_str.to_rust_string_lossy(scope), ASCII);
+    }
+
+    /// [`v8_interned`] should panic if called with a non-ASCII string.
+    #[test]
+    fn v8_interned_fn_not_ascii() {
+        for text in [LATIN_1_SUPPLEMENT, WIDE] {
+            let result = std::panic::catch_unwind(|| {
+                let mut runtime = cfg_test_runtime();
+                let scope = &mut runtime.handle_scope();
+                let _v8_str = v8_interned(scope, text);
+            });
+            assert!(result.is_err());
+        }
     }
 }
