@@ -33,6 +33,7 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "PYTHON",
     "RUBY",
     "TYPESCRIPT",
+    "PHP",
 ];
 
 // Get secrets rules from the static analysis API
