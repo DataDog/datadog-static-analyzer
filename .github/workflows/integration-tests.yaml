@@ -31,6 +31,6 @@ jobs:
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: release
+          cargo-cache-key: release-dev
       - name: Execute script
         run: ${{ matrix.scripts.file }}

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo build -r --bin datadog-static-analyzer
+cargo build --profile release-dev --bin datadog-static-analyzer
 
 ## A Python repository
 echo "Checking secrets-tests repository"
@@ -10,7 +10,7 @@ git clone --depth=1 https://github.com/muh-nee/secrets-tests.git "${REPO_DIR}"
 
 # Test without the static-analysis.datadog.yml file
 rm -f "${REPO_DIR}/static-analysis.datadog.yml"
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x --secrets
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x --secrets
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze secrets-tests repository"

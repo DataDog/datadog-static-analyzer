@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo build -r --bin datadog-static-analyzer
+cargo build --profile release-dev --bin datadog-static-analyzer
 
 ## A Python repository
 echo "Checking docker repository"
@@ -10,7 +10,7 @@ git clone --depth=1 https://github.com/juli1/dd-sa-dockerfile.git "${REPO_DIR}"
 
 echo "Try without the static-analysis.datadog.yml file"
 rm -f "${REPO_DIR}/static-analysis.datadog.yml"
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze docker repository"
@@ -31,7 +31,7 @@ echo "Try with the static-analysis.datadog.yml file"
 echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - docker-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif -x
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze docker repository"

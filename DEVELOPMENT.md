@@ -5,22 +5,23 @@ You need to have all the necessary [tree-sitter](https://github.com/tree-sitter)
 in `kernel` for the analysis to work. The `build` process will take care of this for you:
 
 ```shell
-cargo build
+cargo build --profile release-dev
 ```
-
-**NOTE**: you may need extra dependencies to install. Read [these instructions](crates/vectorscan-sys/README.md).
+> [!TIP]
+> The use of the `release-dev` cargo profile is highly recommended, as runtime analysis speed is effectively
+> the same as `release` mode, but compile times are comparable to `debug` mode.
 
 ## Analyze a directory
 
 ```shell
 
-cargo run --bin datadog-static-analyzer -- --directory <SOURCE> --output result.json --format sarif --debug yes
+cargo run --profile release-dev --bin datadog-static-analyzer -- --directory <SOURCE> --output result.json --format sarif --debug yes
 ```
 
 ## Start a local server
 
 ```shell
-cargo run --bin datadog-static-analyzer-server -- --port <server-port> -a <server-address>
+cargo run --profile release-dev --bin datadog-static-analyzer-server -- --port <server-port> -a <server-address>
 ```
 
 ## Run tests
@@ -51,7 +52,7 @@ cargo test -- --nocapture
 First, start the server using
 
 ```shell
-cargo run --bin datadog-static-analyzer-server
+cargo run --profile release-dev --bin datadog-static-analyzer-server
 ```
 
 

@@ -15,6 +15,15 @@ version = "0.3.7"
 [profile.release]
 lto = true
 
+[profile.release-dev]
+inherits = "release"
+lto = false
+debug = true
+debug-assertions = true
+overflow-checks = true
+incremental = true
+codegen-units = 256
+
 [workspace.dependencies]
 anyhow = "1"
 base64 = "0.21.2"
