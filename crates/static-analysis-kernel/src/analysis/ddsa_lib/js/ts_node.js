@@ -2,9 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
-
-const { op_ts_node_named_children, op_ts_node_text } = Deno.core.ops;
+const { op_ts_node_text } = Deno.core.ops;
 
 /**
  * A non-zero integer assigned by the Rust static-analysis-kernel.
@@ -158,23 +156,7 @@ export class TreeSitterNode {
      * @deprecated
      */
     get children() {
-        const childTuples = op_ts_node_named_children(this.id);
-        if (childTuples === null) {
-            return SEALED_EMPTY_ARRAY;
-        }
-        const children = [];
-        const len = childTuples.length;
-        for (let i = 0; i < len; i += 2) {
-            const node = globalThis.__RUST_BRIDGE__ts_node.get(childTuples[i]);
-            const fieldId = childTuples[i + 1];
-            // Only allocate a new `TreeSitterFieldChildNode` if the node has a field name (indicated by a non-zero fieldId).
-            if (fieldId > 0) {
-                children.push(new TreeSitterFieldChildNode(node, fieldId));
-            } else {
-                children.push(node);
-            }
-        }
-        return children;
+        return globalThis.ddsa.getChildren(this);
     }
 
     /**

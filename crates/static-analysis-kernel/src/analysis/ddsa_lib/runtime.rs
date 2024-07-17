@@ -390,6 +390,11 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
         self.runtime.handle_scope()
     }
 
+    #[cfg(test)]
+    pub fn bridge_ts_node(&self) -> Rc<RefCell<TsNodeBridge>> {
+        Rc::clone(&self.bridge_ts_node)
+    }
+
     /// Returns the length of the `v8::Array` backing the runtime's `ViolationBridge`.
     #[cfg(test)]
     pub fn violation_bridge_v8_len(&mut self) -> usize {
@@ -1252,81 +1257,5 @@ function visit(captures) {
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         let expected = r#"{"type":"identifier","start":{"line":1,"col":15},"end":{"line":1,"col":16},"text":"a"}"#;
         assert_eq!(console_lines[0], expected);
-    }
-
-    /// Tests that `op_ts_node_named_children` returns only named children.
-    #[test]
-    fn op_ts_node_named_children() {
-        let mut rt = JsRuntime::try_new().unwrap();
-        let text = "function echo(a, b, c) {}";
-        let filename = "some_filename.js";
-        let ts_query = r#"
-((function_declaration
-    (formal_parameters) @paramList))
-"#;
-        let noop = r#"
-function visit(captures) { }
-"#;
-        let get_children = r#"
-function visit(captures) {
-    const node = captures.get("paramList");
-    const children = node.children;
-    console.log(children.map((c) => c.text));
-}
-"#;
-        // First run a no-op rule to assert that only 1 (captured) node is sent to the bridge.
-        shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, noop, None).unwrap();
-        assert_eq!(rt.bridge_ts_node.borrow().len(), 1);
-        // Then execute the rule that fetches the children of the node.
-        shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, get_children, None)
-            .unwrap();
-        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        // We should've newly pushed the captured node's 3 children to the bridge.
-        assert_eq!(rt.bridge_ts_node.borrow().len(), 4);
-        assert_eq!(console_lines[0], r#"["a","b","c"]"#);
-
-        // Check a node with no children.
-        let source = "function echo() {}";
-        shorthand_execute_rule_internal(&mut rt, source, filename, ts_query, get_children, None)
-            .unwrap();
-        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        assert_eq!(console_lines[0], "[]");
-    }
-
-    /// Tests that a child node can have a `fieldName`, but that not all child nodes do.
-    #[test]
-    fn child_node_with_field() {
-        // (Assertion included to alert if upstream tree-sitter grammar unexpectedly alters metadata)
-        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
-        assert_eq!(ts_lang.field_name_for_id(26).unwrap(), "name");
-
-        let mut rt = JsRuntime::try_new().unwrap();
-        let text = "function echo(a, b) { /* ... */ }";
-        let filename = "some_filename.js";
-        let tsq_with_fields = r#"
-(function_declaration) @cap_name
-"#;
-        let tsq_no_fields = r#"
-((function_declaration
-    (formal_parameters) @cap_name))
-"#;
-        let code = r#"
-function visit(captures) {
-    const node = captures.get("cap_name");
-    const firstChild = node.children[0];
-    console.log(firstChild._fieldId, firstChild.fieldName);
-}
-"#;
-        // Some children should have a fieldName
-        shorthand_execute_rule_internal(&mut rt, text, filename, tsq_with_fields, code, None)
-            .unwrap();
-        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        assert_eq!(console_lines[0], "26 name");
-
-        // Others do not
-        shorthand_execute_rule_internal(&mut rt, text, filename, tsq_no_fields, code, None)
-            .unwrap();
-        let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        assert_eq!(console_lines[0], "undefined undefined");
     }
 }

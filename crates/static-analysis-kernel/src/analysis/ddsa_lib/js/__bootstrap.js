@@ -4,6 +4,7 @@
 
 "use strict";
 
+import {DDSA} from "ext:ddsa_lib/ddsa";
 import {DDSA_Console} from "ext:ddsa_lib/utility";
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
@@ -17,6 +18,7 @@ import {TsLanguageContext} from "ext:ddsa_lib/context_ts_lang";
 // TODO(JF): These are only used by the Rust runtime, which currently expects them in global scope, but
 //           these should be hidden inside another object, not `globalThis`.
 globalThis.DDSA_Console = DDSA_Console;
+globalThis.DDSA = DDSA;
 globalThis.FileContext = FileContext;
 globalThis.FileContextGo = FileContextGo;
 globalThis.FileContextTerraform = FileContextTerraform;
@@ -39,3 +41,4 @@ for (const [name, obj] of Object.entries(stellaCompat)) {
 ///////////
 
 globalThis.console = new DDSA_Console();
+globalThis.ddsa = new DDSA();
