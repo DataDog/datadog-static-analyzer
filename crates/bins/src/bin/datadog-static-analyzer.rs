@@ -807,30 +807,40 @@ fn main() -> Result<()> {
     // and the rule that timed-out.
     if enable_performance_statistics {
         // The time spent performing a tree-sitter query and running the JavaScript
-        let mut analysis_times =
-            Vec::<(&str, Duration, Duration)>::with_capacity(all_stats.agg_execution_time.len());
+        let mut analysis_times = Vec::<(&str, Duration, Duration, usize)>::with_capacity(
+            all_stats.agg_execution_time.len(),
+        );
         for (rule, execution) in &all_stats.agg_execution_time {
             let query = all_stats
                 .agg_query_time
                 .get(rule)
                 .expect("query should exist if execution does");
-            analysis_times.push((rule.as_str(), query.time, execution.time));
+            analysis_times.push((
+                rule.as_str(),
+                query.time,
+                execution.time,
+                execution.sample_count,
+            ));
         }
 
         println!("All rules execution time");
         println!("------------------------");
         // Sort by total analysis time, descending
-        analysis_times.sort_by_key(|&(_, query, execution)| std::cmp::Reverse(query + execution));
+        analysis_times
+            .sort_by_key(|&(_, query, execution, _)| std::cmp::Reverse(query + execution));
 
-        for &(name, query, execution) in &analysis_times {
+        for &(name, query, execution, count) in &analysis_times {
             let total_millis = (query + execution).as_millis();
-            println!("rule {:?} total analysis time {:?} ms", name, total_millis);
+            println!(
+                "rule {:?} total analysis time {:?} ms in {:?} files",
+                name, total_millis, count
+            );
         }
 
         println!("Top 100 slowest rules breakdown");
         println!("-------------------------------");
         // Show execution time breakdown in descending order.
-        for &(name, query, execution) in analysis_times.iter().take(100) {
+        for &(name, query, execution, _) in analysis_times.iter().take(100) {
             let total = (query + execution).as_millis();
             let query = query.as_millis();
             let execution = execution.as_millis();
@@ -839,17 +849,6 @@ fn main() -> Result<()> {
                 name, total, query, execution
             );
         }
-
-        analysis_times
-            .iter()
-            .take(100)
-            .for_each(|&(name, query, execution)| {
-                let total_millis = (query + execution).as_millis();
-                println!(
-                    "rule {:?}, total time {:?} ms, query node time {:?} ms, execution time {:?} ms",
-                    name, total_millis, query.as_millis(), execution.as_millis()
-                );
-            });
 
         println!("Top {} slowest files to parse", STATS_MAX_PARSE_TIMES);
         println!("------------------------------");
