@@ -292,7 +292,7 @@ To use diff-aware scanning:
  3. Run the static analyzer with option `--diff-aware`
 
 When using diff-aware, the static analyzer will connect to Datadog and attempt a previous analysis to use. If any problem occurs
-and diff-aware cannot be used, the analyzer will output an error like the one below.
+and diff-aware cannot be used, the analyzer will output an error like the one below and continue with a full scan.
 
 You can use the option `--debug true` to troubleshoot further if needed.
 
