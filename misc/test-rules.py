@@ -2,10 +2,10 @@
 # We assume that everything is correctly built and available in the `target` directory.
 
 # If you want to try this locally
-# 1. Build the binary locally (e.g. cargo run -r)
+# 1. Build the binary locally (e.g. cargo build --profile release-dev)
 # 2. Bootstrap a Python environment with requests (e.g python -mvenv venv && source venv/bin/activate && pip install requests)
-# 3. Execute the script: python misc/test-rules.py -l <LANGUAGE> -c target/release/datadog-static-analyzer -s target/release/datadog-static-analyzer-server
-# Example: python misc/test-rules.py -l python -c target/release/datadog-static-analyzer -s target/release/datadog-static-analyzer-server
+# 3. Execute the script: python misc/test-rules.py -l <LANGUAGE> -c target/release-dev/datadog-static-analyzer -s target/release-dev/datadog-static-analyzer-server
+# Example: python misc/test-rules.py -l python -c target/release-dev/datadog-static-analyzer -s target/release-dev/datadog-static-analyzer-server
 
 import base64
 import json

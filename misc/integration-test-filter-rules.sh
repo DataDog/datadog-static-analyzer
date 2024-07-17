@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo build -r --bin datadog-static-analyzer
+cargo build --profile release-dev --bin datadog-static-analyzer
 
 echo "Checking juice shop"
 REPO_DIR="$(mktemp -d)"
@@ -14,7 +14,7 @@ rulesets:
   - typescript-node-security
 EOT
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${UNFILTERED_OUTPUT}" -f csv
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${UNFILTERED_OUTPUT}" -f csv
 
 if [ $? -ne 0 ]; then
   echo "failed to analyze juice-shop (without rule filters)"
@@ -37,7 +37,7 @@ rulesets:
           - "data/static"
 EOT
 
-./target/release/datadog-static-analyzer --directory "${REPO_DIR}" -o "${FILTERED_OUTPUT}" -f csv
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${FILTERED_OUTPUT}" -f csv
 
 if [ $? -ne 0 ]; then
   echo "failed to analyze juice-shop (with rule filters)"
