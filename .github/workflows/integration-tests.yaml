@@ -20,6 +20,7 @@ jobs:
           - { file: './misc/integration-test-docker.sh', gha_alias: 'Docker' }
           - { file: './misc/integration-test-js-ts.sh', gha_alias: 'JavaScript/TypeScript' }
           - { file: './misc/integration-test-filter-rules.sh', gha_alias: 'Per-Path Rule Filtering' }
+          - { file: './misc/integration-git-hooks.sh', gha_alias: 'Git Hooks' }
     name: Run integration test - ${{ matrix.scripts.gha_alias }}
     steps:
       - uses: actions/checkout@v4

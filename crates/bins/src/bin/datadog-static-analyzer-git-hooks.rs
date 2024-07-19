@@ -248,8 +248,15 @@ fn main() -> Result<()> {
     let repository =
         Repository::init(&configuration.source_directory).expect("fail to initialize repository");
 
-    // the default branch is either the --default-branch argumetn or what is found using git
-    let default_branch = default_branch_opt.unwrap_or(get_default_branch(&repository)?);
+    // the default branch is either the --default-branch argument or what is found using git
+    let default_branch = default_branch_opt
+        .ok_or_else(|| get_default_branch(&repository))
+        .unwrap_or_else(|_| {
+            eprintln!(
+                "Cannot find the default branch, use --default-branch to force the default branch"
+            );
+            exit(1);
+        });
 
     if configuration.use_debug {
         println!("default branch={}", default_branch);
