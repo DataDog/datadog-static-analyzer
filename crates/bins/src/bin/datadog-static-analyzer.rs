@@ -24,7 +24,10 @@ use cli::file_utils::{
 };
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
-use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal, convert_secret_result_to_rule_result, count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file};
+use cli::rule_utils::{
+    check_rules_checksum, convert_rules_to_rules_internal, convert_secret_result_to_rule_result,
+    count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
+};
 use cli::sarif::sarif_utils::{
     generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
@@ -367,7 +370,7 @@ fn main() -> Result<()> {
 
     if should_verify_checksum {
         if let Err(e) = check_rules_checksum(configuration.rules.as_slice()) {
-            eprintln!("error when checking rules checksum: {e}")
+            eprintln!("error when checking rules checksum: {e}");
             exit(1)
         }
     }

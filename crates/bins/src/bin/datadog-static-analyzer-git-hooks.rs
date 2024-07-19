@@ -11,9 +11,7 @@ use cli::file_utils::{filter_files_by_size, get_files, read_files_from_gitignore
 use cli::git_utils::{get_changed_files, get_default_branch};
 use cli::model::cli_configuration::CliConfiguration;
 use cli::rule_utils::check_rules_checksum;
-use cli::utils::{
-    choose_cpu_count, get_num_threads_to_use, get_threads_count, print_configuration,
-};
+use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use common::analysis_options::AnalysisOptions;
 use getopts::Options;
 use git2::Repository;
