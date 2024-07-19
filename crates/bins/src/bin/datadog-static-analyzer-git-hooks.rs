@@ -22,6 +22,7 @@ use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::model::rule::Rule;
 use kernel::path_restrictions::PathRestrictions;
+use kernel::rule_config::RuleConfigProvider;
 use kernel::rule_overrides::RuleOverrides;
 use rayon::prelude::*;
 use secrets::model::secret_result::SecretResult;
@@ -132,8 +133,10 @@ fn main() -> Result<()> {
             }
         };
     let mut rules: Vec<Rule> = Vec::new();
-    let mut path_restrictions = PathRestrictions::default();
-    let mut argument_provider = ArgumentProvider::new();
+    let rule_config_provider = configuration_file
+        .as_ref()
+        .map(RuleConfigProvider::from_config)
+        .unwrap_or_default();
 
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
@@ -145,8 +148,6 @@ fn main() -> Result<()> {
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
             .context("error when reading rules from API")?;
         rules.extend(rules_from_api);
-        path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
-        argument_provider = ArgumentProvider::from(&conf);
 
         // copy the only and ignore paths from the configuration file
         path_config.ignore.extend(conf.paths.ignore);
