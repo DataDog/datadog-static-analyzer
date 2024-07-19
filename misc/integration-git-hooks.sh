@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo build --profile release-dev --bin datadog-static-analyzer
+cargo build --profile release-dev --bin datadog-static-analyzer-git-hooks
 
 ## A Python repository
 REPO_DIR=$(mktemp -d)
@@ -21,13 +21,13 @@ echo "AKIAIOSFODNN7EXAMPLE" > "${REPO_DIR}/foobar"
 ## Secrets should be found
 ./target/release-dev/datadog-static-analyzer-git-hooks --repository "${REPO_DIR}" --secrets --staging --debug yes --default-branch main >/tmp/plop 2>&1
 
-## Print output
-cat /tmp/plop
-
 if [ $? -ne 1 ]; then
   echo "secrets should have been found"
   exit 1
 fi
+
+## Print output
+cat /tmp/plop
 
 NB_OCCURRENCES=$(grep "secret found on file foobar" /tmp/plop | wc -l)
 echo "Found ${NB_OCCURRENCES} secret"
