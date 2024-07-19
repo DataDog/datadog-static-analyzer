@@ -1,6 +1,10 @@
-use crate::constants::{GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH, GIT_HEAD};
-use git2::Repository;
+use anyhow::anyhow;
+use git2::{DiffLineType, DiffOptions, Repository};
+use std::collections::HashMap;
 use std::env;
+use std::path::PathBuf;
+
+use crate::constants::{GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH, GIT_HEAD};
 
 /// Try to get the branch running. We first try to get the branch from the repository. When
 /// it fails, we attempt to get the branch from the CI provider when the analyzer
@@ -44,4 +48,75 @@ pub fn get_branch(repository: &Repository, use_debug: bool) -> Option<String> {
     }
 
     None
+}
+
+/// Get the default branch of [repository]
+pub fn get_default_branch(repository: &Repository) -> anyhow::Result<String> {
+    let head_ref = repository.find_reference("refs/remotes/origin/HEAD")?;
+    let resolved_ref = head_ref.resolve()?;
+    let branch_name_opt = resolved_ref.shorthand();
+
+    if let Some(branch_name) = branch_name_opt {
+        if branch_name.starts_with("origin/") {
+            let bn = &branch_name[7..branch_name.len()];
+            return Ok(bn.to_string());
+        }
+    }
+    return Err(anyhow!("cannot find the default branch"));
+}
+
+/// Get the list of changed files for the repository between the latest commit the repository
+/// is at and the default branch pointed by [default_branch].
+/// The [repository] object is the repository built by git2.
+/// It returns a map where the key is the path of the file and the value is the list of lines
+/// that have been added (understand: added/updated).
+pub fn get_changed_files(
+    repository: &Repository,
+    branch_name: &String,
+) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> {
+    // final result
+    let mut res: HashMap<PathBuf, Vec<u32>> = HashMap::new();
+
+    // the latest commit on the local head
+    let head_commit = repository.head()?.peel_to_commit()?;
+
+    // the commit of the default branch.
+    let branch_commit = repository
+        .find_branch(branch_name, git2::BranchType::Local)?
+        .get()
+        .peel_to_commit()?;
+
+    // diff between local and default branch
+    let diff = repository.diff_tree_to_tree(
+        Some(&branch_commit.tree()?),
+        Some(&head_commit.tree()?),
+        Some(&mut DiffOptions::new()),
+    )?;
+
+    // for each element, we find the lines that have been added.
+    diff.foreach(
+        &mut |_, _| true,
+        None,
+        None,
+        Some(&mut |delta, _diffhunk, diff_line| {
+            let origin = diff_line.origin_value();
+
+            // if this is not an add, we keep going. Note that when a line is updated, it's
+            // marked as both an remove and an add.
+            if origin != DiffLineType::Addition && origin != DiffLineType::AddEOFNL {
+                return true;
+            }
+
+            if let (Some(path), Some(line)) = (delta.new_file().path(), diff_line.new_lineno()) {
+                let pb = PathBuf::from(path);
+                res.entry(pb)
+                    .and_modify(|e| e.push(line))
+                    .or_insert_with(|| vec![line]);
+            }
+
+            true
+        }),
+    )?;
+
+    Ok(res)
 }

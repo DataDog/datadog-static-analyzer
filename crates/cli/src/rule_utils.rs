@@ -1,10 +1,12 @@
-use anyhow::Result;
+use crate::model::cli_configuration::CliConfiguration;
+use anyhow::{Context, Result};
 use kernel::model::common::Language;
-use kernel::model::rule::{Rule, RuleCategory, RuleResult, RuleSeverity};
+use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleResult, RuleSeverity};
 use kernel::model::ruleset::RuleSet;
 use kernel::model::violation::Violation;
 use secrets::model::secret_result::SecretResult;
 use std::collections::HashSet;
+use std::time::Instant;
 use std::{fs::File, io::BufReader};
 
 pub fn get_rulesets_from_file(file_path: &str) -> Result<Vec<RuleSet>> {
@@ -62,6 +64,48 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
             })
             .collect(),
     }
+}
+
+/// Utility function to convert rules to rules internal.
+/// Print the time to convert if the performance statistics switch is enabled.
+pub fn convert_rules_to_rules_internal(
+    configuration: &CliConfiguration,
+    language: &Language,
+) -> anyhow::Result<Vec<RuleInternal>> {
+    let rules_conversion_time = Instant::now();
+
+    let rules = configuration
+        .rules
+        .iter()
+        .filter(|r| r.language == *language)
+        .map(|r| {
+            let rule_conversion_time = Instant::now();
+
+            let res = r
+                .to_rule_internal()
+                .context(format!("cannot convert {} to rule internal", r.name));
+
+            if configuration.show_performance_statistics {
+                println!(
+                    "Rule {} conversion to rule internal: {} ms",
+                    r.name,
+                    rule_conversion_time.elapsed().as_millis()
+                );
+            }
+
+            res
+        })
+        .collect::<anyhow::Result<Vec<_>>>();
+
+    if configuration.show_performance_statistics {
+        println!(
+            "Total time to convert rules to rules internal for language {}: {} ms",
+            language,
+            rules_conversion_time.elapsed().as_millis()
+        );
+    }
+
+    rules
 }
 
 #[cfg(test)]
