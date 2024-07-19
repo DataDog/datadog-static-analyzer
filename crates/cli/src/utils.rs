@@ -19,8 +19,11 @@ pub fn get_num_threads_to_use(configuration: &CliConfiguration) -> usize {
     // we always keep one thread free and some room for the management threads that monitor
     // the rule execution.
     let ideal_threads = ((configuration.num_cpus as f32 - 1.0) * 0.90) as usize;
-    let num_threads = if ideal_threads == 0 { 1 } else { ideal_threads };
-    num_threads
+    if ideal_threads == 0 {
+        1
+    } else {
+        ideal_threads
+    }
 }
 
 pub fn print_configuration(configuration: &CliConfiguration) {
