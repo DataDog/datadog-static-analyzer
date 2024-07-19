@@ -62,7 +62,7 @@ pub fn get_default_branch(repository: &Repository) -> anyhow::Result<String> {
             return Ok(bn.to_string());
         }
     }
-    return Err(anyhow!("cannot find the default branch"));
+    Err(anyhow!("cannot find the default branch"))
 }
 
 /// Get the list of changed files for the repository between the latest commit the repository
@@ -72,7 +72,7 @@ pub fn get_default_branch(repository: &Repository) -> anyhow::Result<String> {
 /// that have been added (understand: added/updated).
 pub fn get_changed_files(
     repository: &Repository,
-    branch_name: &String,
+    branch_name: &str,
 ) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> {
     // final result
     let mut res: HashMap<PathBuf, Vec<u32>> = HashMap::new();
