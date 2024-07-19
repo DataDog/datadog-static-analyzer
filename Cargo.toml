@@ -27,6 +27,7 @@ codegen-units = 256
 [workspace.dependencies]
 anyhow = "1"
 base64 = "0.21.2"
+git2 = "0.19.0"
 indexmap = { version = "2.2", features = ["serde"] }
 itertools = "0.12.1"
 derive_builder = "0.12"
@@ -35,5 +36,6 @@ serde_json = "1"
 serde-sarif = "0.4"
 serde_yaml = "0.9.21"
 sha2 = "0.10.7"
+num_cpus = "1.15.0"
 tracing = "0.1.40"
 uuid = { version = "1.6.1", features = ["v4"] }

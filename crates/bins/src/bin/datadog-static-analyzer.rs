@@ -1,4 +1,19 @@
+use std::collections::HashMap;
+use std::io::prelude::*;
+use std::process::exit;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+use std::{env, fs};
+
+use anyhow::{Context, Result};
+use getopts::Options;
+use indicatif::ProgressBar;
+use itertools::Itertools;
+use rayon::prelude::*;
+
 use cli::config_file::read_config_file;
+use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
+use cli::csv;
 use cli::datadog_utils::{
     get_all_default_rulesets, get_diff_aware_information, get_rules_from_rulesets,
     get_secrets_rules,
@@ -7,163 +22,32 @@ use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
     filter_files_for_language, get_files, read_files_from_gitignore,
 };
-use cli::rule_utils::{
-    convert_secret_result_to_rule_result, count_violations_by_severities, get_languages_for_rules,
-    get_rulesets_from_file,
-};
-use common::analysis_options::AnalysisOptions;
-use itertools::Itertools;
-use kernel::analysis::analyze::analyze;
-use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::analysis::ERROR_RULE_TIMEOUT;
-use kernel::model::common::{Language, OutputFormat};
-use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
-
-use anyhow::{Context, Result};
-use cli::constants::DEFAULT_MAX_FILE_SIZE_KB;
-use cli::csv;
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
+use cli::rule_utils::{
+    check_rules_checksum, convert_rules_to_rules_internal, convert_secret_result_to_rule_result,
+    count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
+};
 use cli::sarif::sarif_utils::{
     generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
+use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
+use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
-use getopts::Options;
-use indicatif::ProgressBar;
+use kernel::analysis::analyze::analyze;
+use kernel::constants::{CARGO_VERSION, VERSION};
+use kernel::model::analysis::ERROR_RULE_TIMEOUT;
+use kernel::model::common::OutputFormat;
 use kernel::model::config_file::{ConfigFile, PathConfig};
+use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
-use rayon::prelude::*;
 use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
-use std::collections::HashMap;
-use std::io::prelude::*;
-use std::process::exit;
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
-use std::{env, fs};
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
     print!("{}", opts.usage(&brief));
-}
-
-fn print_configuration(configuration: &CliConfiguration) {
-    let configuration_method = if configuration.use_configuration_file {
-        "config file (static-analysis.datadog.[yml|yaml])"
-    } else {
-        "rule file"
-    };
-
-    let output_format_str = match configuration.output_format {
-        OutputFormat::Csv => "csv",
-        OutputFormat::Sarif => "sarif",
-        OutputFormat::Json => "json",
-    };
-
-    let languages = get_languages_for_rules(&configuration.rules);
-    let languages_string: Vec<String> = languages.iter().map(|l| l.to_string()).collect();
-    let ignore_paths_str = if configuration.path_config.ignore.is_empty() {
-        "no ignore path".to_string()
-    } else {
-        configuration.path_config.ignore.join(",")
-    };
-    let only_paths_str = match &configuration.path_config.only {
-        Some(x) => x.join(","),
-        None => "all paths".to_string(),
-    };
-
-    println!("Configuration");
-    println!("=============");
-    println!("version                : {}", CARGO_VERSION);
-    println!("revision               : {}", VERSION);
-    println!("config method          : {}", configuration_method);
-    println!("cores available        : {}", num_cpus::get());
-    println!("cores used             : {}", configuration.num_cpus);
-    println!("#static analysis rules : {}", configuration.rules.len());
-
-    if configuration.secrets_enabled {
-        println!(
-            "#secrets rules loaded  : {}",
-            configuration.secrets_rules.len()
-        );
-    }
-
-    println!(
-        "source directory       : {}",
-        configuration.source_directory
-    );
-    println!(
-        "subdirectories         : {}",
-        configuration.source_subdirectories.clone().join(",")
-    );
-
-    println!("output file            : {}", configuration.output_file);
-    println!("secrets enabled        : {}", configuration.secrets_enabled);
-    println!("output format          : {}", output_format_str);
-    println!("ignore paths           : {}", ignore_paths_str);
-    println!("only paths             : {}", only_paths_str);
-    println!(
-        "ignore gitignore       : {}",
-        configuration.ignore_gitignore
-    );
-    println!(
-        "use config file        : {}",
-        configuration.use_configuration_file
-    );
-    println!("use debug              : {}", configuration.use_debug);
-    println!("use staging            : {}", configuration.use_staging);
-    println!(
-        "ignore gen files       : {}",
-        configuration.ignore_generated_files
-    );
-    println!("rules languages        : {}", languages_string.join(","));
-    println!(
-        "max file size          : {} kb",
-        configuration.max_file_size_kb
-    );
-}
-
-/// Utility function to convert rules to rules internal.
-/// Print the time to convert if the performance statistics switch is enabled.
-fn convert_rules_to_rules_internal(
-    configuration: &CliConfiguration,
-    language: &Language,
-) -> Result<Vec<RuleInternal>> {
-    let rules_conversion_time = Instant::now();
-
-    let rules = configuration
-        .rules
-        .iter()
-        .filter(|r| r.language == *language)
-        .map(|r| {
-            let rule_conversion_time = Instant::now();
-
-            let res = r
-                .to_rule_internal()
-                .context(format!("cannot convert {} to rule internal", r.name));
-
-            if configuration.show_performance_statistics {
-                println!(
-                    "Rule {} conversion to rule internal: {} ms",
-                    r.name,
-                    rule_conversion_time.elapsed().as_millis()
-                );
-            }
-
-            res
-        })
-        .collect::<Result<Vec<_>>>();
-
-    if configuration.show_performance_statistics {
-        println!(
-            "Total time to convert rules to rules internal for language {}: {} ms",
-            language,
-            rules_conversion_time.elapsed().as_millis()
-        );
-    }
-
-    rules
 }
 
 fn main() -> Result<()> {
@@ -475,21 +359,11 @@ fn main() -> Result<()> {
         ignore_generated_files,
     };
 
-    // verify rule checksum
     if should_verify_checksum {
-        if configuration.use_debug {
-            print!("Checking rule checksum ... ");
+        if let Err(e) = check_rules_checksum(configuration.rules.as_slice()) {
+            eprintln!("error when checking rules checksum: {e}");
+            exit(1)
         }
-        for r in &configuration.rules {
-            if !r.verify_checksum() {
-                panic!("Checksum invalid for rule {}", r.name);
-            }
-        }
-        if configuration.use_debug {
-            println!("done!");
-        }
-    } else {
-        println!("Skipping checksum verification");
     }
 
     // check if we do a diff-aware scan
@@ -552,10 +426,7 @@ fn main() -> Result<()> {
         println!("diff aware data: {:?}", diff_aware_parameters);
     }
 
-    // we always keep one thread free and some room for the management threads that monitor
-    // the rule execution.
-    let ideal_threads = ((configuration.num_cpus as f32 - 1.0) * 0.90) as usize;
-    let num_threads = if ideal_threads == 0 { 1 } else { ideal_threads };
+    let num_threads = get_num_threads_to_use(&configuration);
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
@@ -933,16 +804,6 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-const DEFAULT_MAX_CPUS: usize = 8;
-
-/// Returns the user's requested core count, clamped to the number of logical cores on the system.
-/// If unspecified, up to [DEFAULT_MAX_CPUS] CPUs will be used.
-fn choose_cpu_count(user_input: Option<usize>) -> usize {
-    let logical_cores = num_cpus::get();
-    let cores = user_input.unwrap_or(DEFAULT_MAX_CPUS);
-    usize::min(logical_cores, cores)
-}
-
 // The `AnalysisStatistics` struct is "tacked" onto this file here.
 // We'll eventually refactor this to be implemented with tracing and the subscriber pattern.
 // Thus, this should be seen as a temporary implementation.
@@ -1081,9 +942,10 @@ impl std::ops::AddAssign for AnalysisStatistics {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Aggregate, AnalysisStatistics, FileName, STATS_MAX_PARSE_TIMES};
     use std::collections::{BTreeSet, HashMap};
     use std::time::Duration;
+
+    use crate::{Aggregate, AnalysisStatistics, FileName, STATS_MAX_PARSE_TIMES};
 
     /// Tests that the combining of `AnalysisStatistics` is logically correct
     #[test]

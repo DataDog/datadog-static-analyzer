@@ -7,6 +7,9 @@ edition = "2021"
 name = "datadog-static-analyzer"
 
 [[bin]]
+name = "datadog-static-analyzer-git-hooks"
+
+[[bin]]
 name = "datadog-static-analyzer-test-ruleset"
 
 [[bin]]
@@ -40,15 +43,17 @@ secrets = { package = "secrets", path = "../secrets" }
 # workspace
 anyhow = { workspace = true }
 itertools = { workspace = true }
+git2 = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 uuid = { workspace = true }
 indexmap = { workspace = true }
+num_cpus = { workspace = true}
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 # other
 getopts = "0.2.21"
-num_cpus = "1.15.0"
+
 indicatif = "0.17.6"
 rayon = "1.7.0"
 rocket = { version = "=0.5.0", features = ["json"] }
