@@ -9,6 +9,8 @@ export REPO_DIR
 git init --initial-branch=main "${REPO_DIR}"
 touch "${REPO_DIR}/README.md"
 (cd "${REPO_DIR}" && git add README.md)
+(cd "${REPO_DIR}" && git config user.email "you@example.com")
+(cd "${REPO_DIR}" && git config user.name "Your Name")
 (cd "${REPO_DIR}" && git commit -m"initial commit")
 
 ## Creating a new branch and adding a new file with a secret
