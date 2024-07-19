@@ -39,7 +39,7 @@ use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
 use kernel::model::common::OutputFormat;
-use kernel::model::config_file::ConfigFile;
+use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use secrets::model::secret_result::SecretResult;
