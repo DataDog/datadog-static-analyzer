@@ -41,7 +41,6 @@ use kernel::model::analysis::ERROR_RULE_TIMEOUT;
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
-use rayon::prelude::*;
 use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 
