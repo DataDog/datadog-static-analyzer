@@ -328,7 +328,7 @@ fn main() -> Result<()> {
                     .unwrap()
                     .to_str()
                     .expect("path contains non-Unicode characters");
-                let res = if let Ok(file_content) = fs::read_to_string(path) {
+                if let Ok(file_content) = fs::read_to_string(path) {
                     let file_content = Arc::from(file_content);
                     find_secrets(
                         &sds_scanner,
@@ -343,9 +343,7 @@ fn main() -> Result<()> {
                         eprintln!("error when getting content of path {}", &path.display());
                     }
                     vec![]
-                };
-
-                res
+                }
             })
             .collect();
 
