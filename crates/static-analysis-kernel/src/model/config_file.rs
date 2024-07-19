@@ -76,7 +76,7 @@ pub struct RuleConfig {
     // Arguments to pass to this rule.
     pub arguments: IndexMap<String, BySubtree<String>>,
     // Override this rule's severity.
-    pub severity: Option<RuleSeverity>,
+    pub severity: Option<BySubtree<RuleSeverity>>,
     // Override this rule's category.
     pub category: Option<RuleCategory>,
 }

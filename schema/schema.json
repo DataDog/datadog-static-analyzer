@@ -61,11 +61,16 @@
           }
         },
         "severity": {
-          "enum": [
-            "ERROR",
-            "WARNING",
-            "NOTICE",
-            "NONE"
+          "anyOf": [
+            {
+              "$ref": "#/definitions/singularSeverityValue"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "$ref": "#/definitions/singularSeverityValue"
+              }
+            }
           ]
         },
         "category": {
@@ -138,6 +143,14 @@
           "type": "boolean",
           "$comment": "will be internally coerced to string"
         }
+      ]
+    },
+    "singularSeverityValue": {
+      "enum": [
+        "ERROR",
+        "WARNING",
+        "NOTICE",
+        "NONE"
       ]
     }
   }

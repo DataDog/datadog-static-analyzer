@@ -1,0 +1,14 @@
+schema-version: v1
+rulesets:
+  - java-best-practices:
+    rules:
+      avoid-printstacktrace:
+        severity: ERROR
+      one-declaration-per-line:
+        severity:
+          /: WARNING
+          uno/dos: ERROR
+          elsewhere: NOTICE
+      loose-coupling:
+        tres: NOTICE
+        tres/cuatro: ERROR

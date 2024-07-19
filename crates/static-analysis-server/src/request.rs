@@ -729,6 +729,38 @@ rulesets:
             RuleSeverity::Error,
             response.rule_responses[0].violations[0].severity
         );
+
+        // Per-path severity override.
+        let request = AnalysisRequest {
+            configuration_base64: Some(encode_base64_string(
+                r#"
+rulesets:
+  - myrs:
+    rules:
+      myrule:
+        severity:
+          /: ERROR
+          somepath: WARNING
+          mypath: NOTICE
+          mypath/my: ERROR
+        category: CODE_STYLE
+            "#
+                .to_string(),
+            )),
+            ..base_request.clone()
+        };
+        let response = process_analysis_request(request);
+        assert!(response.errors.is_empty());
+        assert_eq!(1, response.rule_responses.len());
+        assert_eq!(1, response.rule_responses[0].violations.len());
+        assert_eq!(
+            RuleCategory::CodeStyle,
+            response.rule_responses[0].violations[0].category
+        );
+        assert_eq!(
+            RuleSeverity::Notice,
+            response.rule_responses[0].violations[0].severity
+        );
     }
 
     /// Tests that subsequent requests to analyze a rule with the same name can have different code.

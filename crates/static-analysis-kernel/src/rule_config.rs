@@ -62,7 +62,9 @@ impl<'a> RuleConfig<'a> {
     }
 
     pub fn get_severity(&self, rule_name: &str) -> Option<RuleSeverity> {
-        self.provider.rule_overrides.severity(rule_name)
+        self.provider
+            .rule_overrides
+            .severity(&self.split_path, rule_name)
     }
 
     pub fn get_category(&self, rule_name: &str) -> Option<RuleCategory> {
