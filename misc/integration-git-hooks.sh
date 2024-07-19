@@ -19,7 +19,7 @@ echo "AKIAIOSFODNN7EXAMPLE" > "${REPO_DIR}/foobar"
 
 
 ## Secrets should be found
-cargo run --bin datadog-static-analyzer-git-hooks -- --repository "${REPO_DIR}" --secrets --staging --debug yes --default-branch main >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hooks --repository "${REPO_DIR}" --secrets --staging --debug yes --default-branch main >/tmp/plop 2>&1
 
 ## Print output
 cat /tmp/plop
