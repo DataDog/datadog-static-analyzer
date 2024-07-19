@@ -3,7 +3,7 @@ use crate::model::rule::{RuleCategory, RuleSeverity};
 use std::collections::HashMap;
 
 /// User-provided overrides for rule definitions.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct RuleOverrides {
     severities: HashMap<String, RuleSeverity>,
     categories: HashMap<String, RuleCategory>,
@@ -41,12 +41,12 @@ impl RuleOverrides {
     }
 
     // Returns the overridden severity for the given rule name, or the original severity if no override exists.
-    pub fn severity(&self, rule_name: &str, original: RuleSeverity) -> RuleSeverity {
-        *self.severities.get(rule_name).unwrap_or(&original)
+    pub fn severity(&self, rule_name: &str) -> Option<RuleSeverity> {
+        self.severities.get(rule_name).copied()
     }
 
     // Returns the overridden category for the given rule name, or the original category if no override exists.
-    pub fn category(&self, rule_name: &str, original: RuleCategory) -> RuleCategory {
-        *self.categories.get(rule_name).unwrap_or(&original)
+    pub fn category(&self, rule_name: &str) -> Option<RuleCategory> {
+        self.categories.get(rule_name).copied()
     }
 }
