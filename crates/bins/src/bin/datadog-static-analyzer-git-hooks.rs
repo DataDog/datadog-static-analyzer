@@ -141,16 +141,10 @@ fn main() -> Result<()> {
         use_configuration_file = true;
         ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
 
-        let overrides = RuleOverrides::from_config_file(&conf);
-
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
             .context("error when reading rules from API")?;
-        rules.extend(rules_from_api.into_iter().map(|rule| Rule {
-            severity: overrides.severity(&rule.name, rule.severity),
-            category: overrides.category(&rule.name, rule.category),
-            ..rule
-        }));
+        rules.extend(rules_from_api);
         path_restrictions = PathRestrictions::from_ruleset_configs(&conf.rulesets);
         argument_provider = ArgumentProvider::from(&conf);
 
