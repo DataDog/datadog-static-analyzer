@@ -1,5 +1,5 @@
 use crate::model::cli_configuration::CliConfiguration;
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use kernel::model::common::Language;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleResult, RuleSeverity};
 use kernel::model::ruleset::RuleSet;
@@ -106,6 +106,15 @@ pub fn convert_rules_to_rules_internal(
     }
 
     rules
+}
+
+pub fn check_rules_checksum(rules: &[Rule]) -> anyhow::Result<()> {
+    for r in rules {
+        if !r.verify_checksum() {
+            return Err(anyhow!("Checksum invalid for rule {}", r.name));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

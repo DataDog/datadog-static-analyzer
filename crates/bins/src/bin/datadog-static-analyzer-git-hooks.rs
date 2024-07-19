@@ -10,7 +10,10 @@ use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_
 use cli::file_utils::{filter_files_by_size, get_files, read_files_from_gitignore};
 use cli::git_utils::{get_changed_files, get_default_branch};
 use cli::model::cli_configuration::CliConfiguration;
-use cli::utils::{choose_cpu_count, print_configuration};
+use cli::rule_utils::check_rules_checksum;
+use cli::utils::{
+    choose_cpu_count, get_num_threads_to_use, get_threads_count, print_configuration,
+};
 use common::analysis_options::AnalysisOptions;
 use getopts::Options;
 use git2::Repository;
@@ -239,27 +242,14 @@ fn main() -> Result<()> {
         ignore_generated_files,
     };
 
-    // verify rule checksum
     if should_verify_checksum {
-        if configuration.use_debug {
-            print!("Checking rule checksum ... ");
+        if let Err(e) = check_rules_checksum(configuration.rules.as_slice()) {
+            eprintln!("error when checking rules checksum: {e}");
+            exit(1)
         }
-        for r in &configuration.rules {
-            if !r.verify_checksum() {
-                panic!("Checksum invalid for rule {}", r.name);
-            }
-        }
-        if configuration.use_debug {
-            println!("done!");
-        }
-    } else {
-        println!("Skipping checksum verification");
     }
 
-    // we always keep one thread free and some room for the management threads that monitor
-    // the rule execution.
-    let ideal_threads = ((configuration.num_cpus as f32 - 1.0) * 0.90) as usize;
-    let num_threads = if ideal_threads == 0 { 1 } else { ideal_threads };
+    let num_threads = get_num_threads_to_use(&configuration);
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)

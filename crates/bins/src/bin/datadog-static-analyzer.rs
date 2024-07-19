@@ -24,14 +24,11 @@ use cli::file_utils::{
 };
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
-use cli::rule_utils::{
-    convert_rules_to_rules_internal, convert_secret_result_to_rule_result,
-    count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
-};
+use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal, convert_secret_result_to_rule_result, count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file};
 use cli::sarif::sarif_utils::{
     generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
-use cli::utils::{choose_cpu_count, print_configuration};
+use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
@@ -368,21 +365,11 @@ fn main() -> Result<()> {
         ignore_generated_files,
     };
 
-    // verify rule checksum
     if should_verify_checksum {
-        if configuration.use_debug {
-            print!("Checking rule checksum ... ");
+        if let Err(e) = check_rules_checksum(configuration.rules.as_slice()) {
+            eprintln!("error when checking rules checksum: {e}")
+            exit(1)
         }
-        for r in &configuration.rules {
-            if !r.verify_checksum() {
-                panic!("Checksum invalid for rule {}", r.name);
-            }
-        }
-        if configuration.use_debug {
-            println!("done!");
-        }
-    } else {
-        println!("Skipping checksum verification");
     }
 
     // check if we do a diff-aware scan
@@ -445,10 +432,7 @@ fn main() -> Result<()> {
         println!("diff aware data: {:?}", diff_aware_parameters);
     }
 
-    // we always keep one thread free and some room for the management threads that monitor
-    // the rule execution.
-    let ideal_threads = ((configuration.num_cpus as f32 - 1.0) * 0.90) as usize;
-    let num_threads = if ideal_threads == 0 { 1 } else { ideal_threads };
+    let num_threads = get_num_threads_to_use(&configuration);
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)

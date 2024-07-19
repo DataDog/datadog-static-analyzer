@@ -6,6 +6,10 @@ use std::path::PathBuf;
 
 use crate::constants::{GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH, GIT_HEAD};
 
+/// The string to reference the head on the remote (hopefully pointing to the default branch)
+const REMOTE_HEAD_REF: &str = "refs/remotes/origin/HEAD";
+const ORIGIN_PREFIX: &str = "origin/";
+
 /// Try to get the branch running. We first try to get the branch from the repository. When
 /// it fails, we attempt to get the branch from the CI provider when the analyzer
 /// runs in a CI provider.
@@ -50,15 +54,16 @@ pub fn get_branch(repository: &Repository, use_debug: bool) -> Option<String> {
     None
 }
 
-/// Get the default branch of [repository]
+/// Get the default branch of [repository]. To do so, we check the head ref on remote, which
+/// is hopefully on the default branch.
 pub fn get_default_branch(repository: &Repository) -> anyhow::Result<String> {
-    let head_ref = repository.find_reference("refs/remotes/origin/HEAD")?;
+    let head_ref = repository.find_reference(REMOTE_HEAD_REF)?;
     let resolved_ref = head_ref.resolve()?;
     let branch_name_opt = resolved_ref.shorthand();
 
     if let Some(branch_name) = branch_name_opt {
-        if branch_name.starts_with("origin/") {
-            let bn = &branch_name[7..branch_name.len()];
+        if branch_name.starts_with(ORIGIN_PREFIX) {
+            let bn = &branch_name[ORIGIN_PREFIX.len()..branch_name.len()];
             return Ok(bn.to_string());
         }
     }
