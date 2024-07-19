@@ -21,7 +21,7 @@ echo "AKIAIOSFODNN7EXAMPLE" > "${REPO_DIR}/foobar"
 
 
 ## Secrets should be found
-./target/release-dev/datadog-static-analyzer-git-hooks --repository "${REPO_DIR}" --secrets --staging --debug yes --default-branch main >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hooks --repository "${REPO_DIR}" --secrets --debug yes --default-branch main >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
   echo "secrets should have been found"
