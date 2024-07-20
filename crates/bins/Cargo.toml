@@ -7,7 +7,7 @@ edition = "2021"
 name = "datadog-static-analyzer"
 
 [[bin]]
-name = "datadog-static-analyzer-git-hooks"
+name = "datadog-static-analyzer-git-hook"
 
 [[bin]]
 name = "datadog-static-analyzer-test-ruleset"

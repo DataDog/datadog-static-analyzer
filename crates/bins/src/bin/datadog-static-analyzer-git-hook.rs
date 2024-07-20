@@ -86,7 +86,7 @@ fn user_override() -> bool {
             return true;
         }
         if user_input == "no" {
-            return true;
+            return false;
         }
     }
 }
