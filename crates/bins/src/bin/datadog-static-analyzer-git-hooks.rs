@@ -1,14 +1,11 @@
-use std::path::PathBuf;
-use std::process::exit;
-use std::sync::Arc;
-use std::{env, fs};
-
 use anyhow::{Context, Result};
 use cli::config_file::read_config_file;
 use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
 use cli::file_utils::{filter_files_by_size, get_files, read_files_from_gitignore};
-use cli::git_utils::{get_changed_files, get_default_branch};
+use cli::git_utils::{
+    get_changed_files_between_shas, get_changed_files_with_branch, get_default_branch,
+};
 use cli::model::cli_configuration::CliConfiguration;
 use cli::rule_utils::check_rules_checksum;
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
@@ -24,10 +21,35 @@ use kernel::rule_config::RuleConfigProvider;
 use rayon::prelude::*;
 use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::exit;
+use std::sync::Arc;
+use std::{env, fs, io};
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
     print!("{}", opts.usage(&brief));
+}
+
+/// Ask the user if they want to continue
+/// User enters "yes" -> function returns true
+/// User enters "no" -> function returns false
+fn user_override() -> bool {
+    loop {
+        println!("⚠ errors found, do you want to override the check and continue? (yes/no): ");
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("error: unable to read user input");
+        let user_input = input.trim();
+        if user_input == "yes" {
+            return true;
+        }
+        if user_input == "no" {
+            return true;
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -49,6 +71,19 @@ fn main() -> Result<()> {
 
     opts.optopt("", "default-branch", "default branch", "main");
 
+    opts.optopt(
+        "",
+        "sha-start",
+        "sha start",
+        "077a3609dbff7c390efe54820e0bda3536685605",
+    );
+    opts.optopt(
+        "",
+        "sha-end",
+        "sha end",
+        "484df034272a3f63c1796ef44f83a790d7729590",
+    );
+
     opts.optopt("d", "debug", "use debug mode", "yes/no");
 
     opts.optopt(
@@ -67,6 +102,11 @@ fn main() -> Result<()> {
     );
 
     opts.optflag("s", "staging", "use staging");
+    opts.optflag(
+        "",
+        "confirmation",
+        "user must validate if they want to continue",
+    );
     opts.optflag("t", "include-testing-rules", "include testing rules");
     opts.optflag("", "secrets", "enable secrets detection (BETA)");
 
@@ -89,9 +129,12 @@ fn main() -> Result<()> {
 
     let should_verify_checksum = !matches.opt_present("b");
     let use_staging = matches.opt_present("s");
+    let use_confirmation = matches.opt_present("confirmation");
 
     let secrets_enabled = matches.opt_present("secrets");
     let default_branch_opt = matches.opt_str("default-branch");
+    let sha_start_opt = matches.opt_str("sha-start");
+    let sha_end_opt = matches.opt_str("sha-end");
 
     let use_debug = *matches
         .opt_str("d")
@@ -248,21 +291,42 @@ fn main() -> Result<()> {
     let repository =
         Repository::init(&configuration.source_directory).expect("fail to initialize repository");
 
-    // the default branch is either the --default-branch argument or what is found using git
-    let default_branch = default_branch_opt
-        .ok_or_else(|| get_default_branch(&repository))
-        .unwrap_or_else(|_| {
+    let modifications: HashMap<PathBuf, Vec<u32>> = match (
+        &default_branch_opt,
+        &sha_start_opt,
+        &sha_end_opt,
+    ) {
+        (Some(_), Some(_), Some(_)) => {
             eprintln!(
-                "Cannot find the default branch, use --default-branch to force the default branch"
+                "incompatible options: cannot use --sha-start --sha-end and --default-branch"
             );
             exit(1);
-        });
+        }
+        // user specified the default branch
+        (Some(default_branch), None, None) => {
+            get_changed_files_with_branch(&repository, default_branch)?
+        }
+        // user specified the start sha and the end sha
+        (None, Some(sha_start), Some(sha_end)) => {
+            get_changed_files_between_shas(&repository, sha_start, sha_end)?
+        }
 
-    if configuration.use_debug {
-        println!("default branch={}", default_branch);
-    }
+        // none of this was submitted, try to guess the default branch
+        _ => {
+            let default_branch = get_default_branch(&repository).unwrap_or_else(|_| {
+                eprintln!(
+                    "Cannot find the default branch, use --default-branch to force the default branch"
+                );
+                exit(1);
+            });
 
-    let modifications = get_changed_files(&repository, &default_branch)?;
+            if configuration.use_debug {
+                println!("detected default branch={}", default_branch);
+            }
+
+            get_changed_files_with_branch(&repository, &default_branch)?
+        }
+    };
 
     let changed_files: Vec<PathBuf> = modifications
         .keys()
@@ -298,10 +362,10 @@ fn main() -> Result<()> {
         );
     }
 
+    let mut fail_for_secrets = false;
+
     // Secrets detection
     if secrets_enabled {
-        let mut fail_for_secrets = false;
-
         let secrets_files = &files_to_analyze;
 
         let sds_scanner = build_sds_scanner(&secrets_rules);
@@ -340,9 +404,10 @@ fn main() -> Result<()> {
                 if let Some(lines) = modifications.get(&path) {
                     if lines.contains(&secret_match.start.line) {
                         println!(
-                            "secret found on file {} line {}",
+                            "secret found on file {} line {} (type: {})",
                             path.display(),
-                            secret_match.start.line
+                            secret_match.start.line,
+                            secret_result.rule_name,
                         );
                         fail_for_secrets = true;
                         continue;
@@ -350,11 +415,20 @@ fn main() -> Result<()> {
                 }
             }
         }
+    }
 
-        if fail_for_secrets {
+    let failed = fail_for_secrets;
+
+    if failed {
+        if use_confirmation {
+            if user_override() {
+                exit(0)
+            } else {
+                exit(1)
+            }
+        } else {
             exit(1)
         }
     }
-
     exit(0)
 }
