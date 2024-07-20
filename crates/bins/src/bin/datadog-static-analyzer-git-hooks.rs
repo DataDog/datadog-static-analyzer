@@ -508,7 +508,7 @@ fn main() -> Result<()> {
                 if let Some(lines) = modifications.get(&path) {
                     if lines.contains(&secret_match.start.line) {
                         print_error(
-                            &path.display().to_string().as_str(),
+                            path.display().to_string().as_str(),
                             secret_match.start.line,
                             &secret_result.rule_name,
                             IssueType::Secret,
