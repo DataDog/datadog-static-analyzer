@@ -18,7 +18,7 @@ You have two modes to invoke the program:
  - compare the current branch with a default branch
  - compare two shas
 
-## Compare the current branch with a default branch
+### Compare the current branch with a default branch
 
 To compare the current commit with the default branch main, invoke the following command.
 
@@ -26,7 +26,7 @@ To compare the current commit with the default branch main, invoke the following
 datadog-static-analyzer-git-hook -r <path/to/repo> --secrets  --default-branch main
 ```
 
-## Compare two commit shas
+### Compare two commit shas
 
 To compare the commit `<sha1>` and `<sha2>` (`<sha1>` has been committed before `<sha2>`), enter the following command.
 
@@ -34,20 +34,20 @@ To compare the commit `<sha1>` and `<sha2>` (`<sha1>` has been committed before 
 datadog-static-analyzer-git-hook -r <path/to/repo> --secrets  --sha-start <sha1> --sha-end <sha2>
 ```
 
-## Options
+### Options
 
  - `--secrets`: also validate secrets with [Datadog Sensitive Data Scanner](https://docs.datadoghq.com/sensitive_data_scanner/)
  - `--confirmation`: prompts the user if they want to bypass the warning
 
 
-## Example of Integration
+### Example of Integration
 
 
-### Step 1: ensure that `datadog-static-analyzer-git-hook` is in your PATH
+#### Step 1: ensure that `datadog-static-analyzer-git-hook` is in your PATH
 
 Make sure you copy the `datadog-static-analyzer-git-hook` in your `PATH` and you can invoke it.
 
-### Step 2: add Git `pre-commit` script
+#### Step 2: add Git `pre-commit` script
 
 In your repository, create a file `.git/hooks/pre-push` with the following content.
 With this file, the datadog static analyzer will check that code being pushed does
