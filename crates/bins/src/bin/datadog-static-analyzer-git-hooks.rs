@@ -2,23 +2,30 @@ use anyhow::{Context, Result};
 use cli::config_file::read_config_file;
 use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
-use cli::file_utils::{filter_files_by_size, get_files, read_files_from_gitignore};
+use cli::file_utils::{
+    filter_files_by_size, filter_files_for_language, get_files, read_files_from_gitignore,
+};
 use cli::git_utils::{
     get_changed_files_between_shas, get_changed_files_with_branch, get_default_branch,
 };
 use cli::model::cli_configuration::CliConfiguration;
-use cli::rule_utils::check_rules_checksum;
+use cli::rule_utils::{
+    check_rules_checksum, convert_rules_to_rules_internal, get_languages_for_rules,
+};
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use common::analysis_options::AnalysisOptions;
+use console::Emoji;
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
+use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, PathConfig};
-use kernel::model::rule::Rule;
+use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 use kernel::rule_config::RuleConfigProvider;
 use rayon::prelude::*;
+use rocket::yansi::Paint;
 use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use std::collections::HashMap;
@@ -32,12 +39,44 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
+enum IssueType {
+    Secret,
+    StaticAnalysis,
+}
+
+fn print_error(file: &str, line: u32, rule: &str, kind: IssueType) {
+    let error_type_emoji = match kind {
+        IssueType::Secret => Emoji("🔑", ""),
+        IssueType::StaticAnalysis => Emoji("🛑", ""),
+    };
+
+    let error_type = match kind {
+        IssueType::Secret => "secret",
+        IssueType::StaticAnalysis => "code violation",
+    };
+
+    let red_str_fmt = format!(
+        "{} {} {} found on file {} line {}",
+        Emoji("⚠️", "/!\\"),
+        error_type_emoji,
+        error_type,
+        file,
+        line,
+    );
+
+    let red_str = red_str_fmt.magenta();
+
+    let rule_str = format!("(type: {})", rule);
+    println!("{red_str} {rule_str}");
+}
+
 /// Ask the user if they want to continue
 /// User enters "yes" -> function returns true
 /// User enters "no" -> function returns false
 fn user_override() -> bool {
     loop {
-        println!("⚠ errors found, do you want to override the check and continue? (yes/no): ");
+        let prompt = "do you want to override the check and continue?".cyan();
+        println!("{} {} (yes/no): ", Emoji("⛔️", "WARNING"), prompt);
         let mut input = String::new();
         io::stdin()
             .read_line(&mut input)
@@ -253,7 +292,7 @@ fn main() -> Result<()> {
         rules_file: None,
         output_format: Json,
         num_cpus,
-        rules,
+        rules: rules.clone(),
         rule_config_provider,
         output_file: "".to_string(),
         max_file_size_kb,
@@ -362,9 +401,74 @@ fn main() -> Result<()> {
         );
     }
 
-    let mut fail_for_secrets = false;
+    // static analysis part
+    let mut fail_for_static_analysis = false;
+    let languages = get_languages_for_rules(&rules);
+    let mut all_rule_results: Vec<RuleResult> = vec![];
+    for language in &languages {
+        let files_for_language = filter_files_for_language(&files_to_analyze, language);
+
+        if files_for_language.is_empty() {
+            continue;
+        }
+
+        let rules_for_language: Vec<RuleInternal> =
+            convert_rules_to_rules_internal(&configuration, language)?;
+
+        // take the relative path for the analysis
+        let rule_results: Vec<RuleResult> = files_for_language
+            .into_par_iter()
+            .flat_map(|path| {
+                let relative_path = path
+                    .strip_prefix(directory_path)
+                    .unwrap()
+                    .to_str()
+                    .expect("path contains non-Unicode characters");
+                let relative_path: Arc<str> = Arc::from(relative_path);
+                let rule_config = configuration
+                    .rule_config_provider
+                    .config_for_file(relative_path.as_ref());
+                if let Ok(file_content) = fs::read_to_string(&path) {
+                    let file_content = Arc::from(file_content);
+                    analyze(
+                        language,
+                        &rules_for_language,
+                        &relative_path,
+                        &file_content,
+                        &rule_config,
+                        &analysis_options,
+                    )
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+
+        all_rule_results.extend(rule_results);
+    }
+
+    for rule_result in all_rule_results {
+        let path = PathBuf::from(rule_result.filename);
+
+        for violation in rule_result.violations {
+            if let Some(lines) = modifications.get(&path) {
+                if lines.contains(&violation.start.line) {
+                    print_error(
+                        path.display().to_string().as_str(),
+                        violation.start.line,
+                        &rule_result.rule_name,
+                        IssueType::StaticAnalysis,
+                    );
+                    fail_for_static_analysis = true;
+                    continue;
+                }
+            }
+        }
+    }
 
     // Secrets detection
+    let mut fail_for_secrets = false;
+
     if secrets_enabled {
         let secrets_files = &files_to_analyze;
 
@@ -403,12 +507,13 @@ fn main() -> Result<()> {
             for secret_match in secret_result.matches {
                 if let Some(lines) = modifications.get(&path) {
                     if lines.contains(&secret_match.start.line) {
-                        println!(
-                            "secret found on file {} line {} (type: {})",
-                            path.display(),
+                        print_error(
+                            &path.display().to_string().as_str(),
                             secret_match.start.line,
-                            secret_result.rule_name,
+                            &secret_result.rule_name,
+                            IssueType::Secret,
                         );
+
                         fail_for_secrets = true;
                         continue;
                     }
@@ -417,7 +522,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let failed = fail_for_secrets;
+    let failed = fail_for_secrets || fail_for_static_analysis;
 
     if failed {
         if use_confirmation {

@@ -2,6 +2,7 @@ Component,Origin,License,Copyright
 anyhow,https://crates.io/crates/anyhow,MIT,Copyright (c) 2019 David Tolnay
 base64,https://github.com/marshallpierce/rust-base64,Apache-2.0,Copyright (c) 2015 Alice Maz
 bstr,https://github.com/BurntSushi/bstr,MIT,Copyright (c) 2018-2019 Andrew Gallant
+console,https://github.com/console-rs/console,MIT,Copyright (c) 2017 Armin Ronacher
 csv,https://github.com/BurntSushi/rust-csv,MIT,Copyright (c) 2015 Andrew Gallant
 deno-core,https://github.com/denoland/deno,MIT,Copyright 2018-2023 the Deno authors
 git2,https://crates.io/crates/git2,MIT,Copyright (c) 2014 Alex Crichton
