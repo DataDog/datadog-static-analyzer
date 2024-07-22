@@ -49,6 +49,25 @@ pub fn is_generated_file(full_content: &str, language: &Language) -> bool {
     }
 }
 
+/// Glob patterns that are, by default, excluded from analysis. These patterns are for paths
+/// that often contain either vendored 3rd party dependencies or generated files.
+pub const DEFAULT_IGNORED_GLOBS: &[&str] = &[
+    // JavaScript
+    "**/node_modules/**/*",
+    "**/jspm_packages/**/*",
+    "**/.next/**/*",
+    "**/.vuepress/**/*",
+    // Python
+    "**/venv/**/*",
+    "**/__pycache__/**/*",
+    // Ruby
+    "**/_vendor/bundle/ruby/**/*",
+    "**/.vendor/bundle/ruby/**/*",
+    "**/.bundle/**/*",
+    // Java
+    "**/.gradle/**/*",
+];
+
 #[cfg(test)]
 mod tests {
     use crate::analysis::generated_content::{is_generated_file, PROTOBUF_HEADER, THRIFT_HEADER};
