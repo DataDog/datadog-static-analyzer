@@ -36,6 +36,7 @@ use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
 use kernel::analysis::analyze::analyze;
+use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
 use kernel::model::common::OutputFormat;
@@ -302,6 +303,11 @@ fn main() -> Result<()> {
         path_config
             .ignore
             .extend(paths_from_gitignore.iter().map(|p| p.clone().into()));
+    }
+    if ignore_generated_files {
+        path_config
+            .ignore
+            .extend(DEFAULT_IGNORED_GLOBS.iter().map(|&p| p.to_string().into()));
     }
 
     let languages = get_languages_for_rules(&rules);
