@@ -44,7 +44,7 @@ enum IssueType {
     StaticAnalysis,
 }
 
-fn print_error(file: &str, line: u32, rule: &str, kind: IssueType) {
+fn format_error(file: &str, line: u32, rule: &str, kind: IssueType) -> String {
     let error_type_emoji = match kind {
         IssueType::Secret => Emoji("🔑", ""),
         IssueType::StaticAnalysis => Emoji("🛑", ""),
@@ -67,7 +67,7 @@ fn print_error(file: &str, line: u32, rule: &str, kind: IssueType) {
     let red_str = red_str_fmt.magenta();
 
     let rule_str = format!("(type: {})", rule);
-    println!("{red_str} {rule_str}");
+    format!("{red_str} {rule_str}")
 }
 
 /// Ask the user if they want to continue
@@ -453,11 +453,14 @@ fn main() -> Result<()> {
         for violation in rule_result.violations {
             if let Some(lines) = modifications.get(&path) {
                 if lines.contains(&violation.start.line) {
-                    print_error(
-                        path.display().to_string().as_str(),
-                        violation.start.line,
-                        &rule_result.rule_name,
-                        IssueType::StaticAnalysis,
+                    println!(
+                        "{}",
+                        format_error(
+                            path.display().to_string().as_str(),
+                            violation.start.line,
+                            &rule_result.rule_name,
+                            IssueType::StaticAnalysis,
+                        )
                     );
                     fail_for_static_analysis = true;
                     continue;
@@ -507,11 +510,14 @@ fn main() -> Result<()> {
             for secret_match in secret_result.matches {
                 if let Some(lines) = modifications.get(&path) {
                     if lines.contains(&secret_match.start.line) {
-                        print_error(
-                            path.display().to_string().as_str(),
-                            secret_match.start.line,
-                            &secret_result.rule_name,
-                            IssueType::Secret,
+                        println!(
+                            "{}",
+                            format_error(
+                                path.display().to_string().as_str(),
+                                secret_match.start.line,
+                                &secret_result.rule_name,
+                                IssueType::Secret,
+                            )
                         );
 
                         fail_for_secrets = true;
