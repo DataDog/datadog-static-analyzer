@@ -14,7 +14,6 @@ use cli::rule_utils::{
 };
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use common::analysis_options::AnalysisOptions;
-use console::Emoji;
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
@@ -33,6 +32,7 @@ use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
 use std::{env, fs, io};
+use terminal_emoji::Emoji;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -46,8 +46,8 @@ enum IssueType {
 
 fn format_error(file: &str, line: u32, rule: &str, kind: IssueType) -> String {
     let error_type_emoji = match kind {
-        IssueType::Secret => Emoji("🔑", ""),
-        IssueType::StaticAnalysis => Emoji("🛑", ""),
+        IssueType::Secret => Emoji::new("🔑", ""),
+        IssueType::StaticAnalysis => Emoji::new("🛑", ""),
     };
 
     let error_type = match kind {
@@ -57,7 +57,7 @@ fn format_error(file: &str, line: u32, rule: &str, kind: IssueType) -> String {
 
     let red_str_fmt = format!(
         "{} {} {} found on file {} line {}",
-        Emoji("⚠️", "/!\\"),
+        Emoji::new("⚠️", "/!\\"),
         error_type_emoji,
         error_type,
         file,
