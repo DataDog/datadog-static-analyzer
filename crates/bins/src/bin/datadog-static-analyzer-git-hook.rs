@@ -1,33 +1,94 @@
-use std::path::PathBuf;
-use std::process::exit;
-use std::sync::Arc;
-use std::{env, fs};
-
 use anyhow::{Context, Result};
 use cli::config_file::read_config_file;
 use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
-use cli::file_utils::{filter_files_by_size, get_files, read_files_from_gitignore};
-use cli::git_utils::{get_changed_files, get_default_branch};
+use cli::file_utils::{
+    filter_files_by_size, filter_files_for_language, get_files, read_files_from_gitignore,
+};
+use cli::git_utils::{
+    get_changed_files_between_shas, get_changed_files_with_branch, get_default_branch,
+};
 use cli::model::cli_configuration::CliConfiguration;
-use cli::rule_utils::check_rules_checksum;
+use cli::rule_utils::{
+    check_rules_checksum, convert_rules_to_rules_internal, get_languages_for_rules,
+};
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use common::analysis_options::AnalysisOptions;
+use console::Emoji;
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
+use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, PathConfig};
-use kernel::model::rule::Rule;
+use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 use kernel::rule_config::RuleConfigProvider;
 use rayon::prelude::*;
+use rocket::yansi::Paint;
 use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::process::exit;
+use std::sync::Arc;
+use std::{env, fs, io};
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
     print!("{}", opts.usage(&brief));
+}
+
+enum IssueType {
+    Secret,
+    StaticAnalysis,
+}
+
+fn format_error(file: &str, line: u32, rule: &str, kind: IssueType) -> String {
+    let error_type_emoji = match kind {
+        IssueType::Secret => Emoji("🔑", ""),
+        IssueType::StaticAnalysis => Emoji("🛑", ""),
+    };
+
+    let error_type = match kind {
+        IssueType::Secret => "secret",
+        IssueType::StaticAnalysis => "code violation",
+    };
+
+    let red_str_fmt = format!(
+        "{} {} {} found on file {} line {}",
+        Emoji("⚠️", "/!\\"),
+        error_type_emoji,
+        error_type,
+        file,
+        line,
+    );
+
+    let red_str = red_str_fmt.magenta();
+
+    let rule_str = format!("(type: {})", rule);
+    format!("{red_str} {rule_str}")
+}
+
+/// Ask the user if they want to continue
+/// User enters "yes" -> function returns true
+/// User enters "no" -> function returns false
+fn user_override() -> bool {
+    loop {
+        let prompt = "do you want to override the check and continue?".cyan();
+        println!("{} {} (yes/no): ", Emoji("⛔️", "WARNING"), prompt);
+        let mut input = String::new();
+        io::stdin()
+            .read_line(&mut input)
+            .expect("error: unable to read user input");
+        let user_input = input.trim();
+        if user_input == "yes" {
+            return true;
+        }
+        if user_input == "no" {
+            return false;
+        }
+    }
 }
 
 fn main() -> Result<()> {
@@ -49,6 +110,19 @@ fn main() -> Result<()> {
 
     opts.optopt("", "default-branch", "default branch", "main");
 
+    opts.optopt(
+        "",
+        "sha-start",
+        "sha start",
+        "077a3609dbff7c390efe54820e0bda3536685605",
+    );
+    opts.optopt(
+        "",
+        "sha-end",
+        "sha end",
+        "484df034272a3f63c1796ef44f83a790d7729590",
+    );
+
     opts.optopt("d", "debug", "use debug mode", "yes/no");
 
     opts.optopt(
@@ -67,6 +141,11 @@ fn main() -> Result<()> {
     );
 
     opts.optflag("s", "staging", "use staging");
+    opts.optflag(
+        "",
+        "confirmation",
+        "user must validate if they want to continue",
+    );
     opts.optflag("t", "include-testing-rules", "include testing rules");
     opts.optflag("", "secrets", "enable secrets detection (BETA)");
 
@@ -89,9 +168,12 @@ fn main() -> Result<()> {
 
     let should_verify_checksum = !matches.opt_present("b");
     let use_staging = matches.opt_present("s");
+    let use_confirmation = matches.opt_present("confirmation");
 
     let secrets_enabled = matches.opt_present("secrets");
     let default_branch_opt = matches.opt_str("default-branch");
+    let sha_start_opt = matches.opt_str("sha-start");
+    let sha_end_opt = matches.opt_str("sha-end");
 
     let use_debug = *matches
         .opt_str("d")
@@ -210,7 +292,7 @@ fn main() -> Result<()> {
         rules_file: None,
         output_format: Json,
         num_cpus,
-        rules,
+        rules: rules.clone(),
         rule_config_provider,
         output_file: "".to_string(),
         max_file_size_kb,
@@ -248,21 +330,42 @@ fn main() -> Result<()> {
     let repository =
         Repository::init(&configuration.source_directory).expect("fail to initialize repository");
 
-    // the default branch is either the --default-branch argument or what is found using git
-    let default_branch = default_branch_opt
-        .ok_or_else(|| get_default_branch(&repository))
-        .unwrap_or_else(|_| {
+    let modifications: HashMap<PathBuf, Vec<u32>> = match (
+        &default_branch_opt,
+        &sha_start_opt,
+        &sha_end_opt,
+    ) {
+        (Some(_), Some(_), Some(_)) => {
             eprintln!(
-                "Cannot find the default branch, use --default-branch to force the default branch"
+                "incompatible options: cannot use --sha-start --sha-end and --default-branch"
             );
             exit(1);
-        });
+        }
+        // user specified the default branch
+        (Some(default_branch), None, None) => {
+            get_changed_files_with_branch(&repository, default_branch)?
+        }
+        // user specified the start sha and the end sha
+        (None, Some(sha_start), Some(sha_end)) => {
+            get_changed_files_between_shas(&repository, sha_start, sha_end)?
+        }
 
-    if configuration.use_debug {
-        println!("default branch={}", default_branch);
-    }
+        // none of this was submitted, try to guess the default branch
+        _ => {
+            let default_branch = get_default_branch(&repository).unwrap_or_else(|_| {
+                eprintln!(
+                    "Cannot find the default branch, use --default-branch to force the default branch"
+                );
+                exit(1);
+            });
 
-    let modifications = get_changed_files(&repository, &default_branch)?;
+            if configuration.use_debug {
+                println!("detected default branch={}", default_branch);
+            }
+
+            get_changed_files_with_branch(&repository, &default_branch)?
+        }
+    };
 
     let changed_files: Vec<PathBuf> = modifications
         .keys()
@@ -298,10 +401,78 @@ fn main() -> Result<()> {
         );
     }
 
-    // Secrets detection
-    if secrets_enabled {
-        let mut fail_for_secrets = false;
+    // static analysis part
+    let mut fail_for_static_analysis = false;
+    let languages = get_languages_for_rules(&rules);
+    let mut all_rule_results: Vec<RuleResult> = vec![];
+    for language in &languages {
+        let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
+        if files_for_language.is_empty() {
+            continue;
+        }
+
+        let rules_for_language: Vec<RuleInternal> =
+            convert_rules_to_rules_internal(&configuration, language)?;
+
+        // take the relative path for the analysis
+        let rule_results: Vec<RuleResult> = files_for_language
+            .into_par_iter()
+            .flat_map(|path| {
+                let relative_path = path
+                    .strip_prefix(directory_path)
+                    .unwrap()
+                    .to_str()
+                    .expect("path contains non-Unicode characters");
+                let relative_path: Arc<str> = Arc::from(relative_path);
+                let rule_config = configuration
+                    .rule_config_provider
+                    .config_for_file(relative_path.as_ref());
+                if let Ok(file_content) = fs::read_to_string(&path) {
+                    let file_content = Arc::from(file_content);
+                    analyze(
+                        language,
+                        &rules_for_language,
+                        &relative_path,
+                        &file_content,
+                        &rule_config,
+                        &analysis_options,
+                    )
+                } else {
+                    vec![]
+                }
+            })
+            .collect();
+
+        all_rule_results.extend(rule_results);
+    }
+
+    for rule_result in all_rule_results {
+        let path = PathBuf::from(rule_result.filename);
+
+        for violation in rule_result.violations {
+            if let Some(lines) = modifications.get(&path) {
+                if lines.contains(&violation.start.line) {
+                    println!(
+                        "{}",
+                        format_error(
+                            path.display().to_string().as_str(),
+                            violation.start.line,
+                            &rule_result.rule_name,
+                            IssueType::StaticAnalysis,
+                        )
+                    );
+                    fail_for_static_analysis = true;
+                    continue;
+                }
+            }
+        }
+    }
+
+    // Secrets detection
+    let mut fail_for_secrets = false;
+
+    if secrets_enabled {
         let secrets_files = &files_to_analyze;
 
         let sds_scanner = build_sds_scanner(&secrets_rules);
@@ -340,21 +511,35 @@ fn main() -> Result<()> {
                 if let Some(lines) = modifications.get(&path) {
                     if lines.contains(&secret_match.start.line) {
                         println!(
-                            "secret found on file {} line {}",
-                            path.display(),
-                            secret_match.start.line
+                            "{}",
+                            format_error(
+                                path.display().to_string().as_str(),
+                                secret_match.start.line,
+                                &secret_result.rule_name,
+                                IssueType::Secret,
+                            )
                         );
+
                         fail_for_secrets = true;
                         continue;
                     }
                 }
             }
         }
+    }
 
-        if fail_for_secrets {
+    let failed = fail_for_secrets || fail_for_static_analysis;
+
+    if failed {
+        if use_confirmation {
+            if user_override() {
+                exit(0)
+            } else {
+                exit(1)
+            }
+        } else {
             exit(1)
         }
     }
-
     exit(0)
 }

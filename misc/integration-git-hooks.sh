@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo build --profile release-dev --bin datadog-static-analyzer-git-hooks
+cargo build --profile release-dev --bin datadog-static-analyzer-git-hook
 
 ## A Python repository
 REPO_DIR=$(mktemp -d)
@@ -12,16 +12,25 @@ touch "${REPO_DIR}/README.md"
 (cd "${REPO_DIR}" && git config user.email "you@example.com")
 (cd "${REPO_DIR}" && git config user.name "Your Name")
 (cd "${REPO_DIR}" && git commit -m"initial commit")
+SHA1=$(cd $REPO_DIR && git rev-parse HEAD)
 
 ## Creating a new branch and adding a new file with a secret
 (cd "${REPO_DIR}" && git checkout -b new-branch)
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-code-style" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo "AKIAIOSFODNN7EXAMPLE" > "${REPO_DIR}/foobar"
-(cd "${REPO_DIR}" && git add foobar )
+(cd "${REPO_DIR}" && git add foobar)
+(cd "${REPO_DIR}" && git add static-analysis.datadog.yml)
 (cd "${REPO_DIR}" && git commit -a -m"add foobar")
+SHA2=$(cd $REPO_DIR && git rev-parse HEAD)
 
+########################################################
+# TEST: Secrets should be found using the default branch
+########################################################
 
-## Secrets should be found
-./target/release-dev/datadog-static-analyzer-git-hooks --repository "${REPO_DIR}" --secrets --debug yes --default-branch main >/tmp/plop 2>&1
+echo "Starting test: secrets should be found using the default branch"
+
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --default-branch main >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
   echo "secrets should have been found"
@@ -35,11 +44,90 @@ NB_OCCURRENCES=$(grep "secret found on file foobar" /tmp/plop | wc -l)
 echo "Found ${NB_OCCURRENCES} secret"
 if [ "${NB_OCCURRENCES}" -ne "1" ]; then
   echo "secrets should have been found"
+  cat /tmp/plop
   exit 1
 fi
 
-rm -rf "${REPO_DIR}"
+#############################################################
+# TEST: Secrets should be found using two sha (start and end)
+#############################################################
+echo "Starting test: secrets should be found using two sha"
+
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --sha-start $SHA1 --sha-end $SHA2 >/tmp/plop 2>&1
+
+if [ $? -ne 1 ]; then
+  echo "secrets should have been found"
+  exit 1
+fi
+
+## Print output
+cat /tmp/plop
+
+NB_OCCURRENCES=$(grep "secret found on file foobar" /tmp/plop | wc -l)
+echo "Found ${NB_OCCURRENCES} secret"
+if [ "${NB_OCCURRENCES}" -ne "1" ]; then
+  echo "secrets should have been found"
+  cat /tmp/plop
+  exit 1
+fi
+
+
+###################################
+# TEST: Find static analysis issues
+###################################
+echo "Starting test: static analysis errors found"
+
+# Add code with a violation
+
+echo "def apiProduct_add():" > "${REPO_DIR}/mycode.py"
+echo "  pass" >> "${REPO_DIR}/mycode.py"
+(cd "${REPO_DIR}" && git add mycode.py )
+(cd "${REPO_DIR}" && git commit -a -m"add static analysis violation")
+SHA3=$(cd $REPO_DIR && git rev-parse HEAD)
+
+echo "starting analyzer between $SHA2 and $SHA3"
+
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --sha-start $SHA2 --sha-end $SHA3 >/tmp/plop 2>&1
+
+if [ $? -ne 1 ]; then
+  echo "static analysis issues should have been found"
+  cat /tmp/plop
+  exit 1
+fi
+
+## Print output
+cat /tmp/plop
+
+NB_OCCURRENCES=$(grep "type: python-code-style/function-naming" /tmp/plop | wc -l)
+echo "Found ${NB_OCCURRENCES} violations for python-code-style/function-naming"
+if [ "${NB_OCCURRENCES}" -ne "1" ]; then
+  echo "violations should have been found"
+  exit 1
+fi
+
+################################################
+# TEST: Test error when a branch does not exists
+################################################
+
+echo "Starting test: error when a branch does not exists"
+
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --default-branch mainwefwef >/tmp/plop 2>&1
+
+if [ $? -ne 1 ]; then
+  echo "branch cannot be found"
+  exit 1
+fi
+
+## Print output
+cat /tmp/plop
+
+NB_OCCURRENCES=$(grep "cannot locate local branch" /tmp/plop | wc -l)
+if [ "${NB_OCCURRENCES}" -ne "1" ]; then
+  echo "cannot locate local branch is not found in tool output"
+  cat /tmp/plop
+  exit 1
+fi
 
 echo "All tests passed"
-
+rm -rf "${REPO_DIR}"
 exit 0

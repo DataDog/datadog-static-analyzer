@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use git2::{DiffLineType, DiffOptions, Repository};
+use git2::{Diff, DiffLineType, DiffOptions, Oid, Repository};
 use std::collections::HashMap;
 use std::env;
 use std::path::PathBuf;
@@ -70,34 +70,12 @@ pub fn get_default_branch(repository: &Repository) -> anyhow::Result<String> {
     Err(anyhow!("cannot find the default branch"))
 }
 
-/// Get the list of changed files for the repository between the latest commit the repository
-/// is at and the default branch pointed by [default_branch].
-/// The [repository] object is the repository built by git2.
-/// It returns a map where the key is the path of the file and the value is the list of lines
-/// that have been added (understand: added/updated).
-pub fn get_changed_files(
-    repository: &Repository,
-    branch_name: &str,
-) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> {
+/// Get the list of changed files for a git tree. Helper function used by
+/// public and user-facing functions like [get_changed_files_between_shas] and
+/// [get_changed_files_with_branch]
+fn get_changed_files(diff: &Diff) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> {
     // final result
     let mut res: HashMap<PathBuf, Vec<u32>> = HashMap::new();
-
-    // the latest commit on the local head
-    let head_commit = repository.head()?.peel_to_commit()?;
-
-    // the commit of the default branch.
-    let branch_commit = repository
-        .find_branch(branch_name, git2::BranchType::Local)?
-        .get()
-        .peel_to_commit()?;
-
-    // diff between local and default branch
-    let diff = repository.diff_tree_to_tree(
-        Some(&branch_commit.tree()?),
-        Some(&head_commit.tree()?),
-        Some(&mut DiffOptions::new()),
-    )?;
-
     // for each element, we find the lines that have been added.
     diff.foreach(
         &mut |_, _| true,
@@ -122,6 +100,55 @@ pub fn get_changed_files(
             true
         }),
     )?;
-
     Ok(res)
+}
+
+/// Get the list of changed files for the repository between the latest commit the repository
+/// is at and the default branch pointed by [default_branch].
+/// The [repository] object is the repository built by git2.
+/// It returns a map where the key is the path of the file and the value is the list of lines
+/// that have been added (understand: added/updated).
+pub fn get_changed_files_with_branch(
+    repository: &Repository,
+    branch_name: &str,
+) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> {
+    // the latest commit on the local head
+    let head_commit = repository.head()?.peel_to_commit()?;
+
+    // the commit of the default branch.
+    let branch_commit = repository
+        .find_branch(branch_name, git2::BranchType::Local)?
+        .get()
+        .peel_to_commit()?;
+
+    // diff between local and default branch
+    let diff = repository.diff_tree_to_tree(
+        Some(&branch_commit.tree()?),
+        Some(&head_commit.tree()?),
+        Some(&mut DiffOptions::new()),
+    )?;
+
+    get_changed_files(&diff)
+}
+
+/// Get the list of changed files for the repository between [sha_start] and [sha_end]
+/// The [repository] object is the repository built by git2.
+/// It returns a map where the key is the path of the file and the value is the list of lines
+/// that have been added (understand: added/updated).
+pub fn get_changed_files_between_shas(
+    repository: &Repository,
+    sha_start: &str,
+    sha_end: &str,
+) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> {
+    let start_commit = repository.find_commit(Oid::from_str(sha_start)?)?;
+    let end_commit = repository.find_commit(Oid::from_str(sha_end)?)?;
+
+    // diff between local and default branch
+    let diff = repository.diff_tree_to_tree(
+        Some(&start_commit.tree().unwrap()),
+        Some(&end_commit.tree().unwrap()),
+        Some(&mut DiffOptions::new()),
+    )?;
+
+    get_changed_files(&diff)
 }
