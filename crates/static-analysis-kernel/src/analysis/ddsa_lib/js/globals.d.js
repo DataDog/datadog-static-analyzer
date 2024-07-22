@@ -46,3 +46,10 @@ import {Violation} from "ext:ddsa_lib/violation";
  * @type {Array<Violation>}
  * @global
  */
+
+/**
+ * The entrypoint to the ddsa runtime API.
+ * @name ddsa
+ * @type {DDSA}
+ * @global
+ */

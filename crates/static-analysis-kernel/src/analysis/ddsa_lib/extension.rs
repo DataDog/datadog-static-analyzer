@@ -25,6 +25,7 @@ deno_core::extension!(
         ("ext:ddsa_lib/context_root", "context_root.js"),
         ("ext:ddsa_lib/context_rule", "context_rule.js"),
         ("ext:ddsa_lib/context_ts_lang", "context_ts_lang.js"),
+        ("ext:ddsa_lib/ddsa", "ddsa.js"),
         ("ext:ddsa_lib/edit", "edit.js"),
         ("ext:ddsa_lib/fix", "fix.js"),
         ("ext:ddsa_lib/query_match", "query_match.js"),

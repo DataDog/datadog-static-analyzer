@@ -7,13 +7,21 @@
 //       They should only be used in unit tests.
 
 use crate::analysis::ddsa_lib::common::{
-    iter_v8_array, load_function, v8_interned, v8_string, v8_uint,
+    iter_v8_array, load_function, v8_interned, v8_string, v8_uint, DDSAJsRuntimeError,
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
+use crate::analysis::ddsa_lib::runtime::ExecutionResult;
+use crate::analysis::ddsa_lib::JsRuntime;
+use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
+use crate::model::rule::{RuleCategory, RuleInternal, RuleSeverity};
 use deno_core::v8::HandleScope;
 use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::ops::Deref;
+use std::sync::Arc;
+use std::time::Duration;
 
 /// Returns true if an instance of the provided JavaScript class has exactly the `expected` property names.
 /// The instance will be created by passing zero arguments to the class constructor.
@@ -294,4 +302,61 @@ pub(crate) fn make_stub_root_context<'s>(
     }
 
     v8_root_ctx
+}
+
+/// Additional options that are used for a subset of tests
+// (This keeps the function signature of `shorthand_execute_rule` concise)
+#[derive(Debug, Default, Clone)]
+pub(crate) struct ExecuteOptions<'a> {
+    file_name: Option<&'a str>,
+    rule_arguments: Option<&'a HashMap<String, String>>,
+    timeout: Option<Duration>,
+}
+
+/// Executes the provided code and tree-sitter query as a [`RuleCategory::Unknown`] and
+/// [`RuleSeverity::Error`] rule, handling test-related setup boilerplate.
+pub(crate) fn shorthand_execute_rule(
+    runtime: &mut JsRuntime,
+    language: Language,
+    ts_query: &str,
+    js_code: &str,
+    source_text: &str,
+    options: Option<ExecuteOptions>,
+) -> Result<ExecutionResult, DDSAJsRuntimeError> {
+    let mut hasher = std::hash::DefaultHasher::new();
+    (language, &js_code, &ts_query).hash(&mut hasher);
+    // A hash used to generate deterministic values for optional arguments.
+    let hash = hasher.finish();
+    let rule_name = format!("rule-{hash:016x}");
+
+    let source_text: Arc<str> = Arc::from(source_text);
+    let tree = get_tree(source_text.as_ref(), &language).unwrap();
+    let tree = Arc::new(tree);
+
+    let filename: Arc<str> = Arc::from(
+        options
+            .as_ref()
+            .and_then(|o| o.file_name.map(ToString::to_string))
+            .unwrap_or(format!("file-{hash:016x}")),
+    );
+    let arguments = options
+        .as_ref()
+        .and_then(|o| o.rule_arguments.cloned())
+        .unwrap_or_default();
+    let timeout = options.as_ref().and_then(|o| o.timeout);
+
+    let ts_lang = get_tree_sitter_language(&language);
+    let query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+    let rule = RuleInternal {
+        name: rule_name,
+        short_description: None,
+        description: None,
+        category: RuleCategory::Unknown,
+        severity: RuleSeverity::Error,
+        language,
+        code: js_code.to_string(),
+        tree_sitter_query: query,
+    };
+
+    runtime.execute_rule(&source_text, &tree, &filename, &rule, &arguments, timeout)
 }
