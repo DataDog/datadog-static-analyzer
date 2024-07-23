@@ -30,7 +30,7 @@ prettytable-rs = "0.10.0"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 valico = "4.0.0"
 walkdir = "2.3.3"
-itertools = "0.12.1"
+itertools = "0.13.0"
 
 [dev-dependencies]
 assert-json-diff = "2.0.2"
