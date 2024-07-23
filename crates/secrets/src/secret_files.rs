@@ -15,6 +15,7 @@ lazy_static! {
         vec!["ico", "jpeg", "jpg", "png", "tif", "tiff", "gif"];
 }
 
+#[allow(clippy::ptr_arg)]
 pub fn should_ignore_file_for_secret(path: &PathBuf) -> bool {
     if let Some(ext) = path.extension() {
         if let Some(e) = ext.to_str() {
