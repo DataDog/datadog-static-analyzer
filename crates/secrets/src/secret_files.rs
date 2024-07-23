@@ -1,5 +1,5 @@
 use lazy_static::lazy_static;
-use std::path::PathBuf;
+use std::path::Path;
 
 lazy_static! {
     static ref IGNORE_FILENAMES: Vec<&'static str> = vec![
@@ -15,8 +15,9 @@ lazy_static! {
         vec!["ico", "jpeg", "jpg", "png", "tif", "tiff", "gif"];
 }
 
-#[allow(clippy::ptr_arg)]
-pub fn should_ignore_file_for_secret(path: &PathBuf) -> bool {
+/// Return true if the file should be ignored, false otherwise.
+/// This function is only valid for secrets.
+pub fn should_ignore_file_for_secret(path: &Path) -> bool {
     if let Some(ext) = path.extension() {
         if let Some(e) = ext.to_str() {
             if IGNORE_SUFFIXES.contains(&e) {
@@ -36,8 +37,8 @@ pub fn should_ignore_file_for_secret(path: &PathBuf) -> bool {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_should_ignore_file_for_secret() {
