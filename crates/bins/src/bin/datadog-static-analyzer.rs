@@ -1,15 +1,15 @@
-use std::collections::HashMap;
-use std::io::prelude::*;
-use std::process::exit;
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
-use std::{env, fs};
-
 use anyhow::{Context, Result};
 use getopts::Options;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use rayon::prelude::*;
+use std::collections::HashMap;
+use std::io::prelude::*;
+use std::path::PathBuf;
+use std::process::exit;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+use std::{env, fs};
 
 use cli::config_file::read_config_file;
 use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
@@ -45,6 +45,7 @@ use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
+use secrets::secret_files::should_ignore_file_for_secret;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -607,7 +608,10 @@ fn main() -> Result<()> {
     if secrets_enabled {
         let secrets_start = Instant::now();
 
-        let secrets_files = &files_to_analyze;
+        let secrets_files: Vec<PathBuf> = files_to_analyze
+            .into_iter()
+            .filter(|f| !should_ignore_file_for_secret(f))
+            .collect();
         let progress_bar = if !configuration.use_debug {
             Some(ProgressBar::new(secrets_files.len() as u64))
         } else {

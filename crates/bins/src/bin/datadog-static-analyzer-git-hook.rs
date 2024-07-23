@@ -28,6 +28,7 @@ use rayon::prelude::*;
 use rocket::yansi::Paint;
 use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
+use secrets::secret_files::should_ignore_file_for_secret;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::exit;
@@ -473,7 +474,10 @@ fn main() -> Result<()> {
     let mut fail_for_secrets = false;
 
     if secrets_enabled {
-        let secrets_files = &files_to_analyze;
+        let secrets_files: Vec<PathBuf> = files_to_analyze
+            .into_iter()
+            .filter(|f| !should_ignore_file_for_secret(f))
+            .collect();
 
         let sds_scanner = build_sds_scanner(&secrets_rules);
 
