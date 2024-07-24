@@ -95,6 +95,7 @@ mod tests {
             name: "detect a lot of secrets!".to_string(),
             description: "super secret!".to_string(),
             pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
         }];
         let scanner = build_sds_scanner(rules.as_slice());
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";

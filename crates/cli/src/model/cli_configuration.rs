@@ -190,6 +190,7 @@ mod tests {
             name: "name1".to_string(),
             description: "description1".to_string(),
             pattern: "pattern1".to_string(),
+            default_included_keywords: vec![],
         };
 
         let secret_rule2 = SecretRule {
@@ -197,6 +198,7 @@ mod tests {
             name: "name2".to_string(),
             description: "description2".to_string(),
             pattern: "pattern2".to_string(),
+            default_included_keywords: vec![],
         };
 
         let cli_configuration_base = CliConfiguration {
