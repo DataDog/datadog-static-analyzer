@@ -65,6 +65,11 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
                 name: v.attributes.name.clone(),
                 description: v.attributes.description.clone(),
                 pattern: v.attributes.pattern.clone(),
+                default_included_keywords: v
+                    .attributes
+                    .default_included_keywords
+                    .clone()
+                    .unwrap_or(vec![]),
             })
             .collect()),
         Err(e) => {
