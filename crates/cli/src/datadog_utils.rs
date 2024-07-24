@@ -69,7 +69,7 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
                     .attributes
                     .default_included_keywords
                     .clone()
-                    .unwrap_or(vec![]),
+                    .unwrap_or_default(),
             })
             .collect()),
         Err(e) => {
