@@ -52,7 +52,7 @@ num_cpus = { workspace = true}
 serde = { workspace = true }
 serde_yaml = { workspace = true }
 # other
-console = "0.15.8"
+terminal-emoji = "0.4.1"
 getopts = "0.2.21"
 indicatif = "0.17.6"
 rayon = "1.7.0"

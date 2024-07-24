@@ -2,7 +2,6 @@ Component,Origin,License,Copyright
 anyhow,https://crates.io/crates/anyhow,MIT,Copyright (c) 2019 David Tolnay
 base64,https://github.com/marshallpierce/rust-base64,Apache-2.0,Copyright (c) 2015 Alice Maz
 bstr,https://github.com/BurntSushi/bstr,MIT,Copyright (c) 2018-2019 Andrew Gallant
-console,https://github.com/console-rs/console,MIT,Copyright (c) 2017 Armin Ronacher
 csv,https://github.com/BurntSushi/rust-csv,MIT,Copyright (c) 2015 Andrew Gallant
 deno-core,https://github.com/denoland/deno,MIT,Copyright 2018-2023 the Deno authors
 git2,https://crates.io/crates/git2,MIT,Copyright (c) 2014 Alex Crichton
@@ -23,6 +22,7 @@ serde_json,https://github.com/serde-rs/json,Apache-2.0,2015 David Tolnay and Ser
 serde_yaml,https://github.com/dtolnay/serde-yaml,Apache-2.0,2016 David Tolnay
 sha2,https://crates.io/crates/sha2,Apache-2.0,Copyright (c) 2006-2009 Graydon Hoare 2009-2013 Mozilla Foundation 2016 Artyom Pavlov
 tempfile,https://crates.io/crates/tempfile,Apache-2.0,Copyright (c) 2015 Steven Allen
+terminal-emoji,https://github.com/mainrs/terminal-emoji-rs,MIT,Copyright (c) 2020 SirWindfield
 thiserror,https://github.com/dtolnay/thiserror,MIT,Copyright (c) 2019 David Tolnay
 tracing,https://crates.io/crates/tracing,MIT,Copyright (c) 2019 Tokio Contributors
 tracing-subscriber,https://crates.io/crates/tracing-subscriber,MIT,Copyright (c) 2019 Tokio Contributors
