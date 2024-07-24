@@ -3,8 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 use common::model::diff_aware::DiffAware;
-use sds::{MatchAction, RuleConfig};
+use sds::{MatchAction, ProximityKeywordsConfig, RuleConfig};
 use serde::{Deserialize, Serialize};
+
+const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
 // This is the secret rule exposed by SDS
 #[derive(Clone, Deserialize, Debug, Serialize)]
@@ -13,14 +15,23 @@ pub struct SecretRule {
     pub name: String,
     pub description: String,
     pub pattern: String,
+    pub default_included_keywords: Vec<String>,
 }
 
 impl SecretRule {
     /// Convert the rule into a configuration usable by SDS.
     pub fn convert_to_sds_ruleconfig(&self) -> RuleConfig {
-        RuleConfig::builder(&self.pattern)
-            .match_action(MatchAction::None)
-            .build()
+        let mut rule_config = RuleConfig::builder(&self.pattern).match_action(MatchAction::None);
+
+        if !self.default_included_keywords.is_empty() {
+            rule_config = rule_config.proximity_keywords(ProximityKeywordsConfig {
+                look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
+                included_keywords: self.default_included_keywords.clone(),
+                excluded_keywords: vec![],
+            });
+        }
+
+        rule_config.build()
     }
 }
 

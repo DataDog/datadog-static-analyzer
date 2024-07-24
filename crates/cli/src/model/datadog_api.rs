@@ -204,6 +204,7 @@ pub struct SecretRuleApiAttributes {
     pub name: String,
     pub description: String,
     pub pattern: String,
+    pub default_included_keywords: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
