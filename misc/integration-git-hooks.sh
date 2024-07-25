@@ -18,7 +18,7 @@ SHA1=$(cd $REPO_DIR && git rev-parse HEAD)
 (cd "${REPO_DIR}" && git checkout -b new-branch)
 echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-code-style" >> "${REPO_DIR}/static-analysis.datadog.yml"
-echo "AKIAIOSFODNN7EXAMPLE" > "${REPO_DIR}/foobar"
+echo "aws_access_key_id AKIAIOSFODNN7EXAMPLE" > "${REPO_DIR}/foobar"
 (cd "${REPO_DIR}" && git add foobar)
 (cd "${REPO_DIR}" && git add static-analysis.datadog.yml)
 (cd "${REPO_DIR}" && git commit -a -m"add foobar")
