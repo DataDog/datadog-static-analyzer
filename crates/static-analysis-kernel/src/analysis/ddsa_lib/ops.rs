@@ -64,7 +64,7 @@ pub fn op_ts_node_text(state: &OpState, #[smi] node_id: u32) -> Option<String> {
         .get_text()
         .expect("tree text should always be `Some` during rule execution");
     let node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>().borrow();
-    let safe_raw_ts_node = OpSafeRawTSNode::try_new(&node_bridge, node_id)?;
+    let safe_raw_ts_node = OpSafeRawTSNode::from_tsn_bridge(&node_bridge, node_id)?;
     let ts_node = safe_raw_ts_node.to_node();
     tree_text
         .get(ts_node.start_byte()..ts_node.end_byte())
@@ -95,7 +95,7 @@ pub fn op_ts_node_named_children<'s>(
 ) -> Option<v8::Local<'s, v8::Uint32Array>> {
     let ts_node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>();
 
-    let safe_raw_ts_node = OpSafeRawTSNode::try_new(&ts_node_bridge.borrow(), node_id)?;
+    let safe_raw_ts_node = OpSafeRawTSNode::from_tsn_bridge(&ts_node_bridge.borrow(), node_id)?;
     let ts_node = safe_raw_ts_node.to_node();
 
     let count = ts_node.named_child_count();
@@ -154,7 +154,7 @@ struct OpSafeRawTSNode(RawTSNode);
 
 impl OpSafeRawTSNode {
     /// Creates an `OpSafeRawTSNode` if the `node_id` exists on the [`TsNodeBridge`](bridge::TsNodeBridge).
-    pub fn try_new(bridge: &bridge::TsNodeBridge, node_id: NodeId) -> Option<Self> {
+    pub fn from_tsn_bridge(bridge: &bridge::TsNodeBridge, node_id: NodeId) -> Option<Self> {
         bridge.get_raw(node_id).cloned().map(Self)
     }
 
