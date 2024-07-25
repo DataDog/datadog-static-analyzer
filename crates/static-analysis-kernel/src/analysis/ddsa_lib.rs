@@ -17,7 +17,7 @@ pub mod v8_ds;
 
 use std::hash::{Hash, Hasher};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Copy, Clone)]
 pub struct RawTSNode(tree_sitter::ffi::TSNode);
 
 impl RawTSNode {
@@ -30,6 +30,10 @@ impl RawTSNode {
     /// # Safety
     /// The caller must ensure the that the [`ffi::Tree`](tree_sitter::ffi::Tree) this node comes from
     /// has not been dropped.
+    #[allow(clippy::wrong_self_convention)]
+    // (This clippy lint is overridden in order to tie the `tree_sitter::Node<'a>` lifetime
+    // to `&'a RawTSNode` to make it harder to do something unintended. Note that this restriction
+    // is artificial because `RawTSNode` is Copy).
     unsafe fn to_node(&self) -> tree_sitter::Node {
         tree_sitter::Node::from_raw(self.0)
     }
