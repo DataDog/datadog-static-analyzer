@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::analysis::ddsa_lib;
 use crate::analysis::ddsa_lib::common::{v8_uint, NodeId};
 use crate::analysis::ddsa_lib::{bridge, runtime, RawTSNode};
 use deno_core::{op2, v8, OpState};
@@ -137,6 +138,33 @@ pub fn op_ts_node_named_children<'s>(
     }
 }
 
+/// Given a tree-sitter node (via its `node_id`), this function traverses the tree to find the
+/// parent of the node, inserting it into the `TsNodeBridge`.
+///
+/// If the node has no parent (i.e. the node passed in is the root node), `None` is returned.
+#[op2]
+pub fn op_ts_node_parent(
+    state: &OpState,
+    scope: &mut v8::HandleScope,
+    #[smi] node_id: u32,
+) -> Option<u32> {
+    let ts_node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>();
+    let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
+
+    let safe_raw_ts_node = OpSafeRawTSNode::from_tsn_bridge(&ts_node_bridge.borrow(), node_id)?;
+    let ts_node = safe_raw_ts_node.to_node();
+
+    let ctx_bridge = ctx_bridge.borrow_mut();
+    let root_ctx = ctx_bridge.ddsa_root_context();
+    let safe_raw_parent =
+        OpSafeRawTSNode::from_root_context(root_ctx, |ctx| ctx.get_ts_node_parent(ts_node))?;
+    let parent_ts_node = safe_raw_parent.to_node();
+
+    let mut bridge_ref = ts_node_bridge.borrow_mut();
+    let nid = bridge_ref.insert(scope, parent_ts_node);
+    Some(nid)
+}
+
 /// An op to test the [`deno_core::op2`] macro's serialization of `Option`.
 ///
 /// Returns `Some(123)` if `true` is passed in, or `None` if `false` is passed in.
@@ -161,15 +189,28 @@ impl OpSafeRawTSNode {
     /// Returns a `tree_sitter::Node` representing this raw node.
     pub fn to_node(&self) -> tree_sitter::Node {
         // Safety:
-        // 1. An `OpSafeRawTSNode` can only be created by fetching a `RawTsNode` from the `bridge::TsNodeBridge`,
-        //    which guarantees that its `v8::Value` counterpart exists within the v8 context. Even though the
-        //    requested `node_id` can be arbitrarily modified by JavaScript, a `RawTsNode` will only be
-        //    returned if we explicitly added it to the bridge via Rust, making it impossible for this function
-        //    to access unintended memory.
-        // 2. An op will only be called during a JavaScript rule execution, where it's guaranteed that
+        // 1. An op will only be called during a JavaScript rule execution, where it's guaranteed that
         //    the `tree_sitter::Tree` exists (because it is owned by the `ddsa_lib::RootContext` on the `bridge::ContextBridge`).
+        // 2. An `OpSafeRawTSNode` can only be created by:
+        //    A. `Self::from_tsn_bridge`:
+        //        Fetches a `RawTsNode` from the `bridge::TsNodeBridge`, which guarantees that its
+        //       `v8::Value` counterpart exists within the v8 context. Even though the requested `node_id`
+        //       can be arbitrarily modified by JavaScript, a `RawTsNode` will only be returned if we
+        //       explicitly added it to the bridge via Rust, making it impossible for this function
+        //       to access unintended memory.
+        //    B. `Self::from_root_context`:
+        //       Fetches a `RawTsNode` directly from a function on `ddsa_lib::RootContext`,
+        //       which guarantees that the node is associated with a live tree.
         // 3. We never mutate the `tree_sitter::Tree` or any related nodes.
         unsafe { self.0.to_node() }
+    }
+
+    /// Creates an `OpSafeRawTSNode` from a closure that can access a reference to the `ddsa_lib::RootContext`.
+    pub fn from_root_context<F>(root_ctx: &ddsa_lib::RootContext, f: F) -> Option<Self>
+    where
+        F: Fn(&ddsa_lib::RootContext) -> Option<RawTSNode>,
+    {
+        f(root_ctx).map(Self)
     }
 }
 

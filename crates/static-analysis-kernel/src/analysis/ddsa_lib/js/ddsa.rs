@@ -20,6 +20,7 @@ mod tests {
         let expected = &[
             // Methods
             "getChildren",
+            "getParent",
         ];
         assert!(js_instance_eq(CLASS_NAME, expected));
         let expected = &[];
@@ -109,5 +110,72 @@ function visit(captures) {{
         let res =
             shorthand_execute_rule(&mut rt, JavaScript, tsq_no_fields, code, text, None).unwrap();
         assert_eq!(res.console_lines[0], "undefined undefined");
+    }
+
+    /// `op_ts_node_parent` returns the node's parent. Calling the op on the tree's root node returns `undefined`.
+    #[test]
+    fn op_ts_node_parent() {
+        use crate::model::common::Language::JavaScript;
+        let mut rt = JsRuntime::try_new().unwrap();
+        let text = "function echo() { /* code */ }";
+        let ts_query = r#"
+(statement_block) @stmt
+"#;
+        let get_parent = r#"
+function visit(captures) {
+    const node = captures.get("stmt");
+    const node1 = node;
+    const node2 = ddsa.getParent(node1);
+    const node3 = ddsa.getParent(node2); // (This is the root)
+    const node4 = ddsa.getParent(node3);
+    console.log(node1.type, node2.type, node3.type, node4);
+}
+"#;
+        // Then execute the rule that fetches the parent of the node.
+        let res =
+            shorthand_execute_rule(&mut rt, JavaScript, ts_query, get_parent, text, None).unwrap();
+        // Checking the node's cstType and its parent's cstType is a simple verification that this works.
+        let expected_output = "statement_block function_declaration program undefined";
+        assert_eq!(res.console_lines[0], expected_output);
+    }
+
+    /// `op_ts_node_parent` only serializes the immediate parent, not the entire ancestor chain.
+    /// (We do this test because we know that in order to get a node's parent, in Rust, we are caching the
+    /// entire root-to-node path, and we want to ensure we aren't pushing it all to JavaScript at once).
+    #[test]
+    fn op_ts_node_parent_lazy_serialization() {
+        use crate::model::common::Language::JavaScript;
+        let mut rt = JsRuntime::try_new().unwrap();
+        let text = "function echo() { /* code */ }";
+        let ts_query = r#"
+(statement_block) @stmt
+"#;
+        let get_parent = r#"
+function visit(captures) {
+    console.log(globalThis.__RUST_BRIDGE__ts_node.size);
+    const node = captures.get("stmt");
+    // Captured node and its parent
+    console.log(node.type, ddsa.getParent(node).type);
+    console.log(globalThis.__RUST_BRIDGE__ts_node.size);
+    // Captured node's grandparent
+    console.log(ddsa.getParent(ddsa.getParent(node)).type);
+    console.log(globalThis.__RUST_BRIDGE__ts_node.size);
+}
+"#;
+        // Execute a rule that fetches the parent of the node. We use `console.log` within the
+        // JavaScript to inspect the bridge state and `assert!` on it within the Rust unit test.
+        let res =
+            shorthand_execute_rule(&mut rt, JavaScript, ts_query, get_parent, text, None).unwrap();
+        // Initially, only 1 node should have been serialized.
+        assert_eq!(res.console_lines[0], "1");
+        // The parent should have been properly retrieved.
+        assert_eq!(res.console_lines[1], "statement_block function_declaration");
+        // Only one extra node should have been serialized
+        assert_eq!(res.console_lines[2], "2");
+        // For test integrity, prove that this is truly lazy by confirming that the length of
+        // the `@stmt` node's ancestor chain is greater than 1.
+        assert_eq!(res.console_lines[3], "program", "test invariant broken");
+        // Only now should the grandparent have been serialized.
+        assert_eq!(res.console_lines[4], "3", "test invariant broken");
     }
 }
