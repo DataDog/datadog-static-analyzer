@@ -52,6 +52,12 @@ else
 	DIFF_AWARE_VALUE=""
 fi
 
+if [ "$SECRETS_ENABLED" = "true" ]; then
+	SECRETS_ENABLED_VALUE="--secrets"
+else
+	SECRETS_ENABLED_VALUE=""
+fi
+
 ########################################################
 # Output directory
 ########################################################
@@ -88,7 +94,7 @@ if [ "$DIFF_AWARE" = "true" ]; then
 fi
 
 echo "Starting Static Analysis"
-datadog-static-analyzer -i "$GITHUB_WORKSPACE" -g -o "$OUTPUT_FILE" -f sarif --cpus "$CPU_COUNT" "$ENABLE_PERFORMANCE_STATISTICS" --debug $DEBUG_ARGUMENT_VALUE $SUBDIRECTORY_OPTION $DIFF_AWARE_VALUE || exit 1
+datadog-static-analyzer -i "$GITHUB_WORKSPACE" -g -o "$OUTPUT_FILE" -f sarif --cpus "$CPU_COUNT" "$ENABLE_PERFORMANCE_STATISTICS" --debug $DEBUG_ARGUMENT_VALUE $SUBDIRECTORY_OPTION $DIFF_AWARE_VALUE $SECRETS_ENABLED_VALUE || exit 1
 echo "Done"
 
 echo "Uploading Static Analysis Results to Datadog"
