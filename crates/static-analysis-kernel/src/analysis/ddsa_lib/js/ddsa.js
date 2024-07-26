@@ -5,7 +5,7 @@
 import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
 import { TreeSitterFieldChildNode } from "ext:ddsa_lib/ts_node";
 
-const { op_ts_node_named_children } = Deno.core.ops;
+import { op_ts_node_named_children } from "ext:core/ops";
 
 /**
  * The main entrypoint to the ddsa JavaScript runtime's API.
