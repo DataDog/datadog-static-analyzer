@@ -1,0 +1,34 @@
+name: Generate static-analysis-kernel test bins
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test-bin-build:
+    strategy:
+      matrix:
+        include:
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build
+        shell: bash
+        run: |
+          cargo test --no-run
+      - name: Archive
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          mv target/debug/deps/static_analysis_kernel-???????????????? artifacts/
+          name="bin-${{ matrix.target }}.zip"
+          zip -r $name artifacts
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: bin-${{ matrix.target }}
+          path: bin-${{ matrix.target }}.zip
