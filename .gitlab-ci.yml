@@ -2,24 +2,6 @@ image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ubuntu:22.04
 
 stages:
   - test
-  - release
-
-test-and-build-arm64:
-  stage: test
-  script:
-    - apt-get update
-    - apt-get install -y git curl build-essential pkg-config libssl-dev
-    - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
-    - source "$HOME/.cargo/env"
-    - cargo build -r
-    - cargo test
-  variables:
-    KUBERNETES_MEMORY_REQUEST: 6Gi
-    KUBERNETES_MEMORY_LIMIT: 8Gi
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
-    DD_SITE: datadoghq.com
-  tags:
-    - arch:arm64
 
 test-and-build-amd64:
   stage: test
@@ -28,7 +10,6 @@ test-and-build-amd64:
     - apt-get install -y git curl build-essential pkg-config libssl-dev
     - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
     - source "$HOME/.cargo/env"
-    - cargo build -r
     - cargo test
   variables:
     KUBERNETES_MEMORY_REQUEST: 6Gi
@@ -37,24 +18,4 @@ test-and-build-amd64:
     DD_SITE: datadoghq.com
   tags:
     - arch:amd64
-
-trigger_internal_image:
-  stage: release
-  only:
-    - main
-  trigger:
-    project: DataDog/images
-    branch: ${DD_IMAGES_BRANCH}
-    strategy: depend
-  variables:
-    DD_IMAGES_BRANCH: master
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: images
-    IMAGE_VERSION: current
-    IMAGE_NAME: datadog-static-analyzer
-    RELEASE_TAG: ${CI_COMMIT_SHORT_SHA}
-    BUILD_TAG:   ${CI_COMMIT_SHORT_SHA}
-    TMPL_SRC_IMAGE: v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
-    RELEASE_STAGING: "true"
-    RELEASE_PROD: "true"
-
 
