@@ -20,5 +20,10 @@ export class FileContext {
          * @type {FileContextTerraform | undefined}
          */
         this.terraform = undefined;
+        /**
+         * A `javascript` file context.
+         * @type {FileContextJavascript | undefined}
+         */
+        this.javascript = undefined;
     }
 }

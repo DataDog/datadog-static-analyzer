@@ -8,6 +8,8 @@ pub(crate) mod file_go;
 pub use file_go::FileContextGo;
 pub(crate) mod file_tf;
 pub use file_tf::FileContextTerraform;
+pub(crate) mod file_js;
+pub use file_js::FileContextJavaScript;
 mod root;
 pub use root::RootContext;
 mod rule;
