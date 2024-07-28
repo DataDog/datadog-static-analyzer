@@ -63,9 +63,10 @@ fn extract_comments_from_node(node: Node<'_>, source: &str, comments: &mut Vec<C
                         Line::new(next.start_position().row, content.to_string())
                     }),
                 },
-                |original| Comment::Inline {
+                |previous_node| Comment::Inline {
                     line: Line::new(row, comment.to_string()),
-                    original_content: source[original.start_byte()..start_byte - 1].to_string(),
+                    original_content: source[previous_node.start_byte()..start_byte - 1]
+                        .to_string(),
                 },
             );
         comments.push(final_comment);

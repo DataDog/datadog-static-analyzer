@@ -398,11 +398,11 @@ rulesets:
             let expected = r"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1
-- ruleset2
-- a-ruleset3
+  - java-security
+  - java-1
+  - ruleset1
+  - ruleset2
+  - a-ruleset3
 ";
 
             assert_eq!(config.trim(), expected.trim());
@@ -587,21 +587,21 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule2:
-      only:
-      - foo/bar
-    rule1:
-      ignore:
-      - '**'
-";
-            assert!(config.trim() == expected.trim());
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+"#;
+            assert_eq!(config.trim(), expected.trim());
         }
 
         #[test]
@@ -639,19 +639,19 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      severity: ERROR
-    rule1:
-      ignore:
-      - '**'
-";
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        severity: ERROR
+      rule1:
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
