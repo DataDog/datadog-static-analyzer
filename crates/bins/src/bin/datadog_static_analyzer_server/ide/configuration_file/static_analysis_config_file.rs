@@ -1,4 +1,4 @@
-use super::comment_preserver::reconcile_comments;
+use super::comment_preserver::{prettify_yaml, reconcile_comments};
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
 use kernel::config_file::config_file_to_yaml;
@@ -250,9 +250,10 @@ impl StaticAnalysisConfigFile {
         let fixed = str.replace(": null", ":");
         // preserve the comments if the original content is provided
         if let Some(original_content) = &self.original_content {
-            reconcile_comments(original_content, &fixed).map_err(Into::into)
+            reconcile_comments(original_content, &fixed, true).map_err(Into::into)
         } else {
-            Ok(fixed)
+            // prettify the content
+            prettify_yaml(&fixed).map_err(Into::into)
         }
     }
 }
@@ -357,9 +358,9 @@ rulesets:
             let expected = r"
 schema-version: v1
 rulesets:
-- ruleset1
-- ruleset2
-- a-ruleset3
+  - ruleset1
+  - ruleset2
+  - a-ruleset3
 ";
             assert_eq!(config.trim(), expected.trim());
         }
@@ -374,7 +375,7 @@ rulesets:
             let expected = r"
 schema-version: v1
 rulesets:
-- ruleset1
+  - ruleset1
 ";
             assert_eq!(config.trim(), expected.trim());
         }

@@ -13,9 +13,17 @@ pub struct ReconcileError {
     pub source: anyhow::Error,
 }
 
+pub fn prettify_yaml(content: &str) -> Result<String, ReconcileError> {
+    let options = pretty_yaml::config::FormatOptions::default();
+    pretty_yaml::format_text(content, &options).map_err(|e| ReconcileError {
+        source: anyhow::anyhow!("Failed to format the content: {}", e),
+    })
+}
+
 pub fn reconcile_comments(
     original_content: &str,
     new_content: &str,
+    prettify: bool,
 ) -> Result<String, ReconcileError> {
     // parse the original content and look for comments
     let tree = get_tree(original_content, &Language::Yaml).ok_or_else(|| {
@@ -30,12 +38,12 @@ pub fn reconcile_comments(
 
     let reconciled_content = reconcile(new_content, &comments);
 
-    // make it pretty
-    let options = pretty_yaml::config::FormatOptions::default();
-    let formatted = pretty_yaml::format_text(&reconciled_content, &options)
-        .map_err(|e| anyhow::anyhow!("Failed to format the reconciled content: {}", e))?;
-
-    Ok(formatted)
+    // make it pretty?
+    if prettify {
+        prettify_yaml(&reconciled_content)
+    } else {
+        Ok(reconciled_content)
+    }
 }
 
 fn get_related_comments<'a, 'b>(
@@ -49,7 +57,6 @@ fn get_related_comments<'a, 'b>(
             // get the comment
             let content = &source[next.start_byte()..next.end_byte()];
             *comment = format!("{}\n{}", comment, content);
-            // println!("Related comment: {}", content);
             visited.insert(next);
             get_related_comments(next.next_sibling(), source, visited, comment)
         } else {
@@ -105,11 +112,12 @@ fn extract_comments_from_node<'a, 'b>(
                         }),
                     }
                 },
-                |prev_sibling| Comment::Inline {
+                |_prev_sibling| Comment::Inline {
                     line: Line::new(row, comment.to_string()),
-                    original_content: source[prev_sibling.start_byte()..start_byte - 1].to_string(),
+                    original_content: get_line_content(source, start_byte).trim().to_string(),
                 },
             );
+
         comments.push(final_comment);
     }
 
@@ -157,14 +165,13 @@ fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &s
         if let Some((row, found_line)) = lines
             .iter()
             .enumerate()
-            .find(|(_, l)| l.starts_with(original_content))
+            .find(|(_, l)| l.trim().starts_with(original_content))
         {
             // we found it, add the comment
             let comment_added = format!("{} {}", found_line, line.content.clone());
             lines[row] = comment_added.to_string();
         } else {
             // ignore comment or add it to the original line?
-            // TODO: add option for the user to decide what to do?
         }
     }
 }
@@ -246,4 +253,72 @@ fn get_line_content(source: &str, byte_offset: usize) -> &str {
     content
         .find('#')
         .map_or(content, |index| content[..index].trim_end())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn it_works() {
+        let original_content = r#"
+schema-version: v1
+rulesets:
+  # this is a comment above java-security
+  - java-security
+  - java-1 # inline comment for java-1
+  # multi1
+  # multi2
+  # multi3
+  # multi4
+  - ruleset1:
+    rules:
+      rule2: # this is rule 2 comment
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+"#;
+
+        let modified = r#"
+schema-version: v1
+rulesets:
+  - java-security
+  - java-1
+  - java-2
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule3:
+        ignore:
+          - "**"
+"#;
+
+        let expected = r#"
+schema-version: v1
+rulesets:
+  # this is a comment above java-security
+  - java-security
+  - java-1 # inline comment for java-1
+  - java-2
+  # multi1
+  # multi2
+  # multi3
+  # multi4
+  - ruleset1:
+    rules:
+      rule2: # this is rule 2 comment
+        only:
+          - foo/bar
+      rule3:
+        ignore:
+          - "**"
+"#;
+
+        let result = reconcile_comments(original_content, modified, true).unwrap();
+        assert_eq!(result.trim(), expected.trim());
+    }
 }

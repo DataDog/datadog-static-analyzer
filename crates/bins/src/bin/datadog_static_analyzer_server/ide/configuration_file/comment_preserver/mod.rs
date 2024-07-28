@@ -1,3 +1,3 @@
 mod models;
 mod reconciler;
-pub use reconciler::{reconcile_comments, ReconcileError};
+pub use reconciler::{prettify_yaml, reconcile_comments, ReconcileError};
