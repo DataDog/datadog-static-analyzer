@@ -1,3 +1,4 @@
+use super::comment_preserver::reconcile_comments;
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
 use kernel::config_file::config_file_to_yaml;
@@ -10,11 +11,17 @@ use std::{borrow::Cow, fmt::Debug, ops::Deref};
 use tracing::instrument;
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct StaticAnalysisConfigFile(ConfigFile);
+pub struct StaticAnalysisConfigFile {
+    config_file: ConfigFile,
+    original_content: Option<String>,
+}
 
 impl From<ConfigFile> for StaticAnalysisConfigFile {
     fn from(value: ConfigFile) -> Self {
-        Self(value)
+        Self {
+            config_file: value,
+            original_content: None,
+        }
     }
 }
 
@@ -27,14 +34,17 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
             return Ok(Self::default());
         }
         let config = parse_config_file(&content)?;
-        Ok(config.into())
+        Ok(Self {
+            config_file: config,
+            original_content: Some(content),
+        })
     }
 }
 
 impl Deref for StaticAnalysisConfigFile {
     type Target = ConfigFile;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.config_file
     }
 }
 
@@ -104,7 +114,7 @@ impl StaticAnalysisConfigFile {
 
     #[instrument(skip(self))]
     pub fn ignore_rule(&mut self, rule: Cow<str>) {
-        let config = &mut self.0;
+        let config = &mut self.config_file;
         if let Some((ruleset_name, rule_name)) = rule.split_once('/') {
             // the ruleset may exist and contain other rules so we
             // can't update it blindly
@@ -168,14 +178,15 @@ impl StaticAnalysisConfigFile {
         rulesets: &[impl AsRef<str> + Debug],
         config_content_base64: Option<String>,
     ) -> Result<String, ConfigFileError> {
-        let mut config = if config_content_base64.is_some() {
-            Self::try_from(config_content_base64.unwrap()).map_err(|e| {
+        let mut original_content: Option<String> = None;
+
+        let mut config = config_content_base64.map_or(Ok(Self::default()), |content| {
+            original_content = Some(content.clone());
+            Self::try_from(content).map_err(|e| {
                 tracing::error!(error =?e, "Error trying to parse config file");
                 e
             })
-        } else {
-            Ok(Self(ConfigFile::default()))
-        }?;
+        })?;
 
         config.add_rulesets(rulesets);
         config.to_string().map_err(|e| {
@@ -186,7 +197,7 @@ impl StaticAnalysisConfigFile {
 
     #[instrument(skip(self))]
     pub fn add_rulesets(&mut self, rulesets: &[impl AsRef<str> + Debug]) {
-        let config = &mut self.0;
+        let config = &mut self.config_file;
         for ruleset in rulesets {
             if !config.rulesets.contains_key(ruleset.as_ref()) {
                 config
@@ -237,7 +248,12 @@ impl StaticAnalysisConfigFile {
         let str = config_file_to_yaml(self)?;
         // fix null maps
         let fixed = str.replace(": null", ":");
-        Ok(fixed)
+        // preserve the comments if the original content is provided
+        if let Some(original_content) = &self.original_content {
+            reconcile_comments(original_content, &fixed).map_err(Into::into)
+        } else {
+            Ok(fixed)
+        }
     }
 }
 

@@ -1,3 +1,4 @@
+mod comment_preserver;
 pub mod endpoints;
 mod error;
 mod models;
