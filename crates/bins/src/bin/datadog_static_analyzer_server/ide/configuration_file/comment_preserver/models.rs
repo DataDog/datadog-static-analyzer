@@ -22,19 +22,3 @@ pub enum Comment {
         below_line: Option<Line>,
     },
 }
-
-impl Comment {
-    pub const fn get_line(&self) -> &Line {
-        match self {
-            Self::Inline {
-                line,
-                original_content: _,
-            }
-            | Self::Block {
-                line,
-                above_line: _,
-                below_line: _,
-            } => line,
-        }
-    }
-}

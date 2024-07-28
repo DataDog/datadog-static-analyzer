@@ -122,20 +122,17 @@ fn reconcile(modified: &str, comments: &[Comment]) -> String {
     let mut lines: Vec<String> = modified.lines().map(ToString::to_string).collect();
 
     for comment in comments {
-        let line = comment.get_line();
-        if line.row < lines.len() {
-            match comment {
-                Comment::Inline {
-                    line,
-                    original_content,
-                } => manage_inline_comment(&mut lines, line, original_content),
+        match comment {
+            Comment::Inline {
+                line,
+                original_content,
+            } => manage_inline_comment(&mut lines, line, original_content),
 
-                Comment::Block {
-                    line,
-                    above_line,
-                    below_line,
-                } => manage_block_comment(&mut lines, line, above_line, below_line),
-            }
+            Comment::Block {
+                line,
+                above_line,
+                below_line,
+            } => manage_block_comment(&mut lines, line, above_line, below_line),
         }
     }
     // rejoin the lines again
@@ -147,8 +144,11 @@ fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &s
     // if the content of the line is the same as the original content, we can add the comment to the end of the line.
     // if the content of the line is different, we have to look for the original content in the document, as it may have been moved
     // if we find it, we add the comment to the end of the line, if we don't find it, we add the comment to the end of the line of the original content even if the content is different.
-    let current_content = &lines[line.row];
-    if current_content.starts_with(original_content) {
+    let current_content = &lines.get(line.row);
+    if current_content
+        .filter(|c| c.starts_with(original_content))
+        .is_some()
+    {
         // line is ok, just add the comment
         let comment_added = format!("{} {}", lines[line.row], line.content.clone());
         lines[line.row] = comment_added;
