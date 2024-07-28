@@ -287,20 +287,20 @@ rulesets:
         #[test]
         fn it_works_complex() {
             let content = to_encoded_content(
-                r"
+                r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
         only:
-        - foo/bar
-    rule1:
+          - foo/bar
+      rule1:
         ignore:
-        - '**'
-",
+          - "**"
+"#,
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
             assert_eq!(rulesets, vec!["java-security", "java-1", "ruleset1"]);
@@ -411,20 +411,20 @@ rulesets:
         #[test]
         fn it_works_complex() {
             let content = to_encoded_content(
-                r"
+                r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      only:
-      - foo/bar
-    rule1:
-      ignore:
-      - '**'
-",
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+"#,
             );
             let config = StaticAnalysisConfigFile::with_added_rulesets(
                 &["ruleset1", "ruleset2", "a-ruleset3"],
@@ -432,22 +432,22 @@ rulesets:
             )
             .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      only:
-      - foo/bar
-    rule1:
-      ignore:
-      - '**'
-- ruleset2
-- a-ruleset3
-";
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+  - ruleset2
+  - a-ruleset3
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -490,17 +490,17 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule1:
-      ignore:
-      - '**'
-";
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule1:
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -519,16 +519,17 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule1:
-      ignore:
-      - '**'";
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule1:
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -552,18 +553,19 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule1:
-      only:
-      - foo/bar
-      ignore:
-      - '**'";
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule1:
+        only:
+          - foo/bar
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -675,18 +677,18 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule2".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      ignore:
-      - '**'
-      severity: ERROR
-";
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        ignore:
+          - "**"
+        severity: ERROR
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
