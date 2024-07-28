@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::models::{Comment, Line};
 use kernel::analysis::tree_sitter::get_tree;
 use kernel::model::common::Language;
@@ -23,7 +25,8 @@ pub fn reconcile_comments(
     let root_node = tree.root_node();
 
     let mut comments = vec![];
-    extract_comments_from_node(root_node, original_content, &mut comments);
+    let mut visited = HashSet::new();
+    extract_comments_from_node(root_node, original_content, &mut comments, &mut visited);
 
     let reconciled_content = reconcile(new_content, &comments);
 
@@ -35,15 +38,47 @@ pub fn reconcile_comments(
     Ok(formatted)
 }
 
-fn extract_comments_from_node(node: Node<'_>, source: &str, comments: &mut Vec<Comment>) {
+fn get_related_comments<'a, 'b>(
+    next: Option<Node<'a>>,
+    source: &str,
+    visited: &'b mut HashSet<Node<'a>>,
+    comment: &mut String,
+) -> Option<Node<'a>> {
+    if let Some(next) = next {
+        if next.kind() == "comment" {
+            // get the comment
+            let content = &source[next.start_byte()..next.end_byte()];
+            *comment = format!("{}\n{}", comment, content);
+            // println!("Related comment: {}", content);
+            visited.insert(next);
+            get_related_comments(next.next_sibling(), source, visited, comment)
+        } else {
+            Some(next)
+        }
+    } else {
+        None
+    }
+}
+
+fn extract_comments_from_node<'a, 'b>(
+    node: Node<'a>,
+    source: &str,
+    comments: &mut Vec<Comment>,
+    visited: &'b mut HashSet<Node<'a>>,
+) {
     if node.kind() == "comment" {
+        if visited.contains(&node) {
+            return;
+        }
+        visited.insert(node);
+
         let start_byte = node.start_byte();
         let end_byte = node.end_byte();
         let comment = &source[start_byte..end_byte];
         let row = node.start_position().row;
 
-        let prev = node.prev_sibling();
-        let final_comment = prev
+        let prev_sibling = node.prev_sibling();
+        let final_comment = prev_sibling
             .and_then(|p| {
                 if p.start_position().row == row {
                     Some(p)
@@ -52,45 +87,49 @@ fn extract_comments_from_node(node: Node<'_>, source: &str, comments: &mut Vec<C
                 }
             })
             .map_or_else(
-                || Comment::Block {
-                    line: Line::new(row, comment.to_string()),
-                    above_line: prev.map(|prev| {
-                        let content = get_line_content(source, prev.end_byte());
-                        Line::new(row, content.to_string())
-                    }),
-                    below_line: node.next_sibling().map(|next| {
-                        let content = get_line_content(source, next.start_byte());
-                        Line::new(next.start_position().row, content.to_string())
-                    }),
+                || {
+                    // this can be a multiline comment
+                    // let's keep adding lines until next_sibling is not comment
+                    let mut comment = comment.to_string();
+                    let last_node =
+                        get_related_comments(node.next_sibling(), source, visited, &mut comment);
+                    Comment::Block {
+                        line: Line::new(row, comment),
+                        above_line: prev_sibling.map(|prev| {
+                            let content = get_line_content(source, prev.end_byte());
+                            Line::new(row, content.to_string())
+                        }),
+                        below_line: last_node.map(|next| {
+                            let content = get_line_content(source, next.start_byte());
+                            Line::new(next.start_position().row, content.to_string())
+                        }),
+                    }
                 },
-                |previous_node| Comment::Inline {
+                |prev_sibling| Comment::Inline {
                     line: Line::new(row, comment.to_string()),
-                    original_content: source[previous_node.start_byte()..start_byte - 1]
-                        .to_string(),
+                    original_content: source[prev_sibling.start_byte()..start_byte - 1].to_string(),
                 },
             );
         comments.push(final_comment);
     }
 
     for child in node.children(&mut node.walk()) {
-        extract_comments_from_node(child, source, comments);
+        extract_comments_from_node(child, source, comments, visited);
     }
 }
 
 fn reconcile(modified: &str, comments: &[Comment]) -> String {
     let mut lines: Vec<String> = modified.lines().map(ToString::to_string).collect();
-    let lines_len = lines.len();
 
     for comment in comments {
         let line = comment.get_line();
-        if line.row < lines_len {
+        if line.row < lines.len() {
             match comment {
                 Comment::Inline {
                     line,
                     original_content,
-                } => {
-                    manage_inline_comment(&mut lines, line, original_content);
-                }
+                } => manage_inline_comment(&mut lines, line, original_content),
+
                 Comment::Block {
                     line,
                     above_line,
