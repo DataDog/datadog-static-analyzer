@@ -46,10 +46,10 @@ pub fn reconcile_comments(
     }
 }
 
-fn get_related_comments<'a, 'b>(
+fn get_related_comments<'a>(
     next: Option<Node<'a>>,
     source: &str,
-    visited: &'b mut HashSet<Node<'a>>,
+    visited: &mut HashSet<Node<'a>>,
     comment: &mut String,
 ) -> Option<Node<'a>> {
     if let Some(next) = next {
@@ -67,11 +67,11 @@ fn get_related_comments<'a, 'b>(
     }
 }
 
-fn extract_comments_from_node<'a, 'b>(
+fn extract_comments_from_node<'a>(
     node: Node<'a>,
     source: &str,
     comments: &mut Vec<Comment>,
-    visited: &'b mut HashSet<Node<'a>>,
+    visited: &mut HashSet<Node<'a>>,
 ) {
     if node.kind() == "comment" {
         if visited.contains(&node) {
@@ -260,7 +260,123 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn it_works_for_inline_comments() {
+        let original_content = r#"
+schema-version: v1
+rulesets:
+  - java-security
+  - java-1 # inline comment for java-1
+  - ruleset1:
+    rules:
+      rule2: # this is rule 2 comment
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+"#;
+
+        let modified = r#"
+schema-version: v1
+rulesets:
+  - java-security
+  - java-1
+  - java-2
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule3:
+        ignore:
+          - "**"
+"#;
+
+        let expected = r#"
+schema-version: v1
+rulesets:
+  - java-security
+  - java-1 # inline comment for java-1
+  - java-2
+  - ruleset1:
+    rules:
+      rule2: # this is rule 2 comment
+        only:
+          - foo/bar
+      rule3:
+        ignore:
+          - "**"
+"#;
+
+        let result = reconcile_comments(original_content, modified, true).unwrap();
+        assert_eq!(result.trim(), expected.trim());
+    }
+
+    #[test]
+    fn it_works_for_block_comments() {
+        let original_content = r#"
+schema-version: v1
+rulesets:
+  # this is a comment above java-security
+  - java-security
+  - java-1
+  # multi1
+  # multi2
+  # multi3
+  # multi4
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+"#;
+
+        let modified = r#"
+schema-version: v1
+rulesets:
+  - java-security
+  - java-1
+  - java-2
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule3:
+        ignore:
+          - "**"
+"#;
+
+        let expected = r#"
+schema-version: v1
+rulesets:
+  # this is a comment above java-security
+  - java-security
+  - java-1
+  - java-2
+  # multi1
+  # multi2
+  # multi3
+  # multi4
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule3:
+        ignore:
+          - "**"
+"#;
+
+        let result = reconcile_comments(original_content, modified, true).unwrap();
+        assert_eq!(result.trim(), expected.trim());
+    }
+
+    #[test]
+    fn it_works_mixed() {
         let original_content = r#"
 schema-version: v1
 rulesets:
