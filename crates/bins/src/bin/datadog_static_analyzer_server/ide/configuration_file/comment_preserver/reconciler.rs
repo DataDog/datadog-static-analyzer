@@ -170,7 +170,7 @@ fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &s
     // if we find it, we add the comment to the end of the line, if we don't find it, we ignore the comment.
     let current_content = &lines.get(line.row);
     if current_content
-        .filter(|c| c.starts_with(original_content))
+        .filter(|c| c.trim().starts_with(original_content))
         .is_some()
     {
         // line is ok, just add the comment
@@ -459,28 +459,66 @@ rulesets:
     }
 
     #[test]
-    fn it_works_for_repeated_keys_with_inline_comments_if_no_additions_before_comment_occurrence() {
+    fn it_works_for_repeated_keys_with_inline_comments_if_no_additions_before_comment_occurrence2()
+    {
         let original_content = r#"
 schema-version: v1
 rulesets:
-  - java-1 # inline comment for java-1
+  - rule-1 # inline 1
+  - rule-1 # inline 2
 "#;
 
         let modified = r#"
 schema-version: v1
 rulesets:
-  - java-1
-  - java-2
+  - rule-1
+  - rule-1
+  - rule-2
 "#;
 
         let expected = r#"
 schema-version: v1
 rulesets:
-  - java-1 # inline comment for java-1
-  - java-2
+  - rule-1 # inline 1
+  - rule-1 # inline 2
+  - rule-2
 "#;
 
         let result = reconcile_comments(original_content, modified, true).unwrap();
         assert_eq!(result.trim(), expected.trim());
+    }
+
+    mod inline_limitations {
+        use super::*;
+
+        #[test]
+        fn it_does_not_work_for_repeated_keys_with_inline_comments_if_additions_before_comment_occurrence(
+        ) {
+            let original_content = r#"
+schema-version: v1
+rulesets:
+    - java-1 # inline comment 1
+    - java-1 # inline comment 2
+"#;
+
+            let modified = r#"
+schema-version: v1
+rulesets:
+    - java-0
+    - java-1
+    - java-1
+"#;
+
+            let expected = r#"
+schema-version: v1
+rulesets:
+    - java-0
+    - java-1 # inline comment 1
+    - java-1 # inline comment 2
+"#;
+
+            let result = reconcile_comments(original_content, modified, true).unwrap();
+            assert_ne!(result.trim(), expected.trim());
+        }
     }
 }
