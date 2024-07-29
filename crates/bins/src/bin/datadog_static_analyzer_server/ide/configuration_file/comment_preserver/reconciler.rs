@@ -459,8 +459,7 @@ rulesets:
     }
 
     #[test]
-    fn it_works_for_repeated_keys_with_inline_comments_if_no_additions_before_comment_occurrence2()
-    {
+    fn it_works_for_repeated_keys_with_inline_comments_if_no_additions_before_comment_occurrence() {
         let original_content = r#"
 schema-version: v1
 rulesets:
