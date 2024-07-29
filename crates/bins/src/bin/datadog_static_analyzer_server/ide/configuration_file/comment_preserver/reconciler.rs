@@ -25,7 +25,7 @@ pub fn prettify_yaml(content: &str) -> Result<String, ReconcileError> {
 ///
 /// The algorithm applies for the majority of the cases affecting the static analysis configuration files but has some limitations:
 ///
-/// * Repeated elements may lead to false positives if there are lines added before or between the existing content.
+/// * Repeated elements with `inline` comments may lead to false positives if there are lines added before or between the existing content.
 /// * If the original content uses a different syntax than the one emitted by the serializer, we may not be able to determine the location of those comments (e.g. dictionaries and list can be represented in an abbreviated form)
 ///  
 ///
@@ -452,6 +452,32 @@ rulesets:
       rule3:
         ignore:
           - "**"
+"#;
+
+        let result = reconcile_comments(original_content, modified, true).unwrap();
+        assert_eq!(result.trim(), expected.trim());
+    }
+
+    #[test]
+    fn it_works_for_repeated_keys_with_inline_comments_if_no_additions_before_comment_occurrence() {
+        let original_content = r#"
+schema-version: v1
+rulesets:
+  - java-1 # inline comment for java-1
+"#;
+
+        let modified = r#"
+schema-version: v1
+rulesets:
+  - java-1
+  - java-2
+"#;
+
+        let expected = r#"
+schema-version: v1
+rulesets:
+  - java-1 # inline comment for java-1
+  - java-2
 "#;
 
         let result = reconcile_comments(original_content, modified, true).unwrap();
