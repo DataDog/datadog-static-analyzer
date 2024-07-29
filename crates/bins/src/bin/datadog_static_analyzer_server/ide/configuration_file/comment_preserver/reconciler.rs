@@ -85,38 +85,33 @@ fn extract_comments_from_node<'a>(
         let row = node.start_position().row;
 
         let prev_sibling = node.prev_sibling();
-        let final_comment = prev_sibling
-            .and_then(|p| {
-                if p.start_position().row == row {
-                    Some(p)
-                } else {
-                    None
-                }
-            })
-            .map_or_else(
-                || {
-                    // this can be a multiline comment
-                    // let's keep adding lines until next_sibling is not comment
-                    let mut comment = comment.to_string();
-                    let last_node =
-                        get_related_comments(node.next_sibling(), source, visited, &mut comment);
-                    Comment::Block {
-                        line: Line::new(row, comment),
-                        above_line: prev_sibling.map(|prev| {
-                            let content = get_line_content(source, prev.end_byte());
-                            Line::new(row, content.to_string())
-                        }),
-                        below_line: last_node.map(|next| {
-                            let content = get_line_content(source, next.start_byte());
-                            Line::new(next.start_position().row, content.to_string())
-                        }),
-                    }
-                },
-                |_prev_sibling| Comment::Inline {
-                    line: Line::new(row, comment.to_string()),
-                    original_content: get_line_content(source, start_byte).trim().to_string(),
-                },
-            );
+
+        let final_comment = if prev_sibling
+            .filter(|p| p.start_position().row == row)
+            .is_some()
+        {
+            Comment::Inline {
+                line: Line::new(row, comment.to_string()),
+                original_content: get_line_content(source, start_byte).trim().to_string(),
+            }
+        } else {
+            // this can be a multiline comment
+            // let's keep adding lines until next_sibling is not comment
+            let mut comment = comment.to_string();
+            let last_node =
+                get_related_comments(node.next_sibling(), source, visited, &mut comment);
+            Comment::Block {
+                line: Line::new(row, comment),
+                above_line: prev_sibling.map(|prev| {
+                    let content = get_line_content(source, prev.end_byte());
+                    Line::new(row, content.to_string())
+                }),
+                below_line: last_node.map(|next| {
+                    let content = get_line_content(source, next.start_byte());
+                    Line::new(next.start_position().row, content.to_string())
+                }),
+            }
+        };
 
         comments.push(final_comment);
     }
@@ -150,8 +145,8 @@ fn reconcile(modified: &str, comments: &[Comment]) -> String {
 fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &str) {
     // for comments added to a node line, we can detect the row and the original content, and then just go to that line,
     // if the content of the line is the same as the original content, we can add the comment to the end of the line.
-    // if the content of the line is different, we have to look for the original content in the document, as it may have been moved
-    // if we find it, we add the comment to the end of the line, if we don't find it, we add the comment to the end of the line of the original content even if the content is different.
+    // if the content of the line is different, we have to look for the original content in the document (as it may have been moved)
+    // if we find it, we add the comment to the end of the line, if we don't find it, we ignore the comment.
     let current_content = &lines.get(line.row);
     if current_content
         .filter(|c| c.starts_with(original_content))
@@ -171,7 +166,7 @@ fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &s
             let comment_added = format!("{} {}", found_line, line.content.clone());
             lines[row] = comment_added.to_string();
         } else {
-            // ignore comment or add it to the original line?
+            // ignore comment (or add it to the original line?)
         }
     }
 }
