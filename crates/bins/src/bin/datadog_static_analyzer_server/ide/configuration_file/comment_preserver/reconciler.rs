@@ -20,6 +20,27 @@ pub fn prettify_yaml(content: &str) -> Result<String, ReconcileError> {
     })
 }
 
+/// This is a best-effort comment reconciler, which uses a simple diff algorithm to try to locate
+/// comments in the new content.
+///
+/// The algorithm applies for the majority of the cases affecting the static analysis configuration files but has some limitations:
+///
+/// * Repeated elements may lead to false positives if there are lines added before or between the existing content.
+/// * If the original content uses a different syntax than the one emitted by the serializer, we may not be able to determine the location of those comments (e.g. dictionaries and list can be represented in an abbreviated form)
+///  
+///
+/// # Returns
+///
+/// If successful, it returns a `Result` containing a `String`. The `String` is the reconciled configuration
+/// file content.
+///
+/// # Errors
+///
+/// This function will return an error of type `ReconcileError` if:
+///
+/// * There's an issue getting the tree-sitter tree
+/// * There's an issue trying to apply the format to the reconciled yaml content
+///
 pub fn reconcile_comments(
     original_content: &str,
     new_content: &str,
@@ -332,6 +353,7 @@ rulesets:
         let modified = r#"
 schema-version: v1
 rulesets:
+  - java-0
   - java-security
   - java-1
   - java-2
@@ -348,6 +370,7 @@ rulesets:
         let expected = r#"
 schema-version: v1
 rulesets:
+  - java-0
   # this is a comment above java-security
   - java-security
   - java-1
@@ -395,6 +418,7 @@ rulesets:
         let modified = r#"
 schema-version: v1
 rulesets:
+  - java-0
   - java-security
   - java-1
   - java-2
@@ -411,6 +435,7 @@ rulesets:
         let expected = r#"
 schema-version: v1
 rulesets:
+  - java-0
   # this is a comment above java-security
   - java-security
   - java-1 # inline comment for java-1
