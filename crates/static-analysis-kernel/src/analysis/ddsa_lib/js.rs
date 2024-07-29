@@ -11,6 +11,8 @@ mod context_file;
 pub(crate) use context_file::FileContext;
 mod context_file_go;
 pub(crate) use context_file_go::FileContextGo;
+mod context_file_js;
+pub(crate) use context_file_js::*;
 mod context_file_tf;
 pub(crate) use context_file_tf::*;
 mod context_root;

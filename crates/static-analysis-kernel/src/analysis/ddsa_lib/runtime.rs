@@ -952,7 +952,7 @@ function visit(captures) {
             let scope = &mut rt.v8_handle_scope();
             let script_a = "__RUST_BRIDGE__context.fileCtx.go === undefined;";
             assert!(!try_execute(scope, script_a).unwrap().is_true());
-            let script_b = "__RUST_BRIDGE__context.fileCtx.javascript === undefined;";
+            let script_b = "__RUST_BRIDGE__context.fileCtx.rust === undefined;";
             assert!(try_execute(scope, script_b).unwrap().is_true());
         }
 
@@ -972,6 +972,8 @@ function visit(captures) {
 
             let text = Arc::<str>::from(text);
             let tree = Arc::new(get_tree(text.as_ref(), &language).unwrap());
+
+            assert!(!tree.root_node().has_error());
 
             // An arbitrary tree-sitter query that should create at least one match.
             let ts_query = "(identifier) @cap_name";
@@ -1026,8 +1028,8 @@ func main() {{
             )
         }
 
-        let js_code_1 = "const someJavaScriptCode = 123;";
-        let js_code_2 = "const isDifferentCode = true;";
+        let rust_code_1 = "let someRustCode = 123;";
+        let rust_code_2 = "let isDifferentCode = true;";
 
         // Case 1: A -> A
         ///////////////////////////////////////////////////////////////////////
@@ -1056,7 +1058,7 @@ func main() {{
             execute_for_side_effects(&mut rt, Language::Go, &go_code).unwrap();
             assert_go_ctx_values(&rt, go_imports);
 
-            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_1).unwrap();
+            execute_for_side_effects(&mut rt, Language::Rust, rust_code_1).unwrap();
             // The FileContextGo should have been cleared
             assert_go_ctx_values(&rt, &[]);
         }
@@ -1066,7 +1068,7 @@ func main() {{
         {
             let mut rt = JsRuntime::try_new().unwrap();
 
-            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_1).unwrap();
+            execute_for_side_effects(&mut rt, Language::Rust, rust_code_1).unwrap();
             // The FileContextGo should be empty
             assert_go_ctx_values(&rt, &[]);
 
@@ -1082,11 +1084,11 @@ func main() {{
         {
             let mut rt = JsRuntime::try_new().unwrap();
 
-            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_1).unwrap();
+            execute_for_side_effects(&mut rt, Language::Rust, rust_code_1).unwrap();
             // The FileContextGo should be empty
             assert_go_ctx_values(&rt, &[]);
 
-            execute_for_side_effects(&mut rt, Language::JavaScript, js_code_2).unwrap();
+            execute_for_side_effects(&mut rt, Language::Rust, rust_code_2).unwrap();
             // The FileContextGo should be empty
             assert_go_ctx_values(&rt, &[]);
         }
