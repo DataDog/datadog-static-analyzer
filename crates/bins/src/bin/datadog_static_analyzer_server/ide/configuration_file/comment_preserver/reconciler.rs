@@ -25,7 +25,7 @@ pub fn prettify_yaml(content: &str) -> Result<String, ReconcileError> {
 ///
 /// The algorithm applies for the majority of the cases affecting the static analysis configuration files but has some limitations:
 ///
-/// * Repeated elements with `inline` comments may lead to false positives if there are lines added before or between the existing content.
+/// * Repeated elements with `inline` comments may lead to false positives in some edge cases.
 /// * If the original content uses a different syntax than the one emitted by the serializer, we may not be able to determine the location of those comments (e.g. dictionaries and list can be represented in an abbreviated form)
 ///  
 ///
@@ -47,6 +47,7 @@ pub fn reconcile_comments(
     prettify: bool,
 ) -> Result<String, ReconcileError> {
     // parse the original content and look for comments
+    let original_content = original_content.trim();
     let tree = get_tree(original_content, &Language::Yaml).ok_or_else(|| {
         anyhow::anyhow!("Failed to parse the original content with the tree-sitter parser")
     })?;
@@ -163,6 +164,11 @@ fn reconcile(modified: &str, comments: &[Comment]) -> String {
     lines.join("\n")
 }
 
+fn starts_with_and_no_comment(text: &str, pat: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.starts_with(pat) && !trimmed.contains('#')
+}
+
 fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &str) {
     // for comments added to a node line, we can detect the row and the original content, and then just go to that line,
     // if the content of the line is the same as the original content, we can add the comment to the end of the line.
@@ -170,7 +176,7 @@ fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &s
     // if we find it, we add the comment to the end of the line, if we don't find it, we ignore the comment.
     let current_content = &lines.get(line.row);
     if current_content
-        .filter(|c| c.trim().starts_with(original_content))
+        .filter(|c| starts_with_and_no_comment(c, original_content))
         .is_some()
     {
         // line is ok, just add the comment
@@ -178,10 +184,11 @@ fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &s
         lines[line.row] = comment_added;
     } else {
         // content is different, try to find the original content in another line
+
         if let Some((row, found_line)) = lines
             .iter()
             .enumerate()
-            .find(|(_, l)| l.trim().starts_with(original_content))
+            .find(|(_, l)| starts_with_and_no_comment(l, original_content))
         {
             // we found it, add the comment
             let comment_added = format!("{} {}", found_line, line.content.clone());
@@ -487,37 +494,33 @@ rulesets:
         assert_eq!(result.trim(), expected.trim());
     }
 
-    mod inline_limitations {
-        use super::*;
-
-        #[test]
-        fn it_does_not_work_for_repeated_keys_with_inline_comments_if_additions_before_comment_occurrence(
-        ) {
-            let original_content = r#"
+    #[test]
+    fn it_does_work_for_repeated_keys_with_inline_comments_if_additions_before_comment_occurrence()
+    {
+        let original_content = r#"
 schema-version: v1
 rulesets:
-    - java-1 # inline comment 1
-    - java-1 # inline comment 2
+  - java-1 # inline comment 1
+  - java-1 # inline comment 2
 "#;
 
-            let modified = r#"
+        let modified = r#"
 schema-version: v1
 rulesets:
-    - java-0
-    - java-1
-    - java-1
+  - java-0
+  - java-1
+  - java-1
 "#;
 
-            let expected = r#"
+        let expected = r#"
 schema-version: v1
 rulesets:
-    - java-0
-    - java-1 # inline comment 1
-    - java-1 # inline comment 2
+  - java-0
+  - java-1 # inline comment 1
+  - java-1 # inline comment 2
 "#;
 
-            let result = reconcile_comments(original_content, modified, true).unwrap();
-            assert_ne!(result.trim(), expected.trim());
-        }
+        let result = reconcile_comments(original_content, modified, true).unwrap();
+        assert_eq!(result.trim(), expected.trim());
     }
 }
