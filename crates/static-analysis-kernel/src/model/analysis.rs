@@ -26,7 +26,7 @@ impl LinesToIgnore {
     /// return if a specific rule should be ignored
     ///  - rule_name is the full rule name like rule1/rule2
     ///  - line is the line of the violation
-    /// returns true if the rule should be ignored
+    ///    returns true if the rule should be ignored
     pub fn should_filter_rule(&self, rule_name: &str, line: u32) -> bool {
         match &self.ignore_file {
             AllRules => {
