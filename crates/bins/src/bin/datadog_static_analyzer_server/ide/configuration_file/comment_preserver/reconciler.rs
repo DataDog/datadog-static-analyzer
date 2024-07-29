@@ -167,7 +167,7 @@ fn reconcile(modified: &str, comments: &[Comment]) -> String {
 
 fn starts_with_and_no_comment(text: &str, pat: &str) -> bool {
     let trimmed = text.trim();
-    trimmed.starts_with(pat) && !trimmed.contains('#')
+    trimmed.starts_with(pat) && !trimmed.contains(" #")
 }
 
 fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &str) {
@@ -275,7 +275,7 @@ fn get_line_content(source: &str, byte_offset: usize) -> &str {
         .map_or(source.len(), |pos| byte_offset + pos);
     let content = &source[start..end];
     content
-        .find('#')
+        .find(" #")
         .map_or(content, |index| content[..index].trim_end())
 }
 
