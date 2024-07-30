@@ -244,17 +244,34 @@ impl StaticAnalysisConfigFile {
     }
 
     /// Serializes the `StaticAnalysisConfigFile` into a YAML string.
+    ///
+    /// # Returns
+    ///
+    /// This function will try to prettify/format the yaml and preserve the existing comments.
+    /// If it fails to do so, it will return a raw yaml with the default format and without comments.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ConfigFileError` if something goes wrong.
+    #[instrument(skip(self))]
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
         let str = config_file_to_yaml(self)?;
         // fix null maps
         let fixed = str.replace(": null", ":");
-        // preserve the comments if the original content is provided
-        if let Some(original_content) = &self.original_content {
-            reconcile_comments(original_content, &fixed, true).map_err(Into::into)
-        } else {
-            // prettify the content
-            prettify_yaml(&fixed).map_err(Into::into)
-        }
+
+        // reconcile and format
+        // NOTE: if this fails, we're going to return the content
+        // and swallow the error.
+        self.original_content
+            .as_ref()
+            .map_or_else(
+                || prettify_yaml(&fixed),
+                |original_content| reconcile_comments(original_content, &fixed, true),
+            )
+            .or_else(|e| {
+                tracing::debug!(error = ?e, "Reconciliation error: {}", e.to_string());
+                Ok::<String, ConfigFileError>(fixed)
+            })
     }
 }
 
