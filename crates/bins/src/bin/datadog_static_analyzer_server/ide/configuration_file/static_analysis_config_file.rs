@@ -1,6 +1,7 @@
 use super::comment_preserver::{prettify_yaml, reconcile_comments};
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use kernel::config_file::config_file_to_yaml;
 use kernel::{
     config_file::parse_config_file,
@@ -256,8 +257,17 @@ impl StaticAnalysisConfigFile {
     #[instrument(skip(self))]
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
         let str = config_file_to_yaml(self)?;
-        // fix null maps
-        let fixed = str.replace(": null", ":");
+        // fix null maps, note that str will not have comments and it will be using the default serde format.
+        let fixed = str
+            .lines()
+            .map(|l| {
+                if l.ends_with(": null") {
+                    l.replace(": null", ":")
+                } else {
+                    l.to_string()
+                }
+            })
+            .join("\n");
 
         // reconcile and format
         // NOTE: if this fails, we're going to return the content
@@ -808,5 +818,43 @@ rulesets:
         let expected = super::StaticAnalysisConfigFile::default();
         let config = super::StaticAnalysisConfigFile::try_from(String::new()).unwrap();
         assert_eq!(config, expected);
+    }
+
+    #[test]
+    fn it_removes_null_on_maps_only() {
+        let content = to_encoded_content(
+            r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      only:
+        - "foo/bar: null"
+"#,
+        );
+        let config = super::StaticAnalysisConfigFile::with_added_rulesets(
+            &["ruleset1", "ruleset2", "a-ruleset3"],
+            Some(content),
+        )
+        .unwrap();
+
+        let expected = r#"
+schema-version: v1
+rulesets:
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - "foo/bar: null"
+  - ruleset2
+  - a-ruleset3
+"#;
+
+        assert_eq!(config.trim(), expected.trim());
     }
 }
