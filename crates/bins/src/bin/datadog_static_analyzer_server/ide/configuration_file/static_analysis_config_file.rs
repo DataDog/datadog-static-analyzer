@@ -269,7 +269,7 @@ impl StaticAnalysisConfigFile {
                 |original_content| reconcile_comments(original_content, &fixed, true),
             )
             .or_else(|e| {
-                tracing::debug!(error = ?e, "Reconciliation error: {}", e.to_string());
+                tracing::debug!(error = ?e, "Reconciliation or formatting error: {}", e.to_string());
                 Ok::<String, ConfigFileError>(fixed)
             })
     }
