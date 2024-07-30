@@ -500,7 +500,7 @@ fn main() -> Result<()> {
                 "Analyzing {}, {} files detected",
                 language,
                 files_for_language.len()
-            )
+            );
         }
 
         // take the relative path for the analysis

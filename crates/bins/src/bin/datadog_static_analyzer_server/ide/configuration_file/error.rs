@@ -40,7 +40,7 @@ impl<'r> Responder<'r, 'static> for ConfigFileError {
 }
 
 impl ConfigFileError {
-    pub fn code(&self) -> u16 {
+    pub const fn code(&self) -> u16 {
         match self {
             Self::Parser { .. } => 1,
             Self::Decoder { .. } => 2,

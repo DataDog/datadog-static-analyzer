@@ -1,3 +1,5 @@
+#![allow(clippy::module_name_repetitions)]
+
 mod configuration_file;
 use rocket::Route;
 

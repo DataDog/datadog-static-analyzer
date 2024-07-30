@@ -5,7 +5,7 @@ pub struct Line {
 }
 
 impl Line {
-    pub fn new(row: usize, content: String) -> Self {
+    pub const fn new(row: usize, content: String) -> Self {
         Self { row, content }
     }
 }

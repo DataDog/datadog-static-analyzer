@@ -179,10 +179,7 @@ impl StaticAnalysisConfigFile {
         rulesets: &[impl AsRef<str> + Debug],
         config_content_base64: Option<String>,
     ) -> Result<String, ConfigFileError> {
-        let mut original_content: Option<String> = None;
-
         let mut config = config_content_base64.map_or(Ok(Self::default()), |content| {
-            original_content = Some(content.clone());
             Self::try_from(content).map_err(|e| {
                 tracing::error!(error =?e, "Error trying to parse config file");
                 e

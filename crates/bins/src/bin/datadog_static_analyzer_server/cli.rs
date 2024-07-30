@@ -8,7 +8,7 @@ use std::{env, process, thread};
 use super::state::ServerState;
 use super::utils::get_current_timestamp_ms;
 
-fn print_usage(program: &str, opts: Options) {
+fn print_usage(program: &str, opts: &Options) {
     let brief = format!("Usage: {} [options]", program);
     print!("{}", opts.usage(&brief));
 }
@@ -61,7 +61,7 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
     }
 
     if matches.opt_present("h") {
-        print_usage(&program, opts);
+        print_usage(&program, &opts);
         process::exit(0);
     }
 
@@ -122,7 +122,7 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
 
                     if latest_timestamp > 0 && current_timestamp > latest_timestamp + timeout_ms {
                         eprintln!("exiting because of timeout, trying to exit gracefully");
-                        shutdown_handle.clone().notify();
+                        shutdown_handle.notify();
                         // we give 10 seconds for the process to terminate
                         // if it does not, we abort
                         thread::sleep(Duration::from_secs(10));

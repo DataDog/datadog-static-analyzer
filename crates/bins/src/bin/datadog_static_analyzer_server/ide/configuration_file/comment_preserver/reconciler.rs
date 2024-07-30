@@ -25,7 +25,7 @@ pub fn prettify_yaml(content: &str) -> Result<String, ReconcileError> {
 ///
 /// The algorithm applies for the majority of the cases affecting the static analysis configuration files but has some limitations:
 ///
-/// * Repeated elements with `inline` comments may lead to false positives in some edge cases (see mode inline_limitations in tests for more info)
+/// * Repeated elements with `inline` comments may lead to false positives in some edge cases (see mode `inline_limitations` in tests for more info)
 /// * If the original content uses a different syntax than the one emitted by the serializer, we may not be able to determine the location of those comments (e.g. dictionaries and list can be represented in an abbreviated form)
 ///  
 ///
@@ -75,19 +75,17 @@ fn get_related_comments<'a>(
     visited: &mut HashSet<Node<'a>>,
     comment: &mut String,
 ) -> Option<Node<'a>> {
-    if let Some(next) = next {
+    next.and_then(|next| {
         if next.kind() == "comment" {
             // get the comment
             let content = &source[next.start_byte()..next.end_byte()];
-            *comment = format!("{}\n{}", comment, content);
+            *comment = format!("{comment}\n{content}");
             visited.insert(next);
             get_related_comments(next.next_sibling(), source, visited, comment)
         } else {
             Some(next)
         }
-    } else {
-        None
-    }
+    })
 }
 
 fn extract_comments_from_node<'a>(
@@ -193,7 +191,7 @@ fn manage_inline_comment(lines: &mut [String], line: &Line, original_content: &s
         {
             // we found it, add the comment
             let comment_added = format!("{} {}", found_line, line.content.clone());
-            lines[row] = comment_added.to_string();
+            lines[row] = comment_added;
         } else {
             // ignore comment (or add it to the original line?)
         }
