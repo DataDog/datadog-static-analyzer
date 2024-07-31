@@ -1,3 +1,4 @@
+use super::comment_preserver::ReconcileError;
 use rocket::{http::ContentType, response::Responder, Response};
 use serde_json::json;
 use thiserror::Error;
@@ -12,6 +13,12 @@ pub enum ConfigFileError {
     },
     #[error("Error decoding base64 string")]
     Decoder { source: anyhow::Error },
+
+    #[error("Error reconciling comments")]
+    CommentReconciler {
+        #[from]
+        source: ReconcileError,
+    },
 }
 
 impl From<anyhow::Error> for ConfigFileError {
@@ -33,10 +40,11 @@ impl<'r> Responder<'r, 'static> for ConfigFileError {
 }
 
 impl ConfigFileError {
-    pub fn code(&self) -> u16 {
+    pub const fn code(&self) -> u16 {
         match self {
             Self::Parser { .. } => 1,
             Self::Decoder { .. } => 2,
+            Self::CommentReconciler { .. } => 3,
         }
     }
 }

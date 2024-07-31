@@ -149,9 +149,9 @@ async fn serve_static(
 
 /// Catches all OPTION requests in order to get the CORS related Fairing triggered.
 #[rocket::options("/<_..>")]
-fn get_options() -> String {
+const fn get_options() -> String {
     /* Intentionally left empty */
-    "".to_string()
+    String::new()
 }
 
 /// Simple ping method that will return "pong" as response.

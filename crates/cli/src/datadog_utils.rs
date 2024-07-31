@@ -287,7 +287,8 @@ pub fn get_all_default_rulesets(use_staging: bool, debug: bool) -> Result<Vec<Ru
 /// we need to ensure that
 ///   1. We are scanning a Git Repository
 ///   2. We have API Keys for the user
-/// When we issue the request, we pass
+///
+///   When we issue the request, we pass
 ///   - repository url
 ///   - current sha
 ///   - current branch

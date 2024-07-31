@@ -1,5 +1,7 @@
+use super::comment_preserver::{prettify_yaml, reconcile_comments};
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use kernel::config_file::config_file_to_yaml;
 use kernel::{
     config_file::parse_config_file,
@@ -10,11 +12,17 @@ use std::{borrow::Cow, fmt::Debug, ops::Deref};
 use tracing::instrument;
 
 #[derive(Debug, Default, Clone, PartialEq)]
-pub struct StaticAnalysisConfigFile(ConfigFile);
+pub struct StaticAnalysisConfigFile {
+    config_file: ConfigFile,
+    original_content: Option<String>,
+}
 
 impl From<ConfigFile> for StaticAnalysisConfigFile {
     fn from(value: ConfigFile) -> Self {
-        Self(value)
+        Self {
+            config_file: value,
+            original_content: None,
+        }
     }
 }
 
@@ -27,14 +35,17 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
             return Ok(Self::default());
         }
         let config = parse_config_file(&content)?;
-        Ok(config.into())
+        Ok(Self {
+            config_file: config,
+            original_content: Some(content),
+        })
     }
 }
 
 impl Deref for StaticAnalysisConfigFile {
     type Target = ConfigFile;
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.config_file
     }
 }
 
@@ -104,7 +115,7 @@ impl StaticAnalysisConfigFile {
 
     #[instrument(skip(self))]
     pub fn ignore_rule(&mut self, rule: Cow<str>) {
-        let config = &mut self.0;
+        let config = &mut self.config_file;
         if let Some((ruleset_name, rule_name)) = rule.split_once('/') {
             // the ruleset may exist and contain other rules so we
             // can't update it blindly
@@ -168,14 +179,12 @@ impl StaticAnalysisConfigFile {
         rulesets: &[impl AsRef<str> + Debug],
         config_content_base64: Option<String>,
     ) -> Result<String, ConfigFileError> {
-        let mut config = if config_content_base64.is_some() {
-            Self::try_from(config_content_base64.unwrap()).map_err(|e| {
+        let mut config = config_content_base64.map_or(Ok(Self::default()), |content| {
+            Self::try_from(content).map_err(|e| {
                 tracing::error!(error =?e, "Error trying to parse config file");
                 e
             })
-        } else {
-            Ok(Self(ConfigFile::default()))
-        }?;
+        })?;
 
         config.add_rulesets(rulesets);
         config.to_string().map_err(|e| {
@@ -186,7 +195,7 @@ impl StaticAnalysisConfigFile {
 
     #[instrument(skip(self))]
     pub fn add_rulesets(&mut self, rulesets: &[impl AsRef<str> + Debug]) {
-        let config = &mut self.0;
+        let config = &mut self.config_file;
         for ruleset in rulesets {
             if !config.rulesets.contains_key(ruleset.as_ref()) {
                 config
@@ -233,11 +242,43 @@ impl StaticAnalysisConfigFile {
     }
 
     /// Serializes the `StaticAnalysisConfigFile` into a YAML string.
+    ///
+    /// # Returns
+    ///
+    /// This function will try to prettify/format the yaml and preserve the existing comments.
+    /// If it fails to do so, it will return a raw yaml with the default format and without comments.
+    ///
+    /// # Errors
+    ///
+    /// Returns a `ConfigFileError` if something goes wrong.
+    #[instrument(skip(self))]
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
         let str = config_file_to_yaml(self)?;
-        // fix null maps
-        let fixed = str.replace(": null", ":");
-        Ok(fixed)
+        // fix null maps, note that str will not have comments and it will be using the default serde format.
+        let fixed = str
+            .lines()
+            .map(|l| {
+                if l.ends_with(": null") {
+                    l.replace(": null", ":")
+                } else {
+                    l.to_string()
+                }
+            })
+            .join("\n");
+
+        // reconcile and format
+        // NOTE: if this fails, we're going to return the content
+        // and swallow the error.
+        self.original_content
+            .as_ref()
+            .map_or_else(
+                || prettify_yaml(&fixed),
+                |original_content| reconcile_comments(original_content, &fixed, true),
+            )
+            .or_else(|e| {
+                tracing::debug!(error = ?e, "Reconciliation or formatting error: {}", e.to_string());
+                Ok::<String, ConfigFileError>(fixed)
+            })
     }
 }
 
@@ -271,20 +312,20 @@ rulesets:
         #[test]
         fn it_works_complex() {
             let content = to_encoded_content(
-                r"
+                r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
         only:
-        - foo/bar
-    rule1:
+          - foo/bar
+      rule1:
         ignore:
-        - '**'
-",
+          - "**"
+"#,
             );
             let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
             assert_eq!(rulesets, vec!["java-security", "java-1", "ruleset1"]);
@@ -341,9 +382,9 @@ rulesets:
             let expected = r"
 schema-version: v1
 rulesets:
-- ruleset1
-- ruleset2
-- a-ruleset3
+  - ruleset1
+  - ruleset2
+  - a-ruleset3
 ";
             assert_eq!(config.trim(), expected.trim());
         }
@@ -358,7 +399,7 @@ rulesets:
             let expected = r"
 schema-version: v1
 rulesets:
-- ruleset1
+  - ruleset1
 ";
             assert_eq!(config.trim(), expected.trim());
         }
@@ -382,11 +423,11 @@ rulesets:
             let expected = r"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1
-- ruleset2
-- a-ruleset3
+  - java-security
+  - java-1
+  - ruleset1
+  - ruleset2
+  - a-ruleset3
 ";
 
             assert_eq!(config.trim(), expected.trim());
@@ -395,20 +436,20 @@ rulesets:
         #[test]
         fn it_works_complex() {
             let content = to_encoded_content(
-                r"
+                r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      only:
-      - foo/bar
-    rule1:
-      ignore:
-      - '**'
-",
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+"#,
             );
             let config = StaticAnalysisConfigFile::with_added_rulesets(
                 &["ruleset1", "ruleset2", "a-ruleset3"],
@@ -416,22 +457,22 @@ rulesets:
             )
             .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      only:
-      - foo/bar
-    rule1:
-      ignore:
-      - '**'
-- ruleset2
-- a-ruleset3
-";
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+  - ruleset2
+  - a-ruleset3
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -474,17 +515,17 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule1:
-      ignore:
-      - '**'
-";
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule1:
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -503,16 +544,17 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule1:
-      ignore:
-      - '**'";
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule1:
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -536,18 +578,19 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule1:
-      only:
-      - foo/bar
-      ignore:
-      - '**'";
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule1:
+        only:
+          - foo/bar
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -571,21 +614,21 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-1
-- java-security
-- ruleset1:
-  rules:
-    rule2:
-      only:
-      - foo/bar
-    rule1:
-      ignore:
-      - '**'
-";
-            assert!(config.trim() == expected.trim());
+  - java-1
+  - java-security
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - foo/bar
+      rule1:
+        ignore:
+          - "**"
+"#;
+            assert_eq!(config.trim(), expected.trim());
         }
 
         #[test]
@@ -623,19 +666,19 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      severity: ERROR
-    rule1:
-      ignore:
-      - '**'
-";
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        severity: ERROR
+      rule1:
+        ignore:
+          - "**"
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -659,18 +702,18 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule2".into(), content)
                     .unwrap();
 
-            let expected = r"
+            let expected = r#"
 schema-version: v1
 rulesets:
-- java-security
-- java-1
-- ruleset1:
-  rules:
-    rule2:
-      ignore:
-      - '**'
-      severity: ERROR
-";
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        ignore:
+          - "**"
+        severity: ERROR
+"#;
 
             assert_eq!(config.trim(), expected.trim());
         }
@@ -772,5 +815,43 @@ rulesets:
         let expected = super::StaticAnalysisConfigFile::default();
         let config = super::StaticAnalysisConfigFile::try_from(String::new()).unwrap();
         assert_eq!(config, expected);
+    }
+
+    #[test]
+    fn it_removes_null_on_maps_only() {
+        let content = to_encoded_content(
+            r#"
+schema-version: v1
+rulesets:
+- java-security
+- java-1
+- ruleset1:
+  rules:
+    rule2:
+      only:
+        - "foo/bar: null"
+"#,
+        );
+        let config = super::StaticAnalysisConfigFile::with_added_rulesets(
+            &["ruleset1", "ruleset2", "a-ruleset3"],
+            Some(content),
+        )
+        .unwrap();
+
+        let expected = r#"
+schema-version: v1
+rulesets:
+  - java-security
+  - java-1
+  - ruleset1:
+    rules:
+      rule2:
+        only:
+          - "foo/bar: null"
+  - ruleset2
+  - a-ruleset3
+"#;
+
+        assert_eq!(config.trim(), expected.trim());
     }
 }

@@ -266,6 +266,7 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
 ///  - directory_path is the path of the directory
 ///  - diff_aware_info is the information we got from our API about the scan to do with the list of files
 ///    and base sha
+///
 /// We return the list of files from the first arguments filtered with the list of files we should effectively
 /// scan. The returned list length must always less or equal than the initial list (first argument).
 pub fn filter_files_by_diff_aware_info(

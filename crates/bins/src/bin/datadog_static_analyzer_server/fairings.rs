@@ -96,9 +96,9 @@ impl Fairing for KeepAlive {
     }
 }
 
-/// Provides functionality to associate a UUIDv4 per request.
+/// Provides functionality to associate a `UUIDv4` per request.
 ///
-/// Rocket 0.5.0 does not generate per-request IDs (see: https://github.com/rwf2/Rocket/issues/21)
+/// Rocket 0.5.0 does not generate per-request IDs (see: [#21](https://github.com/rwf2/Rocket/issues/21))
 /// Until upstream natively supports this, we use a custom [Fairing] to generate one.
 pub struct TracingFairing;
 
@@ -122,10 +122,10 @@ impl TraceSpan {
     }
 }
 
-/// A newtype Option representing a [Span] that is used to conform to the [Request::local_cache] API
+/// A newtype Option representing a [Span] that is used to conform to the [`Request::local_cache`] API
 struct FairingTraceSpan(Option<Span>);
 
-/// A newtype Option representing a [String] request ID that is used to conform to the [Request::local_cache] API
+/// A newtype Option representing a [String] request ID that is used to conform to the [`Request::local_cache`] API
 struct FairingRequestId(Option<String>);
 
 #[rocket::async_trait]
@@ -141,8 +141,7 @@ impl Fairing for TracingFairing {
         let request_id = req
             .headers()
             .get_one("X-Request-Id")
-            .map(String::from)
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+            .map_or_else(|| Uuid::new_v4().to_string(), String::from);
 
         let request_span = tracing::info_span!(
             "http_request",
