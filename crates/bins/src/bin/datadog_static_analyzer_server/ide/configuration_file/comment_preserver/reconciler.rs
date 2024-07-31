@@ -95,10 +95,9 @@ fn extract_comments_from_node<'a>(
     visited: &mut HashSet<Node<'a>>,
 ) {
     if node.kind() == "comment" {
-        if visited.contains(&node) {
+        if !visited.insert(node) {
             return;
         }
-        visited.insert(node);
 
         let start_byte = node.start_byte();
         let end_byte = node.end_byte();
