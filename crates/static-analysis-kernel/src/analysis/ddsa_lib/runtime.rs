@@ -29,12 +29,6 @@ const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
 const STELLA_COMPAT_FILENAME: &str = "STELLA_COMPAT_FILENAME";
 const STELLA_COMPAT_FILE_CONTENTS: &str = "STELLA_COMPAT_FILE_CONTENTS";
 
-/// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
-pub(crate) const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
-    // `deno_core`, by default, injects its own `console` implementation.
-    "console",
-];
-
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
     runtime: deno_core::JsRuntime,
@@ -531,17 +525,26 @@ impl JsExecutionState {
 }
 
 /// Constructs a [`deno_core::JsRuntime`] with the [`ddsa_lib`] extension enabled.
-pub(crate) fn base_js_runtime() -> deno_core::JsRuntime {
-    create_base_runtime(
-        vec![ddsa_lib::init_ops_and_esm()],
-        Some(Box::new(|scope, default_ctx| {
-            let global_proxy = default_ctx.global(scope);
-            for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
-                let key = v8_string(scope, prop);
-                global_proxy.delete(scope, key.into());
-            }
-        })),
-    )
+fn base_js_runtime() -> deno_core::JsRuntime {
+    if cfg!(test) {
+        analysis::ddsa_lib::test_utils::cfg_test_runtime()
+    } else {
+        /// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
+        const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
+            // `deno_core`, by default, injects its own `console` implementation.
+            "console",
+        ];
+        create_base_runtime(
+            vec![ddsa_lib::init_ops_and_esm()],
+            Some(Box::new(|scope, default_ctx| {
+                let global_proxy = default_ctx.global(scope);
+                for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
+                    let key = v8_string(scope, prop);
+                    global_proxy.delete(scope, key.into());
+                }
+            })),
+        )
+    }
 }
 
 /// A mutable scratch space that collects the output of the `console.log` function invoked by JavaScript code.
