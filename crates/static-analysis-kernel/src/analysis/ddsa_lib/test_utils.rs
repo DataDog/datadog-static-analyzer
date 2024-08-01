@@ -360,3 +360,83 @@ pub(crate) fn shorthand_execute_rule(
 
     runtime.execute_rule(&source_text, &tree, &filename, &rule, &arguments, timeout)
 }
+
+/// A wrapper around a [`tree_sitter::Tree`] providing shorthand tree inspection functions.
+#[derive(Debug, Clone)]
+pub(crate) struct TsTree {
+    tree: Arc<tree_sitter::Tree>,
+    text: String,
+}
+
+impl TsTree {
+    pub fn new(source_text: &str, lang: Language) -> Self {
+        let tree = Arc::new(get_tree(source_text, &lang).unwrap());
+        Self::from_parts(tree, source_text)
+    }
+
+    pub fn from_parts(tree: Arc<tree_sitter::Tree>, text: impl Into<String>) -> Self {
+        let text = text.into();
+        Self { tree, text }
+    }
+
+    pub fn tree(&self) -> Arc<tree_sitter::Tree> {
+        Arc::clone(&self.tree)
+    }
+
+    /// Returns the text for the provided node.
+    pub fn text(&self, node: tree_sitter::Node) -> &str {
+        node.utf8_text(self.text.as_bytes()).unwrap()
+    }
+
+    /// Returns all named `tree_sitter::Node`s matching `text` and `kind`, if provided.
+    pub fn find_named_nodes<'t>(
+        &'t self,
+        text: Option<&str>,
+        kind: Option<&str>,
+    ) -> Vec<tree_sitter::Node<'t>> {
+        self.find_nodes(text, kind)
+            .iter()
+            .filter(|&node| node.is_named())
+            .copied()
+            .collect()
+    }
+
+    /// Returns all `tree_sitter::Node`s matching `text` and `kind`, if provided.
+    pub fn find_nodes<'t>(
+        &'t self,
+        text: Option<&str>,
+        kind: Option<&str>,
+    ) -> Vec<tree_sitter::Node<'t>> {
+        Self::preorder_nodes(self.tree.root_node())
+            .iter()
+            .filter(|&node| {
+                text.map(|t| node.utf8_text(self.text.as_bytes()).unwrap() == t)
+                    .unwrap_or(true)
+                    && kind.map(|k| node.kind() == k).unwrap_or(true)
+            })
+            .copied()
+            .collect()
+    }
+
+    /// Returns a Vec of the root's nodes in preorder.
+    pub fn preorder_nodes(root: tree_sitter::Node) -> Vec<tree_sitter::Node> {
+        let mut cursor = root.walk();
+        let mut nodes = vec![];
+        'outer: loop {
+            nodes.push(cursor.node());
+            if cursor.goto_first_child() {
+                continue;
+            }
+            if cursor.goto_next_sibling() {
+                continue;
+            }
+            while !cursor.goto_next_sibling() {
+                if !cursor.goto_parent() {
+                    // Reached the root
+                    break 'outer;
+                }
+            }
+        }
+        nodes
+    }
+}
