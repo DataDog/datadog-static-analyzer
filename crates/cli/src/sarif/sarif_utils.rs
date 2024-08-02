@@ -696,8 +696,8 @@ pub fn generate_sarif_report(
 
 pub fn generate_sarif_file(
     configuration: &CliConfiguration,
-    static_analysis_rule_results: &[RuleResult],
-    secrets_rule_results: &[SecretResult],
+    static_analysis_rule_results: Vec<RuleResult>,
+    secrets_rule_results: Vec<SecretResult>,
     sarif_report_metadata: SarifReportMetadata,
 ) -> Result<String> {
     let static_rules_sarif: Vec<SarifRule> = configuration
@@ -706,24 +706,19 @@ pub fn generate_sarif_file(
         .cloned()
         .map(|r| r.into())
         .collect();
-
     let secrets_rules_sarif: Vec<SarifRule> = configuration
         .secrets_rules
         .clone()
         .into_iter()
         .map(|r| r.into())
         .collect();
-
     let static_analysis_results = static_analysis_rule_results
-        .iter()
-        .cloned()
+        .into_iter()
         .map(SarifRuleResult::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
-
     let secret_results = secrets_rule_results
-        .iter()
-        .cloned()
+        .into_iter()
         .map(SarifRuleResult::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;

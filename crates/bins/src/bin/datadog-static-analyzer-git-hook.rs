@@ -560,8 +560,8 @@ fn main() -> Result<()> {
     if let Some(output_file) = output_opt {
         let sarif_content = generate_sarif_file(
             &configuration,
-            &all_rule_results,
-            &secrets_results,
+            all_rule_results,
+            secrets_results,
             SarifReportMetadata {
                 add_git_info: false,
                 debug: configuration.use_debug,

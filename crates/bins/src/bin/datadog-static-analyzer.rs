@@ -737,6 +737,10 @@ fn main() -> Result<()> {
         violations_table::print_violations_table(&all_rule_results);
     }
 
+    // if there is any violation at all and --fail-on-any-violation is passed, we exit 1
+    let fail_on_violations = !fail_any_violation_severities.is_empty()
+        && count_violations_by_severities(&all_rule_results, &fail_any_violation_severities) > 0;
+
     let value = match configuration.output_format {
         OutputFormat::Csv => csv::generate_csv_results(&all_rule_results, &secrets_results),
         OutputFormat::Json => {
@@ -752,8 +756,8 @@ fn main() -> Result<()> {
         }
         OutputFormat::Sarif => generate_sarif_file(
             &configuration,
-            &all_rule_results,
-            &secrets_results,
+            all_rule_results,
+            secrets_results,
             SarifReportMetadata {
                 add_git_info,
                 debug: configuration.use_debug,
@@ -771,9 +775,7 @@ fn main() -> Result<()> {
         .context("error when writing results")?;
 
     // if there is any violation at all and --fail-on-any-violation is passed, we exit 1
-    if !fail_any_violation_severities.is_empty()
-        && count_violations_by_severities(&all_rule_results, &fail_any_violation_severities) > 0
-    {
+    if fail_on_violations {
         exit(1);
     }
 
