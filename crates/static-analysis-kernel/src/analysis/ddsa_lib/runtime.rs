@@ -349,9 +349,11 @@ impl JsRuntime {
             let exception = tc_ctx_scope
                 .exception()
                 .expect("return value should only be `None` if an error was caught");
-            let reason = exception.to_rust_string_lossy(tc_ctx_scope);
+            let deno_error = deno_core::error::JsError::from_v8_exception(tc_ctx_scope, exception);
             tc_ctx_scope.reset();
-            DDSAJsRuntimeError::Execution { reason }
+            DDSAJsRuntimeError::Execution {
+                error: deno_error.into(),
+            }
         })?;
 
         Ok(handle_return_value(tc_ctx_scope, return_val))

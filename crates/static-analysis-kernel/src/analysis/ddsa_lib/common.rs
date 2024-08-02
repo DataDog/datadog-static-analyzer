@@ -4,7 +4,7 @@
 
 use deno_core::v8;
 use deno_core::v8::HandleScope;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::time::Duration;
 
@@ -13,8 +13,8 @@ pub type NodeId = u32;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DDSAJsRuntimeError {
-    #[error("execution error: {reason}")]
-    Execution { reason: String },
+    #[error("{error}")]
+    Execution { error: JsError },
     #[error("JavaScript execution timeout")]
     JavaScriptTimeout { timeout: Duration },
     #[error("expected `{name}` to exist within the v8 context")]
@@ -35,6 +35,46 @@ pub enum DDSAJsRuntimeError {
     #[cfg(test)]
     #[error("cfg(test): unspecified")]
     Unspecified,
+}
+
+/// An error executing JavaScript.
+#[derive(Debug, Clone)]
+pub struct JsError {
+    pub message: String,
+    pub stack_trace: Vec<String>,
+}
+
+impl From<deno_core::error::JsError> for JsError {
+    fn from(value: deno_core::error::JsError) -> Self {
+        // `deno_core` formats the `deno_core::error::JsError::stack` such that the first line contains
+        // the error message, and all subsequent lines are a human-friendly stack trace. For example:
+        // ```
+        // TypeError: Cannot read properties of undefined (reading 'someProp')
+        //   at SomeClass.someOtherFunction (ext:ddsa_lib/someModule:572:29)
+        //   at SomeClass.someFunction (ext:ddsa_lib/someModule:157:22)
+        //   at <anonymous>:1:13
+        // ```
+        let stack_trace = value.stack.map_or(vec![], |str| {
+            str.lines()
+                .skip(1)
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        });
+        Self {
+            message: value.exception_message,
+            stack_trace,
+        }
+    }
+}
+
+impl Display for JsError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "{}", self.message)?;
+        for line in &self.stack_trace {
+            writeln!(f, "{}", line)?;
+        }
+        Ok(())
+    }
 }
 
 /// A zero-size type marker indicating that the associated struct represents a JavaScript ES6 class object.
