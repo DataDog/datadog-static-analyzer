@@ -27,7 +27,6 @@ use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 use kernel::rule_config::RuleConfigProvider;
 use rayon::prelude::*;
 use rocket::yansi::Paint;
-use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::collections::HashMap;
@@ -129,9 +128,9 @@ fn main() -> Result<()> {
     );
 
     opts.optopt(
-        "",
+        "o",
         "output",
-        "file that contains all findings from the Git hooks (SARIF output)",
+        "output file name to write all findings from the Git hooks to (SARIF output)",
         "/tmp/file-output.sarif",
     );
 
@@ -462,29 +461,18 @@ fn main() -> Result<()> {
         all_rule_results.extend(rule_results);
     }
 
-    // Filter the results and keep only the results relevant for the diff
-    let results_for_diff: Vec<RuleResult> = all_rule_results
-        .into_iter()
-        .map(|rr| {
-            let mut new_result = rr.clone();
-            let filtered_violations = rr
-                .violations
-                .into_iter()
-                .filter(|v| {
-                    let path = PathBuf::from(&rr.filename);
-                    if let Some(lines) = modifications.get(&path) {
-                        lines.contains(&v.start.line)
-                    } else {
-                        false
-                    }
-                })
-                .collect();
-            new_result.violations = filtered_violations;
-            new_result
-        })
-        .collect();
+    all_rule_results.iter_mut().for_each(|rr| {
+        let path = PathBuf::from(&rr.filename);
+        rr.violations.retain(|v| {
+            if let Some(lines) = modifications.get(&path) {
+                lines.contains(&v.start.line)
+            } else {
+                false
+            }
+        });
+    });
 
-    for rule_result in &results_for_diff {
+    for rule_result in &all_rule_results {
         let path = PathBuf::from(&rule_result.filename);
         for violation in &rule_result.violations {
             println!(
@@ -502,7 +490,7 @@ fn main() -> Result<()> {
 
     // Secrets detection
     let mut fail_for_secrets = false;
-    let mut secrets_for_diff: Vec<SecretResult> = vec![];
+    let mut secrets_results = vec![];
     if secrets_enabled {
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
@@ -511,7 +499,7 @@ fn main() -> Result<()> {
 
         let sds_scanner = build_sds_scanner(&secrets_rules);
 
-        let secrets_results: Vec<SecretResult> = secrets_files
+        secrets_results = secrets_files
             .par_iter()
             .flat_map(|path| {
                 let relative_path = path
@@ -538,29 +526,18 @@ fn main() -> Result<()> {
             })
             .collect();
 
-        // Filter the results only based on the difff
-        secrets_for_diff = secrets_results
-            .iter()
-            .map(|rr| {
-                let mut new_result = rr.clone();
-                let filtered_violations = new_result
-                    .matches
-                    .into_iter()
-                    .filter(|v| {
-                        let path = PathBuf::from(&rr.filename);
-                        if let Some(lines) = modifications.get(&path) {
-                            lines.contains(&v.start.line)
-                        } else {
-                            false
-                        }
-                    })
-                    .collect();
-                new_result.matches = filtered_violations;
-                new_result
-            })
-            .collect();
+        secrets_results.iter_mut().for_each(|rr| {
+            let path = PathBuf::from(&rr.filename);
+            rr.matches.retain(|v| {
+                if let Some(lines) = modifications.get(&path) {
+                    lines.contains(&v.start.line)
+                } else {
+                    false
+                }
+            });
+        });
 
-        for secret_result in &secrets_for_diff {
+        for secret_result in &secrets_results {
             let path = PathBuf::from(&secret_result.filename);
 
             for secret_match in &secret_result.matches {
@@ -583,8 +560,8 @@ fn main() -> Result<()> {
     if let Some(output_file) = output_opt {
         let sarif_content = generate_sarif_file(
             &configuration,
-            &results_for_diff,
-            &secrets_for_diff,
+            &all_rule_results,
+            &secrets_results,
             SarifReportMetadata {
                 add_git_info: false,
                 debug: configuration.use_debug,
