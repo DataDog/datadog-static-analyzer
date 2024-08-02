@@ -2,11 +2,22 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::rc::Rc;
 
+use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
 use anyhow::Result;
 use base64::Engine;
+use common::model::position::Position;
+use common::model::position::PositionBuilder;
 use git2::{BlameOptions, Repository};
 use kernel::constants::CARGO_VERSION;
+use kernel::model::rule::{RuleCategory, RuleSeverity};
+use kernel::model::violation::Violation;
+use kernel::model::{
+    rule::{Rule, RuleResult},
+    violation::{Edit, EditType},
+};
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
+use secrets::model::secret_result::SecretResult;
+use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
     self, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder, LocationBuilder,
     MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder, Replacement,
@@ -14,19 +25,8 @@ use serde_sarif::sarif::{
     Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
-use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
-use common::model::position::Position;
-use common::model::position::PositionBuilder;
-use kernel::model::rule::{RuleCategory, RuleSeverity};
-use kernel::model::violation::Violation;
-use kernel::model::{
-    rule::{Rule, RuleResult},
-    violation::{Edit, EditType},
-};
-use secrets::model::secret_result::SecretResult;
-use secrets::model::secret_rule::SecretRule;
-
 use crate::file_utils::get_fingerprint_for_violation;
+use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
 
 trait IntoSarif {
@@ -692,6 +692,48 @@ pub fn generate_sarif_report(
         .version("2.1.0")
         .runs(vec![run])
         .build()?)
+}
+
+pub fn generate_sarif_file(
+    configuration: &CliConfiguration,
+    static_analysis_rule_results: Vec<RuleResult>,
+    secrets_rule_results: Vec<SecretResult>,
+    sarif_report_metadata: SarifReportMetadata,
+) -> Result<String> {
+    let static_rules_sarif: Vec<SarifRule> = configuration
+        .rules
+        .iter()
+        .cloned()
+        .map(|r| r.into())
+        .collect();
+    let secrets_rules_sarif: Vec<SarifRule> = configuration
+        .secrets_rules
+        .clone()
+        .into_iter()
+        .map(|r| r.into())
+        .collect();
+    let static_analysis_results = static_analysis_rule_results
+        .into_iter()
+        .map(SarifRuleResult::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(anyhow::Error::msg)?;
+    let secret_results = secrets_rule_results
+        .into_iter()
+        .map(SarifRuleResult::try_from)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(anyhow::Error::msg)?;
+
+    match generate_sarif_report(
+        &[static_rules_sarif, secrets_rules_sarif].concat(),
+        &[static_analysis_results, secret_results].concat(),
+        &configuration.source_directory,
+        sarif_report_metadata,
+    ) {
+        Ok(report) => {
+            Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
+        }
+        Err(err) => Err(err),
+    }
 }
 
 #[cfg(test)]

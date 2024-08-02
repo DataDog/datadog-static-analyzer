@@ -28,9 +28,7 @@ use cli::rule_utils::{
     check_rules_checksum, convert_rules_to_rules_internal, convert_secret_result_to_rule_result,
     count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
 };
-use cli::sarif::sarif_utils::{
-    generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
-};
+use cli::sarif::sarif_utils::{generate_sarif_file, SarifReportMetadata};
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
@@ -739,6 +737,10 @@ fn main() -> Result<()> {
         violations_table::print_violations_table(&all_rule_results);
     }
 
+    // if there is any violation at all and --fail-on-any-violation is passed, we exit 1
+    let fail_on_violations = !fail_any_violation_severities.is_empty()
+        && count_violations_by_severities(&all_rule_results, &fail_any_violation_severities) > 0;
+
     let value = match configuration.output_format {
         OutputFormat::Csv => csv::generate_csv_results(&all_rule_results, &secrets_results),
         OutputFormat::Json => {
@@ -752,51 +754,19 @@ fn main() -> Result<()> {
             .concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
         }
-        OutputFormat::Sarif => {
-            let static_rules_sarif: Vec<SarifRule> = configuration
-                .rules
-                .iter()
-                .cloned()
-                .map(|r| r.into())
-                .collect();
-
-            let secrets_rules_sarif: Vec<SarifRule> =
-                secrets_rules.into_iter().map(|r| r.into()).collect();
-
-            let static_analysis_results = all_rule_results
-                .iter()
-                .cloned()
-                .map(SarifRuleResult::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(anyhow::Error::msg)?;
-
-            let secret_results = secrets_results
-                .iter()
-                .cloned()
-                .map(SarifRuleResult::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(anyhow::Error::msg)?;
-
-            match generate_sarif_report(
-                &[static_rules_sarif, secrets_rules_sarif].concat(),
-                &[static_analysis_results, secret_results].concat(),
-                &directory_to_analyze,
-                SarifReportMetadata {
-                    add_git_info,
-                    debug: configuration.use_debug,
-                    config_digest: configuration.generate_diff_aware_digest(),
-                    diff_aware_parameters,
-                    execution_time_secs,
-                },
-            ) {
-                Ok(report) => {
-                    serde_json::to_string(&report).expect("error when getting the SARIF report")
-                }
-                Err(_) => {
-                    panic!("Error when generating the sarif report");
-                }
-            }
-        }
+        OutputFormat::Sarif => generate_sarif_file(
+            &configuration,
+            all_rule_results,
+            secrets_results,
+            SarifReportMetadata {
+                add_git_info,
+                debug: configuration.use_debug,
+                config_digest: configuration.generate_diff_aware_digest(),
+                diff_aware_parameters,
+                execution_time_secs,
+            },
+        )
+        .expect("cannot generate SARIF results"),
     };
 
     // write the reports
@@ -805,9 +775,7 @@ fn main() -> Result<()> {
         .context("error when writing results")?;
 
     // if there is any violation at all and --fail-on-any-violation is passed, we exit 1
-    if !fail_any_violation_severities.is_empty()
-        && count_violations_by_severities(&all_rule_results, &fail_any_violation_severities) > 0
-    {
+    if fail_on_violations {
         exit(1);
     }
 

@@ -12,8 +12,10 @@ use cli::model::cli_configuration::CliConfiguration;
 use cli::rule_utils::{
     check_rules_checksum, convert_rules_to_rules_internal, get_languages_for_rules,
 };
+use cli::sarif::sarif_utils::{generate_sarif_file, SarifReportMetadata};
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use common::analysis_options::AnalysisOptions;
+use common::model::diff_aware::DiffAware;
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
@@ -25,13 +27,14 @@ use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 use kernel::rule_config::RuleConfigProvider;
 use rayon::prelude::*;
 use rocket::yansi::Paint;
-use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
+use std::time::Instant;
 use std::{env, fs, io};
 use terminal_emoji::Emoji;
 
@@ -124,6 +127,13 @@ fn main() -> Result<()> {
         "484df034272a3f63c1796ef44f83a790d7729590",
     );
 
+    opts.optopt(
+        "o",
+        "output",
+        "output file name to write all findings from the Git hooks to (SARIF output)",
+        "/tmp/file-output.sarif",
+    );
+
     opts.optopt("d", "debug", "use debug mode", "yes/no");
 
     opts.optopt(
@@ -175,6 +185,7 @@ fn main() -> Result<()> {
     let default_branch_opt = matches.opt_str("default-branch");
     let sha_start_opt = matches.opt_str("sha-start");
     let sha_end_opt = matches.opt_str("sha-end");
+    let output_opt = matches.opt_str("output");
 
     let use_debug = *matches
         .opt_str("d")
@@ -402,6 +413,8 @@ fn main() -> Result<()> {
         );
     }
 
+    let analysis_start_instant = Instant::now();
+
     // static analysis part
     let mut fail_for_static_analysis = false;
     let languages = get_languages_for_rules(&rules);
@@ -448,31 +461,36 @@ fn main() -> Result<()> {
         all_rule_results.extend(rule_results);
     }
 
-    for rule_result in all_rule_results {
-        let path = PathBuf::from(rule_result.filename);
-
-        for violation in rule_result.violations {
+    all_rule_results.iter_mut().for_each(|rr| {
+        let path = PathBuf::from(&rr.filename);
+        rr.violations.retain(|v| {
             if let Some(lines) = modifications.get(&path) {
-                if lines.contains(&violation.start.line) {
-                    println!(
-                        "{}",
-                        format_error(
-                            path.display().to_string().as_str(),
-                            violation.start.line,
-                            &rule_result.rule_name,
-                            IssueType::StaticAnalysis,
-                        )
-                    );
-                    fail_for_static_analysis = true;
-                    continue;
-                }
+                lines.contains(&v.start.line)
+            } else {
+                false
             }
+        });
+    });
+
+    for rule_result in &all_rule_results {
+        let path = PathBuf::from(&rule_result.filename);
+        for violation in &rule_result.violations {
+            println!(
+                "{}",
+                format_error(
+                    path.display().to_string().as_str(),
+                    violation.start.line,
+                    &rule_result.rule_name,
+                    IssueType::StaticAnalysis,
+                )
+            );
+            fail_for_static_analysis = true;
         }
     }
 
     // Secrets detection
     let mut fail_for_secrets = false;
-
+    let mut secrets_results = vec![];
     if secrets_enabled {
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
@@ -481,7 +499,7 @@ fn main() -> Result<()> {
 
         let sds_scanner = build_sds_scanner(&secrets_rules);
 
-        let secrets_results: Vec<SecretResult> = secrets_files
+        secrets_results = secrets_files
             .par_iter()
             .flat_map(|path| {
                 let relative_path = path
@@ -508,30 +526,58 @@ fn main() -> Result<()> {
             })
             .collect();
 
-        for secret_result in secrets_results {
-            let path = PathBuf::from(secret_result.filename);
-
-            for secret_match in secret_result.matches {
+        secrets_results.iter_mut().for_each(|rr| {
+            let path = PathBuf::from(&rr.filename);
+            rr.matches.retain(|v| {
                 if let Some(lines) = modifications.get(&path) {
-                    if lines.contains(&secret_match.start.line) {
-                        println!(
-                            "{}",
-                            format_error(
-                                path.display().to_string().as_str(),
-                                secret_match.start.line,
-                                &secret_result.rule_name,
-                                IssueType::Secret,
-                            )
-                        );
-
-                        fail_for_secrets = true;
-                        continue;
-                    }
+                    lines.contains(&v.start.line)
+                } else {
+                    false
                 }
+            });
+        });
+
+        for secret_result in &secrets_results {
+            let path = PathBuf::from(&secret_result.filename);
+
+            for secret_match in &secret_result.matches {
+                println!(
+                    "{}",
+                    format_error(
+                        path.display().to_string().as_str(),
+                        secret_match.start.line,
+                        &secret_result.rule_name,
+                        IssueType::Secret,
+                    )
+                );
+
+                fail_for_secrets = true;
             }
         }
     }
 
+    // Write the results to a SARIF file is necessary
+    if let Some(output_file) = output_opt {
+        let sarif_content = generate_sarif_file(
+            &configuration,
+            all_rule_results,
+            secrets_results,
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: configuration.use_debug,
+                config_digest: configuration.generate_diff_aware_digest(),
+                diff_aware_parameters: None,
+                execution_time_secs: analysis_start_instant.elapsed().as_secs(),
+            },
+        )
+        .expect("cannot generate SARIF results");
+
+        let mut file = fs::File::create(output_file).context("cannot create file")?;
+        file.write_all(sarif_content.as_bytes())
+            .context("error when writing results")?;
+    }
+
+    // Logic to handle if the run failed or not and show the confirmation
     let failed = fail_for_secrets || fail_for_static_analysis;
 
     if failed {
