@@ -29,7 +29,7 @@ use cli::rule_utils::{
     count_violations_by_severities, get_languages_for_rules, get_rulesets_from_file,
 };
 use cli::sarif::sarif_utils::{
-    generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
+    generate_sarif_file, generate_sarif_report, SarifReportMetadata, SarifRule, SarifRuleResult,
 };
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
@@ -752,51 +752,19 @@ fn main() -> Result<()> {
             .concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
         }
-        OutputFormat::Sarif => {
-            let static_rules_sarif: Vec<SarifRule> = configuration
-                .rules
-                .iter()
-                .cloned()
-                .map(|r| r.into())
-                .collect();
-
-            let secrets_rules_sarif: Vec<SarifRule> =
-                secrets_rules.into_iter().map(|r| r.into()).collect();
-
-            let static_analysis_results = all_rule_results
-                .iter()
-                .cloned()
-                .map(SarifRuleResult::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(anyhow::Error::msg)?;
-
-            let secret_results = secrets_results
-                .iter()
-                .cloned()
-                .map(SarifRuleResult::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(anyhow::Error::msg)?;
-
-            match generate_sarif_report(
-                &[static_rules_sarif, secrets_rules_sarif].concat(),
-                &[static_analysis_results, secret_results].concat(),
-                &directory_to_analyze,
-                SarifReportMetadata {
-                    add_git_info,
-                    debug: configuration.use_debug,
-                    config_digest: configuration.generate_diff_aware_digest(),
-                    diff_aware_parameters,
-                    execution_time_secs,
-                },
-            ) {
-                Ok(report) => {
-                    serde_json::to_string(&report).expect("error when getting the SARIF report")
-                }
-                Err(_) => {
-                    panic!("Error when generating the sarif report");
-                }
-            }
-        }
+        OutputFormat::Sarif => generate_sarif_file(
+            &configuration,
+            &all_rule_results,
+            &secrets_results,
+            SarifReportMetadata {
+                add_git_info,
+                debug: configuration.use_debug,
+                config_digest: configuration.generate_diff_aware_digest(),
+                diff_aware_parameters,
+                execution_time_secs,
+            },
+        )
+        .expect("cannot generate SARIF results"),
     };
 
     // write the reports

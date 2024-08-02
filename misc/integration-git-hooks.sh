@@ -30,7 +30,7 @@ SHA2=$(cd $REPO_DIR && git rev-parse HEAD)
 
 echo "Starting test: secrets should be found using the default branch"
 
-./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --default-branch main >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --default-branch main --output /tmp/git-hook.sarif >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
   echo "secrets should have been found"
@@ -46,6 +46,12 @@ if [ "${NB_OCCURRENCES}" -ne "1" ]; then
   echo "secrets should have been found"
   cat /tmp/plop
   exit 1
+fi
+
+NB_ERRORS_IN_SARIF_FILE=`jq '.runs[0].results | length' /tmp/test.sarif`
+if [ "${NB_ERRORS_IN_SARIF_FILE}" -ne "1" ]; then
+    echo "secrets not found in SARIF file"
+    exit 1
 fi
 
 #############################################################

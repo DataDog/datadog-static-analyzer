@@ -12,8 +12,10 @@ use cli::model::cli_configuration::CliConfiguration;
 use cli::rule_utils::{
     check_rules_checksum, convert_rules_to_rules_internal, get_languages_for_rules,
 };
+use cli::sarif::sarif_utils::{generate_sarif_file, SarifReportMetadata};
 use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use common::analysis_options::AnalysisOptions;
+use common::model::diff_aware::DiffAware;
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
@@ -29,9 +31,11 @@ use secrets::model::secret_result::SecretResult;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
+use std::time::Instant;
 use std::{env, fs, io};
 use terminal_emoji::Emoji;
 
@@ -124,6 +128,13 @@ fn main() -> Result<()> {
         "484df034272a3f63c1796ef44f83a790d7729590",
     );
 
+    opts.optopt(
+        "",
+        "output",
+        "file that contains all findings from the Git hooks (SARIF output)",
+        "/tmp/file-output.sarif",
+    );
+
     opts.optopt("d", "debug", "use debug mode", "yes/no");
 
     opts.optopt(
@@ -175,6 +186,7 @@ fn main() -> Result<()> {
     let default_branch_opt = matches.opt_str("default-branch");
     let sha_start_opt = matches.opt_str("sha-start");
     let sha_end_opt = matches.opt_str("sha-end");
+    let output_opt = matches.opt_str("output");
 
     let use_debug = *matches
         .opt_str("d")
@@ -402,6 +414,8 @@ fn main() -> Result<()> {
         );
     }
 
+    let analysis_start_instant = Instant::now();
+
     // static analysis part
     let mut fail_for_static_analysis = false;
     let languages = get_languages_for_rules(&rules);
@@ -448,31 +462,47 @@ fn main() -> Result<()> {
         all_rule_results.extend(rule_results);
     }
 
-    for rule_result in all_rule_results {
-        let path = PathBuf::from(rule_result.filename);
+    // Filter the results and keep only the results relevant for the diff
+    let results_for_diff: Vec<RuleResult> = all_rule_results
+        .into_iter()
+        .map(|rr| {
+            let mut new_result = rr.clone();
+            let filtered_violations = rr
+                .violations
+                .into_iter()
+                .filter(|v| {
+                    let path = PathBuf::from(&rr.filename);
+                    if let Some(lines) = modifications.get(&path) {
+                        lines.contains(&v.start.line)
+                    } else {
+                        false
+                    }
+                })
+                .collect();
+            new_result.violations = filtered_violations;
+            new_result
+        })
+        .collect();
 
-        for violation in rule_result.violations {
-            if let Some(lines) = modifications.get(&path) {
-                if lines.contains(&violation.start.line) {
-                    println!(
-                        "{}",
-                        format_error(
-                            path.display().to_string().as_str(),
-                            violation.start.line,
-                            &rule_result.rule_name,
-                            IssueType::StaticAnalysis,
-                        )
-                    );
-                    fail_for_static_analysis = true;
-                    continue;
-                }
-            }
+    for rule_result in &results_for_diff {
+        let path = PathBuf::from(&rule_result.filename);
+        for violation in &rule_result.violations {
+            println!(
+                "{}",
+                format_error(
+                    path.display().to_string().as_str(),
+                    violation.start.line,
+                    &rule_result.rule_name,
+                    IssueType::StaticAnalysis,
+                )
+            );
+            fail_for_static_analysis = true;
         }
     }
 
     // Secrets detection
     let mut fail_for_secrets = false;
-
+    let mut secrets_for_diff: Vec<SecretResult> = vec![];
     if secrets_enabled {
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
@@ -508,30 +538,69 @@ fn main() -> Result<()> {
             })
             .collect();
 
-        for secret_result in secrets_results {
-            let path = PathBuf::from(secret_result.filename);
+        // Filter the results only based on the difff
+        secrets_for_diff = secrets_results
+            .iter()
+            .map(|rr| {
+                let mut new_result = rr.clone();
+                let filtered_violations = new_result
+                    .matches
+                    .into_iter()
+                    .filter(|v| {
+                        let path = PathBuf::from(&rr.filename);
+                        if let Some(lines) = modifications.get(&path) {
+                            lines.contains(&v.start.line)
+                        } else {
+                            false
+                        }
+                    })
+                    .collect();
+                new_result.matches = filtered_violations;
+                new_result
+            })
+            .collect();
 
-            for secret_match in secret_result.matches {
-                if let Some(lines) = modifications.get(&path) {
-                    if lines.contains(&secret_match.start.line) {
-                        println!(
-                            "{}",
-                            format_error(
-                                path.display().to_string().as_str(),
-                                secret_match.start.line,
-                                &secret_result.rule_name,
-                                IssueType::Secret,
-                            )
-                        );
+        for secret_result in &secrets_for_diff {
+            let path = PathBuf::from(&secret_result.filename);
 
-                        fail_for_secrets = true;
-                        continue;
-                    }
-                }
+            for secret_match in &secret_result.matches {
+                println!(
+                    "{}",
+                    format_error(
+                        path.display().to_string().as_str(),
+                        secret_match.start.line,
+                        &secret_result.rule_name,
+                        IssueType::Secret,
+                    )
+                );
+
+                fail_for_secrets = true;
             }
         }
     }
 
+    // Write the results to a SARIF file is necessary
+    if let Some(output_file) = output_opt {
+        let sarif_content = generate_sarif_file(
+            &configuration,
+            &results_for_diff,
+            &secrets_for_diff,
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: configuration.use_debug,
+                config_digest: configuration.generate_diff_aware_digest(),
+                diff_aware_parameters: None,
+                execution_time_secs: analysis_start_instant.elapsed().as_secs(),
+            },
+        )
+        .expect("cannot generate SARIF results");
+
+        let mut file = fs::File::create(output_file).context("cannot create file")?;
+        file.write_all(sarif_content.as_bytes())
+            .context("error when writing results")?;
+    }
+
+    // Logic to handle if the run failed or not and show the confirmation
     let failed = fail_for_secrets || fail_for_static_analysis;
 
     if failed {
