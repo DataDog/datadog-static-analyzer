@@ -19,10 +19,14 @@ RUN curl https://sh.rustup.rs -sSf | sh -s -- -y \
 COPY . /app
 WORKDIR /app
 RUN cargo build --release --bin datadog-static-analyzer
+RUN cargo build --release --bin datadog-static-analyzer-git-hook
+RUN cargo build --release --bin datadog-static-analyzer-server
 
 FROM base
 
 COPY --from=build /app/target/release/datadog-static-analyzer /usr/bin/datadog-static-analyzer
+COPY --from=build /app/target/release/datadog-static-analyzer-server /usr/bin/datadog-static-analyzer-server
+COPY --from=build /app/target/release/datadog-static-analyzer-git-hook /usr/bin/datadog-static-analyzer-git-hook
 COPY --from=build /app/misc/github-action.sh /usr/bin/github-action.sh
 
 RUN apt update && apt install -y curl git \
