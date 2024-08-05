@@ -15,6 +15,7 @@ use kernel::model::{
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
 };
+use path_slash::PathExt;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use secrets::model::secret_result::SecretResult;
 use secrets::model::secret_rule::SecretRule;
@@ -142,10 +143,16 @@ impl SarifRuleResult {
         }
     }
 
-    fn file_path(&self) -> &str {
+    fn file_path(&self) -> String {
         match self {
-            SarifRuleResult::StaticAnalysis(r) => r.filename.as_str(),
-            SarifRuleResult::Secret(r) => r.filename.as_str(),
+            SarifRuleResult::StaticAnalysis(r) => Path::new(r.filename.as_str())
+                .to_slash()
+                .unwrap()
+                .to_string(),
+            SarifRuleResult::Secret(r) => Path::new(r.filename.as_str())
+                .to_slash()
+                .unwrap()
+                .to_string(),
         }
     }
 
@@ -551,7 +558,7 @@ fn generate_results(
                             PhysicalLocationBuilder::default()
                                 .artifact_location(
                                     ArtifactLocationBuilder::default()
-                                        .uri(encode_filename(rule_result.file_path().to_string()))
+                                        .uri(encode_filename(rule_result.file_path()))
                                         .build()
                                         .unwrap(),
                                 )
@@ -577,7 +584,7 @@ fn generate_results(
                             let changes = ArtifactChangeBuilder::default()
                                 .artifact_location(
                                     ArtifactLocationBuilder::default()
-                                        .uri(encode_filename(rule_result.file_path().to_string()))
+                                        .uri(encode_filename(rule_result.file_path()))
                                         .build()?,
                                 )
                                 .replacements(replacements)
@@ -595,7 +602,7 @@ fn generate_results(
 
                     let sha_option = if options.add_git_info {
                         get_sha_for_line(
-                            rule_result.file_path(),
+                            rule_result.file_path().as_str(),
                             violation.start.line as usize,
                             &options,
                         )
@@ -607,7 +614,7 @@ fn generate_results(
                         rule_result.rule_name().to_string(),
                         &violation,
                         Path::new(options.repository_directory.as_str()),
-                        Path::new(rule_result.file_path()),
+                        Path::new(rule_result.file_path().as_str()),
                         options.debug,
                     );
 
