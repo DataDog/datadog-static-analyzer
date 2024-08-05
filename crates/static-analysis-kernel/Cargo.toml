@@ -17,7 +17,7 @@ indexmap = { workspace = true }
 tree-sitter = { workspace = true }
 
 # other
-deno_core = "0.196.0"
+deno_core = "0.302.0"
 globset = "0.4.14"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
