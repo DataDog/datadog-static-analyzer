@@ -13,8 +13,6 @@ deno_core::extension!(
         ops::op_ts_node_named_children,
         ops::op_ts_node_parent,
         ops::op_ts_node_text,
-        #[cfg(test)]
-        ops::cfg_test_op_rust_option,
     ],
     esm_entry_point = "ext:ddsa_lib/__bootstrap.js",
     esm = [ dir "src/analysis/ddsa_lib/js", "__bootstrap.js" ],
@@ -38,3 +36,6 @@ deno_core::extension!(
         ("ext:ddsa_lib/violation", "violation.js"),
     ],
 );
+
+#[cfg(test)]
+deno_core::extension!(ddsa_lib_cfg_test, ops = [ops::cfg_test_op_rust_option],);
