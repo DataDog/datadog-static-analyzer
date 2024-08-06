@@ -295,7 +295,7 @@ impl JsRuntime {
     ///     None,
     /// )
     /// ```
-    fn scoped_execute<T, U>(
+    pub(crate) fn scoped_execute<T, U>(
         &mut self,
         script: &v8::Global<v8::UnboundScript>,
         handle_return_value: T,
@@ -304,6 +304,8 @@ impl JsRuntime {
     where
         T: Fn(&mut v8::TryCatch<v8::HandleScope>, v8::Local<v8::Value>) -> U,
     {
+        self.console.borrow_mut().clear();
+
         let scope = &mut self.runtime.handle_scope();
         // We re-use the same v8::Context for performance, and we use a combination of closures and
         // a frozen global object to achieve equivalent encapsulation to creating a new v8::Context.
@@ -539,7 +541,7 @@ pub(crate) fn base_js_runtime() -> deno_core::JsRuntime {
 pub(crate) struct JsConsole(Vec<String>);
 
 impl JsConsole {
-    /// Creates a new, empty `Console`.
+    /// Creates a new, empty `JsConsole`.
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -549,7 +551,12 @@ impl JsConsole {
         self.0.push(value.into())
     }
 
-    /// Removes all lines from the `Console`, returning them as an iterator.
+    /// Removes all lines from the `JsConsole`.
+    pub fn clear(&mut self) {
+        self.0.clear()
+    }
+
+    /// Removes all lines from the `JsConsole`, returning them as an iterator.
     pub fn drain(&mut self) -> impl Iterator<Item = String> + '_ {
         self.0.drain(..)
     }
@@ -834,6 +841,21 @@ function visit(captures) {
         let return_val =
             runtime.scoped_execute(&script, |scope, value| value.uint32_value(scope), None);
         assert_eq!(return_val.unwrap().unwrap(), 123);
+    }
+
+    /// `scoped_execute` should always execute with an empty console (despite a previous execution
+    /// that didn't explicitly clear the console).
+    #[test]
+    fn scoped_execute_console_empty() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let code = "console.log(1234);";
+        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+        assert!(runtime.console.borrow().0.is_empty());
+        runtime.scoped_execute(&script, |_, _| (), None).unwrap();
+        assert_eq!(runtime.console.borrow().0.len(), 1);
+        runtime.scoped_execute(&script, |_, _| (), None).unwrap();
+        // This would be 2 if we weren't properly clearing the console.
+        assert_eq!(runtime.console.borrow().0.len(), 1);
     }
 
     #[test]
