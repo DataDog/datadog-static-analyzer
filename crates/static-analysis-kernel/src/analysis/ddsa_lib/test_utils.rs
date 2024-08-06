@@ -171,10 +171,23 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     let mut production_extension = ddsa_lib::init_ops_and_esm();
     let prod_entrypoint = production_extension.get_esm_entry_point().unwrap();
     let prod_ops = production_extension.init_ops().unwrap();
+    #[allow(unused_mut)]
+    let mut ops = prod_ops;
 
     // Clone all ES modules, minus the entrypoint.
     let mut esm_sources = production_extension.get_esm_sources().clone();
     esm_sources.retain(|efs| efs.specifier != prod_entrypoint);
+
+    // Add additional cfg(test) ES modules
+    #[cfg(test)]
+    {
+        use crate::analysis::ddsa_lib::extension::ddsa_lib_cfg_test;
+        let mut cfg_test_extension = ddsa_lib_cfg_test::init_ops_and_esm();
+        let cfg_test_esm_sources = cfg_test_extension.get_esm_sources().clone();
+        let cfg_test_ops = cfg_test_extension.init_ops().unwrap();
+        esm_sources.extend(cfg_test_esm_sources);
+        ops.extend(cfg_test_ops);
+    }
 
     // Create an entrypoint that adds all exports to `globalThis`.
     let mut entrypoint_code = String::new();
@@ -201,7 +214,7 @@ for (const [name, obj] of Object.entries({})) {{
     ExtensionBuilder::default()
         .esm(esm_sources)
         .esm_entry_point(specifier)
-        .ops(prod_ops)
+        .ops(ops)
         .build()
 }
 
