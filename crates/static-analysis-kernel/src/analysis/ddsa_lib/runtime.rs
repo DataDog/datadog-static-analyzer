@@ -405,6 +405,13 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
             .as_local(&mut self.runtime.handle_scope());
         v8_array.length() as usize
     }
+
+    /// Drains and returns the lines from the DDSA console.
+    #[allow(unused)]
+    #[cfg(test)]
+    pub(crate) fn console_lines(&self) -> Vec<String> {
+        self.console.borrow_mut().drain().collect()
+    }
 }
 
 impl Drop for JsRuntime {
