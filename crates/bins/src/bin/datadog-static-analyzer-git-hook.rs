@@ -159,6 +159,7 @@ fn main() -> Result<()> {
     );
     opts.optflag("t", "include-testing-rules", "include testing rules");
     opts.optflag("", "secrets", "enable secrets detection (BETA)");
+    opts.optflag("", "static-analysis", "enable static-analysis");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
