@@ -33,6 +33,7 @@ echo "Starting test: secrets should be found using the default branch"
 ./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --default-branch main --output /tmp/git-hook.sarif >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
+  cat /tmp/plop
   echo "secrets should have been found"
   exit 1
 fi
@@ -43,8 +44,8 @@ cat /tmp/plop
 NB_OCCURRENCES=$(grep "secret found on file foobar" /tmp/plop | wc -l)
 echo "Found ${NB_OCCURRENCES} secret"
 if [ "${NB_OCCURRENCES}" -ne "1" ]; then
-  echo "secrets should have been found"
   cat /tmp/plop
+  echo "secrets should have been found"
   exit 1
 fi
 
@@ -62,6 +63,7 @@ echo "Starting test: secrets should be found using two sha"
 ./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --sha-start $SHA1 --sha-end $SHA2 >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
+  cat /tmp/plop
   echo "secrets should have been found"
   exit 1
 fi
@@ -138,9 +140,12 @@ fi
 # TEST: Do not pass --static-analysis or --secrets and it fails
 ###############################################################
 
+echo "Starting test: error when not specifying --static-analysis or --secret"
+
 ./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --debug yes --default-branch mainwefwef >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
+  cat /tmp/plop
   echo "program should return an error if --static-analysis or --secrets are not passed"
   exit 1
 fi
