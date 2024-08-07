@@ -93,7 +93,7 @@ SHA3=$(cd $REPO_DIR && git rev-parse HEAD)
 
 echo "starting analyzer between $SHA2 and $SHA3"
 
-./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --sha-start $SHA2 --sha-end $SHA3 >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --static-analysis --secrets --debug yes --sha-start $SHA2 --sha-end $SHA3 >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
   echo "static analysis issues should have been found"
@@ -131,6 +131,17 @@ NB_OCCURRENCES=$(grep "cannot locate local branch" /tmp/plop | wc -l)
 if [ "${NB_OCCURRENCES}" -ne "1" ]; then
   echo "cannot locate local branch is not found in tool output"
   cat /tmp/plop
+  exit 1
+fi
+
+###############################################################
+# TEST: Do not pass --static-analysis or --secrets and it fails
+###############################################################
+
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --debug yes --default-branch mainwefwef >/tmp/plop 2>&1
+
+if [ $? -ne 1 ]; then
+  echo "program should return an error if --static-analysis or --secrets are not passed"
   exit 1
 fi
 
