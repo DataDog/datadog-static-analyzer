@@ -159,6 +159,7 @@ fn main() -> Result<()> {
     );
     opts.optflag("t", "include-testing-rules", "include testing rules");
     opts.optflag("", "secrets", "enable secrets detection (BETA)");
+    opts.optflag("", "static-analysis", "enable static-analysis");
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -182,6 +183,7 @@ fn main() -> Result<()> {
     let use_confirmation = matches.opt_present("confirmation");
 
     let secrets_enabled = matches.opt_present("secrets");
+    let static_analysis_enabled = matches.opt_present("static-analysis");
     let default_branch_opt = matches.opt_str("default-branch");
     let sha_start_opt = matches.opt_str("sha-start");
     let sha_end_opt = matches.opt_str("sha-end");
@@ -209,6 +211,12 @@ fn main() -> Result<()> {
 
     if !directory_path.is_dir() {
         eprintln!("directory to analyze is not correct");
+        exit(1)
+    }
+
+    if !static_analysis_enabled && !secrets_enabled {
+        eprintln!("either --static-analysis or --secrets should be specified");
+        print_usage(&program, opts);
         exit(1)
     }
 
@@ -417,74 +425,76 @@ fn main() -> Result<()> {
 
     // static analysis part
     let mut fail_for_static_analysis = false;
-    let languages = get_languages_for_rules(&rules);
     let mut all_rule_results: Vec<RuleResult> = vec![];
-    for language in &languages {
-        let files_for_language = filter_files_for_language(&files_to_analyze, language);
+    if static_analysis_enabled {
+        let languages = get_languages_for_rules(&rules);
+        for language in &languages {
+            let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
-        if files_for_language.is_empty() {
-            continue;
+            if files_for_language.is_empty() {
+                continue;
+            }
+
+            let rules_for_language: Vec<RuleInternal> =
+                convert_rules_to_rules_internal(&configuration, language)?;
+
+            // take the relative path for the analysis
+            let rule_results: Vec<RuleResult> = files_for_language
+                .into_par_iter()
+                .flat_map(|path| {
+                    let relative_path = path
+                        .strip_prefix(directory_path)
+                        .unwrap()
+                        .to_str()
+                        .expect("path contains non-Unicode characters");
+                    let relative_path: Arc<str> = Arc::from(relative_path);
+                    let rule_config = configuration
+                        .rule_config_provider
+                        .config_for_file(relative_path.as_ref());
+                    if let Ok(file_content) = fs::read_to_string(&path) {
+                        let file_content = Arc::from(file_content);
+                        analyze(
+                            language,
+                            &rules_for_language,
+                            &relative_path,
+                            &file_content,
+                            &rule_config,
+                            &analysis_options,
+                        )
+                    } else {
+                        vec![]
+                    }
+                })
+                .collect();
+
+            all_rule_results.extend(rule_results);
         }
 
-        let rules_for_language: Vec<RuleInternal> =
-            convert_rules_to_rules_internal(&configuration, language)?;
-
-        // take the relative path for the analysis
-        let rule_results: Vec<RuleResult> = files_for_language
-            .into_par_iter()
-            .flat_map(|path| {
-                let relative_path = path
-                    .strip_prefix(directory_path)
-                    .unwrap()
-                    .to_str()
-                    .expect("path contains non-Unicode characters");
-                let relative_path: Arc<str> = Arc::from(relative_path);
-                let rule_config = configuration
-                    .rule_config_provider
-                    .config_for_file(relative_path.as_ref());
-                if let Ok(file_content) = fs::read_to_string(&path) {
-                    let file_content = Arc::from(file_content);
-                    analyze(
-                        language,
-                        &rules_for_language,
-                        &relative_path,
-                        &file_content,
-                        &rule_config,
-                        &analysis_options,
-                    )
+        all_rule_results.iter_mut().for_each(|rr| {
+            let path = PathBuf::from(&rr.filename);
+            rr.violations.retain(|v| {
+                if let Some(lines) = modifications.get(&path) {
+                    lines.contains(&v.start.line)
                 } else {
-                    vec![]
+                    false
                 }
-            })
-            .collect();
-
-        all_rule_results.extend(rule_results);
-    }
-
-    all_rule_results.iter_mut().for_each(|rr| {
-        let path = PathBuf::from(&rr.filename);
-        rr.violations.retain(|v| {
-            if let Some(lines) = modifications.get(&path) {
-                lines.contains(&v.start.line)
-            } else {
-                false
-            }
+            });
         });
-    });
 
-    for rule_result in &all_rule_results {
-        let path = PathBuf::from(&rule_result.filename);
-        for violation in &rule_result.violations {
-            println!(
-                "{}",
-                format_error(
-                    path.display().to_string().as_str(),
-                    violation.start.line,
-                    &rule_result.rule_name,
-                    IssueType::StaticAnalysis,
-                )
-            );
-            fail_for_static_analysis = true;
+        for rule_result in &all_rule_results {
+            let path = PathBuf::from(&rule_result.filename);
+            for violation in &rule_result.violations {
+                println!(
+                    "{}",
+                    format_error(
+                        path.display().to_string().as_str(),
+                        violation.start.line,
+                        &rule_result.rule_name,
+                        IssueType::StaticAnalysis,
+                    )
+                );
+                fail_for_static_analysis = true;
+            }
         }
     }
 
