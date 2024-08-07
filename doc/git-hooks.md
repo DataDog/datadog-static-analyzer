@@ -31,11 +31,12 @@ datadog-static-analyzer-git-hook -r <path/to/repo> --secrets  --default-branch m
 To compare the commit `<sha1>` and `<sha2>` (`<sha1>` has been committed before `<sha2>`), enter the following command.
 
 ```shell
-datadog-static-analyzer-git-hook -r <path/to/repo> --secrets  --sha-start <sha1> --sha-end <sha2>
+datadog-static-analyzer-git-hook -r <path/to/repo> --static-analysis --secrets  --sha-start <sha1> --sha-end <sha2>
 ```
 
 ### Options
 
+ - `--static-analysis`: check for any static analysis error
  - `--secrets`: also validate secrets with [Datadog Sensitive Data Scanner](https://docs.datadoghq.com/sensitive_data_scanner/)
  - `--confirmation`: prompts the user if they want to bypass the warning
 
@@ -64,7 +65,7 @@ repo_path=$(git rev-parse --show-toplevel)
 # Make sure the user can provide some input
 exec < /dev/tty
 
-datadog-static-analyzer-git-hook -r $repo_path --secrets --confirmation --default-branch main
+datadog-static-analyzer-git-hook -r $repo_path --secrets --static-analysis --confirmation --default-branch main
 
 if [ $? -eq 0 ]; then
     echo "datadog-static-analyzer check passed"
