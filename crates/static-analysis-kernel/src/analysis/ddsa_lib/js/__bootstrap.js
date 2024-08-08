@@ -6,6 +6,7 @@
 
 import {DDSA} from "ext:ddsa_lib/ddsa";
 import {DDSA_Console} from "ext:ddsa_lib/utility";
+import {Digraph} from "ext:ddsa_lib/flow/graph";
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
 import {FileContextTerraform, TerraformResource} from "ext:ddsa_lib/context_file_tf";
@@ -20,6 +21,7 @@ import {TsLanguageContext} from "ext:ddsa_lib/context_ts_lang";
 //           these should be hidden inside another object, not `globalThis`.
 globalThis.DDSA_Console = DDSA_Console;
 globalThis.DDSA = DDSA;
+globalThis.Digraph = Digraph;
 globalThis.FileContext = FileContext;
 globalThis.FileContextGo = FileContextGo;
 globalThis.FileContextJavaScript = FileContextJavaScript;
