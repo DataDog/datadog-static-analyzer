@@ -11,6 +11,7 @@ deno_core::extension!(
         ops::op_console_push,
         ops::op_current_ts_tree_text,
         ops::op_ts_node_named_children,
+        ops::op_ts_node_parent,
         ops::op_ts_node_text,
         #[cfg(test)]
         ops::cfg_test_op_rust_option,

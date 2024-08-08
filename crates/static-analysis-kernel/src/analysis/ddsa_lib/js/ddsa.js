@@ -5,7 +5,7 @@
 import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
 import { TreeSitterFieldChildNode } from "ext:ddsa_lib/ts_node";
 
-const { op_ts_node_named_children } = Deno.core.ops;
+const { op_ts_node_named_children, op_ts_node_parent } = Deno.core.ops;
 
 /**
  * The main entrypoint to the ddsa JavaScript runtime's API.
@@ -38,5 +38,19 @@ export class DDSA {
             }
         }
         return children;
+    }
+
+    /**
+     * Fetches and returns the provided node's parent in the tree-sitter tree.
+     * If the node is the root node of the tree, `undefined` will be returned.
+     * @param {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @returns {TreeSitterNode | undefined}
+     */
+    getParent(node) {
+        const parentId = op_ts_node_parent(node.id);
+        if (parentId === null) {
+            return undefined;
+        }
+        return globalThis.__RUST_BRIDGE__ts_node.get(parentId);
     }
 }
