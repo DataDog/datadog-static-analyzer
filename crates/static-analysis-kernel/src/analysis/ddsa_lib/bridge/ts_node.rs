@@ -153,56 +153,16 @@ mod tests {
     use crate::analysis::ddsa_lib::bridge::ts_node::TsNodeBridge;
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
     use crate::analysis::ddsa_lib::common::get_field;
-    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{
+        attach_as_global, cfg_test_runtime, try_execute, TsTree,
+    };
     use crate::analysis::ddsa_lib::RawTSNode;
-    use crate::analysis::tree_sitter::get_tree_sitter_language;
     use crate::model::common::Language;
     use deno_core::v8;
     use deno_core::v8::HandleScope;
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::Arc;
-
-    /// A tree-sitter tree and the text it was parsed from, along with convenience functions
-    /// to inspect the nodes.
-    struct Tree(Arc<tree_sitter::Tree>, &'static str);
-
-    impl Tree {
-        fn text(&self, node: tree_sitter::Node<'_>) -> &'static str {
-            self.1.get(node.start_byte()..node.end_byte()).unwrap()
-        }
-
-        /// Shorthand to extract the first TSNode with matching text and TSSymbol.
-        fn find_first<'t>(&'t self, text: &str, kind: &str) -> tree_sitter::Node<'t> {
-            let mut cursor = self.0.walk();
-            let root = cursor.node().id();
-            loop {
-                cursor.goto_descendant(cursor.descendant_index() + 1);
-                let node = cursor.node();
-                if node.id() == root {
-                    break;
-                }
-                if (kind == "_" || node.grammar_name() == kind) && self.text(node) == text {
-                    return node;
-                }
-            }
-            panic!("no `({})` nodes matched text \"{}\"", kind, text);
-        }
-    }
-
-    /// A newtype [`tree_sitter::Parser`] that constructs a [`Tree`].
-    struct TsParser(tree_sitter::Parser);
-    impl TsParser {
-        fn new(language: Language) -> Self {
-            let lang = get_tree_sitter_language(&language);
-            let mut parser = tree_sitter::Parser::new();
-            parser.set_language(&lang).unwrap();
-            Self(parser)
-        }
-        fn parse(&mut self, text: &'static str) -> Tree {
-            Tree(Arc::new(self.0.parse(text, None).unwrap()), text)
-        }
-    }
 
     /// Compares whether a [`TreeSitterNodeObj`] has equivalent data to a [`tree_sitter::Node`].
     #[rustfmt::skip]
@@ -223,12 +183,12 @@ mod tests {
             && equals("_typeId", node.grammar_id() as usize)
     }
 
-    fn setup_bridge() -> (deno_core::JsRuntime, Rc<RefCell<TsNodeBridge>>, TsParser) {
+    fn setup_bridge() -> (deno_core::JsRuntime, Rc<RefCell<TsNodeBridge>>) {
         let mut runtime = cfg_test_runtime();
         let bridge = TsNodeBridge::try_new(&mut runtime.handle_scope()).unwrap();
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
-        (runtime, bridge, TsParser::new(Language::JavaScript))
+        (runtime, bridge)
     }
 
     fn setup_context_bridge(runtime: &mut deno_core::JsRuntime) -> Rc<RefCell<ContextBridge>> {
@@ -241,14 +201,14 @@ mod tests {
     /// Nodes can be inserted from Rust, and they can be retrieved within v8 from their `NodeId`.
     #[test]
     fn ts_node_bridge_is_synced() {
-        let (mut runtime, bridge, mut parser) = setup_bridge();
+        let (mut runtime, bridge) = setup_bridge();
         let scope = &mut runtime.handle_scope();
         let mut bridge = bridge.borrow_mut();
 
-        let tree = parser.parse(r#"const val = foo(bar, baz);"#);
-        let foo = tree.find_first("foo", "_");
-        let bar = tree.find_first("bar", "_");
-        let baz = tree.find_first("baz", "_");
+        let tree = TsTree::new(r#"const val = foo(bar, baz);"#, Language::JavaScript);
+        let foo = tree.find_named_nodes(Some("foo"), None)[0];
+        let bar = tree.find_named_nodes(Some("bar"), None)[0];
+        let baz = tree.find_named_nodes(Some("baz"), None)[0];
 
         assert!(bridge.v8_get(scope, 0).is_none());
         assert_eq!(bridge.insert(scope, foo), 0);
@@ -268,14 +228,14 @@ mod tests {
     /// We can look up tree-sitter nodes by id, or ids by hash.
     #[test]
     fn ts_node_rust_lookup() {
-        let (mut runtime, bridge, mut parser) = setup_bridge();
+        let (mut runtime, bridge) = setup_bridge();
         let scope = &mut runtime.handle_scope();
         let mut bridge = bridge.borrow_mut();
 
-        let tree = parser.parse(r#"const val = foo(bar, baz);"#);
-        let foo = tree.find_first("foo", "_");
-        let bar = tree.find_first("bar", "_");
-        let baz = tree.find_first("baz", "_");
+        let tree = TsTree::new(r#"const val = foo(bar, baz);"#, Language::JavaScript);
+        let foo = tree.find_named_nodes(Some("foo"), None)[0];
+        let bar = tree.find_named_nodes(Some("bar"), None)[0];
+        let baz = tree.find_named_nodes(Some("baz"), None)[0];
 
         for node in [foo, bar, baz] {
             bridge.insert(scope, node);
@@ -288,12 +248,12 @@ mod tests {
 
     #[test]
     fn ts_node_bridge_no_duplicates() {
-        let (mut runtime, bridge, mut parser) = setup_bridge();
+        let (mut runtime, bridge) = setup_bridge();
         let scope = &mut runtime.handle_scope();
         let mut bridge = bridge.borrow_mut();
 
-        let tree = parser.parse(r#"const val = foo(bar, baz);"#);
-        let foo = tree.find_first("foo", "_");
+        let tree = TsTree::new(r#"const val = foo(bar, baz);"#, Language::JavaScript);
+        let foo = tree.find_named_nodes(Some("foo"), None)[0];
 
         assert_eq!(bridge.insert(scope, foo), 0);
         assert!(bridge.v8_get(scope, 0).is_some());
@@ -305,12 +265,12 @@ mod tests {
     /// The text that the node spans can be retrieved.
     #[test]
     fn get_node_text() {
-        let (mut runtime, ts_node_bridge, mut parser) = setup_bridge();
+        let (mut runtime, ts_node_bridge) = setup_bridge();
         let file_contents = "\
 const abc = 123;
 const def = 456;
 ";
-        let tree = parser.parse(file_contents);
+        let tree = TsTree::new(file_contents, Language::JavaScript);
         let file_contents = Arc::<str>::from(file_contents);
         let file_name = Arc::<str>::from("file_name.js");
 
@@ -321,9 +281,9 @@ const def = 456;
         attach_as_global(scope, ts_node_map, "TS_NODES");
         ctx_bridge
             .borrow_mut()
-            .set_root_context(scope, &tree.0, &file_contents, &file_name);
-        let node_0 = tree.find_first("abc", "identifier");
-        let node_1 = tree.find_first("456", "number");
+            .set_root_context(scope, &tree.tree(), &file_contents, &file_name);
+        let node_0 = tree.find_named_nodes(Some("abc"), Some("identifier"))[0];
+        let node_1 = tree.find_named_nodes(Some("456"), Some("number"))[0];
         ts_node_bridge.borrow_mut().insert(scope, node_0);
         ts_node_bridge.borrow_mut().insert(scope, node_1);
         let expected = [(0, "abc"), (1, "456")]
@@ -337,7 +297,7 @@ const def = 456;
         let dummy_contents = Arc::<str>::from("Z".repeat(file_contents.len()));
         ctx_bridge
             .borrow_mut()
-            .set_root_context(scope, &tree.0, &dummy_contents, &file_name);
+            .set_root_context(scope, &tree.tree(), &dummy_contents, &file_name);
         for (code, text) in &expected {
             let res = try_execute(scope, code).unwrap();
             assert_eq!(res.to_rust_string_lossy(scope).as_str(), *text);
@@ -348,9 +308,9 @@ const def = 456;
     /// the text getter returns an empty string instead of panicking.
     #[test]
     fn get_invalid_node_text() {
-        let (mut runtime, ts_node_bridge, mut parser) = setup_bridge();
+        let (mut runtime, ts_node_bridge) = setup_bridge();
         let file_contents = "const abc = 123;";
-        let tree = parser.parse(file_contents);
+        let tree = TsTree::new(file_contents, Language::JavaScript);
         let file_contents = Arc::<str>::from(file_contents);
         let file_name = Arc::<str>::from("file_name.js");
 
@@ -361,8 +321,8 @@ const def = 456;
         attach_as_global(scope, ts_node_map, "TS_NODES");
         ctx_bridge
             .borrow_mut()
-            .set_root_context(scope, &tree.0, &file_contents, &file_name);
-        let node_0 = tree.find_first("abc", "identifier");
+            .set_root_context(scope, &tree.tree(), &file_contents, &file_name);
+        let node_0 = tree.find_named_nodes(Some("abc"), Some("identifier"))[0];
         ts_node_bridge.borrow_mut().insert(scope, node_0);
 
         let code = "\

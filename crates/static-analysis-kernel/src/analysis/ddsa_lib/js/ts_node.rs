@@ -305,15 +305,13 @@ mod tests {
 
         // We test the prototype, and then ensure properties and getters have the correct "this" context.
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-
 const child = new TreeSitterFieldChildNode(TS_NODE, 30);
-assert(child instanceof TreeSitterNode, "should be a TreeSitterNode instance");
-assert(child instanceof TreeSitterFieldChildNode, "should (also) be a TreeSitterFieldChildNode");
-assert(child._startLine === 1, "_startLine value incorrect");
-assert(child._startCol === 5, "_startCol value incorrect");
-assert(child.start.col === 5, "start getter value incorrect");
-assert(child._fieldId === 30, "_fieldId value incorrect");
+TEST.assert(child instanceof TreeSitterNode, "should be a TreeSitterNode instance");
+TEST.assert(child instanceof TreeSitterFieldChildNode, "should (also) be a TreeSitterFieldChildNode");
+TEST.assert(child._startLine === 1, "_startLine value incorrect");
+TEST.assert(child._startCol === 5, "_startCol value incorrect");
+TEST.assert(child.start.col === 5, "start getter value incorrect");
+TEST.assert(child._fieldId === 30, "_fieldId value incorrect");
 123;
 "#;
         let res = try_execute(scope, code).unwrap();

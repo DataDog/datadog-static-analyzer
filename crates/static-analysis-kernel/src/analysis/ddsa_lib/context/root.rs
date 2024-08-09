@@ -50,8 +50,8 @@ impl RootContext {
     }
 
     /// Returns a reference to the underlying [`tree_sitter::Tree`], if it exists.
-    pub fn get_tree(&self) -> Option<&tree_sitter::Tree> {
-        self.tree.as_ref().map(AsRef::as_ref)
+    pub fn get_tree(&self) -> Option<&Arc<tree_sitter::Tree>> {
+        self.tree.as_ref()
     }
 
     /// Assigns the provided `tree_sitter::Tree` to the context. If an existing tree was assigned, it
