@@ -190,9 +190,8 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     }
 
     // Create an entrypoint that adds all exports to `globalThis`.
-    let mut entrypoint_code = String::new();
+    let mut entrypoint_code = "'use strict';\n".to_string();
     for (idx, efs) in esm_sources.iter().enumerate() {
-        // Create a unique (arbitrary) variable name for the import.
         let var_name = "a".repeat(idx + 1);
         entrypoint_code += &format!(
             r#"
@@ -204,6 +203,10 @@ for (const [name, obj] of Object.entries({})) {{
             var_name, efs.specifier, var_name
         );
     }
+    entrypoint_code += "
+globalThis.console = new DDSA_Console();
+globalThis.ddsa = new DDSA();
+";
     let entrypoint_code = leaked(entrypoint_code);
     let specifier = leaked("ext:test/__entrypoint");
     esm_sources.push(ExtensionFileSource {

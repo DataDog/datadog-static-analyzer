@@ -305,8 +305,6 @@ mod tests {
 
         // We test the prototype, and then ensure properties and getters have the correct "this" context.
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-
 const child = new TreeSitterFieldChildNode(TS_NODE, 30);
 assert(child instanceof TreeSitterNode, "should be a TreeSitterNode instance");
 assert(child instanceof TreeSitterFieldChildNode, "should (also) be a TreeSitterFieldChildNode");

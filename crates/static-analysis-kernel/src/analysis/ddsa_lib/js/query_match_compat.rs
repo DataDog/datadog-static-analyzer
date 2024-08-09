@@ -103,7 +103,6 @@ const abc = 123; thisStringRepresents(\"File Contents\");\
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(QUERY_MATCH.captures["cap_name"].id === 10);
 assert(QUERY_MATCH.captures.cap_name.id === 10);
 "#;
@@ -128,7 +127,6 @@ assert(QUERY_MATCH.captures.cap_name.id === 10);
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(QUERY_MATCH.captures["get"].id === 20);
 assert(QUERY_MATCH.captures.get.id === 20);
 "#;
@@ -168,7 +166,6 @@ QUERY_MATCH.captures.{}(\"cap_name\");",
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const stubNodes = QUERY_MATCH.capturesList["cap_name"];
 assert(stubNodes.length === 2);
 assert(stubNodes[0].id === 10);
@@ -193,7 +190,6 @@ assert(stubNodes[1].id === 20);
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const stubNodes = QUERY_MATCH.capturesList["cap_name"];
 assert(stubNodes === undefined);
 "#;
@@ -217,7 +213,6 @@ assert(stubNodes === undefined);
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(QUERY_MATCH.context.arguments["arg_name1"] === "123");
 assert(QUERY_MATCH.context.arguments.arg_name1 === "123");
 "#;
@@ -255,7 +250,6 @@ QUERY_MATCH.context.filename;
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(QUERY_MATCH._getManyIds("cap_name") instanceof Uint32Array, "invalid _getManyIds");
 assert(Array.isArray(QUERY_MATCH.getMany("cap_name")), "invalid getMany");
 assert(QUERY_MATCH._getId("cap_name") === 30, "invalid _getId");

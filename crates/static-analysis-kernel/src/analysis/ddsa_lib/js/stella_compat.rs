@@ -116,7 +116,6 @@ thisStringRepresents('The file contents');\
         attach_as_global(scope, v8_filename_proxy, "__FILENAME_PROXY__");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(typeof __FILENAME_PROXY__ === "object", "value should be a Proxy object")
 assert(__FILENAME_PROXY__ == "filename.js", "valueOf trap doesn't work");
 assert(__FILENAME_PROXY__.length === 11, "property access doesn't work");
@@ -140,7 +139,6 @@ assert(__FILENAME_PROXY__.includes("name"), "method invocation doesn't work");
         attach_as_global(scope, v8_filename_proxy, "__FILE_CONTENTS_PROXY__");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(typeof __FILE_CONTENTS_PROXY__ === "object", "value should be a Proxy object")
 assert(__FILE_CONTENTS_PROXY__ == "thisStringRepresents('The file contents');", "valueOf trap doesn't work");
 assert(__FILE_CONTENTS_PROXY__.length === 42, "property access doesn't work");

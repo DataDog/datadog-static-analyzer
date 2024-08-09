@@ -656,7 +656,6 @@ mod tests {
         let mut runtime = JsRuntime::try_new().unwrap();
         let scope = &mut runtime.runtime.handle_scope();
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(globalThis.__RUST_BRIDGE__context instanceof RootContext, "ContextBridge global has wrong type");
 assert(Array.isArray(globalThis.__RUST_BRIDGE__query_match), "QueryMatchBridge global has wrong type");
 assert(typeof globalThis.__RUST_BRIDGE__ts_node === "object", "TsNodeBridge global has wrong type");
