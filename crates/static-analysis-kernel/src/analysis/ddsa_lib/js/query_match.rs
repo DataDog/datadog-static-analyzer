@@ -151,11 +151,10 @@ mod tests {
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
-assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
-assert(cap_node_ids.length === 1, "array must have exactly one elements");
-assert(cap_node_ids[0] === 10, "nodeId was incorrect");
+TEST.assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
+TEST.assert(cap_node_ids.length === 1, "array must have exactly one elements");
+TEST.assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -179,11 +178,10 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
-assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
-assert(cap_node_ids.length === 3, "array must have exactly three elements");
-assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
+TEST.assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
+TEST.assert(cap_node_ids.length === 3, "array must have exactly three elements");
+TEST.assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -202,11 +200,10 @@ assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
-assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
-assert(cap_node_ids.length === 1, "array must have exactly one elements");
-assert(cap_node_ids[0] === 10, "nodeId was incorrect");
+TEST.assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
+TEST.assert(cap_node_ids.length === 1, "array must have exactly one elements");
+TEST.assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -244,10 +241,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
-        let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH.get("cap_name").id === 10);
-"#;
+        let code = r#"TEST.assert(QUERY_MATCH.get("cap_name").id === 10);"#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
     }
@@ -269,11 +263,10 @@ assert(QUERY_MATCH.get("cap_name").id === 10);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const stubNodes = QUERY_MATCH.getMany("cap_name");
-assert(stubNodes.length === 2);
-assert(stubNodes[0].id === 10);
-assert(stubNodes[1].id === 20);
+TEST.assert(stubNodes.length === 2);
+TEST.assert(stubNodes[0].id === 10);
+TEST.assert(stubNodes[1].id === 20);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));

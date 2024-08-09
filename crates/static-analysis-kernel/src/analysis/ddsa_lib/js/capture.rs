@@ -136,10 +136,9 @@ mod tests {
         attach_as_global(scope, capture, "CAPTURE");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(Object.keys(CAPTURE).length === 2, "must be exactly 2 properties");
-assert(CAPTURE.name === "alpha", "name was incorrect");
-assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
+TEST.assert(Object.keys(CAPTURE).length === 2, "must be exactly 2 properties");
+TEST.assert(CAPTURE.name === "alpha", "name was incorrect");
+TEST.assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -155,11 +154,10 @@ assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
         attach_as_global(scope, capture, "CAPTURE");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(Object.keys(CAPTURE).length === 2, "must be exactly 2 properties");
-assert(CAPTURE.name === "bravo", "name was incorrect");
-assert(CAPTURE.nodeIds instanceof Uint32Array, "nodeIds had wrong type");
-assert(CAPTURE.nodeIds.join(",") === "16,32,48", "nodeIds were incorrect");
+TEST.assert(Object.keys(CAPTURE).length === 2, "must be exactly 2 properties");
+TEST.assert(CAPTURE.name === "bravo", "name was incorrect");
+TEST.assert(CAPTURE.nodeIds instanceof Uint32Array, "nodeIds had wrong type");
+TEST.assert(CAPTURE.nodeIds.join(",") === "16,32,48", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -168,8 +166,8 @@ assert(CAPTURE.nodeIds.join(",") === "16,32,48", "nodeIds were incorrect");
         let capture = template.new_instance(scope, "bravo", &[16]);
         attach_as_global(scope, capture, "CAPTURE");
         let code = r#"
-assert(CAPTURE.nodeIds instanceof Uint32Array, "nodeIds had wrong type");
-assert(CAPTURE.nodeIds.join(",") === "16", "nodeIds were incorrect");
+TEST.assert(CAPTURE.nodeIds instanceof Uint32Array, "nodeIds had wrong type");
+TEST.assert(CAPTURE.nodeIds.join(",") === "16", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));

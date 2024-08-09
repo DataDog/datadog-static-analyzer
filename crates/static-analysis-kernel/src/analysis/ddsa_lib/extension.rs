@@ -38,4 +38,11 @@ deno_core::extension!(
 );
 
 #[cfg(test)]
-deno_core::extension!(ddsa_lib_cfg_test, ops = [ops::cfg_test_op_rust_option],);
+deno_core::extension!(
+    ddsa_lib_cfg_test,
+    ops = [ops::cfg_test_op_rust_option],
+    esm_with_specifiers = [
+        dir "src/analysis/ddsa_lib/js",
+        ("ext:ddsa_lib_cfg_test/helpers", "test_helpers.js"),
+    ]
+);

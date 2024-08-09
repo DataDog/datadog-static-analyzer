@@ -103,9 +103,8 @@ const abc = 123; thisStringRepresents(\"File Contents\");\
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH.captures["cap_name"].id === 10);
-assert(QUERY_MATCH.captures.cap_name.id === 10);
+TEST.assert(QUERY_MATCH.captures["cap_name"].id === 10);
+TEST.assert(QUERY_MATCH.captures.cap_name.id === 10);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -128,9 +127,8 @@ assert(QUERY_MATCH.captures.cap_name.id === 10);
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH.captures["get"].id === 20);
-assert(QUERY_MATCH.captures.get.id === 20);
+TEST.assert(QUERY_MATCH.captures["get"].id === 20);
+TEST.assert(QUERY_MATCH.captures.get.id === 20);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -138,7 +136,7 @@ assert(QUERY_MATCH.captures.get.id === 20);
         for method in ["get", "getMany", "_getId", "_getManyIds"] {
             let code = format!(
                 "\
-assert(QUERY_MATCH.captures.cap_name.id === 10);
+TEST.assert(QUERY_MATCH.captures.cap_name.id === 10);
 QUERY_MATCH.captures.{}(\"cap_name\");",
                 method
             );
@@ -168,11 +166,10 @@ QUERY_MATCH.captures.{}(\"cap_name\");",
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const stubNodes = QUERY_MATCH.capturesList["cap_name"];
-assert(stubNodes.length === 2);
-assert(stubNodes[0].id === 10);
-assert(stubNodes[1].id === 20);
+TEST.assert(stubNodes.length === 2);
+TEST.assert(stubNodes[0].id === 10);
+TEST.assert(stubNodes[1].id === 20);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -193,9 +190,8 @@ assert(stubNodes[1].id === 20);
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 const stubNodes = QUERY_MATCH.capturesList["cap_name"];
-assert(stubNodes === undefined);
+TEST.assert(stubNodes === undefined);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
@@ -217,9 +213,8 @@ assert(stubNodes === undefined);
         attach_as_global(scope, v8_query_match_compat, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH.context.arguments["arg_name1"] === "123");
-assert(QUERY_MATCH.context.arguments.arg_name1 === "123");
+TEST.assert(QUERY_MATCH.context.arguments["arg_name1"] === "123");
+TEST.assert(QUERY_MATCH.context.arguments.arg_name1 === "123");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()), "`context.arguments` failed test");
@@ -255,11 +250,10 @@ QUERY_MATCH.context.filename;
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
-assert(QUERY_MATCH._getManyIds("cap_name") instanceof Uint32Array, "invalid _getManyIds");
-assert(Array.isArray(QUERY_MATCH.getMany("cap_name")), "invalid getMany");
-assert(QUERY_MATCH._getId("cap_name") === 30, "invalid _getId");
-assert(typeof QUERY_MATCH.get("cap_name") === "object", "invalid get");
+TEST.assert(QUERY_MATCH._getManyIds("cap_name") instanceof Uint32Array, "invalid _getManyIds");
+TEST.assert(Array.isArray(QUERY_MATCH.getMany("cap_name")), "invalid getMany");
+TEST.assert(QUERY_MATCH._getId("cap_name") === 30, "invalid _getId");
+TEST.assert(typeof QUERY_MATCH.get("cap_name") === "object", "invalid get");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
         assert_eq!(result, Ok("undefined".to_string()));
