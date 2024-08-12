@@ -161,12 +161,28 @@ impl JsRuntime {
         let ts_query_cursor = Rc::clone(&self.ts_query_cursor);
         let mut ts_qc = ts_query_cursor.borrow_mut();
         let mut query_cursor = rule.tree_sitter_query.with_cursor(&mut ts_qc);
-        let query_matches = query_cursor
-            .matches(source_tree.root_node(), source_text.as_ref())
-            .filter(|captures| !captures.is_empty())
-            .collect::<Vec<_>>();
+        let mut query_matches = Vec::new();
+        for captures in query_cursor.matches(source_tree.root_node(), source_text.as_ref()) {
+            if let Some(timeout) = timeout {
+                if now.elapsed() >= timeout {
+                    return Err(DDSAJsRuntimeError::JavaScriptTimeout { timeout });
+                }
+            }
+            if !captures.is_empty() {
+                query_matches.push(captures);
+            }
+        }
 
         let ts_query_time = now.elapsed();
+        let timeout = timeout
+            .map(|timeout| {
+                if timeout > ts_query_time {
+                    Ok(timeout - ts_query_time)
+                } else {
+                    Err(DDSAJsRuntimeError::JavaScriptTimeout { timeout })
+                }
+            })
+            .transpose()?;
         let now = Instant::now();
 
         let js_violations = self.execute_rule_internal(

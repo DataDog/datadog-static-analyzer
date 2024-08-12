@@ -203,6 +203,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
+            rule_timeout: None,
         },
     );
 

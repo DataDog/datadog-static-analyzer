@@ -331,6 +331,7 @@ fn main() -> Result<()> {
         log_output: true,
         use_debug,
         ignore_generated_files,
+        rule_timeout: None,
     };
 
     if should_verify_checksum {

@@ -129,6 +129,12 @@ fn main() -> Result<()> {
         "add-git-info",
         "add Git information to the SARIF report",
     );
+    opts.optopt(
+        "",
+        "rule-timeout",
+        "maximum time in milliseconds that a rule can spend analyzing one file",
+        "--rule_timeout=5000ms",
+    );
     // TODO (JF): Remove this when releasing 0.3.8
     opts.optflag("", "ddsa-runtime", "(deprecated)");
 
@@ -333,6 +339,15 @@ fn main() -> Result<()> {
     // Select the number of cores to use based on the user's CLI arg (or lack of one)
     let num_cpus = choose_cpu_count(num_cores_requested);
 
+    let rule_timeout = matches
+        .opt_str("rule-timeout")
+        .map(|val| {
+            val.parse::<u64>()
+                .context("unable to parse the `rule-timeout` flag as a number of milliseconds")
+                .map(Duration::from_millis)
+        })
+        .transpose()?;
+
     // build the configuration object that contains how the CLI should behave.
     let configuration = CliConfiguration {
         use_debug,
@@ -367,6 +382,7 @@ fn main() -> Result<()> {
         log_output: true,
         use_debug,
         ignore_generated_files,
+        rule_timeout,
     };
 
     if should_verify_checksum {

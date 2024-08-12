@@ -217,7 +217,9 @@ where
                 filename,
                 rule,
                 &rule_config.get_arguments(&rule.name),
-                Some(JAVASCRIPT_EXECUTION_TIMEOUT),
+                analysis_option
+                    .rule_timeout
+                    .or(Some(JAVASCRIPT_EXECUTION_TIMEOUT)),
             );
 
             // NOTE: This is a translation layer to map Result<T, E> to a `RuleResult` struct.
@@ -1052,6 +1054,7 @@ function visit(node, filename, code) {
             log_output: true,
             use_debug: false,
             ignore_generated_files: false,
+            rule_timeout: None,
         };
         let rule_config_provider = RuleConfigProvider::from_config(
             &parse_config_file(
