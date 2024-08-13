@@ -26,6 +26,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_starlark() -> tree_sitter::Language;
         fn tree_sitter_bash() -> tree_sitter::Language;
         fn tree_sitter_php() -> tree_sitter::Language;
+        fn tree_sitter_markdown() -> tree_sitter::Language;
     }
 
     match language {
@@ -46,6 +47,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Starlark => unsafe { tree_sitter_starlark() },
         Language::Bash => unsafe { tree_sitter_bash() },
         Language::PHP => unsafe { tree_sitter_php() },
+        Language::Markdown => unsafe { tree_sitter_markdown() },
     }
 }
 
@@ -589,6 +591,19 @@ echo "Hello, World!";
         let t = t.unwrap();
         assert!(!t.root_node().has_error());
         assert_eq!("program", t.root_node().kind());
+    }
+
+    #[test]
+    fn test_markdown_get_tree() {
+        let source_code = r#"
+# Hello, World!
+This is some text
+"#;
+        let t = get_tree(source_code, &Language::Markdown);
+        assert!(t.is_some());
+        let t = t.unwrap();
+        assert!(!t.root_node().has_error());
+        assert_eq!("document", t.root_node().kind());
     }
 
     // test the number of node we should retrieve when executing a rule
