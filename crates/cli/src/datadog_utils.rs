@@ -15,7 +15,8 @@ use secrets::model::secret_rule::SecretRule;
 use uuid::Uuid;
 
 use crate::model::datadog_api::{
-    ApiResponseDefaultRuleset, DiffAwareData, DiffAwareRequest, DiffAwareRequestArguments,
+    ApiResponseDefaultRuleset, ConfigRequest, ConfigRequestData, ConfigRequestDataAttributes,
+    ConfigResponse, DiffAwareData, DiffAwareRequest, DiffAwareRequestArguments,
     DiffAwareRequestData, DiffAwareRequestDataAttributes, DiffAwareResponse,
     StaticAnalysisRulesAPIResponse, StaticAnalysisSecretsAPIResponse,
 };
@@ -129,6 +130,11 @@ fn get_datadog_hostname(use_staging: bool) -> String {
 enum RequestMethod {
     Get,
     Post,
+}
+
+/// Return `true` if the customer configured their environment in a way that
+pub fn should_use_datadog_backend() -> bool {
+    get_datadog_variable_value("API_KEY").is_ok()
 }
 
 // Returns a RequestBuilder for the given API path.
@@ -338,6 +344,44 @@ pub fn get_diff_aware_information(
         }),
         Err(e) => {
             eprintln!("Error when issuing the diff-aware request {:?}", e);
+            Err(anyhow!("error {:?}", e))
+        }
+    }
+}
+
+/// Get remote configuration from the Databdog backend
+pub fn get_remote_configuration(
+    repository_url: String,
+    config_base64: Option<String>,
+    debug: bool,
+) -> Result<String> {
+    let request_payload = ConfigRequest {
+        data: ConfigRequestData {
+            request_type: "config".to_string(),
+            attributes: ConfigRequestDataAttributes {
+                repository: repository_url.clone(),
+                config_base64: config_base64.clone(),
+            },
+        },
+    };
+
+    let path = "config/client";
+    let req = make_request(RequestMethod::Post, path, false, true)?.json(&request_payload);
+    let server_response = perform_request(req, path, debug)?;
+
+    let status_code = server_response.status();
+    let response_text = &server_response.text()?;
+
+    let api_response = serde_json::from_str::<ConfigResponse>(response_text);
+
+    if !&status_code.is_success() {
+        return Err(anyhow!("server returned error {}", &status_code.as_u16()));
+    }
+
+    match api_response {
+        Ok(d) => Ok(d.data.attributes.config_base64),
+        Err(e) => {
+            eprintln!("Error when issuing the config request {:?}", e);
             Err(anyhow!("error {:?}", e))
         }
     }

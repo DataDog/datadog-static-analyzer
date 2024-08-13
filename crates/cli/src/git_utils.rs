@@ -103,6 +103,18 @@ fn get_changed_files(diff: &Diff) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> 
     Ok(res)
 }
 
+pub fn get_repository_url(path: &str) -> anyhow::Result<String> {
+    let repository_opt = Repository::init(path);
+    match repository_opt {
+        Ok(repository) => Ok(repository
+            .find_remote("origin")?
+            .url()
+            .ok_or(anyhow!("cannot get the repository origin URL"))?
+            .to_string()),
+        Err(_) => Err(anyhow!("cannot get the repo")),
+    }
+}
+
 /// Get the list of changed files for the repository between the latest commit the repository
 /// is at and the default branch pointed by [default_branch].
 /// The [repository] object is the repository built by git2.

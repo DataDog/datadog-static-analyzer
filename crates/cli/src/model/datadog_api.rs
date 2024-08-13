@@ -12,6 +12,7 @@ pub struct DiffAwareResponseDataAttributes {
     #[serde(rename = "base_sha")]
     pub base_sha: String,
 }
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DiffAwareResponseData {
     #[serde(rename = "id")]
@@ -24,6 +25,26 @@ pub struct DiffAwareResponseData {
 pub struct DiffAwareResponse {
     #[serde(rename = "data")]
     pub data: DiffAwareResponseData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigResponseDataAttributes {
+    #[serde(rename = "config_base64")]
+    pub config_base64: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigResponseData {
+    #[serde(rename = "id")]
+    pub id: String,
+    #[serde(rename = "attributes")]
+    pub attributes: ConfigResponseDataAttributes,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigResponse {
+    #[serde(rename = "data")]
+    pub data: ConfigResponseData,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -54,6 +75,28 @@ pub struct DiffAwareRequestData {
 pub struct DiffAwareRequest {
     #[serde(rename = "data")]
     pub data: DiffAwareRequestData,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigRequestDataAttributes {
+    #[serde(rename = "repository")]
+    pub repository: String,
+    #[serde(rename = "config_base64")]
+    pub config_base64: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigRequestData {
+    #[serde(rename = "type")]
+    pub request_type: String,
+    #[serde(rename = "attributes")]
+    pub attributes: ConfigRequestDataAttributes,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ConfigRequest {
+    #[serde(rename = "data")]
+    pub data: ConfigRequestData,
 }
 
 /// Data structure to get all attributes and argument for the request.
