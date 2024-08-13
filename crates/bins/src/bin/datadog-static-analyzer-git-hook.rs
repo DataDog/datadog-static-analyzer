@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use cli::config_file::{get_config, read_config_file};
+use cli::config_file::get_config;
 use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
 use cli::file_utils::{
