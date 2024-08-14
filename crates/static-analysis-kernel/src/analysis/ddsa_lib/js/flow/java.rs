@@ -246,6 +246,29 @@ strict digraph full {
     ///////////////////////////////////////////////////////////////////////////
 
     #[test]
+    fn argument_list() {
+        assert_subgraph!(
+            // language=java
+            "\
+void method() {
+    test_01(1, var_A, var_B);
+}
+",
+            // language=dot
+            r#"
+strict digraph {
+    var_A
+    var_B
+    argList [text="*",cstkind=argument_list]
+
+    argList -> var_B [kind=dependence]
+    argList -> var_A [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
     fn assignment_expr() {
         assert_digraph!(
             // language=java
@@ -265,6 +288,42 @@ strict digraph full {
 
     var_B -> var_C [kind=assignment]
     var_A -> 123 [kind=assignment]
+}
+"#
+        );
+    }
+
+    #[test]
+    fn method_invocation() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    someMethod();
+}
+",
+            // language=dot
+            r#"
+strict digraph full { }
+"#
+        );
+
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    join(\", \", var_A);
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    joinArgList [text="*",cstkind=argument_list]
+    join [text="*",cstkind=method_invocation]
+
+    join -> joinArgList [kind=dependence]
+    joinArgList -> var_A [kind=dependence]
 }
 "#
         );
@@ -544,6 +603,70 @@ strict digraph {
     // This relationship is incorrect (and is a side effect of not supporting variable scoping).
     var_A_2 -> var_A_1 [kind=dependence]
     //////////
+}
+"#
+        );
+    }
+}
+
+/// Special case, manual simplifications that create graph edges. These may introduce false positives.
+#[cfg(test)]
+mod tests_special_case_simplifications {
+    use crate::assert_digraph;
+
+    /// We simplify and say that the return value of a method call on a variable is tainted by that variable.
+    #[test]
+    fn method_call_return_object() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    var_A = var_B.getHeader(\"X-Header-Name\");
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    var_B
+    methodCall [text="*",cstkind=method_invocation]
+
+    // The simplification:
+    methodCall -> var_B [kind=dependence]
+    //////////
+
+    var_A -> methodCall [kind=assignment]
+}
+"#
+        );
+    }
+
+    /// We simplify and say that any argument that flows into any method call taints the return value.
+    #[test]
+    fn method_call_return_input_args() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    var_A = getHeader(\"abc\", var_B, var_C);
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    var_B
+    var_C
+    methodCall [text="*",cstkind=method_invocation]
+    argList [text="*",cstkind=argument_list]
+
+    // The simplification:
+    argList -> var_B [kind=dependence]
+    argList -> var_C [kind=dependence]
+    //////////
+
+    methodCall -> argList [kind=dependence]
+    var_A -> methodCall [kind=assignment]
 }
 "#
         );

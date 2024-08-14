@@ -74,11 +74,17 @@ export class MethodFlow {
     visit(node) {
         switch (node.cstType) {
             // Expressions
+            case "argument_list":
+                this.visitArgList(node);
+                break;
             case "assignment_expression":
                 this.visitAssignExpr(node);
                 break;
             case "identifier":
                 this.visitIdentifier(node);
+                break;
+            case "method_invocation":
+                this.visitMethodCall(node);
                 break;
 
             // Statements
@@ -166,6 +172,27 @@ export class MethodFlow {
 
     // Expressions
     //////////////
+
+    /**
+     * Visits an `argument_list`.
+     * ```java
+     *     example_01();
+     * //            ^^
+     *     example_02(1, 2, 3);
+     * //            ^^^^^^^^^
+     * ```
+     * ```
+     * (argument_list (_)*)
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitArgList(node) {
+        const children = ddsa.getChildren(node);
+        for (const child of children) {
+            this.visit(child);
+            this.propagateLastTaint(node);
+        }
+    }
 
     /**
      * Visits an `assignment_expression`.
@@ -283,6 +310,43 @@ export class MethodFlow {
      */
     visitLiteral(node) {
         // [simplification]: We currently don't utilize techniques like constant propagation, so literals are ignored.
+    }
+
+    /**
+     * Visits a `method_invocation`.
+     * ```java
+     *     example_01.someMethod();
+     * //  ^^^^^^^^^^^^^^^^^^^^^^^
+     *     String.join(", ", example_02);
+     * //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (method_invocation <object: (_)>? name: (identifier)  arguments: (argument_list))
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitMethodCall(node) {
+        const children = ddsa.getChildren(node);
+        const objIdx = findFieldIndex(children, 0, "object");
+        // [(identifier) (field_access)]
+        const obj = children[objIdx];
+        if (obj?.cstType === "identifier") {
+            // [simplification]: If the node could represent a local variable, propagate taint as if that local variable
+            // always taints the return value of an instance method (this is clearly not always the case).
+            this.visitIdentifier(obj);
+            this.propagateLastTaint(node);
+            const _ = this.takeLastTainted();
+        }
+
+        // [simplification]: Ignore the "name" field (we don't do name or type resolution).
+
+        const argsIdx = findFieldIndex(children, objIdx + 1, "arguments");
+        const args = children[argsIdx];
+        this.visitArgList(args);
+
+        // [simplification]: Propagate tainted arguments as if they _always_ flow through into the return value
+        // of the method (this is clearly not always the case).
+        this.propagateLastTaint(node);
     }
 
     // Statements
