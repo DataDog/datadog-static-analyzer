@@ -887,4 +887,42 @@ strict digraph {
         let JsGraphs { full } = construct_js_graphs(original_graph);
         assert_eq!(full, dot_graph(expected_graph));
     }
+
+    /// The `findTaintFlows` function properly traverses a reduced graph and returns all possible flows.
+    /// Cycles are handled by ignoring the entire path.
+    #[test]
+    fn find_taint_flows_all_paths() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        // language=js
+        let js_code = "\
+// A helper function to construct a dependence edge.
+const edge = (target) => {
+    return makeEdge(target, EDGE_DEPENDENCE);
+}
+
+const adjList = new Map([
+    [1, [edge(2)]],
+    [2, [edge(3), edge(5)]],
+    [3, [edge(4)]],
+    [5, [edge(6)]],
+    [6, [edge(7), edge(8), edge(10)]],
+    [7, [edge(9)]],
+    [8, [edge(9)]],
+    [10, [/* cycle */ edge(2)]],
+]);
+
+
+const vidPaths = _findTaintFlows(adjList, 1, true).map((flow) => flow._vidPath);
+const serialized = vidPaths.map((flow) => DDSA_Console.stringify(flow)).join('\\n');
+serialized;
+";
+        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code).unwrap();
+        let res = rt
+            .scoped_execute(&js_code, |sc, value| value.to_rust_string_lossy(sc), None)
+            .unwrap();
+        let js_flows = res.lines().collect::<Vec<_>>();
+
+        let expected = vec!["[1,2,3,4]", "[1,2,5,6,7,9]", "[1,2,5,6,8,9]"];
+        assert_eq!(js_flows, expected);
+    }
 }

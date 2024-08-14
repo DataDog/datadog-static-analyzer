@@ -141,3 +141,129 @@ export function getEdgeKind(edge) {
     // (See `Edge` for documentation about this deserialization).
     return /** @type {EdgeKind} */ (edge & EDGE_KIND_MASK);
 }
+
+/**
+ * A directed flow from a {@link Digraph} vertex to a leaf vertex.
+ */
+export class TaintFlow {
+    /**
+     * @param {Array<VertexId>} vidPath
+     * @param {boolean} isForwardFlow
+     */
+    constructor(vidPath, isForwardFlow) {
+        /**
+         * Whether this flow represents forward data flow or not. See {@link TaintFlow.path} for documentation.
+         * @type {boolean}
+         */
+        this.isForwardFlow = isForwardFlow;
+
+        /**
+         * The path, represented as an array of {@link VertexId}.
+         * @type {Array<VertexId>}
+         */
+        this._vidPath = vidPath;
+
+        /**
+         * An array of CST nodes representing taint flow.
+         *
+         * If this is a forward flow (i.e. `isForwardFlow === true`), this path represents:
+         * ```
+         * 0         1         2         3         4         n
+         * |_________|_________|_________|_________|_________|_________|
+         *   source                                              sink
+         * ```
+         *
+         * If this is a backwards flow (i.e. `isForwardFlow === false`), this path represents:
+         * ```
+         * 0         1         2         3         4         n
+         * |_________|_________|_________|_________|_________|_________|
+         *    sink                                              source
+         * ```
+         * @type {Array<TreeSitterNode>}
+         */
+        this.path = vidPath.map((vid) => globalThis.__RUST_BRIDGE__ts_node.get(/** @type {NodeId} */ (vid)));
+    }
+
+    /**
+     * A getter returning the source node for this flow.
+     * @returns {TreeSitterNode}
+     */
+    get source() {
+        /** @type {number} */
+        let idx;
+        if (this.isForwardFlow) {
+            idx = 0;
+        } else {
+            idx = -1;
+        }
+        return this.path.at(idx);
+    }
+
+    /**
+     * A getter returning the sink node for this flow.
+     * @returns {TreeSitterNode}
+     */
+    get sink() {
+        /** @type {number} */
+        let idx;
+        if (this.isForwardFlow) {
+            idx = -1;
+        } else {
+            idx = 0;
+        }
+        return this.path.at(idx);
+    }
+}
+
+/**
+ * Returns all valid paths from the provided `startVid` to any leaf vertex, given the adjacency list.
+ * @param {AdjacencyList} adjList
+ * @param {VertexId} startVid The vertex id to start traversal at.
+ * @param {boolean} isForwardFlow A pass-through boolean used to initialize the resultant {@link TaintFlow}s.
+ * @returns {Array<TaintFlow>}
+ */
+export function _findTaintFlows(adjList, startVid, isForwardFlow) {
+    /** @type {[VertexId, Array<VertexId>]} */
+    const queue = [[startVid, [startVid]]];
+    /** @type {Array<TaintFlow>} */
+    const flows = [];
+
+    while (queue.length > 0) {
+        const item = queue.shift();
+        /** @type {VertexId} */
+        const currentVid = item[0];
+        /** @type {Array<VertexId>} */
+        const currentPath = item[1];
+
+        const edges = adjList.get(currentVid);
+        if (edges === undefined) {
+            if (currentPath.length > 1) {
+                const flow = new TaintFlow(currentPath, isForwardFlow);
+                flows.push(flow);
+            }
+            continue;
+        }
+
+        for (const edge of edges) {
+            const targetVid = getEdgeTarget(edge);
+
+            if (currentPath.includes(targetVid)) {
+                continue;
+            }
+
+            // If there are multiple edges, we need to clone the array because each edge represents a branching point,
+            // and so each needs its own copy of the historical path up to this point.
+            if (edges.length > 1) {
+                const nextPath = [...currentPath];
+                nextPath.push(targetVid);
+                queue.push([targetVid, nextPath]);
+            } else {
+                // Otherwise, we can just keep mutating and passing in the same array:
+                currentPath.push(targetVid);
+                queue.push([targetVid, currentPath]);
+            }
+        }
+    }
+
+    return flows;
+}
