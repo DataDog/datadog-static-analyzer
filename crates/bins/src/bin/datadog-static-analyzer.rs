@@ -233,7 +233,7 @@ fn main() -> Result<()> {
         };
 
     if configuration_file.is_none() && use_debug {
-        eprintln!("INFO: no configuration detected (either local or remote)")
+        eprintln!("INFO: no configuration detected locally or remotely")
     }
 
     let rule_config_provider = configuration_file

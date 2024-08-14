@@ -375,7 +375,7 @@ pub fn get_remote_configuration(
     let api_response = serde_json::from_str::<ConfigResponse>(response_text);
 
     if !&status_code.is_success() {
-        return Err(anyhow!("server returned error {}", &status_code.as_u16()));
+        return Err(anyhow!("server returned error {}", status_code.as_u16()));
     }
 
     match api_response {

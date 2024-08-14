@@ -50,9 +50,7 @@ pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
                 if size_read == 0 {
                     return Err(anyhow!("the config file is empty"));
                 }
-                match parse_config_file(&contents) {
-                    Ok(c) => Ok(Some(c)),
-                    Err(e) => Err(e),
+                parse_config_file(&contents).map(|c| Some(c))
                 }
             }
             None => Ok(None),
@@ -120,8 +118,8 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<ConfigFile>> {
                 }
                 Err(e) => {
                     if debug {
-                        eprintln!("error when trying to get remote config: {:?}", e);
-                        eprintln!("will use the local configuration if any")
+                        eprintln!("Error when attempting to fetch the remote config: {:?}", e);
+                        eprintln!("Falling back to the local configuration, if any")
                     }
                     cf
                 }
