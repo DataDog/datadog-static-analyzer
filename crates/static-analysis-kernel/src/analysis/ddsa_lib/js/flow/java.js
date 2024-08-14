@@ -94,6 +94,9 @@ export class MethodFlow {
             case "binary_expression":
                 this.visitBinExpr(node);
                 break;
+            case "cast_expression":
+                this.visitCastExpr(node);
+                break;
             case "identifier":
                 this.visitIdentifier(node);
                 break;
@@ -343,6 +346,31 @@ export class MethodFlow {
             default:
                 break;
         }
+    }
+
+    /**
+     * Visits a `cast_expression`.
+     * ```java
+     * Object upStr = "Hello World";
+     * // Downcasting:
+     * String name = (String) upStr;
+     * //            ^^^^^^^^^^^^^^
+     * // Casting:
+     * Float temperature = (float) 98.6;
+     * //                  ^^^^^^^^^^^^
+     * ```
+     * ```
+     * (cast_expression type: (_) value: (_))
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitCastExpr(node) {
+        const children = ddsa.getChildren(node);
+
+        const valueIdx = findFieldIndex(children, 1, "value");
+        const value = children[valueIdx];
+        this.visit(value);
+        this.propagateLastTaint(node);
     }
 
     /**

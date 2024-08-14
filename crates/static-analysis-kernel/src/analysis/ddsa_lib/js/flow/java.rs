@@ -432,6 +432,27 @@ strict digraph full {
     }
 
     #[test]
+    fn cast_expression() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    (String) var_A;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    castExpr [text="*",cstkind=cast_expression]
+
+    castExpr -> var_A [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
     fn method_invocation() {
         assert_digraph!(
             // language=java
