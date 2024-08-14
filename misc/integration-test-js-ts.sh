@@ -26,6 +26,13 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+FINDINGS=`jq '.runs[0].results|length' ${REPO_DIR}/results.json`
+echo "Found $FINDINGS violations"
+if [ $FINDINGS -lt 10 ]; then
+  echo "only $FINDINGS found, expected at least 10 findings"
+  exit 1
+fi
+
 echo "All tests passed"
 
 exit 0
