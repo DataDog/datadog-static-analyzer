@@ -269,6 +269,54 @@ strict digraph {
     }
 
     #[test]
+    fn array_access() {
+        assert_subgraph!(
+            // language=java
+            "\
+void method() {
+    var_A[2];
+}
+",
+            // language=dot
+            r#"
+strict digraph {
+    var_A
+    arrayAccess [text="*",cstkind=array_access]
+
+    arrayAccess -> var_A [kind=dependence]
+}
+"#
+        )
+    }
+
+    /// array_creation_expression
+    /// array_initializer
+    #[test]
+    fn array_creation_expression_array_initializer() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    new String[]{var_A, \"abc\", var_B};
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    var_B
+    arrayInit [text="*",cstkind=array_initializer]
+    arrayCreation [text="*",cstkind=array_creation_expression]
+
+    arrayCreation -> arrayInit [kind=dependence]
+    arrayInit -> var_A [kind=dependence]
+    arrayInit -> var_B [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
     fn assignment_expr() {
         assert_digraph!(
             // language=java

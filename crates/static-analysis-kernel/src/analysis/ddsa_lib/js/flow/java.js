@@ -77,6 +77,15 @@ export class MethodFlow {
             case "argument_list":
                 this.visitArgList(node);
                 break;
+            case "array_access":
+                this.visitArrayAccessExpr(node);
+                break;
+            case "array_creation_expression":
+                this.visitArrayCreationExpr(node);
+                break;
+            case "array_initializer":
+                this.visitArrayInitExpr(node);
+                break;
             case "assignment_expression":
                 this.visitAssignExpr(node);
                 break;
@@ -188,6 +197,69 @@ export class MethodFlow {
      */
     visitArgList(node) {
         const children = ddsa.getChildren(node);
+        for (const child of children) {
+            this.visit(child);
+            this.propagateLastTaint(node);
+        }
+    }
+
+    /**
+     * Visits an `array_access`.
+     * ```java
+     *     String example_01 = data[2];
+     * //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (array_access array: (_) index: (_))
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitArrayAccessExpr(node) {
+        // (Note: the `array` field can be an arbitrary expression)
+        const children = ddsa.getChildren(node);
+        const arrayIdx = findFieldIndex(children, 0, "array");
+        const array = children[arrayIdx];
+
+        this.visit(array);
+        this.propagateLastTaint(node);
+    }
+
+    /**
+     * Visits an `array_creation_expression`.
+     * ```java
+     * var test = new String[]{"hello", someVar};
+     * //         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (type: (_) dimensions: (dimensions) value: (array_initializer))
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitArrayCreationExpr(node) {
+        // Each value needs to be visited, as it can contain an arbitrary expression.
+        const children = ddsa.getChildren(node);
+
+        const valueIdx = findFieldIndex(children, 2, "value");
+        const value = children[valueIdx];
+        this.visit(value);
+        this.propagateLastTaint(node);
+    }
+
+    /**
+     * Visits an `array_initializer`.
+     * ```java
+     * var example_01 = new String[]{"hello", someVar};
+     * //                           ^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (array_initializer (_)*)
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitArrayInitExpr(node) {
+        // Each child is a different expression:
+        const children = ddsa.getChildren(node);
+
         for (const child of children) {
             this.visit(child);
             this.propagateLastTaint(node);
