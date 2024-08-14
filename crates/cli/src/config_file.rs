@@ -80,7 +80,9 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<ConfigFile>> {
     let config_file = read_config_file(path);
     let repository_url_opt = get_repository_url(path);
 
+    // Get the config file
     config_file.map(|cf| {
+        // if we need to fetch the remote config
         if should_use_datadog_backend() && repository_url_opt.is_ok() {
             let existing_config_file_base64 =
                 read_config_file_in_base64(path).expect("cannot get the config file in base64");
@@ -90,15 +92,17 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<ConfigFile>> {
                 debug,
             );
 
+            // if we get the remote config, we parse it. If we succeed, we use the remote config
+            // otherwise, we use the file config.
             match remote_config {
                 Ok(rc) => {
                     if debug {
                         eprintln!("Remote config (base64): {:?}", rc);
                     }
 
-                    let remote_config_base64 =
+                    let remote_config_string =
                         decode_base64_string(rc).expect("error when decoding base64");
-                    match parse_config_file(remote_config_base64.as_str()) {
+                    match parse_config_file(remote_config_string.as_str()) {
                         Ok(remote_config) => Some(remote_config),
                         Err(e) => {
                             eprintln!("Error when parsing remote config: {:?}", e);
