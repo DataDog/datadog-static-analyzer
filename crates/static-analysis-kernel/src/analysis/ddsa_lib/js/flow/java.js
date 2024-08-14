@@ -121,6 +121,9 @@ export class MethodFlow {
             case "template_expression":
                 this.visitTemplateExpr(node);
                 break;
+            case "ternary_expression":
+                this.visitTernaryExpr(node);
+                break;
 
             // Statements
             case "block":
@@ -647,6 +650,39 @@ export class MethodFlow {
                 }
             }
         }
+    }
+
+    /**
+     * Visits a `ternary_expression`.
+     * ```java
+     *     example_01 = isValid ? someVar : otherVar;
+     * //               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (ternary_expression condition: (_) consequence: (_) alternative: (_))
+     * ```
+     *
+     * # Note
+     * [simplification]: This uses the same control flow logic as {@link MethodFlow.visitIfStmt}.
+     *
+     * @param {TreeSitterNode} node
+     */
+    visitTernaryExpr(node) {
+        const children = ddsa.getChildren(node);
+        // In the `condition` field, external variables can be mutated, but this is a corner case we
+        // explicitly disregard, and so we only process the `consequence`.
+        ignoreMutatingField(/* condition */);
+
+        // See `visitIfStmt` for a caveat on how we're handling branches.
+        const conseqIdx = findFieldIndex(children, 1, "consequence");
+        const conseq = children[conseqIdx];
+        this.visit(conseq);
+        this.propagateLastTaint(node);
+
+        const altIdx = findFieldIndex(children, conseqIdx + 1, "alternative");
+        const alternative = children[altIdx];
+        this.visit(alternative);
+        this.propagateLastTaint(node);
     }
 
     // Statements

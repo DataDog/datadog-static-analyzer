@@ -579,6 +579,29 @@ strict digraph full {
         );
     }
 
+    #[test]
+    fn ternary_expr() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    isValid? var_A : var_B;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    var_B
+    ternaryExpr [text="*",cstkind=ternary_expression]
+
+    ternaryExpr -> var_B [kind=dependence]
+    ternaryExpr -> var_A [kind=dependence]
+}
+"#
+        );
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // Miscellaneous
     ///////////////////////////////////////////////////////////////////////////
