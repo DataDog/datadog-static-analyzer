@@ -4,6 +4,8 @@
 
 import { Digraph, EDGE_ASSIGNMENT, EDGE_DEPENDENCE } from "ext:ddsa_lib/flow/graph";
 
+const { op_java_get_bin_expr_operator } = Deno.core.ops;
+
 /**
  * A graph describing the flow of variables within a single method.
  */
@@ -88,6 +90,9 @@ export class MethodFlow {
                 break;
             case "assignment_expression":
                 this.visitAssignExpr(node);
+                break;
+            case "binary_expression":
+                this.visitBinExpr(node);
                 break;
             case "identifier":
                 this.visitIdentifier(node);
@@ -298,6 +303,46 @@ export class MethodFlow {
         this.markCurrentDefinition(name);
         // Reset the current taint status.
         const _ = this.takeLastTainted();
+    }
+
+    /**
+     * Visits a `binary_expression`.
+     * ```java
+     *     example_01 + b;
+     * //  ^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (binary_expression left: (_) right: (_))
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitBinExpr(node) {
+        /** @type {BinExprOp | -1} */
+        const operator = op_java_get_bin_expr_operator(node.id);
+        // Only certain binary expressions can propagate taint:
+        switch (operator) {
+            // Strings can be concatenated/mutated via an addition operation.
+            case BIN_EXPR_OP_ADD: {
+                const _ = this.takeLastTainted();
+
+                const children = ddsa.getChildren(node);
+
+                // (start index is 1 to account for preceding "left" field)
+                const rightIdx = findFieldIndex(children, 1, "right");
+                const right = children[rightIdx];
+                this.visit(right);
+                this.propagateLastTaint(node);
+
+                const leftIdx = findFieldIndex(children, 0, "left");
+                const left = children[leftIdx];
+                this.visit(left);
+                this.propagateLastTaint(node);
+
+                break;
+            }
+            default:
+                break;
+        }
     }
 
     /**
@@ -1006,6 +1051,18 @@ function isCommentNode(node) {
             return false;
     }
 }
+
+/**
+ * @typedef {0 | 1} BinExprOp
+ * An integer representing the operator of a binary expression. Possible values:
+ * * {@link BIN_EXPR_OP_IGNORED}
+ * * {@link BIN_EXPR_OP_ADD}
+ */
+
+/** @type {0} */
+export const BIN_EXPR_OP_IGNORED = 0;
+/** @type {1} */
+export const BIN_EXPR_OP_ADD = 1;
 
 /**
  * A noop function intended for documentation:

@@ -33,7 +33,7 @@ mod tests {
     use super::{get_binary_expression_operator, BinOp};
     use crate::analysis::ddsa_lib::common::compile_script;
     use crate::analysis::ddsa_lib::js::flow::graph::{cst_dot_digraph, cst_v8_digraph, Digraph};
-    use crate::analysis::ddsa_lib::test_utils::TsTree;
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute, TsTree};
     use crate::analysis::ddsa_lib::JsRuntime;
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
@@ -257,6 +257,23 @@ public class TestClass {
             assert_eq!(get_binary_expression_operator(bin_op), Some(expected));
         }
     }
+
+    /// The [`BinOp`] enum numbering should be consistent between Rust and JavaScript.
+    #[test]
+    fn bin_expr_op_js_synchronization() {
+        let tests = [BinOp::Ignored, BinOp::Add];
+        let mut rt = cfg_test_runtime();
+        let scope = &mut rt.handle_scope();
+        for rust_kind in tests {
+            let js_const = match rust_kind {
+                BinOp::Ignored => "BIN_EXPR_OP_IGNORED",
+                BinOp::Add => "BIN_EXPR_OP_ADD",
+            };
+            let js_value = try_execute(scope, &format!("{};", js_const)).unwrap();
+            assert!(js_value.is_number());
+            assert_eq!(rust_kind as u32, js_value.uint32_value(scope).unwrap());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -384,6 +401,31 @@ strict digraph full {
 
     var_B -> var_C [kind=assignment]
     var_A -> 123 [kind=assignment]
+}
+"#
+        );
+    }
+
+    #[test]
+    fn binary_expression() {
+        assert_digraph!(
+            // language=java
+            r#"
+void method() {
+    var_A + "abc" + var_B;
+}
+"#,
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    var_B
+    outerBinExpr [text="var_A + \"abc\" + var_B",cstkind=binary_expression]
+    innerBinExpr [text="var_A + \"abc\"",cstkind=binary_expression]
+
+    outerBinExpr -> var_B [kind=dependence]
+    outerBinExpr -> innerBinExpr [kind=dependence]
+    innerBinExpr -> var_A [kind=dependence]
 }
 "#
         );
@@ -526,6 +568,32 @@ void method() {
     "#
             );
         }
+    }
+}
+
+/// Graph fidelity reductions that were artificially introduced for performance.
+#[cfg(test)]
+mod tests_optimizations {
+    use crate::assert_digraph;
+
+    /// Binary expressions are ignored unless they use the addition operator, even if there is a nested
+    /// addition expression.
+    #[test]
+    fn binary_expression_ignores_non_addition() {
+        assert_digraph!(
+            // language=java
+            r#"
+void method() {
+    // Note that we never process the inner (<var_A> + <var_B>) addition binary expression
+    // because it is the child of a non-addition binary expression: (<var_A + var_B> - <var_C>)
+    var_A + var_B - var_C;
+}
+"#,
+            // language=dot
+            r#"
+strict digraph full { }
+"#
+        );
     }
 }
 
