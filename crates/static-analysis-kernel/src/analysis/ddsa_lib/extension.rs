@@ -13,6 +13,8 @@ deno_core::extension!(
         ops::op_ts_node_named_children,
         ops::op_ts_node_parent,
         ops::op_ts_node_text,
+        // Language-specific
+        ops::op_java_get_bin_expr_operator,
     ],
     esm_entry_point = "ext:ddsa_lib/__bootstrap.js",
     esm = [ dir "src/analysis/ddsa_lib/js", "__bootstrap.js" ],

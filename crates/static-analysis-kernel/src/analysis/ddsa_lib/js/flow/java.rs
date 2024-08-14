@@ -2,12 +2,40 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+/// A non-exhaustive list of binary expression operators.
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub(crate) enum BinOp {
+    Ignored = 0,
+    Add = 1,
+}
+
+/// Returns a [`BinOp`] from a binary expression (or `None` if the provided node isn't a `binary_expression`).
+pub(crate) fn get_binary_expression_operator(node: tree_sitter::Node) -> Option<BinOp> {
+    if node.kind() != "binary_expression" {
+        return None;
+    }
+    let mut operator: Option<BinOp> = None;
+    for i in 0..node.child_count() {
+        let child = node.child(i).expect("i should be less than child_count");
+        operator = match child.kind() {
+            "+" => Some(BinOp::Add),
+            _ => None,
+        };
+        if operator.is_some() {
+            break;
+        }
+    }
+    Some(operator.unwrap_or(BinOp::Ignored))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{get_binary_expression_operator, BinOp};
     use crate::analysis::ddsa_lib::common::compile_script;
     use crate::analysis::ddsa_lib::js::flow::graph::{cst_dot_digraph, cst_v8_digraph, Digraph};
     use crate::analysis::ddsa_lib::test_utils::TsTree;
     use crate::analysis::ddsa_lib::JsRuntime;
+    use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
     use deno_core::v8;
     use std::sync::Arc;
@@ -207,6 +235,26 @@ public class TestClass {
             let script = compile_script(&mut rt.v8_handle_scope(), &script).unwrap();
             let exe_result = rt.scoped_execute(&script, |sc, v| v.to_rust_string_lossy(sc), None);
             assert_eq!(exe_result.unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn op_parse_bin_expr_operator() {
+        let cases = [
+            // Normal case
+            (r#""abc" + "def""#, BinOp::Add),
+            // Block comment interspersed
+            (r#""abc" /* comment1 */ + "def""#, BinOp::Add),
+            // Line comment interspersed
+            ("\"abc\"\n\n// comment1\n+\n\"def\"", BinOp::Add),
+            // Other operator
+            (r#"123 * 456"#, BinOp::Ignored),
+        ];
+        for (code, expected) in cases {
+            let tree = get_tree(code, &Language::Java).unwrap();
+            let bin_op = tree.root_node().child(0).unwrap().child(0).unwrap();
+            assert_eq!(bin_op.kind(), "binary_expression", "test invariant broken");
+            assert_eq!(get_binary_expression_operator(bin_op), Some(expected));
         }
     }
 }
