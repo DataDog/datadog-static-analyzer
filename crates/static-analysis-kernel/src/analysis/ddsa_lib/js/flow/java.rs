@@ -803,6 +803,28 @@ strict digraph full {
         );
     }
 
+    /// `object_creation_expression` nodes are parsed but not analyzed.
+    #[test]
+    fn obj_creation_expr_unsupported() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String var_A = new OuterClass().new InnerClass();
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    objCreation [text="new OuterClass().new InnerClass()",cstkind=object_creation_expression]
+
+    var_A -> objCreation [kind=assignment]
+}
+"#
+        );
+    }
+
     /// Lexical scopes are not supported.
     #[test]
     fn variable_scoping_unsupported() {

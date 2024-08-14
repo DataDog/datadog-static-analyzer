@@ -112,6 +112,9 @@ export class MethodFlow {
             case "method_reference":
                 this.visitMethodRefExpr(node);
                 break;
+            case "object_creation_expression":
+                this.visitObjCreationExpr(node);
+                break;
 
             // Statements
             case "block":
@@ -551,6 +554,23 @@ export class MethodFlow {
      * @param {TreeSitterNode} node
      */
     visitMethodRefExpr(node) {
+        // [simplification]: Ignore this node
+    }
+
+    /**
+     * Visits an `object_creation_expression`.
+     * ```java
+     *     new Example_01();
+     * //  ^^^^^^^^^^^^^^^^
+     *     new Example_02().new InnerClass();
+     * //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (object_creation_expression (object_creation_expression)? type: (_) arguments: (argument_list))
+     * ```
+     * @param {TreeSitterNode} _node
+     */
+    visitObjCreationExpr(_node) {
         // [simplification]: Ignore this node
     }
 
