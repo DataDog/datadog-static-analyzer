@@ -12,3 +12,12 @@ export function assert(value, message) {
         throw new Error(message);
     }
 }
+
+/**
+ * Returns the {@link TreeSitterNode} with the given id, if it exists.
+ * @param {NodeId} nid
+ * @returns {TreeSitterNode | undefined}
+ */
+export function getNode(nid) {
+    return globalThis.__RUST_BRIDGE__ts_node.get(nid);
+}

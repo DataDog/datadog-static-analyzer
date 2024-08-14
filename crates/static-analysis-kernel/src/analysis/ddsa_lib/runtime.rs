@@ -402,6 +402,11 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
         v8_array.length() as usize
     }
 
+    #[cfg(test)]
+    pub(crate) fn bridge_context(&self) -> Rc<RefCell<ContextBridge>> {
+        Rc::clone(&self.bridge_context)
+    }
+
     /// Drains and returns the lines from the DDSA console.
     #[allow(unused)]
     #[cfg(test)]
