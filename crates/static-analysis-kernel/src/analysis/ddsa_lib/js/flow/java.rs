@@ -759,6 +759,28 @@ strict digraph full {
         );
     }
 
+    /// `field_access` nodes are passed through, but not analyzed.
+    #[test]
+    fn field_access_unsupported() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String var_A = var_B.field;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    fieldAccess [text="*",cstkind=field_access]
+
+    var_A -> fieldAccess [kind=assignment]
+}
+"#
+        );
+    }
+
     /// Lexical scopes are not supported.
     #[test]
     fn variable_scoping_unsupported() {

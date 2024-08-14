@@ -97,6 +97,9 @@ export class MethodFlow {
             case "cast_expression":
                 this.visitCastExpr(node);
                 break;
+            case "field_access":
+                this.visitFieldAccess(node);
+                break;
             case "identifier":
                 this.visitIdentifier(node);
                 break;
@@ -371,6 +374,25 @@ export class MethodFlow {
         const value = children[valueIdx];
         this.visit(value);
         this.propagateLastTaint(node);
+    }
+
+    /**
+     * Visits a `field_access`.
+     * ```java
+     *     example_01.field = 123;
+     * //  ^^^^^^^^^^^^^^^^
+     *     example_02.inner_01.inner_02.someMethod();
+     * //  ^^^^^^^^^^^^^^^^^^^
+     * //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (field_access object: (_) field: (_))
+     * ```
+     * @param {TreeSitterNode} _node
+     */
+    visitFieldAccess(_node) {
+        // [simplification]: Given that we are operating on a CST and don't have name resolution, it's not
+        // straightforward to determine the nature of the field access. Thus, we ignore it.
     }
 
     /**
