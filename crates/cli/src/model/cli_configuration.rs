@@ -1,4 +1,4 @@
-use crate::git_utils::get_branch;
+use crate::git_utils::{get_branch, ORIGIN};
 use anyhow::anyhow;
 use common::model::diff_aware::DiffAware;
 use git2::Repository;
@@ -101,7 +101,7 @@ impl CliConfiguration {
         let repository = repository_opt?;
 
         let repository_url = repository
-            .find_remote("origin")?
+            .find_remote(ORIGIN)?
             .url()
             .ok_or(anyhow!("cannot get the repository origin URL"))?
             .to_string();

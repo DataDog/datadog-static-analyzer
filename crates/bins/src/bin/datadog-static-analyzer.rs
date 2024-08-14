@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
 
-use cli::config_file::read_config_file;
+use cli::config_file::get_config;
 use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
 use cli::csv;
 use cli::datadog_utils::{
@@ -221,7 +221,7 @@ fn main() -> Result<()> {
     }
 
     let configuration_file: Option<ConfigFile> =
-        match read_config_file(directory_to_analyze.as_str()) {
+        match get_config(directory_to_analyze.as_str(), use_debug) {
             Ok(cfg) => cfg,
             Err(err) => {
                 eprintln!(
@@ -231,6 +231,11 @@ fn main() -> Result<()> {
                 exit(1)
             }
         };
+
+    if configuration_file.is_none() && use_debug {
+        eprintln!("INFO: no configuration detected locally or remotely")
+    }
+
     let rule_config_provider = configuration_file
         .as_ref()
         .map(RuleConfigProvider::from_config)

@@ -9,6 +9,7 @@ use crate::constants::{GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH, GIT_HEAD};
 /// The string to reference the head on the remote (hopefully pointing to the default branch)
 const REMOTE_HEAD_REF: &str = "refs/remotes/origin/HEAD";
 const ORIGIN_PREFIX: &str = "origin/";
+pub const ORIGIN: &str = "origin";
 
 /// Try to get the branch running. We first try to get the branch from the repository. When
 /// it fails, we attempt to get the branch from the CI provider when the analyzer
@@ -101,6 +102,18 @@ fn get_changed_files(diff: &Diff) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> 
         }),
     )?;
     Ok(res)
+}
+
+pub fn get_repository_url(path: &str) -> anyhow::Result<String> {
+    let repository_opt = Repository::init(path);
+    match repository_opt {
+        Ok(repository) => Ok(repository
+            .find_remote(ORIGIN)?
+            .url()
+            .ok_or(anyhow!("cannot get the repository origin URL"))?
+            .to_string()),
+        Err(_) => Err(anyhow!("cannot get the repo")),
+    }
 }
 
 /// Get the list of changed files for the repository between the latest commit the repository
