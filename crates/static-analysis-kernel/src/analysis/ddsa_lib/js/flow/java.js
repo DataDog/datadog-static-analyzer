@@ -115,6 +115,9 @@ export class MethodFlow {
             case "object_creation_expression":
                 this.visitObjCreationExpr(node);
                 break;
+            case "parenthesized_expression":
+                this.visitParensExpr(node);
+                break;
 
             // Statements
             case "block":
@@ -572,6 +575,30 @@ export class MethodFlow {
      */
     visitObjCreationExpr(_node) {
         // [simplification]: Ignore this node
+    }
+
+    /**
+     * Visits a `parenthesized_expression`.
+     * ```java
+     * int example_01 = (1234);
+     * //               ^^^^^^
+     * ```
+     * ```
+     * (parenthesized_expression (_))
+     * ```
+     *
+     * @param {TreeSitterNode} node
+     */
+    visitParensExpr(node) {
+        const children = ddsa.getChildren(node);
+        for (const child of children) {
+            // The first non-comment node is the wrapped expression.
+            if (!isCommentNode(child)) {
+                this.visit(child);
+                this.propagateLastTaint(node);
+                break;
+            }
+        }
     }
 
     // Statements

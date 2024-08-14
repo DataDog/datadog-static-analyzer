@@ -531,6 +531,27 @@ strict digraph full {
         );
     }
 
+    #[test]
+    fn parens_expr() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    (var_A);
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    parensExpr [text="*",cstkind=parenthesized_expression]
+
+    parensExpr -> var_A [kind=dependence]
+}
+"#
+        );
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // Miscellaneous
     ///////////////////////////////////////////////////////////////////////////
