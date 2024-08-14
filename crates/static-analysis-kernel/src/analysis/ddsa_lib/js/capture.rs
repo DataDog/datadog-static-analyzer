@@ -136,7 +136,6 @@ mod tests {
         attach_as_global(scope, capture, "CAPTURE");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(Object.keys(CAPTURE).length === 2, "must be exactly 2 properties");
 assert(CAPTURE.name === "alpha", "name was incorrect");
 assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
@@ -155,7 +154,6 @@ assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
         attach_as_global(scope, capture, "CAPTURE");
 
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(Object.keys(CAPTURE).length === 2, "must be exactly 2 properties");
 assert(CAPTURE.name === "bravo", "name was incorrect");
 assert(CAPTURE.nodeIds instanceof Uint32Array, "nodeIds had wrong type");

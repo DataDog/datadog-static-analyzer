@@ -171,15 +171,27 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     let mut production_extension = ddsa_lib::init_ops_and_esm();
     let prod_entrypoint = production_extension.get_esm_entry_point().unwrap();
     let prod_ops = production_extension.init_ops().unwrap();
+    #[allow(unused_mut)]
+    let mut ops = prod_ops;
 
     // Clone all ES modules, minus the entrypoint.
     let mut esm_sources = production_extension.get_esm_sources().clone();
     esm_sources.retain(|efs| efs.specifier != prod_entrypoint);
 
+    // Add additional cfg(test) ES modules
+    #[cfg(test)]
+    {
+        use crate::analysis::ddsa_lib::extension::ddsa_lib_cfg_test;
+        let mut cfg_test_extension = ddsa_lib_cfg_test::init_ops_and_esm();
+        let cfg_test_esm_sources = cfg_test_extension.get_esm_sources().clone();
+        let cfg_test_ops = cfg_test_extension.init_ops().unwrap();
+        esm_sources.extend(cfg_test_esm_sources);
+        ops.extend(cfg_test_ops);
+    }
+
     // Create an entrypoint that adds all exports to `globalThis`.
-    let mut entrypoint_code = String::new();
+    let mut entrypoint_code = "'use strict';\n".to_string();
     for (idx, efs) in esm_sources.iter().enumerate() {
-        // Create a unique (arbitrary) variable name for the import.
         let var_name = "a".repeat(idx + 1);
         entrypoint_code += &format!(
             r#"
@@ -191,6 +203,10 @@ for (const [name, obj] of Object.entries({})) {{
             var_name, efs.specifier, var_name
         );
     }
+    entrypoint_code += "
+globalThis.console = new DDSA_Console();
+globalThis.ddsa = new DDSA();
+";
     let entrypoint_code = leaked(entrypoint_code);
     let specifier = leaked("ext:test/__entrypoint");
     esm_sources.push(ExtensionFileSource {
@@ -201,7 +217,7 @@ for (const [name, obj] of Object.entries({})) {{
     ExtensionBuilder::default()
         .esm(esm_sources)
         .esm_entry_point(specifier)
-        .ops(prod_ops)
+        .ops(ops)
         .build()
 }
 
@@ -359,4 +375,84 @@ pub(crate) fn shorthand_execute_rule(
     };
 
     runtime.execute_rule(&source_text, &tree, &filename, &rule, &arguments, timeout)
+}
+
+/// A wrapper around a [`tree_sitter::Tree`] providing shorthand tree inspection functions.
+#[derive(Debug, Clone)]
+pub(crate) struct TsTree {
+    tree: Arc<tree_sitter::Tree>,
+    text: String,
+}
+
+impl TsTree {
+    pub fn new(source_text: &str, lang: Language) -> Self {
+        let tree = Arc::new(get_tree(source_text, &lang).unwrap());
+        Self::from_parts(tree, source_text)
+    }
+
+    pub fn from_parts(tree: Arc<tree_sitter::Tree>, text: impl Into<String>) -> Self {
+        let text = text.into();
+        Self { tree, text }
+    }
+
+    pub fn tree(&self) -> Arc<tree_sitter::Tree> {
+        Arc::clone(&self.tree)
+    }
+
+    /// Returns the text for the provided node.
+    pub fn text(&self, node: tree_sitter::Node) -> &str {
+        node.utf8_text(self.text.as_bytes()).unwrap()
+    }
+
+    /// Returns all named `tree_sitter::Node`s matching `text` and `kind`, if provided.
+    pub fn find_named_nodes<'t>(
+        &'t self,
+        text: Option<&str>,
+        kind: Option<&str>,
+    ) -> Vec<tree_sitter::Node<'t>> {
+        self.find_nodes(text, kind)
+            .iter()
+            .filter(|&node| node.is_named())
+            .copied()
+            .collect()
+    }
+
+    /// Returns all `tree_sitter::Node`s matching `text` and `kind`, if provided.
+    pub fn find_nodes<'t>(
+        &'t self,
+        text: Option<&str>,
+        kind: Option<&str>,
+    ) -> Vec<tree_sitter::Node<'t>> {
+        Self::preorder_nodes(self.tree.root_node())
+            .iter()
+            .filter(|&node| {
+                text.map(|t| node.utf8_text(self.text.as_bytes()).unwrap() == t)
+                    .unwrap_or(true)
+                    && kind.map(|k| node.kind() == k).unwrap_or(true)
+            })
+            .copied()
+            .collect()
+    }
+
+    /// Returns a Vec of the root's nodes in preorder.
+    pub fn preorder_nodes(root: tree_sitter::Node) -> Vec<tree_sitter::Node> {
+        let mut cursor = root.walk();
+        let mut nodes = vec![];
+        'outer: loop {
+            nodes.push(cursor.node());
+            if cursor.goto_first_child() {
+                continue;
+            }
+            if cursor.goto_next_sibling() {
+                continue;
+            }
+            while !cursor.goto_next_sibling() {
+                if !cursor.goto_parent() {
+                    // Reached the root
+                    break 'outer;
+                }
+            }
+        }
+        nodes
+    }
 }

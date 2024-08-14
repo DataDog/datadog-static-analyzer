@@ -29,12 +29,6 @@ const BRIDGE_VIOLATION: &str = "__RUST_BRIDGE__violation";
 const STELLA_COMPAT_FILENAME: &str = "STELLA_COMPAT_FILENAME";
 const STELLA_COMPAT_FILE_CONTENTS: &str = "STELLA_COMPAT_FILE_CONTENTS";
 
-/// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
-pub(crate) const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
-    // `deno_core`, by default, injects its own `console` implementation.
-    "console",
-];
-
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
     runtime: deno_core::JsRuntime,
@@ -295,7 +289,7 @@ impl JsRuntime {
     ///     None,
     /// )
     /// ```
-    fn scoped_execute<T, U>(
+    pub(crate) fn scoped_execute<T, U>(
         &mut self,
         script: &v8::Global<v8::UnboundScript>,
         handle_return_value: T,
@@ -304,6 +298,8 @@ impl JsRuntime {
     where
         T: Fn(&mut v8::TryCatch<v8::HandleScope>, v8::Local<v8::Value>) -> U,
     {
+        self.console.borrow_mut().clear();
+
         let scope = &mut self.runtime.handle_scope();
         // We re-use the same v8::Context for performance, and we use a combination of closures and
         // a frozen global object to achieve equivalent encapsulation to creating a new v8::Context.
@@ -353,9 +349,11 @@ impl JsRuntime {
             let exception = tc_ctx_scope
                 .exception()
                 .expect("return value should only be `None` if an error was caught");
-            let reason = exception.to_rust_string_lossy(tc_ctx_scope);
+            let deno_error = deno_core::error::JsError::from_v8_exception(tc_ctx_scope, exception);
             tc_ctx_scope.reset();
-            DDSAJsRuntimeError::Execution { reason }
+            DDSAJsRuntimeError::Execution {
+                error: deno_error.into(),
+            }
         })?;
 
         Ok(handle_return_value(tc_ctx_scope, return_val))
@@ -402,6 +400,13 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
             .bridge_violation
             .as_local(&mut self.runtime.handle_scope());
         v8_array.length() as usize
+    }
+
+    /// Drains and returns the lines from the DDSA console.
+    #[allow(unused)]
+    #[cfg(test)]
+    pub(crate) fn console_lines(&self) -> Vec<String> {
+        self.console.borrow_mut().drain().collect()
     }
 }
 
@@ -522,24 +527,33 @@ impl JsExecutionState {
 }
 
 /// Constructs a [`deno_core::JsRuntime`] with the [`ddsa_lib`] extension enabled.
-pub(crate) fn base_js_runtime() -> deno_core::JsRuntime {
-    create_base_runtime(
-        vec![ddsa_lib::init_ops_and_esm()],
-        Some(Box::new(|scope, default_ctx| {
-            let global_proxy = default_ctx.global(scope);
-            for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
-                let key = v8_string(scope, prop);
-                global_proxy.delete(scope, key.into());
-            }
-        })),
-    )
+fn base_js_runtime() -> deno_core::JsRuntime {
+    if cfg!(test) {
+        analysis::ddsa_lib::test_utils::cfg_test_runtime()
+    } else {
+        /// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
+        const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
+            // `deno_core`, by default, injects its own `console` implementation.
+            "console",
+        ];
+        create_base_runtime(
+            vec![ddsa_lib::init_ops_and_esm()],
+            Some(Box::new(|scope, default_ctx| {
+                let global_proxy = default_ctx.global(scope);
+                for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
+                    let key = v8_string(scope, prop);
+                    global_proxy.delete(scope, key.into());
+                }
+            })),
+        )
+    }
 }
 
 /// A mutable scratch space that collects the output of the `console.log` function invoked by JavaScript code.
 pub(crate) struct JsConsole(Vec<String>);
 
 impl JsConsole {
-    /// Creates a new, empty `Console`.
+    /// Creates a new, empty `JsConsole`.
     pub fn new() -> Self {
         Self(Vec::new())
     }
@@ -549,7 +563,12 @@ impl JsConsole {
         self.0.push(value.into())
     }
 
-    /// Removes all lines from the `Console`, returning them as an iterator.
+    /// Removes all lines from the `JsConsole`.
+    pub fn clear(&mut self) {
+        self.0.clear()
+    }
+
+    /// Removes all lines from the `JsConsole`, returning them as an iterator.
     pub fn drain(&mut self) -> impl Iterator<Item = String> + '_ {
         self.0.drain(..)
     }
@@ -642,7 +661,6 @@ mod tests {
         let mut runtime = JsRuntime::try_new().unwrap();
         let scope = &mut runtime.runtime.handle_scope();
         let code = r#"
-const assert = (val, msg) => { if (!val) throw new Error(msg); };
 assert(globalThis.__RUST_BRIDGE__context instanceof RootContext, "ContextBridge global has wrong type");
 assert(Array.isArray(globalThis.__RUST_BRIDGE__query_match), "QueryMatchBridge global has wrong type");
 assert(typeof globalThis.__RUST_BRIDGE__ts_node === "object", "TsNodeBridge global has wrong type");
@@ -834,6 +852,21 @@ function visit(captures) {
         let return_val =
             runtime.scoped_execute(&script, |scope, value| value.uint32_value(scope), None);
         assert_eq!(return_val.unwrap().unwrap(), 123);
+    }
+
+    /// `scoped_execute` should always execute with an empty console (despite a previous execution
+    /// that didn't explicitly clear the console).
+    #[test]
+    fn scoped_execute_console_empty() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let code = "console.log(1234);";
+        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+        assert!(runtime.console.borrow().0.is_empty());
+        runtime.scoped_execute(&script, |_, _| (), None).unwrap();
+        assert_eq!(runtime.console.borrow().0.len(), 1);
+        runtime.scoped_execute(&script, |_, _| (), None).unwrap();
+        // This would be 2 if we weren't properly clearing the console.
+        assert_eq!(runtime.console.borrow().0.len(), 1);
     }
 
     #[test]
