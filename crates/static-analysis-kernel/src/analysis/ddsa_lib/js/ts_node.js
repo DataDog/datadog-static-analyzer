@@ -141,7 +141,7 @@ export class TreeSitterNode {
      * "function_declaration"
      * ```
      */
-    get type() {
+    get cstType() {
         // Note: the map lookup should only return undefined if either `this._typeId` or the symbol map were mutated.
         // Although that should never happen, we handle it by returning an empty string.
         return globalThis.__RUST_BRIDGE__context.tsLangCtx.nodeType.get(this._typeId) ?? "";
@@ -168,7 +168,7 @@ export class TreeSitterNode {
      * @deprecated
      */
     get astType() {
-        return this.type;
+        return this.cstType;
     }
 }
 
