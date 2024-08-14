@@ -39,45 +39,35 @@ fn get_config_file(path: &str) -> Result<Option<File>> {
 // If the file does not exist, we return a Ok(None).
 // If there is an error reading the file, we return a failure
 pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
-    match get_config_file(path) {
-        Ok(file_opt) => {
-            if let Some(mut file) = file_opt {
-                let mut contents = String::new();
+    if let Some(mut file) = get_config_file(path)? {
+        let mut contents = String::new();
 
-                let size_read = file
-                    .read_to_string(&mut contents)
-                    .context("error when reading the configration file")?;
-                if size_read == 0 {
-                    return Err(anyhow!("the config file is empty"));
-                }
-                parse_config_file(&contents).map(Some)
-            } else {
-                Ok(None)
-            }
+        let size_read = file
+            .read_to_string(&mut contents)
+            .context("error when reading the configration file")?;
+        if size_read == 0 {
+            return Err(anyhow!("the config file is empty"));
         }
-        Err(e) => Err(e),
+        parse_config_file(&contents).map(Some)
+    } else {
+        Ok(None)
     }
 }
 
 // Read the config file in base64
 pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
-    match get_config_file(path) {
-        Ok(file_opt) => {
-            if let Some(mut file) = file_opt {
-                let mut contents = String::new();
+    if let Some(mut file) = get_config_file(path)? {
+        let mut contents = String::new();
 
-                let size_read = file
-                    .read_to_string(&mut contents)
-                    .context("error when reading the configration file")?;
-                if size_read == 0 {
-                    return Err(anyhow!("the config file is empty"));
-                }
-                Ok(Some(encode_base64_string(contents)))
-            } else {
-                Ok(None)
-            }
+        let size_read = file
+            .read_to_string(&mut contents)
+            .context("error when reading the configration file")?;
+        if size_read == 0 {
+            return Err(anyhow!("the config file is empty"));
         }
-        Err(e) => Err(e),
+        Ok(Some(encode_base64_string(contents)))
+    } else {
+        Ok(None)
     }
 }
 
