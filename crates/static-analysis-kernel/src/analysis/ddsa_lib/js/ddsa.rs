@@ -21,6 +21,8 @@ mod tests {
             // Methods
             "getChildren",
             "getParent",
+            "getTaintSinks",
+            "getTaintSources",
         ];
         assert!(js_instance_eq(CLASS_NAME, expected));
         let expected = &[];

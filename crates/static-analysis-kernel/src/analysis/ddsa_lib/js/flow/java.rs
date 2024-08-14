@@ -274,6 +274,83 @@ public class TestClass {
             assert_eq!(rust_kind as u32, js_value.uint32_value(scope).unwrap());
         }
     }
+
+    /// `ddsa.getTaintSources` and `ddsa.getTaintSinks` should return the expected results.
+    /// (Note that the `getTaintSinks`/forwards analysis is simplistic because it is a simple
+    /// physical transposition of the backwards analysis graph).
+    #[test]
+    fn js_invocation() {
+        // language=java
+        let code = r#"
+class TestClass extends HttpServlet {
+    @override
+    void testMethod(HttpServletRequest request, HttpServletResponse response) {
+        String username = request.getHeader("abc");
+        String sqlQuery = "SELECT * FROM " + username;
+        connection.prepareStatement(sqlQuery);
+    }
+}
+"#;
+
+        let (mut rt, tree) = setup(code);
+        let tsn_bridge = rt.bridge_ts_node();
+        // The parameter definition of the variable:
+        // ```java
+        //     void testMethod(HttpServletRequest request, HttpServletResponse response)
+        // //                                     ^^^^^^^
+        // ```
+        let request_param = tree.find_named_nodes(Some("request"), Some("identifier"))[0];
+        let request_param = tsn_bridge.borrow().get_id(request_param).unwrap();
+        // The sink method call:
+        // ```java
+        //     connection.prepareStatement(sqlQuery);
+        // //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        // ```
+        let method_call = tree.find_named_nodes(
+            Some("connection.prepareStatement(sqlQuery)"),
+            Some("method_invocation"),
+        )[0];
+        let method_call = tsn_bridge.borrow().get_id(method_call).unwrap();
+        // An identifier that flows into the sink:
+        // ```java
+        //     connection.prepareStatement(sqlQuery);
+        // //                              ^^^^^^^^
+        // ```
+        let sql_identifier = tree.find_named_nodes(Some("sqlQuery"), Some("identifier"))[1];
+        let sql_identifier = tsn_bridge.borrow().get_id(sql_identifier).unwrap();
+
+        // language=javascript
+        let script = format!(
+            r#"
+const sourceFlows = ddsa.getTaintSources(getNode({sql_identifier}));
+assert(sourceFlows.length === 1, "`getTaintSources` should have returned 1 flow");
+const sinkFlows = ddsa.getTaintSinks(getNode({request_param}));
+assert(sinkFlows.length === 1, "`getTaintSinks` should have returned 1 flow");
+
+let serialized = "";
+for (const flow of [sourceFlows[0], sinkFlows[0]]) {{
+    // Test the `sink` getter.
+    const sinkId = flow.sink.id;
+    // Test the `source` getter.
+    const sourceId = flow.source.id;
+    // We only assert the number of nodes in the path because we just want to ensure that
+    // this array is populated. The accuracy/correctness of those nodes is handled by graph unit tests.
+    assert(flow.path.length > 2, "flow should have more than 2 nodes");
+
+    serialized += DDSA_Console.stringifyAll(sinkId, sourceId) + '\n';
+}}
+
+serialized;
+"#,
+        );
+        let script = compile_script(&mut rt.v8_handle_scope(), &script).unwrap();
+        let res = rt
+            .scoped_execute(&script, |sc, value| value.to_rust_string_lossy(sc), None)
+            .unwrap();
+        let lines = res.lines().collect::<Vec<_>>();
+        assert_eq!(lines[0], format!("{sql_identifier} {request_param}"));
+        assert_eq!(lines[1], format!("{method_call} {request_param}"));
+    }
 }
 
 #[cfg(test)]
