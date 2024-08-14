@@ -40,8 +40,8 @@ fn get_config_file(path: &str) -> Result<Option<File>> {
 // If there is an error reading the file, we return a failure
 pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
     match get_config_file(path) {
-        Ok(file_opt) => match file_opt {
-            Some(mut file) => {
+        Ok(file_opt) => {
+            if let Some(mut file) = file_opt {
                 let mut contents = String::new();
 
                 let size_read = file
@@ -51,10 +51,10 @@ pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
                     return Err(anyhow!("the config file is empty"));
                 }
                 parse_config_file(&contents).map(|c| Some(c))
-                }
+            } else {
+                Ok(None)
             }
-            None => Ok(None),
-        },
+        }
         Err(e) => Err(e),
     }
 }
@@ -62,8 +62,8 @@ pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
 // Read the config file in base64
 pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
     match get_config_file(path) {
-        Ok(file_opt) => match file_opt {
-            Some(mut file) => {
+        Ok(file_opt) => {
+            if let Some(mut file) = file_opt {
                 let mut contents = String::new();
 
                 let size_read = file
@@ -73,9 +73,10 @@ pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
                     return Err(anyhow!("the config file is empty"));
                 }
                 Ok(Some(encode_base64_string(contents)))
+            } else {
+                Ok(None)
             }
-            None => Ok(None),
-        },
+        }
         Err(e) => Err(e),
     }
 }
