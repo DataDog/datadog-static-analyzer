@@ -44,7 +44,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         | Language::Bash => {
             vec!["#no-dd-sa", "#datadog-disable"]
         }
-        Language::JavaScript | Language::TypeScript => {
+        Language::JavaScript | Language::TypeScript | Language::Apex => {
             vec![
                 "//no-dd-sa",
                 "/*no-dd-sa",

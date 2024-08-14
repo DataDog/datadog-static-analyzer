@@ -56,6 +56,8 @@ pub enum Language {
     PHP,
     #[serde(rename = "MARKDOWN")]
     Markdown,
+    #[serde(rename = "APEX")]
+    Apex,
 }
 
 #[allow(dead_code)]
@@ -78,6 +80,7 @@ pub static ALL_LANGUAGES: &[Language] = &[
     Language::Bash,
     Language::PHP,
     Language::Markdown,
+    Language::Apex,
 ];
 
 impl fmt::Display for Language {
@@ -101,6 +104,7 @@ impl fmt::Display for Language {
             Self::Bash => "bash",
             Self::PHP => "php",
             Self::Markdown => "markdown",
+            Self::Apex => "apex",
         };
         write!(f, "{s}")
     }
