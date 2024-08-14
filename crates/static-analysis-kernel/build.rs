@@ -214,6 +214,15 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
+        TreeSitterProject {
+            name: "tree-sitter-apex".to_string(),
+            compilation_unit: "tree-sitter-apex".to_string(),
+            repository: "https://github.com/aheber/tree-sitter-sfapex".to_string(),
+            build_dir: "apex/src".into(),
+            commit_hash: "9fe5d1fbfd75c11ba48a32db27ac0ed5da57ec78".to_string(),
+            files: vec!["parser.c".to_string()],
+            cpp: false,
+        },
     ];
 
     // For each project:
