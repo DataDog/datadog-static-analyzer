@@ -8,6 +8,51 @@ const { op_java_get_bin_expr_operator } = Deno.core.ops;
 
 /**
  * A graph describing the flow of variables within a single method.
+ *
+ * # Limitations
+ * This graph cuts numerous corners in the interest of implementation simplicity:
+ *
+ * ## Block scoping
+ * Block scoping is unsupported.
+ * For example:
+ * ```java
+ * int someVariable = 123;
+ * if (shouldProceed) {
+ *     int someVariable = 456;
+ *     System.out.println(value);
+ *     someVariable = 789;
+ * }
+ * System.out.println(someVariable); // At this point, we'll think `someVariable` is 789.
+ * ```
+ * ## Name resolution
+ * Name resolution is unsupported. All identifiers are treated equally.
+ *
+ * ## Type resolution
+ * Type resolution is unsupported.
+ *
+ * ## Control Flow
+ * Mutually exclusive branches are not treated as such -- rather, they are treated as if they are sequential.
+ * For example:
+ * ```java
+ * String query = "";
+ * if (valid) {
+ *     query = taintedData;
+ * } else {
+ *     query = "safe";
+ * }
+ * ```
+ * We effectively treat the above program as:
+ * ```java
+ * String query = "";
+ * {
+ *     query = taintedData;
+ * }
+ * {
+ *     query = "safe";
+ * }
+ * ```
+ * NB: In the future, we will handle this by reconciling and merging variable definitions at
+ * the relevant control flow merge points using a simplified approach inspired by static single assignment (SSA) phi nodes.
  */
 export class MethodFlow {
     /**
