@@ -552,6 +552,33 @@ strict digraph full {
         );
     }
 
+    #[test]
+    fn template_expr() {
+        // Only `STR` and `FMT` templates are currently handled.
+        assert_digraph!(
+            // language=java
+            r#"
+void method() {
+    STR."SELECT * FROM users where username='\{var_A}';";
+    FMT."SELECT * FROM users where username='\{var_B}';";
+    OTHER."SELECT * FROM users where username='\{var_C}';";
+}
+"#,
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    var_B
+    template_1 [text="*",line=3,cstkind=template_expression]
+    template_2 [text="*",line=4,cstkind=template_expression]
+
+    template_2 -> var_B [kind=dependence]
+    template_1 -> var_A [kind=dependence]
+}
+"#
+        );
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // Miscellaneous
     ///////////////////////////////////////////////////////////////////////////

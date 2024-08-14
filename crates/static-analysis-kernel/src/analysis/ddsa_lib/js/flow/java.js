@@ -118,6 +118,9 @@ export class MethodFlow {
             case "parenthesized_expression":
                 this.visitParensExpr(node);
                 break;
+            case "template_expression":
+                this.visitTemplateExpr(node);
+                break;
 
             // Statements
             case "block":
@@ -597,6 +600,51 @@ export class MethodFlow {
                 this.visit(child);
                 this.propagateLastTaint(node);
                 break;
+            }
+        }
+    }
+
+    /**
+     * Visits a `template_expression`.
+     * ```java
+     * String query = STR."SELECT * FROM users where username='\{userInput}'";
+     * //             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (template_expression template_processor: (identifier) template_argument: (string_literal))
+     * ```
+     *
+     * @param {TreeSitterNode} node
+     */
+    visitTemplateExpr(node) {
+        const children = ddsa.getChildren(node);
+        const processorIdx = findFieldIndex(children, 0, "template_processor");
+
+        // To be conservative, we currently only attempt to parse `STR` and `FMT`.
+        const processor = children[processorIdx];
+        switch (processor.text) {
+            case "STR":
+            case "FMT":
+                break;
+            default:
+                return;
+        }
+
+        const templateArgIdx = findFieldIndex(children, processorIdx + 1, "template_argument");
+        const templateArg = children[templateArgIdx];
+
+        const stringLitChildren = ddsa.getChildren(templateArg);
+        // (string_literal [(string_fragment) (string_interpolation (_))]*)
+        for (const stringLitChild of stringLitChildren) {
+            if (stringLitChild.cstType === "string_interpolation") {
+                // (string_interpolation (_))
+                const interChildren = ddsa.getChildren(stringLitChild);
+                for (const child of interChildren) {
+                    if (!isCommentNode(child)) {
+                        this.visit(child);
+                        this.propagateLastTaint(node);
+                    }
+                }
             }
         }
     }
