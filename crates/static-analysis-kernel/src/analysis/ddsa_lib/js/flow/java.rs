@@ -781,6 +781,28 @@ strict digraph full {
         );
     }
 
+    /// `lambda_expression` nodes are parsed but not analyzed.
+    #[test]
+    fn lambda_expression_unsupported() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String var_A = ((Supplier<String>) () -> var_B).get();
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    var_A
+    methodInvocation [text="*",cstkind=method_invocation]
+
+    var_A -> methodInvocation [kind=assignment]
+}
+"#
+        );
+    }
+
     /// Lexical scopes are not supported.
     #[test]
     fn variable_scoping_unsupported() {

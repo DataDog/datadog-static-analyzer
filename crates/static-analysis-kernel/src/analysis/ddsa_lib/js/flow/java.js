@@ -103,6 +103,9 @@ export class MethodFlow {
             case "identifier":
                 this.visitIdentifier(node);
                 break;
+            case "lambda_expression":
+                this.visitLambdaExpr(node);
+                break;
             case "method_invocation":
                 this.visitMethodCall(node);
                 break;
@@ -477,6 +480,23 @@ export class MethodFlow {
      */
     visitLiteral(node) {
         // [simplification]: We currently don't utilize techniques like constant propagation, so literals are ignored.
+    }
+
+    /**
+     * Visits a `lambda_expression`.
+     * ```java
+     *     example_01.forEach((v) -> v + "!");
+     * //                     ^^^^^^^^^^^^^^
+     *     example_02 = ((Supplier<String>) () -> { return "abc"; }).get();
+     * //                                   ^^^^^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (lambda_expression parameters: (_) body: (_))
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitLambdaExpr(node) {
+        // [simplification]: Ignore this node
     }
 
     /**
