@@ -50,7 +50,7 @@ pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
                 if size_read == 0 {
                     return Err(anyhow!("the config file is empty"));
                 }
-                parse_config_file(&contents).map(|c| Some(c))
+                parse_config_file(&contents).map(Some)
             } else {
                 Ok(None)
             }
