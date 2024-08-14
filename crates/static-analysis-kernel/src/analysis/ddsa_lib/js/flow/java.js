@@ -109,6 +109,9 @@ export class MethodFlow {
             case "method_invocation":
                 this.visitMethodCall(node);
                 break;
+            case "method_reference":
+                this.visitMethodRefExpr(node);
+                break;
 
             // Statements
             case "block":
@@ -534,6 +537,21 @@ export class MethodFlow {
         // [simplification]: Propagate tainted arguments as if they _always_ flow through into the return value
         // of the method (this is clearly not always the case).
         this.propagateLastTaint(node);
+    }
+
+    /**
+     * Visits a `method_reference`.
+     * ```java
+     *     example_01.forEach(System.out::println);
+     * //                     ^^^^^^^^^^^^^^^^^^^
+     * ```
+     * ```
+     * (method_reference (_)+)
+     * ```
+     * @param {TreeSitterNode} node
+     */
+    visitMethodRefExpr(node) {
+        // [simplification]: Ignore this node
     }
 
     // Statements
