@@ -228,7 +228,7 @@ fn main() {
             compilation_unit: "tree-sitter-r".to_string(),
             repository: "https://github.com/r-lib/tree-sitter-r".to_string(),
             build_dir: "src".into(),
-            commit_hash: "b1e211f52ad8f8e1e182bbbcc16dcd5e3688eb7d".to_string(),
+            commit_hash: "369d20ff5d9fced274d3065b792951b23981b63d".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
