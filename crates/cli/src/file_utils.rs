@@ -34,6 +34,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Markdown, &["md"]),
     (Language::Apex, &["cls"]),
     (Language::R, &["r"]),
+    (Language::SQL, &["sql"]),
 ];
 
 static FILE_EXACT_MATCH_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
@@ -704,6 +705,7 @@ mod tests {
         extensions_per_languages.insert(Language::Markdown, 1);
         extensions_per_languages.insert(Language::Apex, 1);
         extensions_per_languages.insert(Language::R, 1);
+        extensions_per_languages.insert(Language::SQL, 1);
 
         for (l, e) in extensions_per_languages {
             assert_eq!(

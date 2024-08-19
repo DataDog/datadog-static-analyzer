@@ -232,6 +232,15 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
+        TreeSitterProject {
+            name: "tree-sitter-sql".to_string(),
+            compilation_unit: "tree-sitter-sql".to_string(),
+            repository: "https://github.com/DerekStride/tree-sitter-sql".to_string(),
+            build_dir: "src".into(),
+            commit_hash: "c67ecbd37d8d12f22e4cc7138afd14bc20253e10".to_string(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
+        },
     ];
 
     // For each project:
