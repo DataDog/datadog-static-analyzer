@@ -77,6 +77,14 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         Language::Markdown => {
             vec!["<!--no-dd-sa", "<!--datadog-disable"]
         }
+        Language::SQL => {
+            vec![
+                "--no-dd-sa",
+                "--datadog-disable",
+                "/*no-dd-sa",
+                "/*datadog-disable",
+            ]
+        }
     };
     let mut ignore_file_all_rules: bool = false;
     let mut rules_to_ignore: Vec<String> = vec![];

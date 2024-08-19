@@ -29,6 +29,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         fn tree_sitter_markdown() -> tree_sitter::Language;
         fn tree_sitter_apex() -> tree_sitter::Language;
         fn tree_sitter_r() -> tree_sitter::Language;
+        fn tree_sitter_sql() -> tree_sitter::Language;
     }
 
     match language {
@@ -52,6 +53,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Markdown => unsafe { tree_sitter_markdown() },
         Language::Apex => unsafe { tree_sitter_apex() },
         Language::R => unsafe { tree_sitter_r() },
+        Language::SQL => unsafe { tree_sitter_sql() },
     }
 }
 
@@ -632,6 +634,18 @@ x <- 1
 print("Hello, World!")
 "#;
         let t = get_tree(source_code, &Language::R);
+        assert!(t.is_some());
+        let t = t.unwrap();
+        assert!(!t.root_node().has_error());
+        assert_eq!("program", t.root_node().kind());
+    }
+
+    #[test]
+    fn test_sql_get_tree() {
+        let source_code = r#"
+SELECT * FROM table WHERE column = 'value';
+"#;
+        let t = get_tree(source_code, &Language::SQL);
         assert!(t.is_some());
         let t = t.unwrap();
         assert!(!t.root_node().has_error());
