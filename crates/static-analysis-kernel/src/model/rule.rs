@@ -5,7 +5,6 @@ use base64::Engine;
 use crate::analysis::tree_sitter::{get_query, TSQuery};
 use crate::model::rule_test::RuleTest;
 use crate::model::violation::Violation;
-use anyhow::anyhow;
 use common::model::diff_aware::DiffAware;
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
@@ -181,6 +180,23 @@ pub struct RuleInternal {
     pub tree_sitter_query: TSQuery,
 }
 
+// This error is meant to be used when we try to convert a Rule to a RuleInternal
+// It details the exact kind of error that could happen at any step during the conversion process,
+// so that we can surface more appropriate error messages to the user.
+#[derive(Debug, thiserror::Error)]
+pub enum RuleInternalError {
+    #[error("invalid base64 string: {0}")]
+    InvalidBase64(String),
+    #[error("invalid utf8 string: {0}")]
+    InvalidUtf8(#[from] std::string::FromUtf8Error),
+    #[error("invalid rule type: {0:?}")]
+    InvalidRuleType(RuleType),
+    #[error("missing tree-sitter query")]
+    MissingTreeSitterQuery,
+    #[error("invalid tree-sitter query: {0}")]
+    InvalidTreeSitterQuery(#[from] Box<tree_sitter::QueryError>),
+}
+
 impl DiffAware for Rule {
     /// Produce a string that is used to get the config_hash. The generated string should change
     /// if we think that the rules change and may trigger new results.
@@ -214,39 +230,49 @@ impl Rule {
         }
     }
 
-    fn decode_description(&self) -> anyhow::Result<Option<String>> {
-        self.description_base64
-            .as_ref()
-            .map(|s| {
-                let bytes = general_purpose::STANDARD.decode(s)?;
-                Ok(String::from_utf8(bytes)?)
-            })
-            .transpose()
+    fn decode_description(&self) -> Result<Option<String>, RuleInternalError> {
+        self.description_base64.as_ref().map_or(Ok(None), |s| {
+            let bytes = general_purpose::STANDARD
+                .decode(s)
+                .map_err(|e| RuleInternalError::InvalidBase64(e.to_string()))?;
+            Ok(Some(String::from_utf8(bytes)?))
+        })
     }
 
     // convert the rule to rule internal
-    pub fn to_rule_internal(&self) -> anyhow::Result<RuleInternal> {
+    pub fn to_rule_internal(&self) -> Result<RuleInternal, RuleInternalError> {
         if self.rule_type != RuleType::TreeSitterQuery {
-            return Err(anyhow!("invalid rule type: {:?}", &self.rule_type));
+            return Err(RuleInternalError::InvalidRuleType(self.rule_type));
         }
-        let description = self
-            .decode_description()
-            .unwrap_or_else(|_| Some("invalid description".to_string()));
-        let code = String::from_utf8(general_purpose::STANDARD.decode(self.code_base64.clone())?)?;
+        let description = self.decode_description()?;
+        let code = String::from_utf8(
+            general_purpose::STANDARD
+                .decode(self.code_base64.clone())
+                .map_err(|e| RuleInternalError::InvalidBase64(e.to_string()))?,
+        )?;
         let short_description = self
             .short_description_base64
             .as_ref()
-            .map(|s| anyhow::Ok(String::from_utf8(general_purpose::STANDARD.decode(s)?)?))
+            .map(|s| -> Result<String, RuleInternalError> {
+                Ok(String::from_utf8(
+                    general_purpose::STANDARD
+                        .decode(s)
+                        .map_err(|e| RuleInternalError::InvalidBase64(e.to_string()))?,
+                )?)
+            })
             .transpose()?;
 
         let tree_sitter_query = String::from_utf8(
-            general_purpose::STANDARD.decode(
-                self.tree_sitter_query_base64
-                    .as_ref()
-                    .ok_or_else(|| anyhow!("tree sitter query is empty"))?,
-            )?,
+            general_purpose::STANDARD
+                .decode(
+                    self.tree_sitter_query_base64
+                        .as_ref()
+                        .ok_or(RuleInternalError::MissingTreeSitterQuery)?,
+                )
+                .map_err(|e| RuleInternalError::InvalidBase64(e.to_string()))?,
         )?;
-        let tree_sitter_query = get_query(&tree_sitter_query, &self.language)?;
+        let tree_sitter_query = get_query(&tree_sitter_query, &self.language)
+            .map_err(|e| RuleInternalError::InvalidTreeSitterQuery(Box::new(e)))?;
 
         Ok(RuleInternal {
             name: self.name.clone(),
