@@ -1,3 +1,5 @@
+// when a rule failed to parse
+pub const ERROR_PARSING_RULE: &str = "error-parsing-rule";
 // when a rule is not base64
 pub const ERROR_DECODING_BASE64: &str = "error-decoding-base64";
 // when the code is not base64

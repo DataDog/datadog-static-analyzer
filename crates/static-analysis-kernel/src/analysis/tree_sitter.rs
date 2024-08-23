@@ -1,6 +1,5 @@
 use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
 use crate::model::common::Language;
-use anyhow::Result;
 use common::model::position::Position;
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -68,9 +67,12 @@ pub fn get_tree(code: &str, language: &Language) -> Option<tree_sitter::Tree> {
 }
 
 // build the query from tree-sitter
-pub fn get_query(query_code: &str, language: &Language) -> Result<TSQuery> {
+pub fn get_query(
+    query_code: &str,
+    language: &Language,
+) -> Result<TSQuery, tree_sitter::QueryError> {
     let tree_sitter_language = get_tree_sitter_language(language);
-    TSQuery::try_new(&tree_sitter_language, query_code).map_err(anyhow::Error::new)
+    TSQuery::try_new(&tree_sitter_language, query_code)
 }
 
 /// A wrapper around a [`tree_sitter::Query`].
@@ -84,7 +86,7 @@ impl TSQuery {
     pub fn try_new(
         language: &tree_sitter::Language,
         source: &str,
-    ) -> std::result::Result<Self, tree_sitter::QueryError> {
+    ) -> Result<Self, tree_sitter::QueryError> {
         let query = tree_sitter::Query::new(language, source)?;
         let capture_names = Self::build_cache(&query);
         Ok(Self {

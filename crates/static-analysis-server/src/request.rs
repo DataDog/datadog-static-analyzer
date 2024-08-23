@@ -1,6 +1,7 @@
 use crate::constants::{
     ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
     ERROR_CONFIGURATION_NOT_BASE64, ERROR_COULD_NOT_PARSE_CONFIGURATION, ERROR_DECODING_BASE64,
+    ERROR_PARSING_RULE,
 };
 use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
@@ -8,7 +9,7 @@ use crate::model::violation::violation_to_server;
 use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::{analyze, DEFAULT_JS_RUNTIME};
 use kernel::config_file::parse_config_file;
-use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleSeverity};
+use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleInternalError, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
 use std::sync::Arc;
@@ -112,7 +113,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     }
 
     // Convert the rules from the server into internal rules
-    let rules: Result<Vec<RuleInternal>, anyhow::Error> = server_rules_to_rules
+    let rules: Result<Vec<RuleInternal>, RuleInternalError> = server_rules_to_rules
         .iter()
         .map(|r| {
             let rule_internal = r.to_rule_internal();
@@ -124,12 +125,26 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
             }
             rule_internal
         })
-        .collect::<Result<Vec<RuleInternal>, anyhow::Error>>();
-    let Ok(rules) = rules else {
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![ERROR_DECODING_BASE64.to_string()],
-        };
+        .collect();
+
+    let rules = match rules {
+        Ok(rules) => rules,
+        Err(e) => match e {
+            RuleInternalError::InvalidBase64(_) | RuleInternalError::InvalidUtf8(_) => {
+                return AnalysisResponse {
+                    rule_responses: vec![],
+                    errors: vec![ERROR_DECODING_BASE64.to_string()],
+                };
+            }
+            RuleInternalError::InvalidRuleType(_)
+            | RuleInternalError::MissingTreeSitterQuery
+            | RuleInternalError::InvalidTreeSitterQuery(_) => {
+                return AnalysisResponse {
+                    rule_responses: vec![],
+                    errors: vec![ERROR_PARSING_RULE.to_string()],
+                };
+            }
+        },
     };
 
     // let's try to decode the code
@@ -287,7 +302,7 @@ mod tests {
             ]
         };
         let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
+        assert!(response.rule_responses.is_empty());
         assert_eq!(
             &ERROR_CHECKSUM_MISMATCH.to_string(),
             response.errors.get(0).unwrap()
@@ -360,6 +375,41 @@ mod tests {
         assert_eq!(0, response.rule_responses.len());
         assert_eq!(
             &ERROR_DECODING_BASE64.to_string(),
+            response.errors.get(0).unwrap()
+        );
+    }
+
+    #[test]
+    fn test_request_invalid_rule_tree_sitter_query() {
+        let request = AnalysisRequest {
+            filename: "myfile.rb".to_string(),
+            language: Language::Ruby,
+            file_encoding: "utf-8".to_string(),
+            code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
+            configuration_base64: None,
+            options: None,
+            rules: vec![
+                ServerRule{
+                    name: "myrule".to_string(),
+                    short_description_base64: None,
+                    description_base64: None,
+                    category: None,
+                    severity: None,
+                    language: Language::Ruby,
+                    rule_type: RuleType::TreeSitterQuery,
+                    entity_checked: None,
+                    code_base64: "ZnVuY3Rpb24gdmlzaXQoKSB7fQ==".to_string(),
+                    checksum: Some("1a1dd51c47738a19b073a20ffc16c1eb816a4a6ed05ffaa53c19db0caf036c0c".to_string()),
+                    pattern: None,
+                    tree_sitter_query_base64: Some("KGJpbmFyeQogICAgXwogICAgIj1+IiBAb3AKICAgIHJpZ2h0OiAocmVnZXggCiAgICAgICAgKHN0cmluZ19jb250ZW50KSBAc3RyCiAgICApIEByZWdleAogICAgKCNub3QtbWF0Y2g/IEBzdHIgIi9bLltcXSgpe31cXF4kfCorP10vIikKKQ==".to_string()),
+                    arguments: vec![],
+                }
+            ],
+        };
+        let response = process_analysis_request(request);
+        assert_eq!(0, response.rule_responses.len());
+        assert_eq!(
+            &ERROR_PARSING_RULE.to_string(),
             response.errors.get(0).unwrap()
         );
     }
