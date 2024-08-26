@@ -128,7 +128,10 @@ pub fn get_files(
     };
 
     for directory_to_walk in directories_to_walk {
-        for entry in WalkDir::new(directory_to_walk.as_str()) {
+        for entry in WalkDir::new(directory_to_walk.as_str())
+            .follow_links(false)
+            .follow_root_links(true)
+        {
             let dir_entry = entry?;
             let entry = dir_entry.path();
 
