@@ -267,3 +267,29 @@ export function _findTaintFlows(adjList, startVid, isForwardFlow) {
 
     return flows;
 }
+
+/**
+ * Transposes a digraph.
+ * @param {AdjacencyList} adjList
+ * @returns {AdjacencyList}
+ */
+export function transpose(adjList) {
+    /** @type {AdjacencyList} */
+    const transposed = new Map();
+
+    for (const [vid, edgeList] of adjList.entries()) {
+        for (const edge of edgeList) {
+            const target = getEdgeTarget(edge);
+            const kind = getEdgeKind(edge);
+            let targetEdgeList = transposed.get(target);
+            if (targetEdgeList === undefined) {
+                targetEdgeList = [];
+                transposed.set(target, targetEdgeList);
+            }
+            targetEdgeList.push(makeEdge(vid, kind));
+        }
+    }
+
+    return transposed;
+}
+

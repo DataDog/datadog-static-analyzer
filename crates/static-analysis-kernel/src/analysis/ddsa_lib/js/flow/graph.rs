@@ -738,6 +738,8 @@ graph.adjacencyList;
     struct JsGraphs {
         /// The entire graph with all nodes.
         pub full: Digraph,
+        /// The transposed version of `full`.
+        pub full_transposed: Digraph,
     }
 
     /// Builds a JavaScript `Digraph` from the provided `reference` and then deserializes it to
@@ -745,7 +747,11 @@ graph.adjacencyList;
     fn construct_js_graphs(reference: &str) -> JsGraphs {
         let mut rt = JsRuntime::try_new().unwrap();
         let reference_graph = graphviz_rust::parse(reference).unwrap();
-        let js_script = generate_graph_creation_js(&reference_graph);
+        let mut js_script = generate_graph_creation_js(&reference_graph);
+        // language=javascript
+        js_script += "\
+[graph.adjacencyList, transpose(graph.adjacencyList)];
+";
         let js_script = compile_script(&mut rt.v8_handle_scope(), &js_script).unwrap();
 
         let vertex_transformer = |node: &dot_structures::Node| -> dot_structures::Node {
@@ -754,20 +760,32 @@ graph.adjacencyList;
             vertex.to_dot()
         };
 
-        let full = rt
+        let (full, full_transposed) = rt
             .scoped_execute(
                 &js_script,
                 |sc, val| {
-                    let full = v8::Local::<v8::Map>::try_from(val).unwrap();
+                    let arr = v8::Local::<v8::Array>::try_from(val).unwrap();
+                    let full =
+                        v8::Local::<v8::Map>::try_from(arr.get_index(sc, 0).unwrap()).unwrap();
                     let full = V8DotGraph::new(sc, full);
-                    full.to_dot("full", vertex_transformer)
+                    let full_transposed =
+                        v8::Local::<v8::Map>::try_from(arr.get_index(sc, 1).unwrap()).unwrap();
+                    let full_transposed = V8DotGraph::new(sc, full_transposed);
+                    (
+                        full.to_dot("full", vertex_transformer),
+                        full_transposed.to_dot("full_transposed", vertex_transformer),
+                    )
                 },
                 None,
             )
             .unwrap();
 
         let full = Digraph::new(full);
-        JsGraphs { full }
+        let full_transposed = Digraph::new(full_transposed);
+        JsGraphs {
+            full,
+            full_transposed,
+        }
     }
 
     /// Constructs a [`dot_structures::Graph`] and casts it to a `Digraph`.
@@ -845,7 +863,7 @@ strict digraph {
 strict digraph { }
         "#;
 
-        let JsGraphs { full } = construct_js_graphs(attempted_graph);
+        let JsGraphs { full, .. } = construct_js_graphs(attempted_graph);
         assert_eq!(full, dot_graph(expected_graph));
     }
 
@@ -865,7 +883,7 @@ strict digraph {
         "#;
         let expected_graph = original_graph;
 
-        let JsGraphs { full } = construct_js_graphs(original_graph);
+        let JsGraphs { full, .. } = construct_js_graphs(original_graph);
         assert_eq!(full, dot_graph(expected_graph));
     }
 
@@ -884,7 +902,7 @@ strict digraph {
         "#;
         let expected_graph = original_graph;
 
-        let JsGraphs { full } = construct_js_graphs(original_graph);
+        let JsGraphs { full, .. } = construct_js_graphs(original_graph);
         assert_eq!(full, dot_graph(expected_graph));
     }
 
@@ -924,5 +942,37 @@ serialized;
 
         let expected = vec!["[1,2,3,4]", "[1,2,5,6,7,9]", "[1,2,5,6,8,9]"];
         assert_eq!(js_flows, expected);
+    }
+
+    /// The graph can be transposed.
+    #[test]
+    fn graph_transpose() {
+        // language=dot
+        let original_graph = r#"
+strict digraph {
+    v_1
+    v_2
+    v_3
+
+    v_2 -> v_3 [kind=assignment]
+    v_1 -> v_3 [kind=dependence]
+    v_1 -> v_2 [kind=dependence]
+}
+        "#;
+        let expected_graph = r#"
+strict digraph {
+    v_1
+    v_2
+    v_3
+
+    v_3 -> v_2 [kind=assignment]
+    v_3 -> v_1 [kind=dependence]
+    v_2 -> v_1 [kind=dependence]
+}
+        "#;
+        let JsGraphs {
+            full_transposed, ..
+        } = construct_js_graphs(original_graph);
+        assert_eq!(full_transposed, dot_graph(expected_graph));
     }
 }
