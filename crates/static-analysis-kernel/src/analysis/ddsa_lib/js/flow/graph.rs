@@ -2,6 +2,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::analysis::ddsa_lib::bridge::TsNodeBridge;
+use crate::analysis::ddsa_lib::test_utils::TsTree;
 use deno_core::v8;
 use graphviz_rust::dot_structures;
 use std::borrow::{Borrow, Cow};
@@ -108,6 +110,11 @@ fn digraph_stmts(graph: &dot_structures::Graph) -> &[dot_structures::Stmt] {
 
 // DOT attribute keys
 const KIND: &str = "kind";
+const TEXT: &str = "text";
+const LINE: &str = "line";
+const COL: &str = "col";
+const CST_KIND: &str = "cstkind";
+const NODE_ATTRS: &[&str] = &[TEXT, LINE, COL, CST_KIND];
 
 /// A graph edge storing a target [`VertexId`] and an [`EdgeKind`].
 ///
@@ -183,6 +190,13 @@ impl EdgeKind {
 /// A [`v8::Number`] used to store an id of a vertex in a [`Digraph`].
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct VertexId(u32);
+
+impl VertexId {
+    /// Returns the internal node id for this vertex (a [`ddsa_lib::common::NodeId`]).
+    pub fn internal_id(&self) -> u32 {
+        self.0
+    }
+}
 
 impl std::fmt::Display for VertexId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -312,6 +326,280 @@ impl V8DotGraph {
             strict: true,
             stmts: [vertices, edges].concat(),
         }
+    }
+}
+
+/// Creates a new `Digraph` from the provided [DOT Language] graph using a small DSL that
+/// allows CST nodes to be searched for/specified succinctly. If provided, `root_node` will constrain
+/// the search to the provided CST node and its children.
+///
+/// # Specifying Vertices
+/// CST nodes are defined by specifying attributes that identify exactly one node within the syntax tree.
+/// * `text`: an exact string match for the node's text, or `*` for any text _(default: <the DOT-specified node id>)_.
+/// * `line`: an absolute line number for where the CST node is located in the source text.
+/// * `col`: an absolute column number for where the CST node is located in the source text.
+/// * `cstkind`: a CST node type for the node, or `*` for any type _(default: `identifier`)_.
+///
+/// For example, the following two are equivalent:
+/// ```dot
+/// strict digraph {
+///     A1 [text=var_01,line=3]
+///     A2 [text=var_01,line=5,col=22]
+///     var_02
+///     1234 [cstkind="*"]
+///     9876 [cstkind=decimal_integer_literal]
+///
+///     A2 -> 9876 [kind=assignment]
+///     A1 -> 1234 [kind=assignment]
+///     var_02 -> A1 [kind=dependence]
+/// }
+/// // Equivalent:
+/// strict digraph {
+///     A1 [text=var_01,line=3,cstkind=identifier]
+///     A2 [text=var_01,line=5,col=22,cstkind=identifier]
+///     var_02 [text=var_02,cstkind=identifier]
+///     1234 [text=1234,cstkind="*"]
+///     9876 [text=9876,cstkind=decimal_integer_literal]
+///
+///     A2 -> 9876 [kind=assignment]
+///     A1 -> 1234 [kind=assignment]
+///     var_02 -> A1 [kind=dependence]
+/// }
+/// ```
+/// [DOT Language]: https://graphviz.org/doc/info/lang.html
+///
+/// # Panics
+/// Panics if any configuration is not as-expected or if any digraph CST node does not have
+/// exactly 1 matching tree-sitter node.
+pub fn cst_dot_digraph(
+    dot: &str,
+    ts_tree: &TsTree,
+    root_node: Option<tree_sitter::Node>,
+) -> Digraph {
+    use dot_structures::*;
+
+    let graph = graphviz_rust::parse(dot).unwrap();
+    let stmts = digraph_stmts(&graph);
+
+    let tree = ts_tree.tree();
+    let candidates = TsTree::preorder_nodes(root_node.unwrap_or(tree.root_node()))
+        .iter()
+        .map(|&node| LocatedNode::new_cst(node, ts_tree.text(node)))
+        .collect::<Vec<_>>();
+
+    // The `String` in the tuple is the original ID of the vertex (as specified in the DOT).
+    // Because we normalize all vertices to have a canonical vertex id, we use the original as a key
+    // to map it to its canonical form.
+    let located: Vec<(LocatedNode, String)> = stmts
+        .iter()
+        .filter_map(|stmt| {
+            if let Stmt::Node(node) = stmt {
+                let attrs = NodeSearchAttrs::from_vertex(node);
+                let original_text = id_str(&node.id.0).to_string();
+                let located = locate_node(attrs, &candidates);
+                Some((located, original_text))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let edges = stmts
+        .iter()
+        .filter_map(|stmt| {
+            if let Stmt::Edge(edge) = stmt {
+                let EdgeTy::Pair(Vertex::N(source), Vertex::N(target)) = &edge.ty else {
+                    panic!("edge should be between two `node`s")
+                };
+                assert_eq!(id_str(&edge.attributes[0].0), KIND);
+                let kind = EdgeKind::try_from(&*id_str(&edge.attributes[0].1)).unwrap();
+                assert_eq!(edge.attributes.len(), 1, "edge should only have 1 attr");
+
+                // Locate the node based on the original id:
+                let source_id = id_str(&source.0);
+                let source = located.iter().find(|&(_, id)| &source_id == id);
+                let (source, _) = source
+                    .unwrap_or_else(|| panic!("edge-declared node `{source_id}` should exist"));
+                let target_id = id_str(&target.0);
+                let target = located.iter().find(|&(_, id)| &target_id == id);
+                let (target, _) = target
+                    .unwrap_or_else(|| panic!("edge-declared node `{target_id}` should exist"));
+                let located = LocatedEdge {
+                    source: *source,
+                    target: *target,
+                    kind,
+                };
+                Some(Stmt::Edge(Edge::from(located)))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+
+    let nodes = located
+        .into_iter()
+        .map(|(located, _)| Stmt::Node(Node::from(located)))
+        .collect::<Vec<_>>();
+
+    Digraph::new(Graph::DiGraph {
+        id: Id::Plain("cst_dot".to_string()),
+        strict: true,
+        stmts: [nodes, edges].concat(),
+    })
+}
+
+/// Converts a JavaScript Map<VertexId, PackedEdge[]> to a `FlowDigraph`.
+///
+/// # Panics
+/// Panics if deserialization is unsuccessful.
+pub(crate) fn cst_v8_digraph(
+    name: &str,
+    scope: &mut v8::HandleScope,
+    map: v8::Local<v8::Map>,
+    ts_tree: &TsTree,
+    bridge: &TsNodeBridge,
+) -> Digraph {
+    // Generates a `LocatedNode` from info provided by the `TsNodeBridge` and text provided by `ts_tree`.
+    let transform_vertex = |node: &dot_structures::Node| -> dot_structures::Node {
+        let vid = VertexId(id_str(&node.id.0).parse::<u32>().unwrap());
+        let raw = bridge.get_raw(vid.internal_id()).unwrap();
+        // This is only used in tests, however...
+        // Safety:
+        // Given that the `ts_tree` provided owns the underlying `tree_sitter::Tree` that
+        // the bridge's `RawTSNode`s are referencing, we know the tree is alive and that
+        // the memory is still allocated.
+        let ts_node = unsafe { raw.to_node() };
+        let located = LocatedNode::new_cst(ts_node, ts_tree.text(ts_node));
+        located.into()
+    };
+
+    let v8_dot_graph = V8DotGraph::new(scope, map);
+    Digraph::new(v8_dot_graph.to_dot(name, transform_vertex))
+}
+
+/// Searches a list of candidates to find a `LocatedNode` that matches the `NodeSearchAttrs`.
+///
+/// # Panics
+/// Panics if the number of matches is not exactly 1.
+#[rustfmt::skip]
+fn locate_node<'a>(
+    attrs: NodeSearchAttrs,
+    candidates: &[LocatedNode<'a>],
+) -> LocatedNode<'a> {
+    let mut located: Option<LocatedNode> = None;
+    for &cand in candidates {
+        if attrs.text.as_ref().map_or(true, |text| text == "*" || cand.text == text)
+            && attrs.line.map_or(true, |line| cand.line == line)
+            && attrs.col.map_or(true, |col| cand.col == col)
+            && attrs.cst_kind.as_ref().map_or(true, |ty| ty == "*" || cand.cst_type == ty)
+        {
+            if let Some(prev) = located.replace(cand) {
+                panic!("two nodes matched {:?}: ({:?}, {:?})", attrs, prev, cand);
+            }
+        }
+    }
+    located.unwrap_or_else(|| panic!("{:?} should have matched", attrs))
+}
+
+/// Search metadata to identify a vertex.
+#[derive(Debug, Clone)]
+struct NodeSearchAttrs {
+    pub text: Option<String>,
+    pub line: Option<usize>,
+    pub col: Option<usize>,
+    pub cst_kind: Option<String>,
+}
+
+impl NodeSearchAttrs {
+    /// Parses a `NodeSearchAttrs` from a `dot_structured::Node`. Panics if the node
+    /// is improperly formatted.
+    fn from_vertex(node: &dot_structures::Node) -> Self {
+        use std::str::FromStr;
+
+        let mut text: Option<String> = None;
+        let mut line: Option<usize> = None;
+        let mut col: Option<usize> = None;
+        let mut cst_kind: Option<String> = None;
+
+        for n in &node.attributes {
+            let (key, value) = (id_str(&n.0), id_str(&n.1));
+            match key.as_ref() {
+                TEXT => drop(text.insert(value.to_string())),
+                LINE => drop(line.insert(usize::from_str(&value).unwrap())),
+                COL => drop(col.insert(usize::from_str(&value).unwrap())),
+                CST_KIND => drop(cst_kind.insert(value.to_string())),
+                _ => panic!("cst node: unexpected attribute `{key}`"),
+            };
+        }
+        // Defaults
+        let _ = text.get_or_insert_with(|| id_str(&node.id.0).to_string());
+        let _ = cst_kind.get_or_insert_with(|| "identifier".to_string());
+
+        Self {
+            text,
+            line,
+            col,
+            cst_kind,
+        }
+    }
+}
+
+/// A located `tree_sitter::Node`, along with all metadata needed to construct a [`dot_structures::Node`].
+#[derive(Debug, Copy, Clone)]
+struct LocatedNode<'a> {
+    text: &'a str,
+    line: usize,
+    col: usize,
+    cst_type: &'static str,
+}
+
+/// A directed edge from a source [`LocatedNode`] to a target.
+#[derive(Debug, Copy, Clone)]
+struct LocatedEdge<'a> {
+    source: LocatedNode<'a>,
+    target: LocatedNode<'a>,
+    kind: EdgeKind,
+}
+
+impl From<LocatedEdge<'_>> for dot_structures::Edge {
+    fn from(value: LocatedEdge<'_>) -> Self {
+        use graphviz_rust::dot_generator::*;
+        use graphviz_rust::dot_structures::*;
+        edge!(
+            NodeId(encode_id(value.source.canonical_id()), None) => NodeId(encode_id(value.target.canonical_id()), None),
+            vec![attr!(KIND, value.kind.to_string())]
+        )
+    }
+}
+
+impl<'a> LocatedNode<'a> {
+    /// Constructs a new `LocatedNode` from a tree-sitter node.
+    fn new_cst(node: tree_sitter::Node<'a>, text: &'a str) -> LocatedNode<'a> {
+        Self {
+            text,
+            line: node.start_position().row + 1,
+            col: node.start_position().column + 1,
+            cst_type: node.kind(),
+        }
+    }
+
+    /// A canonical id for this node.
+    fn canonical_id(&self) -> String {
+        format!("{}:{}:{}", self.text, self.line, self.col)
+    }
+}
+
+impl From<LocatedNode<'_>> for dot_structures::Node {
+    fn from(value: LocatedNode<'_>) -> Self {
+        use dot_structures::*;
+        use graphviz_rust::dot_generator::*;
+        let attrs = vec![
+            Attribute(id!(TEXT), encode_id(value.text)),
+            attr!(LINE, value.line),
+            attr!(COL, value.col),
+            attr!(CST_KIND, value.cst_type),
+        ];
+        Node::new(NodeId(encode_id(value.canonical_id()), None), attrs)
     }
 }
 
