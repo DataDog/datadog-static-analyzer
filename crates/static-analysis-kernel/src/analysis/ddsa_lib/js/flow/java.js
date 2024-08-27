@@ -71,26 +71,19 @@ export class MethodFlow {
         this.methodDecl = methodDecl;
 
         /**
-         * As the CST is traversed, we construct an abstract state of the program. At each CST node, we track
-         * the last tainted expression node (if any), and use that to propagate the taint between nodes in the graph.
-         * This variable is thus used to allow (indirect) data passing between recursive visitor function invocations.
-         * @type {TreeSitterNode | undefined}
-         */
-        this.lastTaintSource = undefined;
-
-        /**
          * A graph of taint propagation.
          * @type {Digraph}
          */
         this.graph = new Digraph();
 
         /**
-         * A list of definitions from a variable name to its most recent value. This is stateful
-         * and is mutated as the CST is traversed.
-         *
-         * @type {Map<String, NodeId>}
+         * The traversal context
+         * @type {TraversalContext}
          */
-        this.currentDefinition = new Map();
+        this.context = {
+            lastTaintSource: undefined,
+            currentDefinition: new Map(),
+        };
 
         this.visitMethodDecl(methodDecl);
     }
@@ -1229,17 +1222,17 @@ export class MethodFlow {
     lookupIdentifier(name) {
         // A current limitation of this is that it's not scope aware, and so we effectively always
         // read from a scope stack of height 1.
-        return this.currentDefinition.get(name);
+        return this.context.currentDefinition.get(name);
     }
 
     /**
-     * Takes a {@link TreeSitterNode} out of {@link MethodFlow.lastTaintSource} (if it exists),
+     * Takes a {@link TreeSitterNode} out of {@link TraversalContext} `lastTaintSource` (if it exists),
      * leaving `undefined` in its place.
      * @returns {TreeSitterNode | undefined}
      */
     takeLastTainted() {
-        const last = this.lastTaintSource;
-        this.lastTaintSource = undefined;
+        const last = this.context.lastTaintSource;
+        this.context.lastTaintSource = undefined;
         return last;
     }
 
@@ -1247,15 +1240,15 @@ export class MethodFlow {
      * Marks the provided {@link TreeSitterNode} as the last tainted node.
      */
     markLastTainted(node) {
-        this.lastTaintSource = node;
+        this.context.lastTaintSource = node;
     }
 
     /**
-     * Propagates taint from the {@link MethodFlow.lastTaintSource} (if it exists) to the target node.
+     * Propagates taint from the {@link TraversalContext} `lastTaintSource` (if it exists) to the target node.
      * @param {TreeSitterNode} target
      */
     propagateLastTaint(target) {
-        const lastSource = this.lastTaintSource;
+        const lastSource = this.context.lastTaintSource;
         if (lastSource === undefined) {
             return;
         }
@@ -1264,7 +1257,7 @@ export class MethodFlow {
             return;
         }
         this.graph.addTypedEdge(target.id, lastSource.id, EDGE_DEPENDENCE);
-        this.lastTaintSource = target;
+        this.context.lastTaintSource = target;
     }
 
 
@@ -1280,9 +1273,21 @@ export class MethodFlow {
         if (node.cstType !== "identifier") {
             throw new Error("node must be an `identifier`");
         }
-        this.currentDefinition.set(node.text, node.id);
+        this.context.currentDefinition.set(node.text, node.id);
     }
 }
+
+/**
+ * As the CST is traversed, an implicit control flow graph (CFG) is constructed to simulate abstract states of the program.
+ * At times, this requires a CST node visitor to know information from a CST parent or CST child. This context allows for
+ * indirect data passing between recursive visitor function invocations.
+ * @typedef TraversalContext
+ *
+ * @property {TreeSitterNode | undefined} lastTaintSource The last tainted expression node (if any).
+ * This is used to propagate taint between nodes in the graph.
+ * 
+ * @property {Map<string, NodeId>} currentDefinition A list of definitions from variable names to their most recent value.
+ */
 
 /**
  * Returns the index of the first node with a matching `fieldName`, or `-1` if it doesn't exist.
