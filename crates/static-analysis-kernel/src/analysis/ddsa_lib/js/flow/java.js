@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-import { Digraph, EDGE_ASSIGNMENT, EDGE_DEPENDENCE } from "ext:ddsa_lib/flow/graph";
+import { Digraph, EDGE_ASSIGNMENT, EDGE_DEPENDENCE, vertexId } from "ext:ddsa_lib/flow/graph";
 
 const { op_java_get_bin_expr_operator } = Deno.core.ops;
 
@@ -10,10 +10,10 @@ const { op_java_get_bin_expr_operator } = Deno.core.ops;
  * A graph describing the flow of variables within a single method.
  *
  * # Limitations
- * This graph cuts numerous corners in the interest of implementation simplicity:
+ * This graph cuts corners in the interest of implementation simplicity:
  *
- * ## Block scoping
- * Block scoping is unsupported.
+ * ## Name resolution and scoping
+ * Variable scopes are unsupported.
  * For example:
  * ```java
  * int someVariable = 123;
@@ -24,35 +24,9 @@ const { op_java_get_bin_expr_operator } = Deno.core.ops;
  * }
  * System.out.println(someVariable); // At this point, we'll think `someVariable` is 789.
  * ```
- * ## Name resolution
- * Name resolution is unsupported. All identifiers are treated equally.
  *
  * ## Type resolution
  * Type resolution is unsupported.
- *
- * ## Control Flow
- * Mutually exclusive branches are not treated as such -- rather, they are treated as if they are sequential.
- * For example:
- * ```java
- * String query = "";
- * if (valid) {
- *     query = taintedData;
- * } else {
- *     query = "safe";
- * }
- * ```
- * We effectively treat the above program as:
- * ```java
- * String query = "";
- * {
- *     query = taintedData;
- * }
- * {
- *     query = "safe";
- * }
- * ```
- * NB: In the future, we will handle this by reconciling and merging variable definitions at
- * the relevant control flow merge points using a simplified approach inspired by static single assignment (SSA) phi nodes.
  */
 export class MethodFlow {
     /**
@@ -82,7 +56,8 @@ export class MethodFlow {
          */
         this.context = {
             lastTaintSource: undefined,
-            currentDefinition: new Map(),
+            scopeStack: [],
+            conditionalAncestorBlocks: 0,
         };
 
         this.visitMethodDecl(methodDecl);
@@ -359,10 +334,8 @@ export class MethodFlow {
         // [simplification]: assume the operator in this case is an `=`, making this a true assignment.
         //                   (if the operator was, e.g. `+=`, we would have a "dependence", not assignment).
         // The current definition for "name" is now `rhsExpr`.
-        this.graph.addTypedEdge(name.id, rhsExpr.id, EDGE_ASSIGNMENT);
-
-
-        this.markCurrentDefinition(name);
+        this.graph.addTypedEdge(vertexId(name), vertexId(rhsExpr), EDGE_ASSIGNMENT);
+        this.markCurrentDefinition(name.text, name);
         // Reset the current taint status.
         const _ = this.takeLastTainted();
     }
@@ -466,7 +439,7 @@ export class MethodFlow {
      * @param {TreeSitterNode} node
      */
     visitIdentifier(node) {
-        const currentDef = this.lookupIdentifier(node.text);
+        const currentDef = this.resolveVariableAt(node.text, this.context.scopeStack.length);
         // If this identifier has a known definition, create a dependence edge.
         if (currentDef !== undefined) {
             // Given the following code:
@@ -486,7 +459,7 @@ export class MethodFlow {
             // int y_2 = 20;        // L2
             // int z_1 = y_2 + 5;   // L3
             // ```
-            this.graph.addTypedEdge(node.id, currentDef, EDGE_DEPENDENCE);
+            this.graph.addTypedEdge(vertexId(node), currentDef, EDGE_DEPENDENCE);
         } else {
             // If this is a valid program and there is no known definition here, it is either that:
             // 1. We're visiting this `identifier` recursively within a variable declarator visitor.
@@ -740,16 +713,34 @@ export class MethodFlow {
      * ```
      * (block (_)*)
      * ```
+     *
+     * # Control Flow
+     * Semantically, this visitor treats the syntactic block as a CFG "scope block".
+     * If the syntactic block represents a CFG conditional block, this function should not be used. Rather,
+     * the caller must manually enter and exit the block:
+     * ```js
+     * this.enterBlock(true)
+     * // ...
+     * this.exitBlock();
+     * ```
+     *
      * @param {TreeSitterNode} node
      */
     visitBlockStmt(node) {
-        // (NB: If we supported scoping, we would enter a scope here)
+        // By default, assume a syntactic block is a scope block.
+        this.enterBlock(false);
+        this._innerVisitBlockStmt(node);
+        this.exitBlock();
+        // (Ignore the returned scope: this isn't a merge point, so no reconciliation is required).
+    }
 
-        // A block's children is a list of statements and expressions. Each should be visited in order.
-        const exprStmts = ddsa.getChildren(node);
-        this._visitExprStmtList(node, exprStmts);
-
-        // (NB: If we supported scoping, we would exit a scope here)
+    /**
+     * Visits the children of a `block` CST node.
+     * @param {TreeSitterNode} blockNode A `block` CST node.
+     */
+    _innerVisitBlockStmt(blockNode) {
+        const exprStmts = ddsa.getChildren(blockNode);
+        this._visitExprStmtList(blockNode, exprStmts);
     }
 
     /**
@@ -900,37 +891,119 @@ export class MethodFlow {
     /**
      * Visits an `if_statement`.
      * ```java
-     *     if (example_01) { }
-     * //  ^^^^^^^^^^^^^^^^^^^
+     *    if (example_01) { }
+     * // ^^^^^^^^^^^^^^^^^^^
      *    if (example_02) { } else { }
      * // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     *    if (example_03) { } else if { } else { }
+     * // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     *    if (example_04) { } else throw new Err(e)
+     * // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      * ```
      * ```
      * (if_statement
      *     condition: (parenthesized_expression)
-     *     consequence: (block)
-     *     <alternative: [(block) (if_statement)>?)
+     *     consequence: (_)
+     *     <alternative: (_)>?)
      * ```
-     *
-     * # Note
-     * [simplification]: See caveats under `Control Flow` in {@link MethodFlow}.
-     *
      * @param {TreeSitterNode} node
      */
     visitIfStmt(node) {
+        this.enterBlock(true);
+        this._innerVisitIfStmt(node);
+        this.exitBlock();
+    }
+
+    /**
+     * Implements the logic of visiting an `if_statement` without creating a control flow conditional block.
+     *
+     * This is necessary because the CST representation of an "if...else if" statement is
+     * recursive, whereas the control flow conditional blocks are vertices on the same level within the CFG:
+     * ```java
+     *    if (example_01) { } else if (e4) { }
+     * // ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * //                          ^^^^^^^^^^^
+     * ```
+     * ```
+     * (if_statement
+     *      condition: (parenthesized_expression)
+     *      consequence: (block)
+     *      alternative: (if_statement
+     *          condition: (parenthesized_expression)
+     *          consequence: (block)
+     *      )
+     * )
+     * ```
+     *
+     * This function encapsulates any recursion so that {@link MethodFlow.visitIfStmt} can be implemented sequentially.
+     *
+     * @param {TreeSitterNode} node
+     * @private
+     */
+    _innerVisitIfStmt(node) {
         const children = ddsa.getChildren(node);
         // In the `condition` field, external variables can be mutated, but this is a corner case we
         // explicitly disregard, and so we only process the `consequence`.
         ignoreMutatingField(/* condition */);
 
-        const conseqIdx = findFieldIndex(children, 1, "consequence");
-        const conseq = children[conseqIdx];
-        this.visitBlockStmt(conseq);
+        const consequentIdx = findFieldIndex(children, 1, "consequence");
+        // (_)
+        const consequent = children[consequentIdx];
+        this._innerVisitIfStmtConditionalBlock(consequent, BRANCH_TYPE_CONSEQUENT);
 
-        const altIdx = findFieldIndex(children, conseqIdx + 1, "alternative");
+        const altIdx = findFieldIndex(children, consequentIdx + 1, "alternative");
         if (altIdx !== -1) {
+            // (_)
             const alternative = children[altIdx];
-            this.visit(alternative);
+            this._innerVisitIfStmtConditionalBlock(alternative, BRANCH_TYPE_ALTERNATIVE);
+        }
+    }
+
+    /**
+     * A helper for {@link MethodFlow._innerVisitIfStmt} that implements logic to visit a CST node representing
+     * the consequent/alternative of an if statement.
+     *
+     * @param {TreeSitterNode} node
+     * @param {BranchSemantic} branchSemantic
+     * @private
+     */
+    _innerVisitIfStmtConditionalBlock(node, branchSemantic) {
+        switch (node.cstType) {
+            // A semantic "else if" (This requires recursion, so a branching block isn't entered)
+            case "if_statement": {
+                // to preserve the correct parent.
+                this._innerVisitIfStmt(node);
+                break;
+            }
+            // A conditional CFG block that happens to be a CST block.
+            case "block": {
+                this.enterBranch(branchSemantic);
+                this._innerVisitBlockStmt(node);
+                this.exitBlock();
+                break;
+            }
+            // A conditional CFG block, but not a CST block:
+            // ```java
+            // String val = "abc";
+            // if (condition) val = "123";
+            // ```
+            case "expression_statement": {
+                this.enterBranch(branchSemantic);
+                this.visitExprStmt(node);
+                this.exitBlock();
+                break;
+            }
+            // Other CST types (non-exhaustive examples below) are not handled:
+            // ```java
+            // if (condition) return 123;
+            //
+            // if (condition) {
+            //     val = "xyz";
+            // } else throw new Err(e);
+            // ```
+            default:
+                // unimplemented
+                break;
         }
     }
 
@@ -987,16 +1060,14 @@ export class MethodFlow {
             const name = declaratorChildren[nameIdx];
 
             const valueIdx = findFieldIndex(declaratorChildren, nameIdx + 1, "value");
-            if (valueIdx === -1) {
-                // A variable may not be initialized with a value.
-                continue;
+            // A variable may not be declared with a value.
+            if (valueIdx !== -1) {
+                const rhsExpr = declaratorChildren[valueIdx];
+                this.visit(rhsExpr);
+                this.graph.addTypedEdge(vertexId(name), vertexId(rhsExpr), EDGE_ASSIGNMENT);
             }
 
-            const rhsExpr = declaratorChildren[valueIdx];
-            this.visit(rhsExpr);
-
-            this.graph.addTypedEdge(name.id, rhsExpr.id, EDGE_ASSIGNMENT);
-            this.markCurrentDefinition(name);
+            this.markCurrentDefinition(name.text, name);
             // Reset the current taint status.
             const _ = this.takeLastTainted();
         }
@@ -1027,6 +1098,9 @@ export class MethodFlow {
      * @param {TreeSitterNode} node
      */
     visitMethodDecl(node) {
+        // (A method implicitly has its own scope that doesn't line up with a CST block node).
+        this.enterBlock(false);
+
         const children = ddsa.getChildren(node);
         const formalParamsIdx = findFieldIndex(children, 2, "parameters");
         const formalParams = children[formalParamsIdx];
@@ -1036,10 +1110,10 @@ export class MethodFlow {
             const paramChildren = ddsa.getChildren(param);
 
             if (param.cstType === "formal_parameter") {
-                // (formal_parameter type: (_) name: (identifier))
+                // (formal_parameter (modifiers)? type: (_) name: (identifier))
                 const nameIdx = findFieldIndex(paramChildren, 1, "name");
                 const name = paramChildren[nameIdx];
-                this.markCurrentDefinition(name);
+                this.markCurrentDefinition(name.text, name);
             } else if (param.cstType === "spread_parameter") {
                 // (spread_parameter (type_identifier) (variable_declarator))
                 const spreadParamChildren = ddsa.getChildren(param);
@@ -1049,7 +1123,7 @@ export class MethodFlow {
                         const varDeclChildren = ddsa.getChildren(paramChild);
                         const nameIdx = findFieldIndex(varDeclChildren, 0, "name");
                         const name = varDeclChildren[nameIdx];
-                        this.markCurrentDefinition(name);
+                        this.markCurrentDefinition(name.text, name);
                     }
                 }
             }
@@ -1214,15 +1288,23 @@ export class MethodFlow {
     ///////////////////////////////////////////////////////////////////////////
 
     /**
-     * Finds the most recent assignment of the given identifier, if it exists.
-     *
-     * @param {string} name
-     * @returns {NodeId | undefined}
+     * Returns the definition of a variable at the given a stack height.
+     * @param {string} identifier The variable name
+     * @param {number} stackHeight The one-based height to begin variable resolution at.
+     * @returns {VertexId | undefined}
      */
-    lookupIdentifier(name) {
-        // A current limitation of this is that it's not scope aware, and so we effectively always
-        // read from a scope stack of height 1.
-        return this.context.currentDefinition.get(name);
+    resolveVariableAt(identifier, stackHeight) {
+        if (stackHeight < 1 || stackHeight > this.context.scopeStack.length) {
+            throw new Error(`height ${stackHeight} is out of bounds`);
+        }
+        for (let i = stackHeight - 1; i >= 0; i--) {
+            const scope = this.context.scopeStack[i];
+            const value = scope.getVariable(identifier);
+            if (value !== undefined) {
+                return value;
+            }
+        }
+        return undefined;
     }
 
     /**
@@ -1256,24 +1338,266 @@ export class MethodFlow {
         if (isCommentNode(target)) {
             return;
         }
-        this.graph.addTypedEdge(target.id, lastSource.id, EDGE_DEPENDENCE);
+        this.graph.addTypedEdge(vertexId(target), vertexId(lastSource), EDGE_DEPENDENCE);
         this.context.lastTaintSource = target;
     }
 
-
+    /**
+     * Enters a new block scope.
+     * @param {boolean} isConditional
+     */
+    enterBlock(isConditional) {
+        this._enterBlockInner(isConditional, 0);
+    }
 
     /**
-     * Marks the current definition of the variable according to the incremental abstract program state
-     * that is built while traversing the CST.
-     *
-     * (The approach accuracy is subject to the caveats at the top of this document)
-     * @param {TreeSitterNode} node
+     * Enters a new block scope that represents a branch within {@link ConditionalBlock}.
+     * @param {BranchSemantic} branchSemantic
      */
-    markCurrentDefinition(node) {
-        if (node.cstType !== "identifier") {
-            throw new Error("node must be an `identifier`");
+    enterBranch(branchSemantic) {
+        this._enterBlockInner(false, branchSemantic);
+    }
+
+    /**
+     * Enters a new block scope.
+     * @param {boolean} isConditional
+     * @param {BranchSemantic} branchSemantic
+     */
+    _enterBlockInner(isConditional, branchSemantic) {
+        if (this.currentBlock()?.isConditional) {
+            this.context.conditionalAncestorBlocks += 1;
         }
-        this.context.currentDefinition.set(node.text, node.id);
+        /** @type {ScopeBlock | ConditionalBlock} */
+        let block;
+        if (isConditional) {
+            block = new ConditionalBlock();
+        } else {
+            block = new ScopeBlock();
+        }
+        block.branchSemantic = branchSemantic;
+        this.context.scopeStack.push(block);
+    }
+
+    /**
+     * Exits the current lexical scope, returning it.
+     * @returns {ScopeBlock}
+     */
+    exitBlock() {
+        /** @type {ScopeBlock} */
+        const popped = this.context.scopeStack.pop();
+        const current = this.currentBlock();
+
+        // Exiting a conditional block means that this is a merge point:
+        // Additionally, for each phi candidate, we now can determine if the branches represent exhaustive assignment.
+        if (popped.isConditional) {
+            /** @type {ConditionalBlock} */
+            const poppedBlock = popped;
+            if (poppedBlock.branchCount > 0 && poppedBlock.phiCandidates !== undefined) {
+                // Create the phi nodes and reassign definitions.
+                this._handleMergePoint(poppedBlock);
+            }
+            this.context.conditionalAncestorBlocks -= 1;
+        } else {
+            /** @type {ScopeBlock} */
+            const poppedBlock = popped;
+            // If this is a branch, perform the required accounting on the `currentBlock` phi candidates.
+            if (poppedBlock.branchSemantic !== 0) {
+                /** @type {ConditionalBlock} */
+                const currentBlock = current;
+                if (!currentBlock.isConditional) {
+                    throw new Error("CFG branch block parent must be a conditional block");
+                }
+                currentBlock.branchCount += 1;
+
+                if (poppedBlock.definitions !== undefined) {
+                    if (currentBlock.phiCandidates === undefined) {
+                        currentBlock.phiCandidates = new Map();
+                    }
+                    for (const [identifier, incomingValue] of poppedBlock.definitions.entries()) {
+                        // [simplification]
+                        // If there is no live definition of this variable, this could have been (and to simplify,
+                        // we assume that this was) a local definition that was dropped upon exiting the just-popped scope.
+                        if (this.resolveVariableAt(identifier, this.context.scopeStack.length) === undefined) {
+                            continue;
+                        }
+                        /** @type {PhiCandidate} */
+                        let candidate = currentBlock.phiCandidates.get(identifier);
+                        if (candidate === undefined) {
+                            candidate = { exhaustiveness: 0, operands: new Set() };
+                            currentBlock.phiCandidates.set(identifier, candidate);
+                        }
+                        candidate.exhaustiveness |= poppedBlock.branchSemantic;
+                        candidate.operands.add(incomingValue);
+                    }
+                }
+            } else {
+                // An immediate child of a conditional block must be a branch block. Because this isn't a branch,
+                // `current` cannot be a conditional block (thus, it must be a normal scope block). However,
+                // we may still have an ancestor (non-parent) conditional block. If so, we need to propagate
+                // assignments up to the parent so that they can be processed as phi candidates when the
+                // ancestor conditional block is exited.
+                //
+                // [simplification]
+                // NOTE: as documented on `MethodFlow`, variable lexical scoping is not supported, so there is no checking
+                // of whether these were only local assignments to variables that will be dropped.
+                if (this.context.conditionalAncestorBlocks > 0 && poppedBlock.definitions !== undefined) {
+                    for (const [identifier, vertexId] of poppedBlock.definitions) {
+                        (/** @type {ScopeBlock} */ current)._markAssignmentInner(identifier, vertexId);
+                    }
+                }
+            }
+        }
+
+        return popped;
+    }
+
+    /**
+     * Returns a reference to the current scope block.
+     * This is never `undefined` because `MethodFlow` should always have a balanced stack.
+     * @returns {ScopeBlock | ConditionalBlock}
+     */
+    currentBlock() {
+        return /** @type {ScopeBlock | ConditionalBlock} */ (this.context.scopeStack.at(-1));
+    }
+
+    /**
+     * Marks the node as the current definition of a variable.
+     *
+     * [simplification]
+     * Variable scoping is not supported. (See documentation on {@link MethodFlow}).
+     *
+     * Returns the previous assignment, if it exists.
+     * @param {string} identifier
+     * @param {Vertex} vertex
+     * @returns {VertexId | undefined}
+     */
+    markCurrentDefinition(identifier, vertex) {
+        /** @type {ScopeBlock | ConditionalBlock} */
+        let selectedScope;
+
+        // [simplification]
+        // If in a conditional block, set the definition only for the current block instead of trying
+        // to find its last-known latest definition. Without this simplification, if there are nested
+        // conditional blocks with both assignments and variable shadowing, we'd need to maintain the
+        // scope height of each conditional assignment in order to "reset" the state as we exit a scope.
+        if (this.context.conditionalAncestorBlocks > 0 ) {
+            selectedScope = this.currentBlock();
+        } else {
+            for (let i = this.context.scopeStack.length - 1; i >= 0; i--) {
+                const scope = this.context.scopeStack[i];
+                if (scope.getVariable(identifier) !== undefined) {
+                    selectedScope = scope;
+                    break;
+                }
+            }
+            selectedScope = selectedScope ?? this.currentBlock();
+        }
+        return selectedScope.markAssignment(identifier, vertex);
+    }
+
+    /**
+     * Reconciles assignments from all blocks within the provided conditional block by constructing phi nodes and
+     * re-assigning the latest definition for each variable to that phi node.
+     * @param {ConditionalBlock} block
+     */
+    _handleMergePoint(block) {
+        // `phiCandidates` will be `undefined` if there were no assignments within the conditional block.
+        if (block.phiCandidates === undefined) {
+            return;
+        }
+
+        for (const [identifier, candidate] of block.phiCandidates.entries()) {
+            const phiNode = this.graph.newPhiNode();
+            const wasExhaustive = candidate.exhaustiveness === ALL_BRANCH_TYPES && candidate.operands.size === block.branchCount;
+
+            // Construct a new phi node with operands that represent potential values this `identifier`
+            // could have, depending on the control flow up to this point.
+            //
+            // For example, for the following code:
+            // ```java
+            // int y = 9;
+            // if (condition) {
+            //     y = 5;
+            // }
+            // System.out.println(y);
+            // ```
+            //
+            // The control flow graph is the following:
+            //
+            //                         +----------+
+            //                         |  y <- 9  | (y0)
+            //                         +----------+
+            //                              |
+            //                              v
+            //                      +----------------+    B: true
+            //              +------ | if (condition) | ----------+
+            //              |       +----------------+           |
+            //              |                                   +--------+
+            //     A: false |                                   | y <- 5 | (y1)
+            //              |                                   +--------+
+            //              |       +------------+               |
+            //              +-----> | println(y) | <-------------+
+            //                      +------------+
+            //
+            // This particular example demonstrates a non-exhaustive control flow construct, so
+            // there are two categories of paths:
+            if (!wasExhaustive) {
+                // Path A:
+                // ------
+                // In the `condition == false` path, the variable mutation never happens. The first operand is
+                // the last assigned definition of the `identifier` in reference to the current scope (in this case, y1).
+                const currentDefinition = this.resolveVariableAt(identifier, this.context.scopeStack.length);
+                // [simplification]
+                // Don't handle the case where an assignment can't be matched with a corresponding previous assignment.
+                // This can happen if:
+                // * A variable outside the method is being assigned.
+                // * The assignment was for a scope-local variable that was dropped when the scope was dropped.
+                if (currentDefinition !== undefined) {
+                    phiNode.appendOperand(currentDefinition);
+                }
+            }
+
+            // Path B:
+            // ------
+            // In the `condition == true` path, the variable is mutated to equal the incoming value (y1). Here,
+            // operands will be a set containing only `y1`.
+            for (const operand of candidate.operands) {
+                phiNode.appendOperand(operand);
+            }
+            // Thus, when the program reaches:
+            //
+            // ```java
+            // System.out.println(y);
+            // ```
+            //
+            // The value of `y` will be either `y0` or `y1`.
+            // This mutual exclusion is encapsulated as a phi function, with an operand for each possibility:
+            // y2 = phi(y0, y1)
+
+            // Draw edges to operands and then reassign the current definition of `y` to this phi node (y2).
+            for (const operand of phiNode.operands) {
+                this.graph.addTypedEdge(vertexId(phiNode), operand, EDGE_DEPENDENCE);
+            }
+
+            // [simplification]
+            // Variable scoping is not supported (see documentation on `MethodFlow`).
+            // Thus, our current implementation always performs assignments as if the variable was defined
+            // in the "current" scope. However, because separate branches often mutate variables in
+            // an external scope, in order to more properly place the phi node within a scope without
+            // implementing true variable scoping, we traverse down the stack to find the scope
+            // with the most recent assignment to this variable.
+            /** @type {ScopeBlock | ConditionalBlock} */
+            let selectedScope;
+            for (let i = this.context.scopeStack.length - 1; i >= 0; i--) {
+                const scope = this.context.scopeStack[i];
+                if (scope.getVariable(identifier) !== undefined) {
+                    selectedScope = scope;
+                    break;
+                }
+            }
+            selectedScope = selectedScope ?? this.currentBlock();
+            selectedScope.markAssignment(identifier, phiNode);
+        }
     }
 }
 
@@ -1286,7 +1610,58 @@ export class MethodFlow {
  * @property {TreeSitterNode | undefined} lastTaintSource The last tainted expression node (if any).
  * This is used to propagate taint between nodes in the graph.
  * 
- * @property {Map<string, NodeId>} currentDefinition A list of definitions from variable names to their most recent value.
+ * @property {Array<ScopeBlock | ConditionalBlock>} scopeStack A stack of blocks, which is used to implement
+ * control flow scoping (and eventually variable scoping).
+ *
+ * @property {number} conditionalAncestorBlocks
+ */
+
+/**
+ * @typedef {number & { _brand: "BranchSemantic" }} BranchSemantic
+ * A flag to indicate the semantic of a (simple) branching control flow construct. This is used to determine whether
+ * a variable has been assigned exhaustively or not.
+ *
+ * NB: this is an unconventional, yet very simple technique which lets us determine branch exhaustiveness at
+ * a control flow merge point without having to explicitly construct a CFG and then do DFS to determine exhaustiveness.
+ * 1. Within each CFG conditional block visitor function, we annotate whether the visit represents a semantic
+ * {@link BRANCH_CONSEQUENT|consequent} or an {@link BRANCH_ALTERNATIVE|alternative}.
+ * 2. Upon phi node creation, if an identifier was assigned a value in 1) a consequent, 2) an alternative, and 3) every branch,
+ * it has been assigned exhaustively.
+ *
+ * Possible values:
+ * * {@link BRANCH_TYPE_CONSEQUENT}
+ * * {@link BRANCH_TYPE_ALTERNATIVE}
+ */
+
+/**
+ * A flag for an assignment that occurs semantically within the "consequent" of a conditional.
+ * @type {BranchSemantic}
+ */
+const BRANCH_TYPE_CONSEQUENT = 0b01;
+/**
+ * A flag for an assignment that occurs semantically within the "alternative" of a conditional.
+ * @type {BranchSemantic}
+ */
+const BRANCH_TYPE_ALTERNATIVE = 0b10;
+
+/**
+ * A value indicating that both the {@link BRANCH_TYPE_CONSEQUENT} and the {@link BRANCH_TYPE_ALTERNATIVE}
+ * flags have been set.
+ *
+ * @type {BranchSemantic}
+ */
+const ALL_BRANCH_TYPES = BRANCH_TYPE_CONSEQUENT | BRANCH_TYPE_ALTERNATIVE;
+
+/**
+ * @typedef PhiCandidate
+ * @property {BranchSemantic} exhaustiveness
+ * @property {Set<VertexId>} operands
+ */
+
+/**
+ * A map that collects assignments across mutually exclusive conditional blocks. These assignments
+ * need to be reconciled (with a phi node) upon reaching a merge point in the control flow graph.
+ * @typedef {Map<string, PhiCandidate>} PhiCandidates
  */
 
 /**
@@ -1349,4 +1724,122 @@ export const BIN_EXPR_OP_ADD = 1;
  */
 function ignoreMutatingField() {
     // noop
+}
+
+/**
+ * A block that is a lexical scope.
+ */
+class ScopeBlock {
+    constructor() {
+        /**
+         * Whether this block scope is conditional in the CFG or not.
+         * @type {boolean}
+         */
+        this.isConditional = false;
+
+        /**
+         * If this block represents a branch within a CFG conditional block, this is the "semantic"
+         * of that branch.
+         * @type {BranchSemantic}
+         */
+        this.branchSemantic = 0;
+
+        /**
+         * A map from a variable name to its current definition within the scope. No history is preserved when a re-assignment is made.
+         * @type {VariableDefs | undefined}
+         *
+         * NB: When variable scoping is supported, this will be an array of maps in order to support re-assignments
+         *     of variables from external scopes.
+         */
+        this.definitions = undefined;
+    }
+
+    /**
+     * Marks the node as the current definition of a variable within this scope.
+     * Returns the previous assignment, if it exists.
+     * @param {string} identifier
+     * @param {Vertex} vertex
+     * @returns {VertexId | undefined}
+     */
+    markAssignment(identifier, vertex) {
+        const previousValue = this.definitions?.get(identifier);
+        this._markAssignmentInner(identifier, vertexId(vertex));
+        return previousValue;
+    }
+
+    /**
+     * Marks the vertex id as the current definition of a variable within this scope.
+     * @param {string} identifier
+     * @param {VertexId} vertexId
+     */
+    _markAssignmentInner(identifier, vertexId) {
+        // Lazily instantiate the map
+        if (this.definitions === undefined) {
+            this.definitions = new Map();
+        }
+
+        // [simplification]
+        // Variable scoping is not supported, so this always sets the assignment directly on this scope.
+        // When variable scoping is supported, `markReassign` will need to accept a `height` parameter
+        // and perform the re-assignment at the provided height.
+        this.definitions.set(identifier, vertexId);
+    }
+
+    /**
+     * Returns the latest assignment of variable, if it exists.
+     * @param {string} identifier
+     * @returns {VertexId | undefined}
+     */
+    getVariable(identifier) {
+        return this.definitions?.get(identifier);
+    }
+}
+
+/**
+ * A map from a string identifier to its {@link VertexId} location where it was last assigned a value.
+ * @typedef {Map<string, VertexId>} VariableDefs
+ */
+
+
+/**
+ * A CFG conditional block.
+ *
+ * (NOTE: This is additionally a lexical scope, and thus it behaves the same as @link @{ScopeBlock}
+ * when it comes to scope).
+ */
+class ConditionalBlock extends ScopeBlock {
+    constructor() {
+        super();
+        this.isConditional = true;
+
+        /**
+         * The number of blocks (representing branches of a conditional block) that are direct children.
+         *
+         * For example:
+         * ```java
+         * if (condition) {
+         *     y = 10;
+         * }
+         * // branchCount === 1
+         *
+         * if (condition) {
+         *     y = 10;
+         * } else if (condition2) {
+         *     // no-op
+         * } else {
+         *     y = 30;
+         * }
+         * // branchCount === 3;
+         * ```
+         * @type {number}
+         */
+        this.branchCount = 0;
+
+        /**
+         * The state of all conditional block mutations within this block's immediate scope. See {@link PhiCandidates}
+         * for additional documentation.
+         * @type {PhiCandidates | undefined}
+         */
+        this.phiCandidates = undefined;
+    }
 }

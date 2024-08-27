@@ -570,6 +570,108 @@ strict digraph full {
     ///////////////////////////////////////////////////////////////////////////
 
     #[test]
+    fn if_statement_cfg_exhaustive_non_exhaustive() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = initial0; // Exhaustively assigned
+    String z = initial1; // Not exhaustively assigned
+    if (conditionA) {
+        y = alt0;
+        z = alt1;
+    } else if (conditionB) {
+        y = alt2;
+        z = alt3;
+    } else {
+        y = alt4;
+    }
+    y;
+    z;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    initial0; initial1
+    alt0; alt1; alt2; alt3; alt4
+    y0 [text=y,line=2]
+    y1 [text=y,line=5]
+    y2 [text=y,line=8]
+    y3 [text=y,line=11]
+    y4 [text=y,line=13]
+    z0 [text=z,line=3]
+    z1 [text=z,line=6]
+    z2 [text=z,line=9]
+    z3 [text=z,line=14]
+    phi0 [vkind=phi]
+    phi1 [vkind=phi]
+
+    y0 -> initial0 [kind=assignment]
+    y1 -> alt0 [kind=assignment]
+    y2 -> alt2 [kind=assignment]
+    y3 -> alt4 [kind=assignment]
+    phi0 -> y1 [kind=dependence]
+    phi0 -> y2 [kind=dependence]
+    phi0 -> y3 [kind=dependence]
+    y4 -> phi0 [kind=dependence]
+
+    z0 -> initial1 [kind=assignment]
+    z1 -> alt1 [kind=assignment]
+    z2 -> alt3 [kind=assignment]
+    phi1 -> z0 [kind=dependence]
+    phi1 -> z1 [kind=dependence]
+    phi1 -> z2 [kind=dependence]
+    z3 -> phi1 [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
+    fn if_statement_cfg_nested() {
+        //  Non-exhaustive nested phi
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = initial;
+    if (conditionA) {
+        y = alt0;
+    } else {
+        if (conditionB) {
+            y = alt1;
+        }
+    }
+    y;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    initial
+    alt0; alt1
+    y0 [text=y,line=2]
+    y1 [text=y,line=4]
+    y2 [text=y,line=7]
+    y3 [text=y,line=10]
+    phi0 [vkind=phi]
+    phi1 [vkind=phi]
+
+    y0 -> initial [kind=assignment]
+    y1 -> alt0 [kind=assignment]
+    y2 -> alt1 [kind=assignment]
+    phi0 -> y0 [kind=dependence]
+    phi0 -> y2 [kind=dependence]
+    phi1 -> y1 [kind=dependence]
+    phi1 -> phi0 [kind=dependence]
+    y3 -> phi1 [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
     fn local_var_decl() {
         assert_digraph!(
             // language=java
@@ -826,87 +928,6 @@ strict digraph full {
         );
     }
 
-    /// We currently do not consider separate branches of control flow as independent, mutually
-    /// exclusive possibilities. As such, we end up treating the last branch as the "most recent" definition.
-    #[test]
-    fn control_flow_merge_point_unsupported() {
-        assert_digraph!(
-            // language=java
-            "\
-void method() {
-    String var_B;
-    if (var_A) {
-        var_B = alt_01;
-    } else {
-        var_B = alt_02;
-    }
-    var_B;
-}
-",
-            // language=dot
-            r#"
-strict digraph full {
-    alt_01
-    alt_02
-    // var_b_0 [text="var_B",line=2]
-    var_b_1 [text="var_B",line=4]
-    var_b_2 [text="var_B",line=6]
-    var_b_3 [text="var_B",line=8]
-
-    var_b_1 -> alt_01 [kind=assignment]
-    var_b_2 -> alt_02 [kind=assignment]
-
-    // We _ideally_ would have:
-    // var_b_3 -> var_b_2 [kind=dependence]
-    // var_b_3 -> var_b_1 [kind=dependence]
-
-    // But our current approach limits us to:
-    var_b_3 -> var_b_2 [kind=dependence]
-}
-"#
-        );
-
-        assert_digraph!(
-            // language=java
-            "\
-void method() {
-    String var_B;
-    switch (var_A) {
-        case 1:
-        case 2:
-            var_B = alt_01;
-            break;
-        default:
-            var_B = alt_02;
-            break;
-    }
-    var_B;
-}
-",
-            // language=dot
-            r#"
-strict digraph full {
-    alt_01
-    alt_02
-    // var_b_0 [text="var_B",line=2]
-    var_b_1 [text="var_B",line=6]
-    var_b_2 [text="var_B",line=9]
-    var_b_3 [text="var_B",line=12]
-
-    var_b_1 -> alt_01 [kind=assignment]
-    var_b_2 -> alt_02 [kind=assignment]
-
-    // We _ideally_ would have:
-    // var_b_3 -> var_b_2 [kind=dependence]
-    // var_b_3 -> var_b_1 [kind=dependence]
-
-    // But our current approach limits us to:
-    var_b_3 -> var_b_2 [kind=dependence]
-}
-"#
-        );
-    }
-
     /// `field_access` nodes are passed through, but not analyzed.
     #[test]
     fn field_access_unsupported() {
@@ -976,31 +997,46 @@ strict digraph full {
     /// Lexical scopes are not supported.
     #[test]
     fn variable_scoping_unsupported() {
-        assert_subgraph!(
+        assert_digraph!(
             // language=java
             "\
 void method() {
-    int var_A = 123;
-    if (condition) {
-        String var_A = var_B;
+    int y = 123;
+    {
+        y; // References from parent scopes work.
+        {
+            y = 456; // Modifications can be made to parent scopes.
+            double y = 789.0;
+        }
+        y; // However, shadowing doesn't work.
     }
-    int var_C = var_A;
+    int z = y; // The correct value of this will be `456`.
 }
 ",
             // language=dot
             r#"
 strict digraph {
-    var_A_0 [text=var_A,line=2]
-    var_A_1 [text=var_A,line=4]
-    var_A_2 [text=var_A,line=6]
-    var_B
-    var_C
+    y0 [text=y,line=2]
+    y1 [text=y,line=4]
+    y2 [text=y,line=6]
+    y3 [text=y,line=7]
+    y4 [text=y,line=9]
+    y5 [text=y,line=11]
+    z
+    123 [cstkind=decimal_integer_literal]
+    456 [cstkind=decimal_integer_literal]
+    789.0 [cstkind=decimal_floating_point_literal]
 
-    var_A_1 -> var_B [kind=assignment]
-    var_C -> var_A_2 [kind=assignment]
+    z -> y5 [kind=assignment]
+    y3 -> 789.0 [kind=assignment]
 
-    // This relationship is incorrect (and is a side effect of not supporting variable scoping).
-    var_A_2 -> var_A_1 [kind=dependence]
+    y1 -> y0 [kind=dependence]
+    y0 -> 123 [kind=assignment]
+
+    // These relationships are incorrect because variable scoping isn't supported.
+    y5 -> y3 [kind=dependence]
+    y4 -> y3 [kind=dependence]
+    y2 -> 456 [kind=assignment]
     //////////
 }
 "#
