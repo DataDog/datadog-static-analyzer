@@ -20,7 +20,7 @@ use cli::datadog_utils::{
 };
 use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
-    filter_files_for_language, filter_out_minified_files, get_files, read_files_from_gitignore,
+    filter_files_for_language, get_files, read_files_from_gitignore,
 };
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
@@ -37,7 +37,7 @@ use kernel::analysis::analyze::analyze;
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
-use kernel::model::common::{Language, OutputFormat};
+use kernel::model::common::OutputFormat;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
@@ -471,11 +471,7 @@ fn main() -> Result<()> {
     let mut number_of_rules_used = 0;
     // Finally run the analysis
     for language in &languages {
-        let mut files_for_language = filter_files_for_language(&files_to_analyze, language);
-        if language == &Language::JavaScript {
-            files_for_language =
-                filter_out_minified_files(&files_for_language, directory_path, use_debug);
-        }
+        let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
         if files_for_language.is_empty() {
             continue;

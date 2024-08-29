@@ -299,53 +299,6 @@ pub fn filter_files_by_diff_aware_info(
         .collect();
 }
 
-/// Filter the files to scan by checking if it is minified.
-/// Note that only JavaScript files are considered in this function.
-///
-/// The heuristic for determining whether or not a file is minified is if the average
-/// line length of the file is greater than 110.
-pub fn filter_out_minified_files(
-    files: &[PathBuf],
-    directory_path: &Path,
-    use_debug: bool,
-) -> Vec<PathBuf> {
-    files
-        .iter()
-        .filter(|f| {
-            let path = f
-                .strip_prefix(directory_path)
-                .unwrap()
-                .to_str()
-                .expect("path contains non-Unicode characters");
-
-            if path.ends_with(".js") {
-                let Ok(content) = read_to_string(f) else {
-                    return true;
-                };
-
-                let average_line_length = if content.lines().count() == 0 {
-                    0
-                } else {
-                    content.lines().map(|line| line.len()).sum::<usize>() / content.lines().count()
-                };
-
-                let is_minified = average_line_length > 110;
-                if use_debug && is_minified {
-                    eprintln!(
-                        "File {} is minified (average line length: {})",
-                        f.display(),
-                        average_line_length
-                    );
-                }
-                !is_minified
-            } else {
-                true
-            }
-        })
-        .cloned()
-        .collect()
-}
-
 /// Generate a fingerprint for a violation that will uniquely identify the violation. The fingerprint is calculated
 /// as is
 ///  SHA2(<file-location-in-repository> - <characters-in-directory> - <content-of-code-line> - <number of characters in line>)
@@ -586,20 +539,6 @@ mod tests {
             "/path/to/repo/path/to/file2.py".to_string(),
             res.get(0).unwrap().to_str().unwrap().to_string()
         );
-    }
-
-    #[test]
-    fn test_filter_minified_files() {
-        let mut files = vec![];
-        let tmpdir = tempdir().unwrap();
-        let tmpfile = tmpdir.path().join("test.js");
-        fs::write(&tmpfile, "var a = 1;".repeat(100)).unwrap();
-        files.push(tmpfile.clone());
-
-        let repository_path = tmpfile.parent().unwrap();
-
-        let res = filter_out_minified_files(&files, repository_path, false);
-        assert!(res.is_empty());
     }
 
     #[test]
