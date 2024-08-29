@@ -329,15 +329,15 @@ pub fn filter_out_minified_files(
                     content.lines().map(|line| line.len()).sum::<usize>() / content.lines().count()
                 };
 
-                let result = average_line_length < 110;
-                if use_debug && !result {
+                let is_minified = average_line_length > 110;
+                if use_debug && is_minified {
                     eprintln!(
                         "File {} is minified (average line length: {})",
                         f.display(),
                         average_line_length
                     );
                 }
-                result
+                !is_minified
             } else {
                 true
             }
