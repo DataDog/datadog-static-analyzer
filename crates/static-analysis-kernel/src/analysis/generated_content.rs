@@ -54,12 +54,10 @@ pub fn is_generated_file(full_content: &str, language: &Language) -> bool {
 /// than 110.
 pub fn is_minified_file(content: &str, language: &Language) -> bool {
     if language == &Language::JavaScript {
-        let lines = content.lines();
-        if lines.count() == 0 {
-            false
-        } else {
-            content.lines().map(|line| line.len()).sum::<usize>() / content.lines().count() > 110
-        }
+        content
+            .len()
+            .checked_div(content.lines().count())
+            .is_some_and(|avg| avg > 110)
     } else {
         false
     }
