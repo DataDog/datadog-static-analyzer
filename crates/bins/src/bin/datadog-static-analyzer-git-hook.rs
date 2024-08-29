@@ -3,7 +3,8 @@ use cli::config_file::get_config;
 use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
 use cli::file_utils::{
-    filter_files_by_size, filter_files_for_language, get_files, read_files_from_gitignore,
+    filter_files_by_size, filter_files_for_language, filter_out_minified_files, get_files,
+    read_files_from_gitignore,
 };
 use cli::git_utils::{
     get_changed_files_between_shas, get_changed_files_with_branch, get_default_branch,
@@ -21,6 +22,7 @@ use git2::Repository;
 use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
+use kernel::model::common::Language;
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
@@ -429,7 +431,11 @@ fn main() -> Result<()> {
     if static_analysis_enabled {
         let languages = get_languages_for_rules(&rules);
         for language in &languages {
-            let files_for_language = filter_files_for_language(&files_to_analyze, language);
+            let mut files_for_language = filter_files_for_language(&files_to_analyze, language);
+            if language == &Language::JavaScript {
+                files_for_language =
+                    filter_out_minified_files(&files_for_language, directory_path, use_debug);
+            }
 
             if files_for_language.is_empty() {
                 continue;
