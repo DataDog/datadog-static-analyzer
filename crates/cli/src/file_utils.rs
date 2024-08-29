@@ -323,8 +323,11 @@ pub fn filter_out_minified_files(
                     return true;
                 };
 
-                let average_line_length =
-                    content.lines().map(|line| line.len()).sum::<usize>() / content.lines().count();
+                let average_line_length = if content.lines().count() == 0 {
+                    0
+                } else {
+                    content.lines().map(|line| line.len()).sum::<usize>() / content.lines().count()
+                };
 
                 let result = average_line_length < 110;
                 if use_debug && !result {
