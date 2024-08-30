@@ -49,6 +49,20 @@ pub fn is_generated_file(full_content: &str, language: &Language) -> bool {
     }
 }
 
+/// Returns if a file is minified or not.
+/// The heuristic for detecting minified files is based on the average line length being greater
+/// than 110.
+pub fn is_minified_file(content: &str, language: &Language) -> bool {
+    if language == &Language::JavaScript {
+        content
+            .len()
+            .checked_div(content.lines().count())
+            .is_some_and(|avg| avg > 110)
+    } else {
+        false
+    }
+}
+
 /// Glob patterns that are, by default, excluded from analysis. These patterns are for paths
 /// that often contain either vendored 3rd party dependencies or generated files.
 pub const DEFAULT_IGNORED_GLOBS: &[&str] = &[
@@ -70,7 +84,9 @@ pub const DEFAULT_IGNORED_GLOBS: &[&str] = &[
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::generated_content::{is_generated_file, PROTOBUF_HEADER, THRIFT_HEADER};
+    use crate::analysis::generated_content::{
+        is_generated_file, is_minified_file, PROTOBUF_HEADER, THRIFT_HEADER,
+    };
     use crate::model::common::Language;
 
     #[test]
@@ -176,6 +192,14 @@ mod tests {
         assert!(is_generated_file(
             &format!("// {}\nfunction smtg(){{}}", THRIFT_HEADER),
             &Language::TypeScript
+        ));
+    }
+
+    #[test]
+    fn test_is_minified_file_javascript() {
+        assert!(is_minified_file(
+            &"var x = 2;".repeat(100),
+            &Language::JavaScript
         ));
     }
 }

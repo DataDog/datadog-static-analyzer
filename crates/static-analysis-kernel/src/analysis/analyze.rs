@@ -1,7 +1,7 @@
 use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
 use crate::analysis::ddsa_lib::runtime::ExecutionResult;
 use crate::analysis::ddsa_lib::JsRuntime;
-use crate::analysis::generated_content::is_generated_file;
+use crate::analysis::generated_content::{is_generated_file, is_minified_file};
 use crate::analysis::tree_sitter::get_tree;
 use crate::model::analysis::{
     FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
@@ -183,7 +183,9 @@ where
     I::Item: Borrow<RuleInternal>,
 {
     // check if we should ignore the file before doing any more expensive work.
-    if analysis_option.ignore_generated_files && is_generated_file(code, language) {
+    if analysis_option.ignore_generated_files
+        && (is_generated_file(code, language) || is_minified_file(code, language))
+    {
         if analysis_option.use_debug {
             eprintln!("Skipping generated file {}", filename);
         }
