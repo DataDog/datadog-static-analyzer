@@ -45,7 +45,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         | Language::R => {
             vec!["#no-dd-sa", "#datadog-disable"]
         }
-        Language::JavaScript | Language::TypeScript | Language::Apex => {
+        Language::JavaScript | Language::TypeScript | Language::Kotlin | Language::Apex => {
             vec![
                 "//no-dd-sa",
                 "/*no-dd-sa",
@@ -53,12 +53,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
                 "/*datadog-disable",
             ]
         }
-        Language::Go
-        | Language::Rust
-        | Language::Csharp
-        | Language::Java
-        | Language::Kotlin
-        | Language::Swift => {
+        Language::Go | Language::Rust | Language::Csharp | Language::Java | Language::Swift => {
             vec!["//no-dd-sa", "//datadog-disable"]
         }
         Language::Json => {

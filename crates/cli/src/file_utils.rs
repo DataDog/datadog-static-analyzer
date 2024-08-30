@@ -697,6 +697,7 @@ mod tests {
     fn get_extensions_for_language_all_languages() {
         let mut extensions_per_languages: HashMap<Language, usize> = HashMap::new();
         extensions_per_languages.insert(Language::JavaScript, 2);
+        extensions_per_languages.insert(Language::Kotlin, 2);
         extensions_per_languages.insert(Language::Python, 2);
         extensions_per_languages.insert(Language::Rust, 1);
         extensions_per_languages.insert(Language::TypeScript, 2);
