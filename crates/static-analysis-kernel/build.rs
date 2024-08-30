@@ -92,7 +92,7 @@ fn main() {
             compilation_unit: "tree-sitter-kotlin".to_string(),
             repository: "https://github.com/tree-sitter-grammars/tree-sitter-kotlin.git"
                 .to_string(),
-            commit_hash: "b67a9cfe21b09868bd6bf1d7e812130bface9b79".to_string(),
+            commit_hash: "33c8fa9913e5518724b1e4b3bce6ed69b8117ee7".to_string(),
             build_dir: "src".into(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
