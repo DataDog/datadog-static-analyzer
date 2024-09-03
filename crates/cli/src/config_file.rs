@@ -115,8 +115,11 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigM
                             Some((remote_config, config_method))
                         }
                         Err(e) => {
-                            eprintln!("Error when parsing remote config: {:?}", e);
-                            eprintln!("Proceeding with local config");
+                            if debug {
+                                eprintln!("Error when parsing remote config: {:?}", e);
+                                eprintln!("Proceeding with local config");
+                            }
+
                             cf.map(|c| (c, ConfigMethod::File))
                         }
                     }
