@@ -90,6 +90,12 @@ pub struct RulesetConfig {
     pub rules: IndexMap<String, RuleConfig>,
 }
 
+#[derive(Debug, Clone)]
+pub enum ConfigMethod {
+    File,
+    RemoteConfiguration,
+}
+
 // The parsed configuration file without any legacy fields.
 #[derive(Debug, PartialEq, Default, Clone)]
 pub struct ConfigFile {

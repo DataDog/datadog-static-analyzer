@@ -22,7 +22,7 @@ use itertools::Itertools;
 use kernel::analysis::analyze::analyze;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
-use kernel::model::config_file::{ConfigFile, PathConfig};
+use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult};
 use kernel::rule_config::RuleConfigProvider;
 use rayon::prelude::*;
@@ -100,7 +100,6 @@ fn main() -> Result<()> {
     let program = args[0].clone();
     let mut opts = Options::new();
     #[allow(unused_assignments)]
-    let mut use_configuration_file = false;
     let mut ignore_gitignore = false;
     let mut max_file_size_kb = DEFAULT_MAX_FILE_SIZE_KB;
     let mut ignore_generated_files = true;
@@ -220,9 +219,16 @@ fn main() -> Result<()> {
         exit(1)
     }
 
-    let configuration_file: Option<ConfigFile> =
-        match get_config(directory_to_analyze.as_str(), use_debug) {
-            Ok(cfg) => cfg,
+    let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
+
+    let (configuration_file, configuration_method): (Option<ConfigFile>, Option<ConfigMethod>) =
+        match &configuration_file_and_method {
+            Ok(cfg) => match cfg {
+                Some((config_file, config_method)) => {
+                    (Some(config_file.clone()), Some(config_method.clone()))
+                }
+                _ => (None, None),
+            },
             Err(err) => {
                 eprintln!(
                     "Error reading configuration file from {}:\n  {}",
@@ -240,7 +246,6 @@ fn main() -> Result<()> {
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
     if let Some(conf) = configuration_file {
-        use_configuration_file = true;
         ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
 
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
@@ -256,7 +261,6 @@ fn main() -> Result<()> {
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
         ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
     } else {
-        use_configuration_file = false;
         // if there is no config file, we take the default rules from our APIs.
 
         if use_debug {
@@ -304,7 +308,7 @@ fn main() -> Result<()> {
     // build the configuration object that contains how the CLI should behave.
     let configuration = CliConfiguration {
         use_debug,
-        use_configuration_file,
+        configuration_method,
         ignore_gitignore,
         source_directory: directory_to_analyze.clone(),
         source_subdirectories: vec![],

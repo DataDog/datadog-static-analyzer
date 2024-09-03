@@ -35,6 +35,7 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "RUBY",
     "TYPESCRIPT",
     "PHP",
+    "YAML",
 ];
 
 // Get secrets rules from the static analysis API

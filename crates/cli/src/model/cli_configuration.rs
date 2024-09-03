@@ -3,7 +3,7 @@ use anyhow::anyhow;
 use common::model::diff_aware::DiffAware;
 use git2::Repository;
 use kernel::model::common::OutputFormat;
-use kernel::model::config_file::PathConfig;
+use kernel::model::config_file::{ConfigMethod, PathConfig};
 use kernel::rule_config::RuleConfigProvider;
 use sha2::{Digest, Sha256};
 
@@ -15,7 +15,7 @@ use secrets::model::secret_rule::SecretRule;
 #[derive(Clone)]
 pub struct CliConfiguration {
     pub use_debug: bool,
-    pub use_configuration_file: bool,
+    pub configuration_method: Option<ConfigMethod>,
     pub ignore_gitignore: bool,
     pub source_directory: String,
     pub source_subdirectories: Vec<String>,
@@ -142,7 +142,7 @@ mod tests {
     fn test_generate_diff_aware_hash() {
         let cli_configuration = CliConfiguration {
             use_debug: true,
-            use_configuration_file: true,
+            configuration_method: None,
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
             source_subdirectories: vec![],
@@ -203,7 +203,7 @@ mod tests {
 
         let cli_configuration_base = CliConfiguration {
             use_debug: true,
-            use_configuration_file: true,
+            configuration_method: None,
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
             source_subdirectories: vec![],
