@@ -117,7 +117,7 @@ mod tests {
             "__js_cachedText",
             // Methods
             "text",
-            "type",
+            "cstType",
             "start",
             "end",
             "children",
@@ -269,12 +269,12 @@ mod tests {
         let v8_ts_node = js_class.new_instance(scope, base_ts_node);
         attach_as_global(scope, v8_ts_node, "TS_NODE");
 
-        let code = "TS_NODE.type;";
+        let code = "TS_NODE.cstType;";
         let ret_value = try_execute(scope, code).unwrap();
         assert_eq!(ret_value.to_rust_string_lossy(scope), EXPECTED.1);
 
         // And if the TSNode is mutated to have an invalid _typeId, it should return an empty string.
-        let code = "TS_NODE._typeId = 99999; TS_NODE.type;";
+        let code = "TS_NODE._typeId = 99999; TS_NODE.cstType;";
         let ret_value = try_execute(scope, code).unwrap();
         assert_eq!(ret_value.to_rust_string_lossy(scope), "");
     }

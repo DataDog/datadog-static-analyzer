@@ -72,7 +72,7 @@ export class DDSA_Console {
 /**
  * A human-friendly representation of a {@link TreeSitterNode}, helpful for debugging a rule.
  * @typedef DebugTreeSitterNode
- * @param {string} type
+ * @param {string} cstType
  * @param {Position} start
  * @param {Position} end
  * @param {string} text
@@ -94,7 +94,7 @@ function asDebugFieldChild(childNode) {
     const dNode = asDebugTsNode(childNode);
     // Spread the object to use a custom property ordering.
     return {
-        type: dNode.type,
+        cstType: dNode.cstType,
         fieldName: childNode.fieldName,
         ...dNode,
     };
@@ -107,7 +107,7 @@ function asDebugFieldChild(childNode) {
  */
 function asDebugTsNode(tsNode) {
     return {
-        type: tsNode.type,
+        cstType: tsNode.cstType,
         start: tsNode.start,
         end: tsNode.end,
         text: tsNode.text,

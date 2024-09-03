@@ -21,6 +21,8 @@ mod tests {
             // Methods
             "getChildren",
             "getParent",
+            "getTaintSinks",
+            "getTaintSources",
         ];
         assert!(js_instance_eq(CLASS_NAME, expected));
         let expected = &[];
@@ -128,7 +130,7 @@ function visit(captures) {
     const node2 = ddsa.getParent(node1);
     const node3 = ddsa.getParent(node2); // (This is the root)
     const node4 = ddsa.getParent(node3);
-    console.log(node1.type, node2.type, node3.type, node4);
+    console.log(node1.cstType, node2.cstType, node3.cstType, node4);
 }
 "#;
         // Then execute the rule that fetches the parent of the node.
@@ -155,10 +157,10 @@ function visit(captures) {
     console.log(globalThis.__RUST_BRIDGE__ts_node.size);
     const node = captures.get("stmt");
     // Captured node and its parent
-    console.log(node.type, ddsa.getParent(node).type);
+    console.log(node.cstType, ddsa.getParent(node).cstType);
     console.log(globalThis.__RUST_BRIDGE__ts_node.size);
     // Captured node's grandparent
-    console.log(ddsa.getParent(ddsa.getParent(node)).type);
+    console.log(ddsa.getParent(ddsa.getParent(node)).cstType);
     console.log(globalThis.__RUST_BRIDGE__ts_node.size);
 }
 "#;

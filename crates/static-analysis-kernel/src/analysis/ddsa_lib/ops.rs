@@ -165,6 +165,22 @@ pub fn op_ts_node_parent(
     Some(nid)
 }
 
+/// An op that returns the operator ([`BinOp`](ddsa_lib::js::flow::java::BinOp)) for a binary expression,
+/// or `-1` if the provided node either doesn't exist or isn't a "binary_expression".
+#[op2(fast)]
+pub fn op_java_get_bin_expr_operator(state: &OpState, #[smi] node_id: u32) -> i32 {
+    use crate::analysis::ddsa_lib::js::flow::java::get_binary_expression_operator;
+    const NOT_FOUND: i32 = -1;
+
+    let node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>().borrow();
+    OpSafeRawTSNode::from_tsn_bridge(&node_bridge, node_id)
+        .and_then(|safe_raw_ts_node| {
+            let ts_node = safe_raw_ts_node.to_node();
+            get_binary_expression_operator(ts_node).map(|bin_op| bin_op as i32)
+        })
+        .unwrap_or(NOT_FOUND)
+}
+
 /// An op to test the [`deno_core::op2`] macro's serialization of `Option`.
 ///
 /// Returns `Some(123)` if `true` is passed in, or `None` if `false` is passed in.

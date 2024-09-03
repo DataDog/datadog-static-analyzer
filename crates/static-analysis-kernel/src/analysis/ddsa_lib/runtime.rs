@@ -402,6 +402,11 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
         v8_array.length() as usize
     }
 
+    #[cfg(test)]
+    pub(crate) fn bridge_context(&self) -> Rc<RefCell<ContextBridge>> {
+        Rc::clone(&self.bridge_context)
+    }
+
     /// Drains and returns the lines from the DDSA console.
     #[allow(unused)]
     #[cfg(test)]
@@ -1255,7 +1260,7 @@ function visit(captures) {
         shorthand_execute_rule_internal(&mut rt, source_text, filename, ts_query, rule_code, None)
             .unwrap();
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        let expected = r#"{"type":"identifier","start":{"line":1,"col":7},"end":{"line":1,"col":10},"text":"abc"}"#;
+        let expected = r#"{"cstType":"identifier","start":{"line":1,"col":7},"end":{"line":1,"col":10},"text":"abc"}"#;
         assert_eq!(console_lines[0], expected);
         let expected_nested = format!("[{{\"abc\":{}}}]", expected);
         assert_eq!(console_lines[1], expected_nested);
@@ -1284,13 +1289,13 @@ function visit(captures) {
         shorthand_execute_rule_internal(&mut rt, text, filename, tsq_with_fields, rule_code, None)
             .unwrap();
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        let expected = r#"{"type":"identifier","fieldName":"name","start":{"line":1,"col":10},"end":{"line":1,"col":14},"text":"echo"}"#;
+        let expected = r#"{"cstType":"identifier","fieldName":"name","start":{"line":1,"col":10},"end":{"line":1,"col":14},"text":"echo"}"#;
         assert_eq!(console_lines[0], expected);
         // A child without a field id should omit the property.
         shorthand_execute_rule_internal(&mut rt, text, filename, tsq_no_fields, rule_code, None)
             .unwrap();
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
-        let expected = r#"{"type":"identifier","start":{"line":1,"col":15},"end":{"line":1,"col":16},"text":"a"}"#;
+        let expected = r#"{"cstType":"identifier","start":{"line":1,"col":15},"end":{"line":1,"col":16},"text":"a"}"#;
         assert_eq!(console_lines[0], expected);
     }
 }

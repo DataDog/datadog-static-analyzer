@@ -13,6 +13,8 @@ deno_core::extension!(
         ops::op_ts_node_named_children,
         ops::op_ts_node_parent,
         ops::op_ts_node_text,
+        // Language-specific
+        ops::op_java_get_bin_expr_operator,
     ],
     esm_entry_point = "ext:ddsa_lib/__bootstrap.js",
     esm = [ dir "src/analysis/ddsa_lib/js", "__bootstrap.js" ],
@@ -29,6 +31,7 @@ deno_core::extension!(
         ("ext:ddsa_lib/edit", "edit.js"),
         ("ext:ddsa_lib/fix", "fix.js"),
         ("ext:ddsa_lib/flow/graph", "flow/graph.js"),
+        ("ext:ddsa_lib/flow/java", "flow/java.js"),
         ("ext:ddsa_lib/query_match", "query_match.js"),
         ("ext:ddsa_lib/query_match_compat", "query_match_compat.js"),
         ("ext:ddsa_lib/stella_compat", "stella_compat.js"),

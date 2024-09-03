@@ -2,6 +2,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+import { _findTaintFlows, transpose } from "ext:ddsa_lib/flow/graph";
+import { MethodFlow } from "ext:ddsa_lib/flow/java";
 import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
 import { TreeSitterFieldChildNode } from "ext:ddsa_lib/ts_node";
 
@@ -52,5 +54,55 @@ export class DDSA {
             return undefined;
         }
         return globalThis.__RUST_BRIDGE__ts_node.get(parentId);
+    }
+
+    /**
+     * Returns a backwards flow analysis: a list of `TaintFlow` containing sources of the provided `sinkNode`.
+     * @param {TreeSitterNode} sinkNode
+     * @returns {Array<TaintFlow>}
+     */
+    getTaintSources(sinkNode) {
+        // [simplification]: No caching is currently performed.
+        const containingMethod = MethodFlow.findContainingMethod(sinkNode);
+        if (containingMethod === undefined) {
+            return SEALED_EMPTY_ARRAY;
+        }
+        const methodFlow = new MethodFlow(containingMethod);
+        return _findTaintFlows(methodFlow.graph.adjacencyList, sinkNode.id, false);
+    }
+
+    /**
+     * Returns a **heuristic** forward flow analysis: a list of `TaintFlow` containing sinks for the provided `sourceNode`.
+     *
+     * # Limitations
+     * These flows should only be used heuristically. They should not be relied on to be fundamentally accurate,
+     * as they are generated from a simple but imprecise methodology:
+     *
+     * The initial flow analysis via {@link MethodFlow} traverses a CST and simulates an abstract program state (roughly
+     * simulating a CFG) to output a (backwards) flow graph (sink to source).
+     *
+     * This function returns a heuristic forwards flow analysis by physically transposing the backwards flow graph.
+     * This is inherently imprecise because it is operating on an implied CFG (not an actual one), so the ultimate
+     * predecessor information could be incorrect.
+     *
+     * {@link DDSA.getTaintSources} will provide a more accurate (albeit backwards) analysis.
+     *
+     * @param {TreeSitterNode} sourceNode
+     * @returns {Array<TaintFlow>}
+     */
+    getTaintSinks(sourceNode) {
+        // [simplification]: No caching is currently performed on either the initial
+        // graph or its transposition.
+        const containingMethod = MethodFlow.findContainingMethod(sourceNode);
+        if (containingMethod === undefined) {
+            return SEALED_EMPTY_ARRAY;
+        }
+        const methodFlow = new MethodFlow(containingMethod);
+
+        // See this function's documentation for why this is simple but imprecise.
+        const transposed = transpose(methodFlow.graph.adjacencyList);
+        ////////
+
+        return _findTaintFlows(transposed, sourceNode.id, true);
     }
 }
