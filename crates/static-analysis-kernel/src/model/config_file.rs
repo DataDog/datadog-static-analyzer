@@ -94,6 +94,7 @@ pub struct RulesetConfig {
 pub enum ConfigMethod {
     File,
     RemoteConfiguration,
+    RemoteConfigurationWithFile,
 }
 
 // The parsed configuration file without any legacy fields.

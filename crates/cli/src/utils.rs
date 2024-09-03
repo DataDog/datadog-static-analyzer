@@ -30,6 +30,7 @@ pub fn print_configuration(configuration: &CliConfiguration) {
     let configuration_method = match configuration.configuration_method {
         None => "none (no local file and no remote configuration)",
         Some(ConfigMethod::RemoteConfiguration) => "remote configuration",
+        Some(ConfigMethod::RemoteConfigurationWithFile) => "remote configuration + local file",
         Some(ConfigMethod::File) => "local config file (static-analysis.datadog.[yml|yaml])",
     };
 

@@ -86,6 +86,9 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigM
         if should_use_datadog_backend() && repository_url_opt.is_ok() {
             let existing_config_file_base64 =
                 read_config_file_in_base64(path).expect("cannot get the config file in base64");
+
+            let has_config_file = existing_config_file_base64.is_some();
+
             let remote_config = get_remote_configuration(
                 repository_url_opt.expect("repository URL should exist"),
                 existing_config_file_base64,
@@ -104,7 +107,12 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigM
                         decode_base64_string(rc).expect("error when decoding base64");
                     match parse_config_file(remote_config_string.as_str()) {
                         Ok(remote_config) => {
-                            Some((remote_config, ConfigMethod::RemoteConfiguration))
+                            let config_method = if has_config_file {
+                                ConfigMethod::RemoteConfigurationWithFile
+                            } else {
+                                ConfigMethod::RemoteConfiguration
+                            };
+                            Some((remote_config, config_method))
                         }
                         Err(e) => {
                             eprintln!("Error when parsing remote config: {:?}", e);
