@@ -26,6 +26,7 @@ mod edit;
 pub(crate) use edit::*;
 mod fix;
 pub(crate) use fix::*;
+pub(crate) mod flow;
 mod query_match;
 pub(crate) use query_match::*;
 mod query_match_compat;
