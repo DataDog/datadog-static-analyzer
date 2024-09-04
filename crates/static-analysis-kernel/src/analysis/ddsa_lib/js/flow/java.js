@@ -605,10 +605,17 @@ export class MethodFlow {
      * ```
      * (object_creation_expression (object_creation_expression)? type: (_) arguments: (argument_list))
      * ```
-     * @param {TreeSitterNode} _node
+     * @param {TreeSitterNode} node
      */
-    visitObjCreationExpr(_node) {
-        // [simplification]: Ignore this node
+    visitObjCreationExpr(node) {
+        // [simplification]: Propagate arguments as if they _always_ flow through into the return value
+        // of the constructor.
+        const children = ddsa.getChildren(node);
+
+        const argumentsIdx = findFieldIndex(children, 1, "arguments");
+        const args = children[argumentsIdx];
+        this.visitArgList(args);
+        this.propagateLastTaint(node);
     }
 
     /**

@@ -651,6 +651,32 @@ strict digraph full {
         );
     }
 
+    #[test]
+    fn obj_creation_expr() {
+        // (simplification: all taint is passed through to the return value)
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = new String(z);
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    y
+    z
+    objCreation [text="*",cstkind=object_creation_expression]
+    argList [text="*",cstkind=argument_list]
+
+    argList -> z [kind=dependence]
+    objCreation -> argList [kind=dependence]
+    y -> objCreation [kind=assignment]
+}
+"#
+        );
+    }
+
     ///////////////////////////////////////////////////////////////////////////
     // Statements
     ///////////////////////////////////////////////////////////////////////////
@@ -1095,28 +1121,6 @@ strict digraph full {
     methodInvocation [text="*",cstkind=method_invocation]
 
     var_A -> methodInvocation [kind=assignment]
-}
-"#
-        );
-    }
-
-    /// `object_creation_expression` nodes are parsed but not analyzed.
-    #[test]
-    fn obj_creation_expr_unsupported() {
-        assert_digraph!(
-            // language=java
-            "\
-void method() {
-    String var_A = new OuterClass().new InnerClass();
-}
-",
-            // language=dot
-            r#"
-strict digraph full {
-    var_A
-    objCreation [text="new OuterClass().new InnerClass()",cstkind=object_creation_expression]
-
-    var_A -> objCreation [kind=assignment]
 }
 "#
         );
