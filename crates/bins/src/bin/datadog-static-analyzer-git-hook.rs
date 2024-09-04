@@ -222,11 +222,9 @@ fn main() -> Result<()> {
     let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
 
     let (configuration_file, configuration_method): (Option<ConfigFile>, Option<ConfigMethod>) =
-        match &configuration_file_and_method {
+        match configuration_file_and_method {
             Ok(cfg) => match cfg {
-                Some((config_file, config_method)) => {
-                    (Some(config_file.clone()), Some(config_method.clone()))
-                }
+                Some((config_file, config_method)) => (Some(config_file), Some(config_method)),
                 _ => (None, None),
             },
             Err(err) => {
