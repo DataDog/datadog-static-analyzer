@@ -3,7 +3,7 @@ use crate::datadog_utils::{get_remote_configuration, should_use_datadog_backend}
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context, Result};
 use kernel::config_file::parse_config_file;
-use kernel::model::config_file::ConfigFile;
+use kernel::model::config_file::{ConfigFile, ConfigMethod};
 use kernel::utils::{decode_base64_string, encode_base64_string};
 use std::fs::File;
 use std::io::Read;
@@ -76,7 +76,7 @@ pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
 /// - If the user is a Datadog user (e.g. with API keys), we fetch the remote configuration
 ///   and merge it
 /// - If not, we just return the configuration
-pub fn get_config(path: &str, debug: bool) -> Result<Option<ConfigFile>> {
+pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigMethod)>> {
     let config_file = read_config_file(path);
     let repository_url_opt = get_repository_url(path);
 
@@ -86,6 +86,9 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<ConfigFile>> {
         if should_use_datadog_backend() && repository_url_opt.is_ok() {
             let existing_config_file_base64 =
                 read_config_file_in_base64(path).expect("cannot get the config file in base64");
+
+            let has_config_file = existing_config_file_base64.is_some();
+
             let remote_config = get_remote_configuration(
                 repository_url_opt.expect("repository URL should exist"),
                 existing_config_file_base64,
@@ -103,11 +106,21 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<ConfigFile>> {
                     let remote_config_string =
                         decode_base64_string(rc).expect("error when decoding base64");
                     match parse_config_file(remote_config_string.as_str()) {
-                        Ok(remote_config) => Some(remote_config),
+                        Ok(remote_config) => {
+                            let config_method = if has_config_file {
+                                ConfigMethod::RemoteConfigurationWithFile
+                            } else {
+                                ConfigMethod::RemoteConfiguration
+                            };
+                            Some((remote_config, config_method))
+                        }
                         Err(e) => {
-                            eprintln!("Error when parsing remote config: {:?}", e);
-                            eprintln!("Proceeding with local config");
-                            cf
+                            if debug {
+                                eprintln!("Error when parsing remote config: {:?}", e);
+                                eprintln!("Proceeding with local config");
+                            }
+
+                            cf.map(|c| (c, ConfigMethod::File))
                         }
                     }
                 }
@@ -116,14 +129,14 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<ConfigFile>> {
                         eprintln!("Error when attempting to fetch the remote config: {:?}", e);
                         eprintln!("Falling back to the local configuration, if any")
                     }
-                    cf
+                    cf.map(|c| (c, ConfigMethod::File))
                 }
             }
         } else {
             if debug {
                 eprintln!("not attempting to use remote configuration");
             }
-            cf
+            cf.map(|c| (c, ConfigMethod::File))
         }
     })
 }

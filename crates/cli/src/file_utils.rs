@@ -492,7 +492,7 @@ mod tests {
         files1.push(d);
         let cli_configuration = CliConfiguration {
             use_debug: true,
-            use_configuration_file: true,
+            configuration_method: None,
             ignore_gitignore: true,
             source_directory: "bla".to_string(),
             source_subdirectories: vec![],
