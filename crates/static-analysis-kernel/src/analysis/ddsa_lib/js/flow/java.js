@@ -558,15 +558,6 @@ export class MethodFlow {
     visitMethodCall(node) {
         const children = ddsa.getChildren(node);
         const objIdx = findFieldIndex(children, 0, "object");
-        // [(identifier) (field_access)]
-        const obj = children[objIdx];
-        if (obj?.cstType === "identifier") {
-            // [simplification]: If the node could represent a local variable, propagate taint as if that local variable
-            // always taints the return value of an instance method (this is clearly not always the case).
-            this.visitIdentifier(obj);
-            this.propagateLastTaint(node);
-            const _ = this.takeLastTainted();
-        }
 
         // [simplification]: Ignore the "name" field (we don't do name or type resolution).
 
@@ -577,6 +568,15 @@ export class MethodFlow {
         // [simplification]: Propagate tainted arguments as if they _always_ flow through into the return value
         // of the method (this is clearly not always the case).
         this.propagateLastTaint(node);
+
+        // [(identifier) (field_access)]
+        const obj = children[objIdx];
+        if (obj?.cstType === "identifier") {
+            // [simplification]: If the node could represent a local variable, propagate taint as if that local variable
+            // always taints the return value of an instance method (this is clearly not always the case).
+            this.visitIdentifier(obj);
+            this.propagateLastTaint(node);
+        }
     }
 
     /**

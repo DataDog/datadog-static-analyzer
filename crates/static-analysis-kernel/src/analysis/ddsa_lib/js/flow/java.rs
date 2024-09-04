@@ -1398,6 +1398,38 @@ strict digraph full {
 "#
         );
     }
+    /// This simplification is recursive
+    #[test]
+    fn method_call_return_object_recursive() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    a = b.get(c.getBytes());
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    a
+    b
+    c
+    methodCall_b [text="*",cstkind=method_invocation,col=9]
+    argList_b [text="*",cstkind=argument_list,col=14]
+    methodCall_c [text="*",cstkind=method_invocation,col=15]
+
+    // The simplification:
+    methodCall_b -> b [kind=dependence]
+    methodCall_c -> c [kind=dependence]
+    //////////
+
+    methodCall_b -> argList_b [kind=dependence]
+    argList_b -> methodCall_c [kind=dependence]
+    a -> methodCall_b [kind=assignment]
+}
+"#
+        );
+    }
 
     /// We simplify and say that any argument that flows into any method call taints the return value.
     #[test]
