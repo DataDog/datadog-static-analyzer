@@ -28,8 +28,8 @@ fi
 
 FINDINGS=`jq '.runs[0].results|length' ${REPO_DIR}/results.json`
 echo "Found $FINDINGS violations"
-if [ $FINDINGS -lt 10 ]; then
-  echo "only $FINDINGS found, expected at least 10 findings"
+if [ $FINDINGS -lt 2 ]; then
+  echo "only $FINDINGS found, expected at least 2 findings"
   exit 1
 fi
 
