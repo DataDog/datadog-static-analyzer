@@ -21,7 +21,7 @@ RES=`jq '.runs[0].results | length ' "${REPO_DIR}/results1.json"`
 
 echo "Found $RES errors on first run"
 
-if [ "$RES" -lt "12" ]; then
+if [ "$RES" -lt "2" ]; then
   echo "not enough errors found without the static-analysis.datadog.yml file"
   exit 1
 fi

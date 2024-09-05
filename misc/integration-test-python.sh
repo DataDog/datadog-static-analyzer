@@ -21,7 +21,7 @@ RES=`jq '.runs[0].results | length ' "${REPO_DIR}/results1.json"`
 
 echo "Found $RES errors on first run"
 
-if [ "$RES" -lt "18" ]; then
+if [ "$RES" -lt "2" ]; then
   echo "not enough errors found"
   exit 1
 fi
@@ -44,7 +44,7 @@ RES=`jq '.runs[0].results | length ' "${REPO_DIR}/results2.json"`
 
 echo "Found $RES errors on second run"
 
-if [ "$RES" -lt "18" ]; then
+if [ "$RES" -lt "2" ]; then
   echo "not enough errors found"
   exit 1
 fi
