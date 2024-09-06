@@ -879,6 +879,7 @@ export class MethodFlow {
 
         // The index of the first "update" child field detected.
         let updateFieldIdx = -1;
+        let bodyFieldIdx = -1;
 
         const len = children.length;
         for (let i = 0; i < len; i++) {
@@ -902,6 +903,7 @@ export class MethodFlow {
                     }
                     break;
                 case "body":
+                    bodyFieldIdx = i;
                     this.visitBlockStmt(child);
                     break;
                 default:
@@ -910,7 +912,7 @@ export class MethodFlow {
         }
 
         if (updateFieldIdx !== -1) {
-            for (let i = updateFieldIdx; i < len; i++) {
+            for (let i = updateFieldIdx; i < bodyFieldIdx; i++) {
                 const child = children[i];
                 this.visit(child);
                 // TODO(JF): After scoped variable support: propagate taint here
