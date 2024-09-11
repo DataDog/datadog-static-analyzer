@@ -315,14 +315,37 @@ export function getEdgeKind(edge) {
 }
 
 /**
- * A directed flow from a {@link Digraph} vertex to a leaf vertex.
+ * A directed flow from a {@link Digraph} vertex to a leaf vertex that represents a taint flow.
+ * If this is a forward flow (i.e. `isForwardFlow === true`), this path represents:
+ * ```
+ * 0         1         2         3         4         n
+ * |_________|_________|_________|_________|_________|_________|
+ *   source                                              sink
+ * ```
+ *
+ * If this is a backwards flow (i.e. `isForwardFlow === false`), this path represents:
+ * ```
+ * 0         1         2         3         4         n
+ * |_________|_________|_________|_________|_________|_________|
+ *    sink                                              source
+ * ```
  */
-export class TaintFlow {
+export class TaintFlow extends Array {
     /**
      * @param {Array<VertexId>} vidPath
      * @param {boolean} isForwardFlow
      */
     constructor(vidPath, isForwardFlow) {
+        /** @type {Array<TreeSitterNode>} */
+        const path = [];
+        for (const vertexId of vidPath) {
+            // (Phi nodes are pruned from the public-facing API, but will be present in the `this._vidPath`).
+            if (vertexKind(vertexId) === VERTEX_CST) {
+                path.push(globalThis.__RUST_BRIDGE__ts_node.get(internalId(vertexId)));
+            }
+        }
+        super(...path);
+
         /**
          * Whether this flow represents forward data flow or not. See {@link TaintFlow.path} for documentation.
          * @type {boolean}
@@ -332,36 +355,9 @@ export class TaintFlow {
         /**
          * The path, represented as an array of {@link VertexId}.
          * @type {Array<VertexId>}
+         * @private
          */
         this._vidPath = vidPath;
-
-        /** @type {Array<TreeSitterNode>} */
-        const path = [];
-        for (const vertexId of vidPath) {
-            // (Phi nodes are pruned from the public-facing API, but will be present in the `this._vidPath`).
-            if (vertexKind(vertexId) === VERTEX_CST) {
-                path.push(globalThis.__RUST_BRIDGE__ts_node.get(internalId(vertexId)));
-            }
-        }
-        /**
-         * An array of CST nodes representing taint flow.
-         *
-         * If this is a forward flow (i.e. `isForwardFlow === true`), this path represents:
-         * ```
-         * 0         1         2         3         4         n
-         * |_________|_________|_________|_________|_________|_________|
-         *   source                                              sink
-         * ```
-         *
-         * If this is a backwards flow (i.e. `isForwardFlow === false`), this path represents:
-         * ```
-         * 0         1         2         3         4         n
-         * |_________|_________|_________|_________|_________|_________|
-         *    sink                                              source
-         * ```
-         * @type {Array<TreeSitterNode>}
-         */
-        this.path = path;
     }
 
     /**
@@ -376,7 +372,7 @@ export class TaintFlow {
         } else {
             idx = -1;
         }
-        return this.path.at(idx);
+        return this.at(idx);
     }
 
     /**
@@ -391,7 +387,7 @@ export class TaintFlow {
         } else {
             idx = 0;
         }
-        return this.path.at(idx);
+        return this.at(idx);
     }
 }
 

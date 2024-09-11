@@ -335,7 +335,7 @@ for (const flow of [sourceFlows[0], sinkFlows[0]]) {{
     const sourceId = flow.source.id;
     // We only assert the number of nodes in the path because we just want to ensure that
     // this array is populated. The accuracy/correctness of those nodes is handled by graph unit tests.
-    assert(flow.path.length > 2, "flow should have more than 2 nodes");
+    assert(flow.length > 2, "flow should have more than 2 nodes");
 
     serialized += DDSA_Console.stringifyAll(sinkId, sourceId) + '\n';
 }}
