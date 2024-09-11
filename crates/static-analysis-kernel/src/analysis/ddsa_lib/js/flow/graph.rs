@@ -612,7 +612,10 @@ fn encode_id(input: impl AsRef<str>) -> dot_structures::Id {
         .chars()
         .any(|ch| !matches!(ch, '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' ));
     if needs_escape {
-        dot_structures::Id::Escaped(format!("\"{}\"", input.replace(r#"""#, r#"\""#)))
+        let mut text = input.replace("\"", "\\\"");
+        text = text.replace("\r\n", "\\r\\n");
+        text = text.replace("\n", "\\n");
+        dot_structures::Id::Escaped(format!("\"{}\"", text))
     } else {
         dot_structures::Id::Plain(input.to_string())
     }
