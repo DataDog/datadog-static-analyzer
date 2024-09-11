@@ -1664,6 +1664,28 @@ const ALL_BRANCH_TYPES = BRANCH_TYPE_CONSEQUENT | BRANCH_TYPE_ALTERNATIVE;
  * @typedef {Map<string, PhiCandidate>} PhiCandidates
  */
 
+ /**
+ * Returns `true` if the node's text equals the provided `text`.
+ * For better performance, this function should always be used instead of a vanilla equality
+ * check (`===` or `==`).
+ *
+ * @param {TreeSitterNode} node
+ * @param {string} text
+ * @returns {boolean}
+ */
+function nodeTextEquals(node, text) {
+    // (The reason for this as a distinct function instead of a vanilla JavaScript equality check
+    // is that by cheaply verifying the length of the node's CST span matches the provided `text`,
+    // we can sometimes avoid a relatively expensive call into Rust and a v8 string allocation).
+    if (node._startLine === node._endLine) {
+        const nodeTextLength = node._endCol - node._startCol;
+        if (nodeTextLength !== text.length) {
+            return false;
+        }
+    }
+    return node.text === text;
+}
+
 /**
  * Returns the index of the first node with a matching `fieldName`, or `-1` if it doesn't exist.
  *
