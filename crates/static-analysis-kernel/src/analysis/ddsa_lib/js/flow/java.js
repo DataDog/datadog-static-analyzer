@@ -27,6 +27,19 @@ const { op_java_get_bin_expr_operator } = Deno.core.ops;
  *
  * ## Type resolution
  * Type resolution is unsupported.
+ *
+ * ## Control flow expressions
+ * Return values for expressions aren't formally represented, and thus phi nodes are not created for
+ * expressions that use conditional blocks.
+ * For example:
+ * ```java
+ * int someVariable = switch (value) {
+ *     case 1 -> alt0;
+ *     case 2 -> alt1;
+ *     default -> alt2;
+ * }
+ * // Here, `someVariable` is not assigned to a phi node (rather, the dependence edges are drawn directly)
+ * ```
  */
 export class MethodFlow {
     /**
@@ -755,13 +768,19 @@ export class MethodFlow {
                 case "break_statement":
                 case "throw_statement":
                 case "continue_statement":
+                case "return_statement":
                     // All subsequent nodes are unreachable.
                     break outer;
-                case "return_statement":
-                case "yield_statement":
+                case "yield_statement": {
+                    // Visit children of the yield statement so they can be propagated to `parent`.
+                    const yieldChildren = ddsa.getChildren(node);
+                    for (const child of yieldChildren) {
+                        this.visit(child);
+                    }
                     this.propagateLastTaint(parent);
                     // All subsequent nodes are unreachable.
                     break outer;
+                }
                 default:
                     break;
             }
@@ -1156,6 +1175,12 @@ export class MethodFlow {
      *             yield "some string";
      *     };
      * //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * //                 vvvvvvvvvvvvvvvvvvvvv
+     *     String value = switch (example_03) {
+     *         case 123 -> "one two three";
+     *         default -> "some string";
+     *     };
+     * //  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
      * ```
      * ```
      * (switch_expression condition: (parenthesized_expression) body: (switch_block))
@@ -1164,31 +1189,75 @@ export class MethodFlow {
      * @param {TreeSitterNode} node
      */
     visitSwitchExpr(node) {
+        this.enterBlock(true);
+
         const children = ddsa.getChildren(node);
         ignoreMutatingField(/* "condition" */);
 
         const switchBlockIdx = findFieldIndex(children, 1, "body");
         const switchBlock = children[switchBlockIdx];
 
-        // (switch_block
-        //     (switch_block_statement_group
-        //         (switch_label (_))
-        //         (_)*
-        //     )*
-        // )
-        const switchGroups = ddsa.getChildren(switchBlock);
-        for (const switchGroup of switchGroups) {
-            if (!(switchGroup.cstType === "switch_block_statement_group")) {
-                continue;
+        const caseStatements = ddsa.getChildren(switchBlock);
+        for (const caseStatement of caseStatements) {
+            switch (caseStatement.cstType) {
+                // (switch_block_statement_group (switch_label (_)) (_)*)
+                case "switch_block_statement_group": {
+                    const children = ddsa.getChildren(caseStatement);
+                    // If there is only one child (`switch_label`), this is a "trivial" fall through case
+                    // so we can easily handle it.
+                    if (children.length === 1) {
+                        break;
+                    }
+                    // [simplification]
+                    // Otherwise, logic to more complex fall-through switch cases is omitted.
+                    //
+                    // For example:
+                    // ```java
+                    // int y = 10;
+                    // switch (value) {
+                    //     case 1234:
+                    //         y = 20;
+                    //     case 5678:
+                    //         y = 40;
+                    //         break;
+                    //     default:
+                    //         y = 60;
+                    // }
+                    // In the `case 1234:` branch, the end value for `y` is always `40`, however, we will treat it as `20`.
+                    const switchLabel = children[0];
+                    const branchSemantic = nodeTextEquals(switchLabel, "default") ? BRANCH_TYPE_ALTERNATIVE : BRANCH_TYPE_CONSEQUENT;
+                    this.enterBranch(branchSemantic);
+                    // Visit everything after the `switch_label`.
+                    const exprStmts = children.slice(1);
+                    this._visitExprStmtList(node, exprStmts);
+                    this.exitBlock();
+                    break;
+                }
+                // (switch_rule (switch_label (_)) (expression_statement))
+                case "switch_rule": {
+                    const children = ddsa.getChildren(caseStatement);
+                    const switchLabel = children[0];
+                    const branchSemantic = nodeTextEquals(switchLabel, "default") ? BRANCH_TYPE_ALTERNATIVE : BRANCH_TYPE_CONSEQUENT;
+                    this.enterBranch(branchSemantic);
+                    for (let i = 1; i < children.length; i++) {
+                        const child = children[i];
+                        // The sole `expression_statement` behaves like a `yield_statement`:
+                        if (child.cstType === "expression_statement") {
+                            // (NB: The first child cannot be a comment, so it is safe to manually index into this array)
+                            const innerExpr = ddsa.getChildren(child)[0];
+                            this.visit(innerExpr);
+                            this.propagateLastTaint(node);
+                            break;
+                        }
+                    }
+                    this.exitBlock();
+                    break;
+                }
             }
-            const groupChildren = ddsa.getChildren(switchGroup);
-
-            // Visit everything after the `switch_label`.
-            const exprStmts = groupChildren.slice(1);
-            this._visitExprStmtList(node, exprStmts);
         }
+        this.exitBlock();
     }
-
+    
     /**
      * Visits a `synchronized_statement`.
      * ```java
