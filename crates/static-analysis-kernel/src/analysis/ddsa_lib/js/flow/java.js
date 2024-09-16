@@ -561,7 +561,6 @@ export class MethodFlow {
         // `[(identifier) (field_access)]`
         const obj = children[objIdx];
 
-        // [simplification]: Ignore the "name" field (we don't do name or type resolution).
         // (We don't blanket visit the `obj` because of how we selectively visit `identifier` to track variable references).
         if (obj !== undefined) {
             switch (obj.cstType) {
@@ -573,7 +572,10 @@ export class MethodFlow {
             }
         }
 
-        const argsIdx = findFieldIndex(children, objIdx + 1, "arguments");
+        const nameIdx = findFieldIndex(children, objIdx + 1, "name");
+        const name = children[nameIdx];
+
+        const argsIdx = findFieldIndex(children, nameIdx + 1, "arguments");
         const args = children[argsIdx];
         this.visitArgList(args);
 
@@ -581,11 +583,41 @@ export class MethodFlow {
         // of the method (this is clearly not always the case).
         this.propagateLastTaint(node);
 
+        // Check if this is an instance method call on a variable with a custom taint propagator.
         if (obj?.cstType === "identifier") {
-            // [simplification]: If the node could represent a local variable, propagate taint as if that local variable
-            // always taints the return value of an instance method (this is clearly not always the case).
-            this.visitIdentifier(obj);
-            this.propagateLastTaint(node);
+            let didRedefine = false;
+            // (We iterate this set instead of doing a map lookup to be able to take advantage of `nodeTextEquals`)
+            for (const [methodName, methodPropagators] of propagatingMethodNames) {
+                if (!nodeTextEquals(name, methodName)) {
+                    continue;
+                }
+                /** @type {PropagatorKind | undefined} */
+                let propagatorKind;
+                for (let i = this.context.scopeStack.length - 1; i >= 0; i--) {
+                    const scope = this.context.scopeStack[i];
+                    propagatorKind = scope.getMutablePropagatorKind(obj.text);
+                    if (propagatorKind !== undefined) {
+                        break;
+                    }
+                }
+                // Per our SSA-inspired methodology, a mutation to a variable (e.g. adding to a `List`) requires a
+                // new definition of that variable. This redefinition happens (along with taint propagation) if:
+                // 1. `variableNode`'s text has been marked as a propagator.
+                // 2. `methodName` is a known propagation method.
+                if (propagatorKind !== undefined && methodPropagators.includes(propagatorKind)) {
+                    this.propagateLastTaint(obj);
+                    this.visitIdentifier(obj);
+                    this.markCurrentDefinition(obj.text, obj);
+                    didRedefine = true;
+                    break;
+                }
+            }
+            if (!didRedefine) {
+                // [simplification]: If the node could represent a local variable, propagate taint as if that local variable
+                // always taints the return value of an instance method (this is clearly not always the case).
+                this.visitIdentifier(obj);
+                this.propagateLastTaint(node);
+            }
         }
     }
 
@@ -1090,28 +1122,40 @@ export class MethodFlow {
     visitLocalVarDecl(node) {
         const children = ddsa.getChildren(node);
 
-        for (let i = 1; i < children.length; i++) {
+        // [simplification]: Note that because an abstract state stack isn't tracked, this only works for
+        // explicit type declarations (i.e. those not using the `var` keyword).
+        /** @type {PropagatorKind | undefined} */
+        let propagatorKind;
+        for (let i = 0; i < children.length; i++) {
             const child = children[i];
-            if (child.fieldName !== "declarator") {
-                continue;
+            switch (child.fieldName) {
+                case "type": {
+                    propagatorKind = getPropagatorKindFromType(child);
+                    break;
+                }
+                case "declarator": {
+                    // (variable_declarator name: (identifier) <value: (_)>?)
+                    const declaratorChildren = ddsa.getChildren(child);
+                    const nameIdx = findFieldIndex(declaratorChildren, 0, "name");
+                    const name = declaratorChildren[nameIdx];
+
+                    const valueIdx = findFieldIndex(declaratorChildren, nameIdx + 1, "value");
+                    // A variable may not be declared with a value.
+                    if (valueIdx !== -1) {
+                        const rhsExpr = declaratorChildren[valueIdx];
+                        this.visit(rhsExpr);
+                        this.graph.addTypedEdge(vertexId(name), vertexId(rhsExpr), EDGE_ASSIGNMENT);
+                    }
+
+                    this.markCurrentDefinition(name.text, name);
+                    if (propagatorKind !== undefined) {
+                        this.currentBlock().markMutablePropagator(name.text, propagatorKind);
+                    }
+                    // Reset the current taint status.
+                    const _ = this.takeLastTainted();
+                    break;
+                }
             }
-
-            // (variable_declarator name: (identifier) <value: (_)>?)
-            const declaratorChildren = ddsa.getChildren(child);
-            const nameIdx = findFieldIndex(declaratorChildren, 0, "name");
-            const name = declaratorChildren[nameIdx];
-
-            const valueIdx = findFieldIndex(declaratorChildren, nameIdx + 1, "value");
-            // A variable may not be declared with a value.
-            if (valueIdx !== -1) {
-                const rhsExpr = declaratorChildren[valueIdx];
-                this.visit(rhsExpr);
-                this.graph.addTypedEdge(vertexId(name), vertexId(rhsExpr), EDGE_ASSIGNMENT);
-            }
-
-            this.markCurrentDefinition(name.text, name);
-            // Reset the current taint status.
-            const _ = this.takeLastTainted();
         }
     }
 
@@ -1149,23 +1193,42 @@ export class MethodFlow {
 
         const formalParamsChildren = ddsa.getChildren(formalParams);
         for (const param of formalParamsChildren) {
-            const paramChildren = ddsa.getChildren(param);
+            /** @type {PropagatorKind | undefined} */
+            let propagatorKind;
 
+            const paramChildren = ddsa.getChildren(param);
             if (param.cstType === "formal_parameter") {
                 // (formal_parameter (modifiers)? type: (_) name: (identifier))
-                const nameIdx = findFieldIndex(paramChildren, 1, "name");
+                const typeIdx = findFieldIndex(paramChildren, 0, "type");
+                const type = paramChildren[typeIdx];
+
+                const nameIdx = findFieldIndex(paramChildren, typeIdx + 1, "name");
                 const name = paramChildren[nameIdx];
                 this.markCurrentDefinition(name.text, name);
+                propagatorKind = getPropagatorKindFromType(type);
+                if (propagatorKind !== undefined) {
+                    this.currentBlock().markMutablePropagator(name.text, propagatorKind);
+                }
             } else if (param.cstType === "spread_parameter") {
                 // (spread_parameter (type_identifier) (variable_declarator))
                 const spreadParamChildren = ddsa.getChildren(param);
                 for (const paramChild of spreadParamChildren) {
-                    if (paramChild.cstType === "variable_declarator") {
-                        // (variable_declarator name: (identifier) <value: (_)>?)
-                        const varDeclChildren = ddsa.getChildren(paramChild);
-                        const nameIdx = findFieldIndex(varDeclChildren, 0, "name");
-                        const name = varDeclChildren[nameIdx];
-                        this.markCurrentDefinition(name.text, name);
+                    switch (paramChild.cstType) {
+                        case "generic_type":
+                        case "type_identifier": {
+                            propagatorKind = getPropagatorKindFromType(paramChild);
+                            break;
+                        }
+                        case "variable_declarator": {
+                            // (variable_declarator name: (identifier) <value: (_)>?)
+                            const varDeclChildren = ddsa.getChildren(paramChild);
+                            const nameIdx = findFieldIndex(varDeclChildren, 0, "name");
+                            const name = varDeclChildren[nameIdx];
+                            this.markCurrentDefinition(name.text, name);
+                            if (propagatorKind !== undefined) {
+                                this.currentBlock().markMutablePropagator(name.text, propagatorKind);
+                            }
+                        }
                     }
                 }
             }
@@ -1797,6 +1860,66 @@ function findFieldIndex(children, start, fieldName) {
 }
 
 /**
+ * A variable that, due to its (guessed) type, has additional methods that propagate taint via self-mutation.
+ * @typedef {Object} PropagatorKind
+ * @property {string} simpleClassName The last component of the fully-qualified class name.
+ * @property {Array<string>} instanceMethods Instance methods that taint the variable with their arguments.
+ */
+
+/** @type {Array<PropagatorKind>} */
+const PROPAGATORS = [
+    // java.util.List<String>
+    { simpleClassName: "List<String>", instanceMethods: ["add", "addAll", "set"] },
+];
+
+/**
+ * A cached lookup of method names on {@link PROPAGATORS}.
+ * @type {Map<string, Array<PropagatorKind>>}
+ */
+const propagatingMethodNames = (() => {
+    /** @type {Map<string, Array<PropagatorKind>>} */
+    const lookup = new Map();
+    for (const p of PROPAGATORS) {
+        for (const methodName of p.instanceMethods) {
+            let list = lookup.get(methodName);
+            if (list === undefined) {
+                list = [];
+                lookup.set(methodName, list);
+            }
+            list.push(p);
+        }
+    }
+    return lookup;
+})();
+
+/**
+ * Returns a {@link PropagatorKind} for the provided type.
+ *
+ * [simplification]
+ * * This only checks the literal text, not the CST. This can produce false negatives.
+ * * This only checks the class's short name. This can produce false positives.
+ *
+ * @param typeNode A "type_identifier" or "generic_type" node.
+ * @returns {PropagatorKind | undefined}
+ */
+function getPropagatorKindFromType(typeNode) {
+    let nodeTextLength = -1;
+    // If we can reliably determine the string length, use it to reduce necessary calls to Rust.
+    if (typeNode._startLine === typeNode._endLine) {
+        nodeTextLength = typeNode._endCol - typeNode._startCol;
+    }
+    for (const p of PROPAGATORS) {
+        if (nodeTextLength >= p.simpleClassName.length || nodeTextLength === -1) {
+            if (typeNode.text.endsWith(p.simpleClassName)) {
+                return p;
+            }
+        }
+    }
+    return undefined;
+}
+
+
+/**
  * Returns `true` if the CST node is semantically a comment, or `false` if not.
  * @param {TreeSitterNode | TreeSitterFieldChildNode} node
  */
@@ -1866,6 +1989,12 @@ class ScopeBlock {
          *     of variables from external scopes.
          */
         this.definitions = undefined;
+
+        /**
+         * Variable names within this scope that can propagate taint via mutation.
+         * @type {Map<string, PropagatorKind> | undefined}
+         */
+        this.mutableVars = undefined;
     }
 
     /**
@@ -1906,6 +2035,26 @@ class ScopeBlock {
      */
     getVariable(identifier) {
         return this.definitions?.get(identifier);
+    }
+
+    /**
+     * Marks a mutable propagator within this scope.
+     * @param {string} variableName
+     * @param {PropagatorKind} kind
+     */
+    markMutablePropagator(variableName, kind) {
+        if (this.mutableVars === undefined) {
+            this.mutableVars = new Map();
+        }
+        this.mutableVars.set(variableName, kind);
+    }
+
+    /**
+     * If the `variableName` has been marked within this scope, this function returns the kind of propagator.
+     * @returns {PropagatorKind | undefined}
+     */
+    getMutablePropagatorKind(variableName) {
+        return this.mutableVars?.get(variableName);
     }
 }
 

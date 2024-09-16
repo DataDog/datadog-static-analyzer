@@ -1028,6 +1028,65 @@ void method() {
             );
         }
     }
+
+    /// Common types that either build a string or collection of strings propagate taint and redefine the identifier.
+    #[test]
+    fn string_collection_types_redefinition() {
+        #[rustfmt::skip]
+        let cases = &[
+            ("java.util.List<String>", "ArrayList<String>()", "add"),
+        ];
+        for (class_name, constructor, method) in cases {
+            let java_code = format!(
+                "\
+void method() {{
+    {class_name} y = new {constructor};
+    y.{method}(alt0);
+    y.{method}(\"str0\");
+    y.{method}(alt1);
+    y;
+}}
+"
+            );
+            assert_digraph!(
+                &java_code,
+                // language=dot
+                r#"
+strict digraph full {
+    alt0; alt1
+    y0 [text=y,line=2]
+    y1 [text=y,line=3]
+    y2 [text=y,line=4]
+    y3 [text=y,line=5]
+    y4 [text=y,line=6]
+
+    objCreationExpr [text="*",cstkind=object_creation_expression]
+
+    methodInvo0 [text="*",line=3,cstkind=method_invocation]
+    argList0 [text="*",line=3,cstkind=argument_list]
+    // methodInvo1 [text="*",line=4,cstkind=method_invocation]
+    // argList1 [text="*",line=4,cstkind=argument_list]
+    methodInvo2 [text="*",line=5,cstkind=method_invocation]
+    argList2 [text="*",line=5,cstkind=argument_list]
+
+    y4 -> y3 [kind=dependence]
+    y3 -> methodInvo2 [kind=dependence]
+    methodInvo2 -> argList2 [kind=dependence]
+    argList2 -> alt1 [kind=dependence]
+
+    y3 -> y2 [kind=dependence]
+    y2 -> y1 [kind=dependence]
+    y1 -> methodInvo0 [kind=dependence]
+    methodInvo0 -> argList0 [kind=dependence]
+    argList0 -> alt0 [kind=dependence]
+
+    y1 -> y0 [kind=dependence]
+    y0 -> objCreationExpr [kind=assignment]
+}
+"#
+            );
+        }
+    }
 }
 
 /// Graph fidelity reductions that were artificially introduced for performance.
