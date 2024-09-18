@@ -651,6 +651,40 @@ strict digraph full {
         );
     }
 
+    /// Chained methods are parsed and taint is propagated from object to method/property.
+    #[test]
+    fn method_invocation_chained() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    echo(x).golf(y).foxtrot(z);
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    x; y; z
+    argList0 [text="(x)",cstkind=argument_list]
+    methodInvo0 [text="echo(x)",cstkind=method_invocation]
+    argList1 [text="(y)",cstkind=argument_list]
+    methodInvo1 [text="echo(x).golf(y)",cstkind=method_invocation]
+    argList2 [text="(z)",cstkind=argument_list]
+    methodInvo2 [text="echo(x).golf(y).foxtrot(z)",cstkind=method_invocation]
+
+    argList0 -> x [kind=dependence]
+    methodInvo0 -> argList0 [kind=dependence]
+    argList1 -> y [kind=dependence]
+    methodInvo1 -> argList1 [kind=dependence]
+    methodInvo1 -> methodInvo0 [kind=dependence]
+    argList2 -> z [kind=dependence]
+    methodInvo2 -> argList2 [kind=dependence]
+    methodInvo2 -> methodInvo1 [kind=dependence]
+}
+"#
+        );
+    }
+
     #[test]
     fn obj_creation_expr() {
         // (simplification: all taint is passed through to the return value)
