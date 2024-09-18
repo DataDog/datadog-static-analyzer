@@ -505,9 +505,9 @@ strict digraph {
     }
 
     /// array_creation_expression
-    /// array_initializer
     #[test]
-    fn array_creation_expression_array_initializer() {
+    fn array_creation_expression() {
+        // With array_initializer
         assert_digraph!(
             // language=java
             "\
@@ -527,6 +527,19 @@ strict digraph full {
     arrayInit -> var_A [kind=dependence]
     arrayInit -> var_B [kind=dependence]
 }
+"#
+        );
+        // Without array_initializer
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    new String[123];
+}
+",
+            // language=dot
+            r#"
+strict digraph full {}
 "#
         );
     }

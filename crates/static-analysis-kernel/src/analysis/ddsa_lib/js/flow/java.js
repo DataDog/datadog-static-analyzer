@@ -282,11 +282,13 @@ export class MethodFlow {
     /**
      * Visits an `array_creation_expression`.
      * ```java
-     * var test = new String[]{"hello", someVar};
-     * //         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * var example_01 = new String[]{"hello", someVar};
+     * //               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * var example_02 = new byte[1024];
+     * //               ^^^^^^^^^^^^^^
      * ```
      * ```
-     * (type: (_) dimensions: (dimensions) value: (array_initializer))
+     * (type: (_) dimensions: (dimensions) <value: (array_initializer)>?)
      * ```
      * @param {TreeSitterNode} node
      */
@@ -295,9 +297,11 @@ export class MethodFlow {
         const children = ddsa.getChildren(node);
 
         const valueIdx = findFieldIndex(children, 2, "value");
-        const value = children[valueIdx];
-        this.visit(value);
-        this.propagateLastTaint(node);
+        if (valueIdx !== -1) {
+            const value = children[valueIdx];
+            this.visit(value);
+            this.propagateLastTaint(node);
+        }
     }
 
     /**
