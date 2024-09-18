@@ -1032,9 +1032,11 @@ void method() {
     /// Common types that either build a string or collection of strings propagate taint and redefine the identifier.
     #[test]
     fn string_collection_types_redefinition() {
-        #[rustfmt::skip]
         let cases = &[
             ("java.util.List<String>", "ArrayList<String>()", "add"),
+            ("java.lang.StringBuilder", "StringBuilder()", "append"),
+            ("java.lang.StringBuffer", "StringBuffer()", "append"),
+            ("java.util.StringJoiner", "StringJoiner(\":\")", "add"),
         ];
         for (class_name, constructor, method) in cases {
             let java_code = format!(

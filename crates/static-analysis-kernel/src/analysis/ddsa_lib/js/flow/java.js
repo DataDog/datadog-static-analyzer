@@ -1870,6 +1870,12 @@ function findFieldIndex(children, start, fieldName) {
 const PROPAGATORS = [
     // java.util.List<String>
     { simpleClassName: "List<String>", instanceMethods: ["add", "addAll", "set"] },
+    // java.lang.StringBuilder
+    { simpleClassName: "StringBuilder", instanceMethods: ["append", "insert", "replace"] },
+    // java.lang.StringBuffer
+    { simpleClassName: "StringBuffer", instanceMethods: ["append", "insert", "replace"] },
+    // java.lang.StringJoiner
+    { simpleClassName: "StringJoiner", instanceMethods: ["add", "merge"] },
 ];
 
 /**
