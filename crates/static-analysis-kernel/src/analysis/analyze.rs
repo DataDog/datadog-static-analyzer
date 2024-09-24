@@ -229,7 +229,20 @@ where
                     let console_output = (!console_lines.is_empty() && analysis_option.log_output)
                         .then_some(console_lines.join("\n"));
                     violations.retain(|v| {
-                        !lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line)
+                        let base_ignored =
+                            lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line);
+                        // Additionally, ignore the entire flow if any of the individual regions should be ignored.
+                        let flow_ignored = v
+                            .taint_flow
+                            .as_ref()
+                            .map(|flow| {
+                                flow.iter().any(|region| {
+                                    lines_to_ignore
+                                        .should_filter_rule(rule.name.as_str(), region.start.line)
+                                })
+                            })
+                            .unwrap_or(false);
+                        !(base_ignored || flow_ignored)
                     });
                     violations.iter_mut().for_each(|violation| {
                         if let Some(severity) = rule_config.get_severity(&rule.name) {
@@ -561,7 +574,7 @@ def foo():
 
     // test showing violation ignore
     #[test]
-    fn test_violation_ignore() {
+    fn test_violation_ignore_single_region() {
         let rule_code = r#"
 function visit(node, filename, code) {
     const functionName = node.captures["name"];
@@ -604,6 +617,56 @@ def foo(arg1):
         assert_eq!(1, results.len());
         let result = results.get(0).unwrap();
         assert!(result.violations.is_empty());
+    }
+
+    #[test]
+    fn test_violation_ignore_taint_flow() {
+        // language=java
+        let text = "\
+class Test {
+    // An ignore on a taint flow region (not the base region of the violation):
+    // no-dd-sa
+    void test(String input) {
+        String a = input;
+        var b = a;
+        execute(b);
+    }
+}
+";
+        let ts_query = "\
+(argument_list (identifier) @arg)
+";
+        // language=javascript
+        let rule_code = r#"
+function visit(captures) {
+    const arg = captures.get("arg");
+    const sourceFlows = ddsa.getTaintSources(arg);
+    const v = Violation.new("flow violation", sourceFlows[0]);
+    addError(v);
+}
+"#;
+
+        let rule = RuleInternal {
+            name: "java-security/flow-rule".to_string(),
+            short_description: None,
+            description: None,
+            category: RuleCategory::Security,
+            severity: RuleSeverity::Error,
+            language: Language::Java,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(ts_query, &Language::Java).unwrap(),
+        };
+
+        let analysis_options = AnalysisOptions::default();
+        let results = analyze(
+            &Language::Python,
+            &vec![rule],
+            &Arc::from("file.java"),
+            &Arc::from(text),
+            &RuleConfig::default(),
+            &analysis_options,
+        );
+        assert!(results[0].violations.is_empty());
     }
 
     fn assert_lines_to_ignore(code: String, language: Language, rule: &'static str) {

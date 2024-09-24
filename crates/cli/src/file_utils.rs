@@ -299,9 +299,9 @@ pub fn filter_files_by_diff_aware_info(
         .collect();
 }
 
-/// Generate a fingerprint for a violation that will uniquely identify the violation. The fingerprint is calculated
-/// as is
-///  SHA2(<file-location-in-repository> - <characters-in-directory> - <content-of-code-line> - <number of characters in line>)
+/// Generate a fingerprint for a violation that will uniquely identify the violation.
+/// For each region in the violation, the fingerprint is calculated as:
+///  SHA2(<file-location-in-repository> - <characters-in-directory> - <content-of-start-line> - <number of characters in start line>)
 pub fn get_fingerprint_for_violation(
     rule_name: String,
     violation: &Violation,
@@ -314,38 +314,44 @@ pub fn get_fingerprint_for_violation(
     if !path.exists() || !path.is_file() {
         return None;
     }
-    let line = violation.start.line as usize;
-
-    match read_to_string(&path) {
-        Ok(file_content) => match file_content.lines().nth(line - 1) {
-            Some(line_content) => {
-                let line_content_stripped = line_content
-                    .chars()
-                    .filter(|ch| !ch.is_whitespace())
-                    .collect::<String>();
-                let hash_content = format!(
-                    "{}|{}|{}|{}|{}",
-                    rule_name,
-                    filename,
-                    filename.len(),
-                    line_content_stripped,
-                    line_content_stripped.len()
-                );
-                let hash = format!("{:x}", Sha256::digest(hash_content.as_bytes()));
-                Some(hash)
-            }
-            None => None,
-        },
-        Err(_) => {
-            if use_debug {
-                eprintln!(
-                    "Error when trying to read file {}",
-                    path.into_os_string().to_str().unwrap_or("")
-                );
-            }
-            None
+    let Ok(file_contents) = read_to_string(&path) else {
+        if use_debug {
+            eprintln!(
+                "Error when trying to read file {}",
+                path.into_os_string().to_str().unwrap_or("")
+            );
         }
+        return None;
+    };
+
+    let violations_lines = violation
+        .taint_flow
+        .as_ref()
+        .map_or(vec![violation.start.line as usize], |regions| {
+            regions.iter().map(|r| r.start.line as usize).collect()
+        });
+    let hash_content = violations_lines
+        .iter()
+        .flat_map(|line_num| {
+            let mut stripped = file_contents.lines().nth(line_num - 1)?.to_string();
+            stripped.retain(|c| !c.is_whitespace());
+            Some(format!(
+                "{}|{}|{}|{}|{}",
+                rule_name,
+                filename,
+                filename.len(),
+                stripped,
+                stripped.len()
+            ))
+        })
+        .collect::<Vec<_>>();
+    if hash_content.is_empty() {
+        return None;
     }
+    Some(format!(
+        "{:x}",
+        Sha256::digest(hash_content.join(",").as_bytes())
+    ))
 }
 
 #[cfg(test)]
@@ -356,6 +362,7 @@ mod tests {
 
     use tempfile::{tempdir, TempDir};
 
+    use common::model::position;
     use common::model::position::Position;
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
@@ -385,7 +392,7 @@ mod tests {
     }
 
     #[test]
-    fn get_fingerprint_for_violation_success() {
+    fn get_fingerprint_for_violation_success_single_region() {
         let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let violation = Violation {
             start: Position { line: 10, col: 1 },
@@ -394,6 +401,7 @@ mod tests {
             severity: RuleSeverity::Notice,
             category: RuleCategory::Performance,
             fixes: vec![],
+            taint_flow: None,
         };
         let directory_string = d.into_os_string().into_string().unwrap();
         let fingerprint = get_fingerprint_for_violation(
@@ -419,6 +427,40 @@ mod tests {
         assert!(fingerprint_unknown_file.is_none());
     }
 
+    #[test]
+    fn get_fingerprint_for_violation_success_taint_flow() {
+        let region0 = position::Region {
+            start: Position { line: 22, col: 1 },
+            end: Position { line: 22, col: 30 },
+        };
+        let region1 = position::Region {
+            start: Position { line: 5, col: 1 },
+            end: Position { line: 5, col: 30 },
+        };
+        let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let violation = Violation {
+            start: region0.start,
+            end: region0.end,
+            message: "flow violation".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::Security,
+            fixes: vec![],
+            taint_flow: Some(vec![region0, region1]),
+        };
+        let fingerprint = get_fingerprint_for_violation(
+            "taint_flow_rule".to_string(),
+            &violation,
+            &root_dir,
+            Path::new("resources/test/gitignore/test1"),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            fingerprint,
+            "c4d5a9e602e6097a97490023a753ca9cb1e7fe6c999e6217f5e5e9b8b87253d7"
+        );
+    }
+
     /// same violation, same location, just a different rule id: the fingerprint should
     /// be different.
     #[test]
@@ -433,6 +475,7 @@ mod tests {
             severity: RuleSeverity::Notice,
             category: RuleCategory::Performance,
             fixes: vec![],
+            taint_flow: None,
         };
         let directory_string = d.into_os_string().into_string().unwrap();
 

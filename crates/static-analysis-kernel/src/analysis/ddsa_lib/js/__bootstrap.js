@@ -4,6 +4,7 @@
 
 "use strict";
 
+import {CodeRegion} from "ext:ddsa_lib/region";
 import {DDSA} from "ext:ddsa_lib/ddsa";
 import {DDSA_Console} from "ext:ddsa_lib/utility";
 import {Digraph} from "ext:ddsa_lib/flow/graph";
@@ -17,8 +18,10 @@ import {RootContext} from "ext:ddsa_lib/context_root";
 import {RuleContext} from "ext:ddsa_lib/context_rule";
 import {TreeSitterFieldChildNode, TreeSitterNode} from "ext:ddsa_lib/ts_node";
 import {TsLanguageContext} from "ext:ddsa_lib/context_ts_lang";
+import {Violation} from "ext:ddsa_lib/violation";
 // TODO(JF): These are only used by the Rust runtime, which currently expects them in global scope, but
 //           these should be hidden inside another object, not `globalThis`.
+globalThis.CodeRegion = CodeRegion;
 globalThis.DDSA_Console = DDSA_Console;
 globalThis.DDSA = DDSA;
 globalThis.Digraph = Digraph;
@@ -35,6 +38,7 @@ globalThis.RuleContext = RuleContext;
 globalThis.TreeSitterNode = TreeSitterNode;
 globalThis.TreeSitterFieldChildNode = TreeSitterFieldChildNode;
 globalThis.TsLanguageContext = TsLanguageContext;
+globalThis.Violation = Violation;
 
 ///////////
 // Take all exports from `stella_compat.js` and define them within this scope.

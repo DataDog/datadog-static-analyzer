@@ -5,7 +5,7 @@ import {Violation} from "ext:ddsa_lib/violation";
 export function buildError(startLine, startCol, endLine, endCol, message, severity, category) {
   // NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
   if (typeof message === 'object') message = message.toString();
-  return Violation.new(startLine, startCol, endLine, endCol, message);
+  return Violation.new(message, startLine, startCol, endLine, endCol);
 }
 
 export function buildFix(message, list) {

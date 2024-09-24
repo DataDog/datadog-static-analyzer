@@ -79,7 +79,7 @@ mod tests {
         assert!(violations.is_empty());
 
         let code = r#"
-const v = Violation.new(8, 42, 8, 53, "Message describing the violation");
+const v = Violation.new("Message describing the violation", 8, 42, 8, 53);
 const e = Edit.newAdd(5, 0, "xyz");
 const f = Fix.new("Message describing the fix", [e]);
 v.addFix(f);
@@ -102,9 +102,9 @@ VIOLATIONS.push(v);
         assert_eq!(v8_v_bridge.length(), 0);
 
         let code = r#"
-const valid = Violation.new(16, 84, 16, 106, "abcdef");
-const invalid = Violation.new(8, 42, 8, 53, "abcdef");
-delete invalid.startCol;
+const valid = Violation.new("abcdef", 16, 84, 16, 106);
+const invalid = Violation.new("abcdef", 8, 42, 8, 53);
+delete invalid.baseRegion.startCol;
 VIOLATIONS.push(valid, invalid);
 "#;
         try_execute(scope, code).unwrap();

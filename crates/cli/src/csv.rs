@@ -83,6 +83,7 @@ mod tests {
                     severity: RuleSeverity::Error,
                     category: RuleCategory::Performance,
                     fixes: vec![],
+                    taint_flow: None,
                 }],
                 errors: vec![],
                 execution_error: None,

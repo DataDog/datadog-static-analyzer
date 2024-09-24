@@ -1214,7 +1214,7 @@ flow instanceof Array;
 ";
         let js_code = compile_script(&mut rt.v8_handle_scope(), js_code).unwrap();
         let has_array_proto = rt
-            .scoped_execute(&js_code, |sc, value| value.is_true(), None)
+            .scoped_execute(&js_code, |_, value| value.is_true(), None)
             .unwrap();
         assert!(has_array_proto);
     }

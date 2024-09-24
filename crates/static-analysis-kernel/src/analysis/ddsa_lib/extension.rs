@@ -34,6 +34,7 @@ deno_core::extension!(
         ("ext:ddsa_lib/flow/java", "flow/java.js"),
         ("ext:ddsa_lib/query_match", "query_match.js"),
         ("ext:ddsa_lib/query_match_compat", "query_match_compat.js"),
+        ("ext:ddsa_lib/region", "region.js"),
         ("ext:ddsa_lib/stella_compat", "stella_compat.js"),
         ("ext:ddsa_lib/utility", "utility.js"),
         ("ext:ddsa_lib/ts_node", "ts_node.js"),

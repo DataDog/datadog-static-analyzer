@@ -242,7 +242,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_request_correct_response() {
+    fn test_request_single_region_correct_response() {
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
@@ -271,7 +271,67 @@ mod tests {
         let response = process_analysis_request(request);
         assert!(response.errors.is_empty());
         assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses.get(0).unwrap().violations.len());
+        let violations = &response.rule_responses[0].violations;
+        assert_eq!(1, violations.len());
+        assert!(violations[0].0.taint_flow.is_none());
+    }
+
+    #[test]
+    fn test_request_taint_flow_correct_response() {
+        // language=java
+        let text = "\
+class Test {
+    void test(String input) {
+        String a = input;
+        var b = a;
+        execute(b);
+    }
+}
+";
+        let ts_query = "\
+(argument_list (identifier) @arg)
+";
+        // language=javascript
+        let rule_code = r#"
+function visit(captures) {
+    const arg = captures.get("arg");
+    const sourceFlows = ddsa.getTaintSources(arg);
+    const v = Violation.new("flow violation", sourceFlows[0]);
+    addError(v);
+}
+"#;
+
+        let request = AnalysisRequest {
+            filename: "flow.java".to_string(),
+            language: Language::Java,
+            file_encoding: "utf-8".to_string(),
+            code_base64: encode_base64_string(text.to_string()),
+            configuration_base64: None,
+            options: None,
+            rules: vec![ServerRule {
+                name: "java-security/flow-rule".to_string(),
+                short_description_base64: None,
+                description_base64: None,
+                category: Some(RuleCategory::BestPractices),
+                severity: Some(RuleSeverity::Warning),
+                language: Language::Java,
+                rule_type: RuleType::TreeSitterQuery,
+                entity_checked: None,
+                code_base64: encode_base64_string(rule_code.to_string()),
+                checksum: Some(
+                    "bbcd9763ae8dff95fecadc48d8cfd07767f48ca787749c979022f8d8a12c1e6d".to_string(),
+                ),
+                pattern: None,
+                tree_sitter_query_base64: Some(encode_base64_string(ts_query.to_string())),
+                arguments: vec![],
+            }],
+        };
+        let response = process_analysis_request(request);
+        let taint_flow_regions = response.rule_responses[0].violations[0]
+            .0
+            .taint_flow
+            .as_ref();
+        assert_eq!(taint_flow_regions.unwrap().len(), 6);
     }
 
     #[test]
