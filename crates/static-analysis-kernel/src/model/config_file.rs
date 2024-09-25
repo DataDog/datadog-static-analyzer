@@ -135,6 +135,7 @@ impl From<String> for PathPattern {
                 .literal_separator(true)
                 .empty_alternates(true)
                 .backslash_escape(true)
+                .case_insensitive(true)
                 .build()
                 .map(|g| g.compile_matcher())
                 .ok(),
