@@ -289,14 +289,16 @@ impl JsRuntime {
     ///     None,
     /// )
     /// ```
-    pub(crate) fn scoped_execute<T, U>(
-        &mut self,
-        script: &v8::Global<v8::UnboundScript>,
+    pub(crate) fn scoped_execute<'rt, 's, 'v, T, U>(
+        &'rt mut self,
+        script: &'s v8::Global<v8::UnboundScript>,
         handle_return_value: T,
         timeout: Option<Duration>,
     ) -> Result<U, DDSAJsRuntimeError>
     where
-        T: Fn(&mut v8::TryCatch<v8::HandleScope>, v8::Local<v8::Value>) -> U,
+        'rt: 's,
+        's: 'v,
+        T: Fn(&mut v8::TryCatch<v8::HandleScope<'s>>, v8::Local<'v, v8::Value>) -> U,
     {
         self.console.borrow_mut().clear();
 
