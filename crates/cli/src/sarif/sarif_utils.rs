@@ -830,7 +830,7 @@ mod tests {
     // code path.
     #[test]
     fn test_generate_sarif_report_happy_path() {
-        let rule = RuleBuilder::default()
+        let rule_single_region = RuleBuilder::default()
             .name("my-rule".to_string())
             .description_base64(Some("YXdlc29tZSBydWxl".to_string()))
             .language(Language::Python)
@@ -850,7 +850,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let rule_result = RuleResultBuilder::default()
+        let rule_result_single_region = RuleResultBuilder::default()
             .rule_name("my-rule".to_string())
             .filename("myfile".to_string())
             .violations(vec![ViolationBuilder::default()
@@ -884,8 +884,8 @@ mod tests {
             .expect("building violation");
 
         let sarif_report = generate_sarif_report(
-            &[rule.into()],
-            &[rule_result.try_into().unwrap()],
+            &[rule_single_region.into()],
+            &[rule_result_single_region.try_into().unwrap()],
             &"mydir".to_string(),
             SarifReportMetadata {
                 add_git_info: false,
@@ -898,10 +898,61 @@ mod tests {
         .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
-        assert_json_eq!(
-            sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","version":CARGO_VERSION,"properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["DATADOG_RULE_TYPE:STATIC_ANALYSIS","CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
-        );
+        let expected_json = serde_json::json!(
+        {
+            "runs":[{
+            "results":[{
+                "fixes":[{
+                    "artifactChanges":[{
+                        "artifactLocation":{"uri":"myfile"},
+                        "replacements":[{
+                            "deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},
+                            "insertedContent":{"text":"newcontent"}
+                        }]
+                    }],
+                    "description":{"text":"myfix"}
+                }],
+                "level":"error",
+                "locations":[{
+                    "physicalLocation":{
+                        "artifactLocation":{"uri":"myfile"},
+                        "region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}
+                    }
+                }],
+                "message":{"text":"violation message"},
+                "partialFingerprints":{},
+                "properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},
+                "ruleId":"my-rule","ruleIndex":0
+            }],
+            "tool":{
+                "driver":{
+                    "informationUri":"https://www.datadoghq.com",
+                    "name":"datadog-static-analyzer",
+                    "version":CARGO_VERSION,
+                    "properties":{
+                        "tags":[
+                            "DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0",
+                            "DATADOG_EXECUTION_TIME_SECS:42",
+                            "DATADOG_DIFF_AWARE_ENABLED:false"
+                        ]
+                    },
+                    "rules":[{
+                        "fullDescription":{"text":"awesome rule"},
+                        "helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule",
+                        "id":"my-rule",
+                        "properties":{
+                            "tags":[
+                                "DATADOG_RULE_TYPE:STATIC_ANALYSIS",
+                                "CWE:1234"
+                            ]},
+                        "shortDescription":{"text":"short description"}
+                    }]
+                }
+            }}],
+            "version":"2.1.0"
+        }
+                );
+        assert_json_eq!(expected_json, sarif_report_to_string);
 
         // validate the schema
         assert!(validate_data(&sarif_report_to_string));
