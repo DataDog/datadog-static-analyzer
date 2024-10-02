@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::common::{
-    load_function, v8_uint, Class, DDSAJsRuntimeError, Instance, NodeId,
+    load_function, swallow_v8_error, v8_uint, Class, DDSAJsRuntimeError, Instance, NodeId,
 };
 use deno_core::v8;
 use deno_core::v8::HandleScope;
@@ -82,7 +82,7 @@ impl TreeSitterNodeFn<Class> {
         self.0
             .open(scope)
             .new_instance(scope, &args[..])
-            .expect("class constructor should not throw")
+            .unwrap_or_else(|| swallow_v8_error(|| v8::Object::new(scope)))
     }
 }
 

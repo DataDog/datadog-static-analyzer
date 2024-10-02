@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::common::{
-    load_function, Class, DDSAJsRuntimeError, NodeId, StellaCompat,
+    load_function, swallow_v8_error, Class, DDSAJsRuntimeError, NodeId, StellaCompat,
 };
 use crate::analysis::ddsa_lib::js::QueryMatch;
 use crate::analysis::ddsa_lib::v8_ds::RustConverter;
@@ -27,7 +27,7 @@ rust_converter!(
         self.class
             .open(scope)
             .new_instance(scope, &args[..])
-            .expect("class constructor should not throw")
+            .unwrap_or_else(|| swallow_v8_error(|| v8::Object::new(scope)))
             .into()
     }
 );

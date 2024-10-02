@@ -4,7 +4,7 @@
 
 use crate::analysis;
 use crate::analysis::ddsa_lib::common::{
-    load_function, v8_interned, Class, DDSAJsRuntimeError, Instance, NodeId, StellaCompat,
+    load_function, swallow_v8_error, v8_interned, Class, DDSAJsRuntimeError, NodeId, StellaCompat,
 };
 use crate::analysis::ddsa_lib::js::capture::{MultiCaptureTemplate, SingleCaptureTemplate};
 use crate::analysis::ddsa_lib::js::TreeSitterNodeFn;
@@ -51,7 +51,7 @@ rust_converter!(
         self.class
             .open(scope)
             .new_instance(scope, &args[..])
-            .expect("class constructor should not throw")
+            .unwrap_or_else(|| swallow_v8_error(|| v8::Object::new(scope)))
             .into()
     }
 );

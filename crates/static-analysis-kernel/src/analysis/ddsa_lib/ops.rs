@@ -104,8 +104,7 @@ pub fn op_ts_node_named_children<'s>(
         None
     } else {
         let ids_buf = v8::ArrayBuffer::new(scope, 4 * count * 2);
-        let uint_array = v8::Uint32Array::new(scope, ids_buf, 0, count * 2)
-            .expect("v8 Uint32Array should be able to be created");
+        let uint_array = v8::Uint32Array::new(scope, ids_buf, 0, count * 2)?;
         let mut bridge_ref = ts_node_bridge.borrow_mut();
 
         let mut cursor = ts_node.walk();
