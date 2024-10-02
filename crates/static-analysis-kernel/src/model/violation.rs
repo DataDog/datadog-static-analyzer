@@ -18,7 +18,6 @@ pub enum EditType {
 pub struct Edit {
     pub start: Position,
     pub end: Option<Position>,
-    #[serde(rename = "editType")]
     pub edit_type: EditType,
     pub content: Option<String>,
 }

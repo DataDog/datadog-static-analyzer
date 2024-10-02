@@ -5,7 +5,7 @@ use crate::constants::{
 };
 use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
-use crate::model::violation::violation_to_server;
+use crate::model::violation::ServerViolation;
 use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::{analyze, DEFAULT_JS_RUNTIME};
 use kernel::config_file::parse_config_file;
@@ -210,7 +210,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         .iter()
         .map(|rr| RuleResponse {
             identifier: rr.rule_name.clone(),
-            violations: rr.violations.iter().map(violation_to_server).collect(),
+            violations: rr.violations.iter().map(ServerViolation::from).collect(),
             errors: rr.errors.clone(),
             execution_error: rr.execution_error.clone(),
             output: rr.output.clone(),
@@ -700,6 +700,7 @@ function visit(node, filename, code) {
         assert_eq!(1, response.rule_responses.len());
         assert_eq!(1, response.rule_responses[0].violations.len());
         assert!(response.rule_responses[0].violations[0]
+            .0
             .message
             .contains("argument = 101"));
     }
@@ -745,11 +746,11 @@ function visit(node, filename, code) {
         assert_eq!(1, response.rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::BestPractices,
-            response.rule_responses[0].violations[0].category
+            response.rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Warning,
-            response.rule_responses[0].violations[0].severity
+            response.rule_responses[0].violations[0].0.severity
         );
 
         // Override severity and category.
@@ -773,11 +774,11 @@ rulesets:
         assert_eq!(1, response.rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::CodeStyle,
-            response.rule_responses[0].violations[0].category
+            response.rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Error,
-            response.rule_responses[0].violations[0].severity
+            response.rule_responses[0].violations[0].0.severity
         );
 
         // Per-path severity override.
@@ -805,11 +806,11 @@ rulesets:
         assert_eq!(1, response.rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::CodeStyle,
-            response.rule_responses[0].violations[0].category
+            response.rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Notice,
-            response.rule_responses[0].violations[0].severity
+            response.rule_responses[0].violations[0].0.severity
         );
     }
 
