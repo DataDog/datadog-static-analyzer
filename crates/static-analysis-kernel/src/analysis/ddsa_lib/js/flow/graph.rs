@@ -114,7 +114,8 @@ const TEXT: &str = "text";
 const LINE: &str = "line";
 const COL: &str = "col";
 const CST_KIND: &str = "cstkind";
-const NODE_ATTRS: &[&str] = &[TEXT, LINE, COL, CST_KIND];
+const V_KIND: &str = "vkind";
+const NODE_ATTRS: &[&str] = &[TEXT, LINE, COL, CST_KIND, V_KIND];
 
 /// A graph edge storing a target [`VertexId`] and an [`EdgeKind`].
 ///
@@ -187,20 +188,110 @@ impl EdgeKind {
     }
 }
 
-/// A [`v8::Number`] used to store an id of a vertex in a [`Digraph`].
+/// An id of a vertex in a [`Digraph`], storing an [internal node id](VertexId::internal_id) and a [`VertexKind`].
+///
+/// Internally, this is a bit-packed integer [`v8::Number`]:
+/// ```text
+///            52 bits              1 bit
+/// |------------------------------|-|
+///         internalNodeId          kind
+/// ```
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
 struct VertexId(u32);
 
 impl VertexId {
-    /// Returns the internal node id for this vertex (a [`ddsa_lib::common::NodeId`]).
+    /// The number of bits used to represent a [`VertexKind`].
+    const KIND_BITS: u32 = 1;
+    /// A bitmask to extract a [`VertexKind`] from a `VertexId`.
+    const KIND_BIT_MASK: u32 = (1 << Self::KIND_BITS) - 1;
+
+    /// Returns the kind of this vertex.
+    pub fn kind(&self) -> VertexKind {
+        VertexKind::try_from_id(self.0 & Self::KIND_BIT_MASK)
+            .expect("js should serialize VertexId correctly")
+    }
+
+    /// Returns the internal node id for this vertex. This will return a [`ddsa_lib::common::NodeId`]
+    /// if the vertex is a [`VertexKind::Cst`], or a phi node id if it's a [`VertexKind::Phi`].
     pub fn internal_id(&self) -> u32 {
-        self.0
+        self.0 >> Self::KIND_BITS
+    }
+
+    /// Creates a `VertexId`, given a CST node id.
+    pub const fn from_cst(id: u32) -> Self {
+        Self(id << Self::KIND_BITS | VertexKind::Cst as u32)
+    }
+
+    /// Creates a `VertexId`, given a phi node id.
+    pub const fn from_phi(id: u32) -> Self {
+        Self(id << Self::KIND_BITS | VertexKind::Phi as u32)
     }
 }
 
 impl std::fmt::Display for VertexId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", &self.0)
+    }
+}
+
+/// An integer enum for the type of vertex in a [`Digraph`].
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum VertexKind {
+    Cst = 0,
+    Phi,
+}
+
+impl std::fmt::Display for VertexKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
+
+impl TryFrom<&str> for VertexKind {
+    type Error = String;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            Self::CST_STR => Ok(Self::Cst),
+            Self::PHI_STR => Ok(Self::Phi),
+            _ => Err(format!("invalid vertex kind `{value}`")),
+        }
+    }
+}
+
+impl VertexKind {
+    const CST_STR: &'static str = "cst";
+    const PHI_STR: &'static str = "phi";
+
+    /// Creates a new `VertexKind` if the provided `id` is valid.
+    pub(crate) fn try_from_id(id: u32) -> Result<Self, String> {
+        match id {
+            i if i == VertexKind::Cst as u32 => Ok(VertexKind::Cst),
+            i if i == VertexKind::Phi as u32 => Ok(VertexKind::Phi),
+            _ => Err(format!("invalid id {id}")),
+        }
+    }
+
+    /// Returns the human-friendly string form of the `VertexKind`.
+    pub fn as_str(&self) -> &str {
+        match self {
+            VertexKind::Cst => Self::CST_STR,
+            VertexKind::Phi => Self::PHI_STR,
+        }
+    }
+
+    /// Parses a DOT-specified node and returns its kind.
+    pub fn try_from_dot(node: &dot_structures::Node) -> Result<Self, String> {
+        for n in &node.attributes {
+            let (key, value) = (id_str(&n.0), id_str(&n.1));
+            match key.as_ref() {
+                V_KIND if value == VertexKind::Cst.as_str() => return Ok(Self::Cst),
+                V_KIND if value == VertexKind::Phi.as_str() => return Ok(Self::Phi),
+                V_KIND => return Err(format!("invalid {V_KIND} `{value}`")),
+                _ => {}
+            }
+        }
+        Err(format!("can't find {V_KIND} within provided node"))
     }
 }
 
@@ -329,8 +420,8 @@ impl V8DotGraph {
     }
 }
 
-/// Creates a new `Digraph` from the provided [DOT Language] graph using a small DSL that
-/// allows CST nodes to be searched for/specified succinctly. If provided, `root_node` will constrain
+/// Creates a new `Digraph` from the provided [DOT Language] graph using a DSL that
+/// allows CST/phi nodes to be searched for/specified succinctly. If provided, `root_node` will constrain
 /// the search to the provided CST node and its children.
 ///
 /// # Specifying Vertices
@@ -340,30 +431,41 @@ impl V8DotGraph {
 /// * `col`: an absolute column number for where the CST node is located in the source text.
 /// * `cstkind`: a CST node type for the node, or `*` for any type _(default: `identifier`)_.
 ///
+/// Phi nodes should follow the id pattern of `phi{index}`, using a zero-based index (e.g. `phi0`, `phi1`)
+/// that corresponds to the order in which it is created by the construction algorithm, and additionally
+/// have the following attribute set to `phi`:
+/// * `vkind`: a vertex kind (either `phi` or `cst`) _(default: `cst`)_.
+///
 /// For example, the following two are equivalent:
 /// ```dot
 /// strict digraph {
 ///     A1 [text=var_01,line=3]
 ///     A2 [text=var_01,line=5,col=22]
+///     phi0 [vkind=phi]
 ///     var_02
 ///     1234 [cstkind="*"]
 ///     9876 [cstkind=decimal_integer_literal]
 ///
-///     A2 -> 9876 [kind=assignment]
 ///     A1 -> 1234 [kind=assignment]
-///     var_02 -> A1 [kind=dependence]
+///     A2 -> 9876 [kind=assignment]
+///     phi0 -> A1 [kind=dependence]
+///     phi0 -> A2 [kind=dependence]
+///     var_02 -> phi0 [kind=assignment]
 /// }
 /// // Equivalent:
 /// strict digraph {
-///     A1 [text=var_01,line=3,cstkind=identifier]
-///     A2 [text=var_01,line=5,col=22,cstkind=identifier]
-///     var_02 [text=var_02,cstkind=identifier]
-///     1234 [text=1234,cstkind="*"]
-///     9876 [text=9876,cstkind=decimal_integer_literal]
+///     A1 [text=var_01,line=3,cstkind=identifier,vkind=cst]
+///     A2 [text=var_01,line=5,col=22,cstkind=identifier,vkind=cst]
+///     phi0 [vkind=phi]
+///     var_02 [text=var_02,cstkind=identifier,vkind=cst]
+///     1234 [text=1234,cstkind="*",vkind=cst]
+///     9876 [text=9876,cstkind=decimal_integer_literal,vkind=cst]
 ///
-///     A2 -> 9876 [kind=assignment]
 ///     A1 -> 1234 [kind=assignment]
-///     var_02 -> A1 [kind=dependence]
+///     A2 -> 9876 [kind=assignment]
+///     phi0 -> A1 [kind=dependence]
+///     phi0 -> A2 [kind=dependence]
+///     var_02 -> phi0 [kind=assignment]
 /// }
 /// ```
 /// [DOT Language]: https://graphviz.org/doc/info/lang.html
@@ -388,15 +490,35 @@ pub fn cst_dot_digraph(
         .collect::<Vec<_>>();
 
     // The `String` in the tuple is the original ID of the vertex (as specified in the DOT).
-    // Because we normalize all vertices to have a canonical vertex id, we use the original as a key
-    // to map it to its canonical form.
+    // Because we normalize all vertices to have a canonical vertex id, we use the original id as
+    // a key to map it to its canonical form.
     let located: Vec<(LocatedNode, String)> = stmts
         .iter()
         .filter_map(|stmt| {
             if let Stmt::Node(node) = stmt {
                 let attrs = NodeSearchAttrs::from_vertex(node);
                 let original_text = id_str(&node.id.0).to_string();
-                let located = locate_node(attrs, &candidates);
+                let located = match attrs {
+                    NodeSearchAttrs::Phi => {
+                        // Because phi nodes have no obvious serialization of a unique name (unlike CST nodes),
+                        // despite the coupling with the graph construction algorithm, it vastly reduces
+                        // implementation complexity to require a tests to specify the exact phi id in the DOT.
+                        let num_id = original_text
+                            .split_once("phi")
+                            .and_then(|(pre, id)| {
+                                if !pre.is_empty() {
+                                    return None;
+                                }
+                                id.parse::<u32>().ok()
+                            })
+                            .expect("phi node id should have correct format: `phi{index}`");
+                        let phi = LocatedNode::new_phi(num_id);
+                        // (A lightweight "test" to keep this logic in sync with `canonical_id`).
+                        assert_eq!(original_text, phi.canonical_id());
+                        phi
+                    }
+                    NodeSearchAttrs::Cst { .. } => locate_node(attrs, &candidates),
+                };
                 Some((located, original_text))
             } else {
                 None
@@ -459,17 +581,24 @@ pub(crate) fn cst_v8_digraph(
     ts_tree: &TsTree,
     bridge: &TsNodeBridge,
 ) -> Digraph {
-    // Generates a `LocatedNode` from info provided by the `TsNodeBridge` and text provided by `ts_tree`.
+    // Transformation:
+    // If `VertexKind::CST`: constructs a dot node from metadata from the `TsNodeBridge` and `ts_tree`.
+    // If `VertexKind::Phi`: constructs a dot node from the internal id.
     let transform_vertex = |node: &dot_structures::Node| -> dot_structures::Node {
         let vid = VertexId(id_str(&node.id.0).parse::<u32>().unwrap());
-        let raw = bridge.get_raw(vid.internal_id()).unwrap();
-        // This is only used in tests, however...
-        // Safety:
-        // Given that the `ts_tree` provided owns the underlying `tree_sitter::Tree` that
-        // the bridge's `RawTSNode`s are referencing, we know the tree is alive and that
-        // the memory is still allocated.
-        let ts_node = unsafe { raw.to_node() };
-        let located = LocatedNode::new_cst(ts_node, ts_tree.text(ts_node));
+        let located = match vid.kind() {
+            VertexKind::Cst => {
+                let raw = bridge.get_raw(vid.internal_id()).unwrap();
+                // This is only used in tests, however...
+                // Safety:
+                // Given that the `ts_tree` provided owns the underlying `tree_sitter::Tree` that
+                // the bridge's `RawTSNode`s are referencing, we know the tree is alive and that
+                // the memory is still allocated.
+                let ts_node = unsafe { raw.to_node() };
+                LocatedNode::new_cst(ts_node, ts_tree.text(ts_node))
+            }
+            VertexKind::Phi => LocatedNode::new_phi(vid.internal_id()),
+        };
         located.into()
     };
 
@@ -477,24 +606,30 @@ pub(crate) fn cst_v8_digraph(
     Digraph::new(v8_dot_graph.to_dot(name, transform_vertex))
 }
 
-/// Searches a list of candidates to find a `LocatedNode` that matches the `NodeSearchAttrs`.
+/// Searches a list of candidates to find a `LocatedNode` that matches the [`NodeSearchAttrs::Cst`].
 ///
 /// # Panics
-/// Panics if the number of matches is not exactly 1.
+/// Panics if the number of matches is not exactly 1 or if the `attrs` is not `NodeSearchAttrs::CST`.
 #[rustfmt::skip]
 fn locate_node<'a>(
     attrs: NodeSearchAttrs,
     candidates: &[LocatedNode<'a>],
 ) -> LocatedNode<'a> {
+    let NodeSearchAttrs::Cst { text,  line, col, cst_kind } = &attrs else {
+        panic!("attrs should be `NodeSearchAttrs::CST`");
+    };
     let mut located: Option<LocatedNode> = None;
     for &cand in candidates {
-        if attrs.text.as_ref().map_or(true, |text| text == "*" || cand.text == text)
-            && attrs.line.map_or(true, |line| cand.line == line)
-            && attrs.col.map_or(true, |col| cand.col == col)
-            && attrs.cst_kind.as_ref().map_or(true, |ty| ty == "*" || cand.cst_type == ty)
+        let LocatedNode::Cst { text: cand_text, line: cand_line, col: cand_col, cst_kind: cand_cst_kind } = cand else {
+            panic!("candidate should be `LocatedNode::CST`");
+        };
+        if text.as_ref().map_or(true, |text| text == "*" || cand_text == text)
+            && line.map_or(true, |line| cand_line == line)
+            && col.map_or(true, |col| cand_col == col)
+            && cst_kind.as_ref().map_or(true, |ty| ty == "*" || cand_cst_kind == ty)
         {
             if let Some(prev) = located.replace(cand) {
-                panic!("two nodes matched {:?}: ({:?}, {:?})", attrs, prev, cand);
+                panic!("two CST nodes matched {:?}: ({:?}, {:?})", attrs, prev, cand);
             }
         }
     }
@@ -503,11 +638,14 @@ fn locate_node<'a>(
 
 /// Search metadata to identify a vertex.
 #[derive(Debug, Clone)]
-struct NodeSearchAttrs {
-    pub text: Option<String>,
-    pub line: Option<usize>,
-    pub col: Option<usize>,
-    pub cst_kind: Option<String>,
+enum NodeSearchAttrs {
+    Phi,
+    Cst {
+        text: Option<String>,
+        line: Option<usize>,
+        col: Option<usize>,
+        cst_kind: Option<String>,
+    },
 }
 
 impl NodeSearchAttrs {
@@ -516,6 +654,19 @@ impl NodeSearchAttrs {
     fn from_vertex(node: &dot_structures::Node) -> Self {
         use std::str::FromStr;
 
+        let mut vertex_kind: Option<VertexKind> = None;
+        for n in &node.attributes {
+            let (key, value) = (id_str(&n.0), id_str(&n.1));
+            if key == V_KIND {
+                let _ = vertex_kind.insert(
+                    VertexKind::try_from(value.as_ref())
+                        .expect("caller should provide valid value"),
+                );
+            }
+        }
+        // Default to CST node
+        let vertex_kind = vertex_kind.unwrap_or(VertexKind::Cst);
+
         let mut text: Option<String> = None;
         let mut line: Option<usize> = None;
         let mut col: Option<usize> = None;
@@ -523,34 +674,55 @@ impl NodeSearchAttrs {
 
         for n in &node.attributes {
             let (key, value) = (id_str(&n.0), id_str(&n.1));
-            match key.as_ref() {
-                TEXT => drop(text.insert(value.to_string())),
-                LINE => drop(line.insert(usize::from_str(&value).unwrap())),
-                COL => drop(col.insert(usize::from_str(&value).unwrap())),
-                CST_KIND => drop(cst_kind.insert(value.to_string())),
-                _ => panic!("cst node: unexpected attribute `{key}`"),
-            };
+            match vertex_kind {
+                VertexKind::Cst => {
+                    match key.as_ref() {
+                        V_KIND => continue,
+                        TEXT => drop(text.insert(value.to_string())),
+                        LINE => drop(line.insert(usize::from_str(&value).unwrap())),
+                        COL => drop(col.insert(usize::from_str(&value).unwrap())),
+                        CST_KIND => drop(cst_kind.insert(value.to_string())),
+                        _ => panic!("cst node: unexpected attribute `{key}`"),
+                    };
+                }
+                VertexKind::Phi => {
+                    if key != V_KIND {
+                        panic!("phi node: unexpected attribute `{key}`");
+                    }
+                }
+            }
         }
-        // Defaults
-        let _ = text.get_or_insert_with(|| id_str(&node.id.0).to_string());
-        let _ = cst_kind.get_or_insert_with(|| "identifier".to_string());
 
-        Self {
-            text,
-            line,
-            col,
-            cst_kind,
+        match vertex_kind {
+            VertexKind::Cst => {
+                // Defaults
+                let _ = text.get_or_insert_with(|| id_str(&node.id.0).to_string());
+                let _ = cst_kind.get_or_insert_with(|| "identifier".to_string());
+
+                Self::Cst {
+                    text,
+                    line,
+                    col,
+                    cst_kind,
+                }
+            }
+            VertexKind::Phi => Self::Phi,
         }
     }
 }
 
-/// A located `tree_sitter::Node`, along with all metadata needed to construct a [`dot_structures::Node`].
+/// A located CST or phi node, along with all metadata needed to construct a [`dot_structures::Node`].
 #[derive(Debug, Copy, Clone)]
-struct LocatedNode<'a> {
-    text: &'a str,
-    line: usize,
-    col: usize,
-    cst_type: &'static str,
+enum LocatedNode<'a> {
+    Phi {
+        id: u32,
+    },
+    Cst {
+        text: &'a str,
+        line: usize,
+        col: usize,
+        cst_kind: &'static str,
+    },
 }
 
 /// A directed edge from a source [`LocatedNode`] to a target.
@@ -575,30 +747,52 @@ impl From<LocatedEdge<'_>> for dot_structures::Edge {
 impl<'a> LocatedNode<'a> {
     /// Constructs a new `LocatedNode` from a tree-sitter node.
     fn new_cst(node: tree_sitter::Node<'a>, text: &'a str) -> LocatedNode<'a> {
-        Self {
+        Self::Cst {
             text,
             line: node.start_position().row + 1,
             col: node.start_position().column + 1,
-            cst_type: node.kind(),
+            cst_kind: node.kind(),
         }
+    }
+
+    /// Constructs a new `LocatedNode` from a phi node id.
+    fn new_phi(id: u32) -> LocatedNode<'a> {
+        Self::Phi { id }
     }
 
     /// A canonical id for this node.
     fn canonical_id(&self) -> String {
-        format!("{}:{}:{}", self.text, self.line, self.col)
+        match *self {
+            LocatedNode::Phi { id } => format!("phi{id}"),
+            LocatedNode::Cst {
+                text, line, col, ..
+            } => format!("{}:{}:{}", text, line, col),
+        }
+    }
+
+    fn kind(&self) -> VertexKind {
+        match self {
+            LocatedNode::Phi { .. } => VertexKind::Phi,
+            LocatedNode::Cst { .. } => VertexKind::Cst,
+        }
     }
 }
 
 impl From<LocatedNode<'_>> for dot_structures::Node {
+    #[rustfmt::skip]
     fn from(value: LocatedNode<'_>) -> Self {
         use dot_structures::*;
         use graphviz_rust::dot_generator::*;
-        let attrs = vec![
-            Attribute(id!(TEXT), encode_id(value.text)),
-            attr!(LINE, value.line),
-            attr!(COL, value.col),
-            attr!(CST_KIND, value.cst_type),
-        ];
+        let mut attrs = match value {
+            LocatedNode::Phi { .. } => vec![attr!("shape", "diamond")],
+            LocatedNode::Cst { text, line, col, cst_kind } => vec![
+                Attribute(id!(TEXT), encode_id(text)),
+                attr!(LINE, line),
+                attr!(COL, col),
+                attr!(CST_KIND, cst_kind),
+            ]
+        };
+        attrs.push(attr!(V_KIND, value.kind()));
         Node::new(NodeId(encode_id(value.canonical_id()), None), attrs)
     }
 }
@@ -612,7 +806,10 @@ fn encode_id(input: impl AsRef<str>) -> dot_structures::Id {
         .chars()
         .any(|ch| !matches!(ch, '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' ));
     if needs_escape {
-        dot_structures::Id::Escaped(format!("\"{}\"", input.replace(r#"""#, r#"\""#)))
+        let mut text = input.replace("\"", "\\\"");
+        text = text.replace("\r\n", "\\r\\n");
+        text = text.replace("\n", "\\n");
+        dot_structures::Id::Escaped(format!("\"{}\"", text))
     } else {
         dot_structures::Id::Plain(input.to_string())
     }
@@ -622,7 +819,7 @@ fn encode_id(input: impl AsRef<str>) -> dot_structures::Id {
 mod tests {
     use crate::analysis::ddsa_lib::common::compile_script;
     use crate::analysis::ddsa_lib::js::flow::graph::{
-        id_str, Digraph, Edge, EdgeKind, V8DotGraph, VertexId, KIND,
+        id_str, Digraph, Edge, EdgeKind, V8DotGraph, VertexId, VertexKind, KIND,
     };
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
     use crate::analysis::ddsa_lib::JsRuntime;
@@ -639,14 +836,17 @@ mod tests {
         /// (This is a hardcoded mapping for simplicity).
         const ID_MAPPING: &'static [(&'static str, VertexId)] = &[
             // Generic CST node vertices:
-            ("v_1", VertexId(1)),
-            ("v_2", VertexId(2)),
-            ("v_3", VertexId(3)),
+            ("v_1", VertexId::from_cst(1)),
+            ("v_2", VertexId::from_cst(2)),
+            ("v_3", VertexId::from_cst(3)),
+            // Phi nodes
+            ("phi0", VertexId::from_phi(0)),
         ];
 
         /// Creates a new `TestVertex` from a DOT-specified id with the string format:
         /// ```text
         /// v_1  // Generic CST node vertex
+        /// phi0 // Phi node vertex
         /// ```
         /// Panics if the vertex id is not pre-defined in [`Self::ID_MAPPING`].
         fn from_dot(dot_vertex_id: &str) -> Self {
@@ -794,6 +994,23 @@ graph.adjacencyList;
         Digraph::new(dot)
     }
 
+    /// The [`VertexKind`] enum numbering should be consistent between Rust and JavaScript.
+    #[test]
+    fn vertex_kind_js_synchronization() {
+        let tests = [VertexKind::Cst, VertexKind::Phi];
+        let mut rt = cfg_test_runtime();
+        let scope = &mut rt.handle_scope();
+        for rust_kind in tests {
+            let js_const = match rust_kind {
+                VertexKind::Cst => "VERTEX_CST",
+                VertexKind::Phi => "VERTEX_PHI",
+            };
+            let js_value = try_execute(scope, &format!("{};", js_const)).unwrap();
+            assert!(js_value.is_number());
+            assert_eq!(rust_kind as u32, js_value.uint32_value(scope).unwrap());
+        }
+    }
+
     /// The [`EdgeKind`] enum numbering should be consistent between Rust and JavaScript.
     #[test]
     fn edge_kind_js_synchronization() {
@@ -822,13 +1039,20 @@ graph.adjacencyList;
     fn js_edge_rust_deserialize() {
         let mut rt = cfg_test_runtime();
         let sc = &mut rt.handle_scope();
-        // language=javascript
-        let js_code = "makeEdge(1234, EDGE_DEPENDENCE);";
-        let packed_uint = try_execute(sc, js_code).unwrap();
-        assert!(packed_uint.is_number());
-        let packed_edge = Edge(packed_uint.uint32_value(sc).unwrap());
-        assert_eq!(packed_edge.target(), VertexId(1234));
-        assert_eq!(packed_edge.kind(), EdgeKind::Dependence);
+        let cases = [
+            (VertexId::from_cst(1234), VertexKind::Cst),
+            (VertexId::from_phi(1234), VertexKind::Phi),
+        ];
+        for (vid, vkind) in cases {
+            // language=javascript
+            let js_code = format!("makeEdge({vid}, EDGE_DEPENDENCE);",);
+            let packed_uint = try_execute(sc, &js_code).unwrap();
+            assert!(packed_uint.is_number());
+            let edge = Edge(packed_uint.uint32_value(sc).unwrap());
+            assert_eq!(edge.kind(), EdgeKind::Dependence);
+            assert_eq!(edge.target().internal_id(), 1234);
+            assert_eq!(edge.target().kind(), vkind);
+        }
     }
 
     /// The JavaScript logic for serializing and deserializing an "Edge" is correct.
@@ -906,31 +1130,62 @@ strict digraph {
         assert_eq!(full, dot_graph(expected_graph));
     }
 
-    /// The `findTaintFlows` function properly traverses a reduced graph and returns all possible flows.
-    /// Cycles are handled by ignoring the entire path.
+    /// Vertices can be phi nodes.
+    #[test]
+    fn graph_phi_vertices() {
+        // language=dot
+        let original_graph = r#"
+strict digraph {
+    v_1
+    v_2
+    v_3
+    phi0
+
+    phi0 -> v_3  [kind=dependence]
+    phi0 -> v_2  [kind=dependence]
+    v_1  -> phi0 [kind=dependence]
+}
+        "#;
+        let expected_graph = original_graph;
+
+        let JsGraphs { full, .. } = construct_js_graphs(original_graph);
+        assert_eq!(full, dot_graph(expected_graph));
+    }
+
+    /// The `findTaintFlows` function properly traverses a graph and returns all possible flows.
+    /// Phi nodes are preserved. Cycles are handled by ignoring the entire path.
     #[test]
     fn find_taint_flows_all_paths() {
         let mut rt = JsRuntime::try_new().unwrap();
         // language=js
         let js_code = "\
 // A helper function to construct a dependence edge.
+const cst = (id) => _asVertexId(id, VERTEX_CST);
+const phi = (id) => _asVertexId(id, VERTEX_PHI);
 const edge = (target) => {
     return makeEdge(target, EDGE_DEPENDENCE);
 }
 
 const adjList = new Map([
-    [1, [edge(2)]],
-    [2, [edge(3), edge(5)]],
-    [3, [edge(4)]],
-    [5, [edge(6)]],
-    [6, [edge(7), edge(8), edge(10)]],
-    [7, [edge(9)]],
-    [8, [edge(9)]],
-    [10, [/* cycle */ edge(2)]],
+    [cst(1), [edge(cst(2))]],
+    [cst(2), [edge(cst(3)), edge(cst(5))]],
+    [cst(3), [edge(cst(4))]],
+    [cst(5), [edge(phi(0))]],
+    // Phi behavior: pointing to another phi
+    [phi(0), [edge(cst(7)), edge(phi(1)), edge(cst(10))]],
+    [cst(7), [edge(cst(9))]],
+    // Phi behavior pointing to A) a non-cyclic vertex, B) a cyclic vertex
+    [phi(1), [edge(cst(8)), edge(cst(10))]],
+    [cst(10), [/* cycle */ edge(cst(2))]],
 ]);
 
 
-const vidPaths = _findTaintFlows(adjList, 1, true).map((flow) => flow._vidPath);
+const vidPaths = _findTaintFlows(adjList, cst(1), false).map((flow) => {
+    return flow._vidPath.map((vid) => {
+        const kindStr = vertexKind(vid) === VERTEX_CST ? 'cst' : 'phi';
+        return `${kindStr}(${internalId(vid)})`;
+    });
+});
 const serialized = vidPaths.map((flow) => DDSA_Console.stringify(flow)).join('\\n');
 serialized;
 ";
@@ -940,7 +1195,11 @@ serialized;
             .unwrap();
         let js_flows = res.lines().collect::<Vec<_>>();
 
-        let expected = vec!["[1,2,3,4]", "[1,2,5,6,7,9]", "[1,2,5,6,8,9]"];
+        let expected = vec![
+            r#"["cst(1)","cst(2)","cst(3)","cst(4)"]"#,
+            r#"["cst(1)","cst(2)","cst(5)","phi(0)","cst(7)","cst(9)"]"#,
+            r#"["cst(1)","cst(2)","cst(5)","phi(0)","phi(1)","cst(8)"]"#,
+        ];
         assert_eq!(js_flows, expected);
     }
 

@@ -2,6 +2,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+import { TreeSitterFieldChildNode, TreeSitterNode } from "ext:ddsa_lib/ts_node";
+
 /**
  * A directed graph.
  */
@@ -12,6 +14,13 @@ export class Digraph {
          * @type {AdjacencyList}
          */
         this.adjacencyList = new Map();
+
+        /**
+         * A list of {@link PhiNode}. There is no significance to the ordering of the nodes.
+         * @type {Array<PhiNode>}
+         * @private
+         */
+        this.phiNodes = [];
     }
 
     /**
@@ -22,6 +31,71 @@ export class Digraph {
      */
     addTypedEdge(from, to, kind) {
         _addTypedEdge(this.adjacencyList, from, to, kind);
+    }
+    
+    /**
+     * Creates a new {@link PhiNode} within this `Digraph` and returns a reference to it.
+     * @returns {PhiNode}
+     */
+    newPhiNode() {
+        // An auto-incrementing id ensures uniqueness of phi node ids:
+        const internalId = this.phiNodes.length;
+        const phiNode = new PhiNode(/** @type {InternalId} */ (internalId));
+        this.phiNodes.push(phiNode);
+        return phiNode;
+    }
+}
+
+/**
+ * A graph node that indicates that a value can have more than one possible definition depending
+ * on the control flow taken. For example:
+ *
+ * ```java
+ * int y = 10;
+ * if (condition) {
+ *     y = 20;
+ * } else {
+ *     y = -50;
+ * }
+ * System.out.println(y);
+ * ```
+ *
+ * When printing `y`, its value could be either `20` or `-50`, depending on which path was taken
+ * in the if/else statement.
+ * More formally, this can be represented as a function with operands describing the possible values:
+ *
+ * ```text
+ * y0 = 10;
+ * y1 = 20;
+ * y2 = -50;
+ * y3 = phi(y1, y2);
+ * ```
+ *
+ * See additional documentation on {@link https://en.wikipedia.org/wiki/Static_single-assignment_form#Converting_to_SSA|phi functions}.
+ */
+export class PhiNode {
+    /**
+     * @param {InternalId} id
+     */
+    constructor(id) {
+        /**
+         * The internal id for this `PhiNode`.
+         * @type {InternalId}
+         */
+        this.id = id;
+        /**
+         * A list of {@link VertexId} that are operands of this phi node.
+         * @type {Array<VertexId>}
+         */
+        this.operands = [];
+    }
+
+    /**
+     * Adds the provided {@link VertexId} as an operand.
+     * @param {VertexId} vertexId
+     */
+    appendOperand(vertexId) {
+        this.operands.push(vertexId);
     }
 }
 
@@ -51,13 +125,110 @@ export class Digraph {
  */
 
 /**
- * @typedef {TreeSitterNode} Vertex
+ * @typedef {TreeSitterNode | PhiNode} Vertex
  * A vertex in a {@link Digraph}.
  */
 
 /**
+ * @typedef {0 | 1} VertexKind
+ * A 1-bit integer enum indicating the type of a {@link Vertex}. Possible values:
+ * * {@link VERTEX_CST}: A CST node ({@link TreeSitterNode})
+ * * {@link VERTEX_PHI}: A phi node ({@link PhiNode})
+ */
+
+/** @type {0} */
+export const VERTEX_CST = 0;
+/** @type {1} */
+export const VERTEX_PHI = 1;
+
+/**
  * @typedef {number & { _brand: "VertexId" }} VertexId
  * An id of {@link Vertex}.
+ */
+
+/**
+ * @constant
+ * @type {number}
+ * The number of bits used to represent a {@link VertexKind} integer.
+ */
+const VERTEX_KIND_BITS = 1;
+
+/**
+ * @constant
+ * @type {number}
+ * A bitmask to retrieve the {@link VertexKind} of a {@link VertexId}.
+ */
+const VERTEX_KIND_MASK = (1 << VERTEX_KIND_BITS) - 1;
+
+/**
+ * @typedef {number & { _brand: "VertexId" }} VertexId
+ * An id of {@link Vertex}. Internally, this is a bit-packed representation:
+ * * {@link VertexKind}: least significant bit
+ * * {@link InternalId}: rest of bits
+ * ```text
+ *              52 bits            1 bit
+ * |------------------------------|-|
+ *            internalId           kind
+ * ```
+ * This serialization format stores the same information as an object with the shape:
+ * ```js
+ * const vertex = {
+ *     internalId: internalId,
+ *     kind: kind,
+ * };
+ * ```
+ */
+
+/**
+ * Returns the type of the provided `VertexId`.
+ * @param {VertexId} vertexId
+ * @returns {VertexKind}
+ */
+export function vertexKind(vertexId) {
+    // (See `VertexId` for documentation about how this deserialization works).
+    return /** @type VertexKind */ (vertexId & VERTEX_KIND_MASK);
+}
+
+/**
+ * Returns the corresponding {@link VertexId} for the provided `vertex`.
+ * @param {Vertex} vertex
+ * @returns {VertexId}
+ */
+export function vertexId(vertex) {
+    if (vertex instanceof TreeSitterFieldChildNode || vertex instanceof TreeSitterNode) {
+        return _asVertexId(/** @type {InternalId} */ (vertex.id), VERTEX_CST);
+    } else if (vertex instanceof PhiNode) {
+        return _asVertexId(/** @type {InternalId} */ (vertex.id), VERTEX_PHI);
+    } else {
+        throw new Error("unexpected `vertex` argument");
+    }
+}
+
+/**
+ * Casts the provided internal node id to a {@link VertexId} of the provided type.
+ * @param {InternalId} internalId
+ * @param {VertexKind} kind
+ * @returns {VertexId}
+ */
+export function _asVertexId(internalId, kind) {
+    return /** @type {VertexId} */ ((internalId << VERTEX_KIND_BITS) | kind);
+}
+
+/**
+ * Returns the internal node id of the provided `vertexId`.
+ * * If the vertex is a {@link VERTEX_CST}, this will be a {@link TreeSitterNode} id.
+ * * If the vertex is a {@link VERTEX_PHI}, this will be a {@link PhiNode} id.
+ * @param {VertexId} vertexId
+ * @returns {InternalId}
+ */
+export function internalId(vertexId) {
+    // (See `VertexId` for documentation about how this deserialization works).
+    return /** @type {InternalId} */ (vertexId >> VERTEX_KIND_BITS);
+}
+
+/**
+ * @typedef {number & { _brand: "InternalId" }} InternalId
+ * The internal id of a node ({@link TreeSitterNode.id} or {@link PhiNode.id}) that is a vertex in a {@link Digraph}.
  */
 
 /**
@@ -73,6 +244,7 @@ function _addTypedEdge(adjacencyList, from, to, kind) {
     }
     let existingEdges = adjacencyList.get(from);
     if (existingEdges === undefined) {
+        /** @type {Array<Edge>} */
         const sources = [];
         adjacencyList.set(from, sources);
         existingEdges = sources;
@@ -163,6 +335,14 @@ export class TaintFlow {
          */
         this._vidPath = vidPath;
 
+        /** @type {Array<TreeSitterNode>} */
+        const path = [];
+        for (const vertexId of vidPath) {
+            // (Phi nodes are pruned from the public-facing API, but will be present in the `this._vidPath`).
+            if (vertexKind(vertexId) === VERTEX_CST) {
+                path.push(globalThis.__RUST_BRIDGE__ts_node.get(internalId(vertexId)));
+            }
+        }
         /**
          * An array of CST nodes representing taint flow.
          *
@@ -181,7 +361,7 @@ export class TaintFlow {
          * ```
          * @type {Array<TreeSitterNode>}
          */
-        this.path = vidPath.map((vid) => globalThis.__RUST_BRIDGE__ts_node.get(/** @type {NodeId} */ (vid)));
+        this.path = path;
     }
 
     /**

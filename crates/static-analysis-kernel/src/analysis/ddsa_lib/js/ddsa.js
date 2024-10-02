@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-import { _findTaintFlows, transpose } from "ext:ddsa_lib/flow/graph";
+import { _findTaintFlows, transpose, vertexId } from "ext:ddsa_lib/flow/graph";
 import { MethodFlow } from "ext:ddsa_lib/flow/java";
 import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
 import { TreeSitterFieldChildNode } from "ext:ddsa_lib/ts_node";
@@ -68,7 +68,7 @@ export class DDSA {
             return SEALED_EMPTY_ARRAY;
         }
         const methodFlow = new MethodFlow(containingMethod);
-        return _findTaintFlows(methodFlow.graph.adjacencyList, sinkNode.id, false);
+        return _findTaintFlows(methodFlow.graph.adjacencyList, vertexId(sinkNode), false);
     }
 
     /**
@@ -103,6 +103,6 @@ export class DDSA {
         const transposed = transpose(methodFlow.graph.adjacencyList);
         ////////
 
-        return _findTaintFlows(transposed, sourceNode.id, true);
+        return _findTaintFlows(transposed, vertexId(sourceNode), true);
     }
 }
