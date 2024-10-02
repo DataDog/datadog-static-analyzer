@@ -138,6 +138,7 @@ impl SarifRuleResult {
                     severity: RuleSeverity::Error,
                     category: RuleCategory::Security,
                     fixes: vec![],
+                    taint_flow: None,
                 })
                 .collect::<Vec<Violation>>(),
         }
@@ -514,6 +515,10 @@ fn generate_results(
     rules_results
         .iter()
         .flat_map(|rule_result| {
+            let artifact_loc = ArtifactLocationBuilder::default()
+                .uri(encode_filename(rule_result.file_path()))
+                .build()
+                .expect("file path should be encodable");
             // if we find the rule for this violation, get the id, level and category
             let mut result_builder = ResultBuilder::default();
             let mut tags = vec![];
@@ -556,12 +561,7 @@ fn generate_results(
                     let location = LocationBuilder::default()
                         .physical_location(
                             PhysicalLocationBuilder::default()
-                                .artifact_location(
-                                    ArtifactLocationBuilder::default()
-                                        .uri(encode_filename(rule_result.file_path()))
-                                        .build()
-                                        .unwrap(),
-                                )
+                                .artifact_location(artifact_loc.clone())
                                 .region(
                                     RegionBuilder::default()
                                         .start_line(violation.start.line)
@@ -582,11 +582,7 @@ fn generate_results(
                                 fix.edits.iter().map(IntoSarif::into_sarif).collect();
 
                             let changes = ArtifactChangeBuilder::default()
-                                .artifact_location(
-                                    ArtifactLocationBuilder::default()
-                                        .uri(encode_filename(rule_result.file_path()))
-                                        .build()?,
-                                )
+                                .artifact_location(artifact_loc.clone())
                                 .replacements(replacements)
                                 .build()?;
                             Ok(FixBuilder::default()
@@ -599,6 +595,57 @@ fn generate_results(
                                 .build()?)
                         })
                         .collect::<Result<Vec<_>>>()?;
+
+                    let taint_code_flow: Result<_, anyhow::Error> = violation
+                        .taint_flow
+                        .as_ref()
+                        .map(|regions| {
+                            let last_idx = regions.len().saturating_sub(1);
+                            let tf_locations = regions
+                                .iter()
+                                .enumerate()
+                                .map(|(idx, region)| {
+                                    let importance = if idx == 0 || idx == last_idx {
+                                        "essential"
+                                    } else {
+                                        "important"
+                                    };
+                                    let region = sarif::RegionBuilder::default()
+                                        .start_line(region.start.line)
+                                        .start_column(region.start.col)
+                                        .end_line(region.end.line)
+                                        .end_column(region.end.col)
+                                        .build()?;
+                                    let location = sarif::LocationBuilder::default()
+                                        .physical_location(
+                                            sarif::PhysicalLocationBuilder::default()
+                                                .artifact_location(artifact_loc.clone())
+                                                .region(region)
+                                                .build()?,
+                                        )
+                                        .build()?;
+                                    Ok::<_, anyhow::Error>(
+                                        sarif::ThreadFlowLocationBuilder::default()
+                                            .location(location)
+                                            .importance(importance)
+                                            .build()?,
+                                    )
+                                })
+                                .collect::<Result<Vec<_>, _>>()?;
+                            if tf_locations.len() < 2 {
+                                return Err(anyhow::Error::msg(
+                                    "taint flow must have at least two regions",
+                                ));
+                            }
+                            let thread_flow = sarif::ThreadFlowBuilder::default()
+                                .locations(tf_locations)
+                                .build()?;
+                            Ok(sarif::CodeFlowBuilder::default()
+                                .thread_flows(&[thread_flow])
+                                .build()?)
+                        })
+                        .transpose();
+                    let taint_code_flow = taint_code_flow?;
 
                     let sha_option = if options.add_git_info {
                         get_sha_for_line(
@@ -634,8 +681,8 @@ fn generate_results(
                             _ => BTreeMap::new(),
                         };
 
-                    Ok(result_builder
-                        .clone()
+                    let mut sarif_result = result_builder.clone();
+                    sarif_result
                         .rule_id(rule_result.rule_id())
                         .locations([location])
                         .fixes(fixes)
@@ -651,8 +698,11 @@ fn generate_results(
                                 .build()
                                 .unwrap(),
                         )
-                        .partial_fingerprints(partial_fingerprints)
-                        .build()?)
+                        .partial_fingerprints(partial_fingerprints);
+                    if let Some(taint_code_flow) = taint_code_flow {
+                        sarif_result.code_flows(&[taint_code_flow]);
+                    };
+                    Ok(sarif_result.build()?)
                 })
         })
         .collect()
@@ -746,7 +796,7 @@ pub fn generate_sarif_file(
 #[cfg(test)]
 mod tests {
     use assert_json_diff::assert_json_eq;
-    use common::model::position::{Position, PositionBuilder};
+    use common::model::position::{Position, PositionBuilder, Region};
     use kernel::model::violation::Fix;
     use kernel::model::{
         common::Language,
@@ -775,7 +825,8 @@ mod tests {
             message: "bad stuff".to_string(),
             severity: RuleSeverity::Error,
             category: RuleCategory::BestPractices,
-            fixes: vec![]
+            fixes: vec![],
+            taint_flow: None,
         }));
 
         // good location in the violation location and no fixes
@@ -785,7 +836,8 @@ mod tests {
             message: "bad stuff".to_string(),
             severity: RuleSeverity::Error,
             category: RuleCategory::BestPractices,
-            fixes: vec![]
+            fixes: vec![],
+            taint_flow: None,
         }));
 
         // bad location in the fixes location
@@ -803,7 +855,8 @@ mod tests {
                     edit_type: EditType::Add,
                     content: Some("foo".to_string())
                 }]
-            }]
+            }],
+            taint_flow: None,
         }));
 
         // good location everywhere
@@ -821,7 +874,8 @@ mod tests {
                     edit_type: EditType::Add,
                     content: Some("foo".to_string())
                 }]
-            }]
+            }],
+            taint_flow: None,
         }));
     }
 
@@ -830,7 +884,7 @@ mod tests {
     // code path.
     #[test]
     fn test_generate_sarif_report_happy_path() {
-        let rule = RuleBuilder::default()
+        let rule_single_region = RuleBuilder::default()
             .name("my-rule".to_string())
             .description_base64(Some("YXdlc29tZSBydWxl".to_string()))
             .language(Language::Python)
@@ -849,8 +903,47 @@ mod tests {
             .is_testing(false)
             .build()
             .unwrap();
+        let rule_taint_flow = Rule {
+            name: "java-security/flow-rule".to_string(),
+            short_description_base64: None,
+            description_base64: None,
+            category: RuleCategory::Security,
+            severity: RuleSeverity::Error,
+            language: Language::Java,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: String::new(),
+            cwe: Some("89".to_string()),
+            checksum: String::new(),
+            pattern: None,
+            tree_sitter_query_base64: None,
+            arguments: vec![],
+            tests: vec![],
+            is_testing: false,
+        };
+        let region0 = Region {
+            start: Position { line: 50, col: 5 },
+            end: Position { line: 50, col: 10 },
+        };
+        let region1 = Region {
+            start: Position { line: 40, col: 20 },
+            end: Position { line: 40, col: 25 },
+        };
+        let region2 = Region {
+            start: Position { line: 30, col: 12 },
+            end: Position { line: 30, col: 17 },
+        };
+        let violation_taint_flow = Violation {
+            start: region0.start,
+            end: region0.end,
+            message: "flow violation".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::Security,
+            fixes: vec![],
+            taint_flow: Some(vec![region0, region1, region2]),
+        };
 
-        let rule_result = RuleResultBuilder::default()
+        let rule_result_single_region = RuleResultBuilder::default()
             .rule_name("my-rule".to_string())
             .filename("myfile".to_string())
             .violations(vec![ViolationBuilder::default()
@@ -872,6 +965,7 @@ mod tests {
                         .unwrap()])
                     .build()
                     .unwrap()])
+                .taint_flow(None)
                 .build()
                 .unwrap()])
             .output(None)
@@ -882,10 +976,24 @@ mod tests {
             .execution_error(None)
             .build()
             .expect("building violation");
+        let rule_result_taint_flow = RuleResult {
+            rule_name: "java-security/flow-rule".to_string(),
+            filename: "file.java".to_string(),
+            violations: vec![violation_taint_flow],
+            errors: vec![],
+            execution_error: None,
+            output: None,
+            execution_time_ms: 0,
+            parsing_time_ms: 0,
+            query_node_time_ms: 0,
+        };
 
         let sarif_report = generate_sarif_report(
-            &[rule.into()],
-            &[rule_result.try_into().unwrap()],
+            &[rule_single_region.into(), rule_taint_flow.into()],
+            &[
+                rule_result_single_region.try_into().unwrap(),
+                rule_result_taint_flow.try_into().unwrap(),
+            ],
             &"mydir".to_string(),
             SarifReportMetadata {
                 add_git_info: false,
@@ -898,10 +1006,113 @@ mod tests {
         .expect("generate sarif report");
 
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
-        assert_json_eq!(
-            sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"myfile"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","version":CARGO_VERSION,"properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["DATADOG_RULE_TYPE:STATIC_ANALYSIS","CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
-        );
+        let expected_json = serde_json::json!(
+        {
+            "runs":[{
+            "results":[{
+                "fixes":[{
+                    "artifactChanges":[{
+                        "artifactLocation":{"uri":"myfile"},
+                        "replacements":[{
+                            "deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},
+                            "insertedContent":{"text":"newcontent"}
+                        }]
+                    }],
+                    "description":{"text":"myfix"}
+                }],
+                "level":"error",
+                "locations":[{
+                    "physicalLocation":{
+                        "artifactLocation":{"uri":"myfile"},
+                        "region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}
+                    }
+                }],
+                "message":{"text":"violation message"},
+                "partialFingerprints":{},
+                "properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},
+                "ruleId":"my-rule","ruleIndex":0
+            },{
+                "codeFlows": [{
+                    "threadFlows":[{
+                        "locations": [{
+                            "importance": "essential",
+                            "location": {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri":"file.java"},
+                                    "region": {"startLine":50,"startColumn":5,"endLine":50,"endColumn":10}
+                                }
+                            }
+                        },{
+                            "importance": "important",
+                            "location": {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri":"file.java"},
+                                    "region": {"startLine":40,"startColumn":20,"endLine":40,"endColumn":25}
+                                }
+                            }
+                        },{
+                            "importance": "essential",
+                            "location": {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri":"file.java"},
+                                    "region": {"startLine":30,"startColumn":12,"endLine":30,"endColumn":17}
+                                }
+                            }
+                        }],
+                    }]
+                }],
+                "fixes":[],
+                "level":"error",
+                "locations": [{
+                    "physicalLocation": {
+                        "artifactLocation": {"uri":"file.java"},
+                        "region": {"startLine":50,"startColumn":5,"endLine":50,"endColumn":10}
+                    }
+                }],
+                "message": {"text":"flow violation"},
+                "partialFingerprints": {},
+                "properties": {"tags": ["DATADOG_CATEGORY:SECURITY","CWE:89"]},
+                "ruleId": "java-security/flow-rule",
+                "ruleIndex": 1
+            }],
+            "tool":{
+                "driver":{
+                    "informationUri":"https://www.datadoghq.com",
+                    "name":"datadog-static-analyzer",
+                    "version":CARGO_VERSION,
+                    "properties":{
+                        "tags":[
+                            "DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0",
+                            "DATADOG_EXECUTION_TIME_SECS:42",
+                            "DATADOG_DIFF_AWARE_ENABLED:false"
+                        ]
+                    },
+                    "rules":[{
+                        "fullDescription":{"text":"awesome rule"},
+                        "helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule",
+                        "id":"my-rule",
+                        "properties":{
+                            "tags":[
+                                "DATADOG_RULE_TYPE:STATIC_ANALYSIS",
+                                "CWE:1234"
+                            ]},
+                        "shortDescription":{"text":"short description"}
+                    },{
+                        "helpUri":"https://docs.datadoghq.com/static_analysis/rules/java-security/flow-rule",
+                        "id":"java-security/flow-rule",
+                        "properties":{
+                            "tags":[
+                                "DATADOG_RULE_TYPE:STATIC_ANALYSIS",
+                                "CWE:89"
+                            ]
+                        },
+                    }]
+                }
+            }}],
+            "version":"2.1.0"
+        }
+                );
+        assert_json_eq!(expected_json, sarif_report_to_string);
 
         // validate the schema
         assert!(validate_data(&sarif_report_to_string));
@@ -983,6 +1194,7 @@ mod tests {
                         .unwrap()])
                     .build()
                     .unwrap()])
+                .taint_flow(None)
                 .build()
                 .unwrap()])
             .output(None)
@@ -1064,6 +1276,7 @@ mod tests {
                         .unwrap()])
                     .build()
                     .unwrap()])
+                .taint_flow(None)
                 .build()
                 .unwrap()])
             .output(None)

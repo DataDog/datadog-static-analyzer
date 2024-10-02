@@ -1203,6 +1203,22 @@ serialized;
         assert_eq!(js_flows, expected);
     }
 
+    /// `TaintFlow` acts like an array (i.e. has Array as its prototype).
+    #[test]
+    fn taint_flow_array() {
+        let mut rt = JsRuntime::try_new().unwrap();
+        // language=js
+        let js_code = "\
+const flow = new TaintFlow([], false);
+flow instanceof Array;
+";
+        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code).unwrap();
+        let has_array_proto = rt
+            .scoped_execute(&js_code, |_, value| value.is_true(), None)
+            .unwrap();
+        assert!(has_array_proto);
+    }
+
     /// The graph can be transposed.
     #[test]
     fn graph_transpose() {

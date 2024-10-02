@@ -23,3 +23,16 @@ impl fmt::Display for Position {
         write!(f, "position (line: {}, col: {})", self.line, self.col)
     }
 }
+
+/// A contiguous portion of a file.
+#[derive(Deserialize, Serialize, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct Region {
+    /// The start of a region.
+    /// * `line`: A positive integer equal to the line number containing the first character of this region.
+    /// * `col`: A positive integer equal to the column number of the first character of this region.
+    pub start: Position,
+    /// The end of a region.
+    /// * `line`: A positive integer equal to the line number containing the last character of this region.
+    /// * `col`: A positive integer whose value is one greater than column number of the last character in this region.
+    pub end: Position,
+}

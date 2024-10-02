@@ -289,14 +289,16 @@ impl JsRuntime {
     ///     None,
     /// )
     /// ```
-    pub(crate) fn scoped_execute<T, U>(
-        &mut self,
-        script: &v8::Global<v8::UnboundScript>,
+    pub(crate) fn scoped_execute<'rt, 's, 'v, T, U>(
+        &'rt mut self,
+        script: &'s v8::Global<v8::UnboundScript>,
         handle_return_value: T,
         timeout: Option<Duration>,
     ) -> Result<U, DDSAJsRuntimeError>
     where
-        T: Fn(&mut v8::TryCatch<v8::HandleScope>, v8::Local<v8::Value>) -> U,
+        'rt: 's,
+        's: 'v,
+        T: Fn(&mut v8::TryCatch<v8::HandleScope<'s>>, v8::Local<'v, v8::Value>) -> U,
     {
         self.console.borrow_mut().clear();
 
@@ -590,6 +592,7 @@ mod tests {
     use crate::model::common::Language;
     use deno_core::v8;
     use std::collections::HashMap;
+    use std::marker::PhantomData;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
 
@@ -875,7 +878,7 @@ function visit(captures) {
     }
 
     #[test]
-    fn execute_rule_internal() {
+    fn execute_rule_internal_single_region() {
         let mut rt = JsRuntime::try_new().unwrap();
         let text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
@@ -903,13 +906,17 @@ function visit(captures) {
         let violation = violations.first().unwrap();
 
         let expected = js::Violation {
-            start_line: 1,
-            start_col: 29,
-            end_line: 1,
-            end_col: 42,
+            base_region: js::CodeRegion {
+                start_line: 1,
+                start_col: 29,
+                end_line: 1,
+                end_col: 42,
+                _pd: PhantomData,
+            },
             message: "`protectedName` is a protected variable name".to_string(),
             fixes: None,
-            _pd: Default::default(),
+            taint_flow_regions: None,
+            _pd: PhantomData,
         };
         assert_eq!(*violation, expected);
     }
@@ -1181,13 +1188,17 @@ function visit(query, filename, code) {
         let violation = violations.first().unwrap();
 
         let expected = js::Violation {
-            start_line: 1,
-            start_col: 29,
-            end_line: 1,
-            end_col: 42,
+            base_region: js::CodeRegion {
+                start_line: 1,
+                start_col: 29,
+                end_line: 1,
+                end_col: 42,
+                _pd: PhantomData,
+            },
             message: "`protectedName` is a protected variable name".to_string(),
             fixes: None,
-            _pd: Default::default(),
+            taint_flow_regions: None,
+            _pd: PhantomData,
         };
         assert_eq!(*violation, expected);
     }

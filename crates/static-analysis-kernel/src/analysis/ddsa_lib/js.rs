@@ -31,6 +31,8 @@ mod query_match;
 pub(crate) use query_match::*;
 mod query_match_compat;
 pub(crate) use query_match_compat::*;
+mod region;
+pub(crate) use region::CodeRegion;
 mod ts_node;
 pub(crate) use ts_node::*;
 mod stella_compat;

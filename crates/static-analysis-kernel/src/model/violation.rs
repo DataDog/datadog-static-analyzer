@@ -1,5 +1,5 @@
 use crate::model::rule::{RuleCategory, RuleSeverity};
-use common::model::position::Position;
+use common::model::position::{Position, Region};
 
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
@@ -36,4 +36,6 @@ pub struct Violation {
     pub severity: RuleSeverity,
     pub category: RuleCategory,
     pub fixes: Vec<Fix>,
+    /// An ordered list of regions representing a flow from start to finish.
+    pub taint_flow: Option<Vec<Region>>,
 }

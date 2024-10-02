@@ -15,6 +15,7 @@ pub struct RuleContext<T> {
     v8_object: v8::Global<v8::Object>,
     // Cached keys
     s_arguments: v8::Global<v8::String>,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
 }
 

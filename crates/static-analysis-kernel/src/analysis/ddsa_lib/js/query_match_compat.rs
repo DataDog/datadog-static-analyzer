@@ -39,7 +39,6 @@ pub struct QueryMatchCompat<T> {
     class: v8::Global<v8::Function>,
     /// The `QueryMatch` class. An instance of this is used as a JavaScript `Proxy` target.
     proxied: QueryMatch<T>,
-    _pd: PhantomData<T>,
 }
 
 impl QueryMatchCompat<Class> {
@@ -50,11 +49,7 @@ impl QueryMatchCompat<Class> {
     pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
         let class = load_function(scope, Self::CLASS_NAME)?;
         let proxied = QueryMatch::<Class>::try_new(scope)?;
-        Ok(Self {
-            class,
-            proxied,
-            _pd: PhantomData,
-        })
+        Ok(Self { class, proxied })
     }
 }
 

@@ -61,6 +61,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
                 severity: RuleSeverity::Error,
                 category: RuleCategory::Security,
                 fixes: vec![],
+                taint_flow: None,
             })
             .collect(),
     }
@@ -141,6 +142,7 @@ mod tests {
                     severity: RuleSeverity::Error,
                     category: RuleCategory::Performance,
                     fixes: vec![],
+                    taint_flow: None,
                 },
                 Violation {
                     start: Position { line: 10, col: 12 },
@@ -149,6 +151,7 @@ mod tests {
                     severity: RuleSeverity::Notice,
                     category: RuleCategory::Performance,
                     fixes: vec![],
+                    taint_flow: None,
                 },
                 Violation {
                     start: Position { line: 10, col: 12 },
@@ -157,6 +160,7 @@ mod tests {
                     severity: RuleSeverity::Notice,
                     category: RuleCategory::Performance,
                     fixes: vec![],
+                    taint_flow: None,
                 },
             ],
             errors: vec![],

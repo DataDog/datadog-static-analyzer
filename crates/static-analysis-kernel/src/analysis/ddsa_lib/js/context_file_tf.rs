@@ -19,6 +19,7 @@ pub struct FileContextTerraform<T> {
     v8_object: v8::Global<v8::Object>,
     // Cached keys
     s_resource_map: v8::Global<v8::String>,
+    /// (See documentation on [`Class`]).
     _pd: PhantomData<T>,
 }
 
@@ -26,6 +27,7 @@ pub struct FileContextTerraform<T> {
 #[derive(Debug)]
 pub struct TerraformResource<T> {
     class: v8::Global<v8::Function>,
+    /// (See documentation on [`Class`]).
     _pd: PhantomData<T>,
 }
 

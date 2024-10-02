@@ -31,12 +31,17 @@ pub(crate) fn get_binary_expression_operator(node: tree_sitter::Node) -> Option<
 #[cfg(test)]
 mod tests {
     use super::{get_binary_expression_operator, BinOp};
-    use crate::analysis::ddsa_lib::common::compile_script;
+    use crate::analysis::ddsa_lib::common::{compile_script, Instance, NodeId};
     use crate::analysis::ddsa_lib::js::flow::graph::{cst_dot_digraph, cst_v8_digraph, Digraph};
+    use crate::analysis::ddsa_lib::js::ViolationConverter;
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute, TsTree};
-    use crate::analysis::ddsa_lib::JsRuntime;
+    use crate::analysis::ddsa_lib::v8_ds::V8Converter;
+    use crate::analysis::ddsa_lib::{js, JsRuntime};
     use crate::analysis::tree_sitter::get_tree;
+    use crate::model::analysis::TreeSitterNode;
     use crate::model::common::Language;
+    use crate::model::rule::{RuleCategory, RuleSeverity};
+    use common::model::position;
     use deno_core::v8;
     use std::sync::Arc;
 
@@ -335,7 +340,7 @@ for (const flow of [sourceFlows[0], sinkFlows[0]]) {{
     const sourceId = flow.source.id;
     // We only assert the number of nodes in the path because we just want to ensure that
     // this array is populated. The accuracy/correctness of those nodes is handled by graph unit tests.
-    assert(flow.path.length > 2, "flow should have more than 2 nodes");
+    assert(flow.length > 2, "flow should have more than 2 nodes");
 
     serialized += DDSA_Console.stringifyAll(sinkId, sourceId) + '\n';
 }}
@@ -350,6 +355,74 @@ serialized;
         let lines = res.lines().collect::<Vec<_>>();
         assert_eq!(lines[0], format!("{sql_identifier} {request_param}"));
         assert_eq!(lines[1], format!("{method_call} {request_param}"));
+    }
+
+    /// The ddsa runtime correctly passes and deserializes a violation with a taint flow region.
+    #[test]
+    fn violation_taint_flow_regions() {
+        let v_converter = ViolationConverter::new();
+        fn position_eq(region: js::CodeRegion<Instance>, node: tree_sitter::Node) -> bool {
+            region.start_line == (node.start_position().row as u32) + 1
+                && region.start_col == (node.start_position().column as u32) + 1
+                && region.end_line == (node.end_position().row as u32) + 1
+                && region.end_col == (node.end_position().column as u32) + 1
+        }
+
+        // language=java
+        let code = r#"
+class Test {
+    void test(String input) {
+        String a = input;
+        var b = a;
+        execute(b);
+    }
+}
+"#;
+
+        let (mut rt, tree) = setup(code);
+        let tsn_bridge = rt.bridge_ts_node();
+        let nid_of =
+            |ts_node: tree_sitter::Node| -> NodeId { tsn_bridge.borrow().get_id(ts_node).unwrap() };
+
+        let expected_flow = vec![
+            tree.find_named_nodes(Some("b"), Some("identifier"))[1],
+            tree.find_named_nodes(Some("b"), Some("identifier"))[0],
+            tree.find_named_nodes(Some("a"), Some("identifier"))[1],
+            tree.find_named_nodes(Some("a"), Some("identifier"))[0],
+            tree.find_named_nodes(Some("input"), Some("identifier"))[1],
+            tree.find_named_nodes(Some("input"), Some("identifier"))[0],
+        ];
+        let sink_id = nid_of(expected_flow[0]);
+
+        // language=javascript
+        let script = format!(
+            r#"
+const sourceFlows = ddsa.getTaintSources(getNode({sink_id}));
+assert(sourceFlows.length === 1, "`getTaintSources` should have returned 1 flow");
+
+const v = Violation.new("flow violation", sourceFlows[0]);
+v;
+"#,
+        );
+        let script = compile_script(&mut rt.v8_handle_scope(), &script).unwrap();
+        let violation = rt
+            .scoped_execute(
+                &script,
+                |sc, value| v_converter.try_convert_from(sc, value).unwrap(),
+                None,
+            )
+            .unwrap();
+
+        assert!(position_eq(violation.base_region, expected_flow[0]));
+
+        let taint_flow_regions = violation.taint_flow_regions.unwrap();
+        assert_eq!(taint_flow_regions.len(), expected_flow.len());
+        taint_flow_regions
+            .iter()
+            .zip(expected_flow)
+            .for_each(|(&region, node)| {
+                assert!(position_eq(region, node));
+            });
     }
 }
 

@@ -16,6 +16,7 @@ pub struct FileContextGo<T> {
     // Cached keys
     s_alias_map: v8::Global<v8::String>,
     s_is_cached: v8::Global<v8::String>,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
 }
 
