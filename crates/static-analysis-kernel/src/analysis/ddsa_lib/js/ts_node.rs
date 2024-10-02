@@ -19,6 +19,7 @@ pub struct TreeSitterNode<T> {
     end_col: u32,
     /// The type of node this is. This corresponds to [`tree_sitter::Node::kind_id`].
     node_type_id: u16,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
 }
 
@@ -51,7 +52,11 @@ impl<T> TreeSitterNode<T> {
 
 /// A function representing the ES6 class `TreeSitterNode`.
 #[derive(Debug)]
-pub struct TreeSitterNodeFn<T>(v8::Global<v8::Function>, PhantomData<T>);
+pub struct TreeSitterNodeFn<T>(
+    v8::Global<v8::Function>,
+    /// (See documentation on [`Class`]).
+    PhantomData<T>,
+);
 
 impl TreeSitterNodeFn<Class> {
     pub const CLASS_NAME: &'static str = "TreeSitterNode";

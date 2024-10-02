@@ -4,7 +4,7 @@
 
 use crate::analysis;
 use crate::analysis::ddsa_lib::common::{
-    load_function, v8_interned, Class, DDSAJsRuntimeError, NodeId, StellaCompat,
+    load_function, v8_interned, Class, DDSAJsRuntimeError, Instance, NodeId, StellaCompat,
 };
 use crate::analysis::ddsa_lib::js::capture::{MultiCaptureTemplate, SingleCaptureTemplate};
 use crate::analysis::ddsa_lib::js::TreeSitterNodeFn;
@@ -21,6 +21,7 @@ pub struct QueryMatch<T> {
     class: v8::Global<v8::Function>,
     single_capture: SingleCaptureTemplate,
     multi_capture: MultiCaptureTemplate,
+    /// (See documentation on [`Class`]).
     _pd: PhantomData<T>,
 }
 

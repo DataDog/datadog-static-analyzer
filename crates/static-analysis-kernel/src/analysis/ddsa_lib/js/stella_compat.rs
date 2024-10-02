@@ -12,6 +12,7 @@ use std::marker::PhantomData;
 #[derive(Debug)]
 pub struct VisitArgFilenameCompat<T> {
     v8_object: v8::Global<v8::Object>,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
 }
 

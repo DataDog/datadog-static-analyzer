@@ -15,6 +15,7 @@ use std::marker::PhantomData;
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct Edit<T> {
     pub kind: EditKind,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
 }
 

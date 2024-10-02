@@ -21,6 +21,7 @@ pub struct RootContext<T> {
     s_ts_lang_ctx: v8::Global<v8::String>,
     s_filename: v8::Global<v8::String>,
     s_file_contents: v8::Global<v8::String>,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
 }
 

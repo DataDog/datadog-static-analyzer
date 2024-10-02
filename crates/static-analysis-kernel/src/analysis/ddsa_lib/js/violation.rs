@@ -22,6 +22,7 @@ pub struct Violation<T> {
     pub fixes: Option<Vec<Fix<T>>>,
     pub base_region: CodeRegion<T>,
     pub taint_flow_regions: Option<Vec<CodeRegion<T>>>,
+    /// (See documentation on [`Instance`]).
     pub _pd: PhantomData<T>,
 }
 

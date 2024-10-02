@@ -16,6 +16,7 @@ pub struct CodeRegion<T> {
     pub start_col: u32,
     pub end_line: u32,
     pub end_col: u32,
+    /// (See documentation on [`Instance`]).
     pub _pd: PhantomData<T>,
 }
 

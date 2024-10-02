@@ -19,6 +19,7 @@ pub struct TsLanguageContext<T> {
     // Cached keys
     s_node_type: v8::Global<v8::String>,
     s_field: v8::Global<v8::String>,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
 }
 

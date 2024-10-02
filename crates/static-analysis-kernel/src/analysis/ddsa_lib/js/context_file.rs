@@ -15,6 +15,7 @@ use std::marker::PhantomData;
 #[derive(Debug)]
 pub struct FileContext<T> {
     v8_object: v8::Global<v8::Object>,
+    /// (See documentation on [`Instance`]).
     _pd: PhantomData<T>,
     // Individual language support:
     pub ctx_go: Option<js::FileContextGo<Instance>>,
