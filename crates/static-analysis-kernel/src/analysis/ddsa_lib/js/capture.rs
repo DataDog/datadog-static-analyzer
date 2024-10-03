@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, NodeId};
+use crate::analysis::ddsa_lib::common::{swallow_v8_error, v8_interned, v8_uint, NodeId};
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 
@@ -48,7 +48,7 @@ impl SingleCaptureTemplate {
             .template
             .open(scope)
             .new_instance(scope)
-            .expect("v8 object should be able to be created");
+            .unwrap_or_else(|| swallow_v8_error(|| v8::Object::new(scope)));
         let key = v8::Local::new(scope, &self.s_name);
         let name = v8_interned(scope, name);
         capture.set(scope, key.into(), name.into());
@@ -100,20 +100,20 @@ impl MultiCaptureTemplate {
             .template
             .open(scope)
             .new_instance(scope)
-            .expect("v8 object should be able to be created");
+            .unwrap_or_else(|| swallow_v8_error(|| v8::Object::new(scope)));
         let key = v8::Local::new(scope, &self.s_name);
         let name = v8_interned(scope, name);
         capture.set(scope, key.into(), name.into());
 
         let key = v8::Local::new(scope, &self.s_node_ids);
         let ids_buf = v8::ArrayBuffer::new(scope, 4 * node_ids.len());
-        let ids_array = v8::Uint32Array::new(scope, ids_buf, 0, node_ids.len())
-            .expect("v8 Uint32Array should be able to be created");
-        for (i, node_id) in node_ids.iter().enumerate() {
-            let id = v8_uint(scope, *node_id);
-            ids_array.set_index(scope, i as u32, id.into());
+        if let Some(ids_array) = v8::Uint32Array::new(scope, ids_buf, 0, node_ids.len()) {
+            for (i, node_id) in node_ids.iter().enumerate() {
+                let id = v8_uint(scope, *node_id);
+                ids_array.set_index(scope, i as u32, id.into());
+            }
+            capture.set(scope, key.into(), ids_array.into());
         }
-        capture.set(scope, key.into(), ids_array.into());
         capture
     }
 }

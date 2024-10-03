@@ -2,7 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, DDSAJsRuntimeError};
+use crate::analysis::ddsa_lib::common::{
+    swallow_v8_error, v8_interned, v8_uint, DDSAJsRuntimeError,
+};
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use indexmap::{Equivalent, IndexMap};
@@ -236,7 +238,7 @@ where
             self.v8_map
                 .open(scope)
                 .set(scope, v8_key, v8_value)
-                .expect("v8 map should be insertable");
+                .unwrap_or_else(|| swallow_v8_error(|| v8::Map::new(scope)));
         }
 
         (index, existing)
@@ -379,7 +381,7 @@ where
         for idx in 0..v8_len {
             let v8_value = v8_array
                 .get_index(scope, idx as u32)
-                .expect("index should have been bounds checked");
+                .unwrap_or_else(|| v8::undefined(scope).into());
             let rust_value = self.converter.try_convert_from(scope, v8_value)?;
             self.vec.push(rust_value);
         }

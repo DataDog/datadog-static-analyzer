@@ -150,7 +150,7 @@ pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, 
     // frequently in performance-critical paths.
     debug_assert!(str.is_ascii(), "string must be ASCII");
     v8::String::new_from_one_byte(scope, str.as_bytes(), v8::NewStringType::Internalized)
-        .expect("str length should be less than v8 limit")
+        .unwrap_or_else(|| swallow_v8_error(|| v8::String::empty(scope)))
 }
 
 /// Creates a [`Normal`](v8::string::NewStringType::Normal) v8 string, which always allocates memory
@@ -161,7 +161,7 @@ pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, 
 #[inline(always)]
 pub fn v8_string<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
     v8::String::new_from_utf8(scope, str.as_bytes(), v8::NewStringType::Normal)
-        .expect("str length should be less than v8 limit")
+        .unwrap_or_else(|| swallow_v8_error(|| v8::String::empty(scope)))
 }
 
 /// A shorthand for creating a [`v8::Integer`].
@@ -253,7 +253,11 @@ pub fn iter_v8_array<'s>(
     let len = value.length();
     let mut vec = Vec::with_capacity(len as usize);
     for idx in 0..len {
-        vec.push(value.get_index(scope, idx).expect("index should exist"));
+        vec.push(
+            value
+                .get_index(scope, idx)
+                .unwrap_or_else(|| swallow_v8_error(|| v8::null(scope).into())),
+        );
     }
     vec.into_iter()
 }
@@ -345,6 +349,30 @@ pub fn create_base_runtime(
             ..Default::default()
         })
     }
+}
+
+/// This function allows the caller to ignore an error associated with a call to v8.
+///
+/// # Safety
+/// This function expects an uninitialized v8 value to be returned matching the type
+/// that the fallible v8 call would have returned upon success.
+///
+/// Be careful: this can lead to incorrect behavior and/or bugs! For example the following
+/// could happen silently, such that the caller would not know:
+/// * a value of `null` may be returned when the caller otherwise expects a number.
+/// * An empty, vanilla object may be returned despite the caller expecting a class instance.
+/// * A state mutation may fail (e.g. a value isn't pushed to an array).
+///
+/// # In Practice
+/// This function is only used to handle the return value of v8 calls that are _effectively_ (not truly)
+/// infallible -- that is, if they were to fail, the analysis will (or should) terminate regardless.
+/// Thus, the swallowing of the error has zero impact on program logic/behavior.
+///
+/// It's appropriate to use this when the v8 call will only fail upon an extreme circumstance,
+/// like if [`v8::IsolateHandle::terminate_execution`] has been called by a watchdog thread
+/// or if v8 or the OS cannot allocate memory.
+pub fn swallow_v8_error<F: FnOnce() -> T, T>(f: F) -> T {
+    f()
 }
 
 #[cfg(test)]
