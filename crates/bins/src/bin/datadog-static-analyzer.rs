@@ -57,7 +57,7 @@ fn main() -> Result<()> {
     #[allow(unused_assignments)]
     let mut ignore_gitignore = false;
     let mut max_file_size_kb = DEFAULT_MAX_FILE_SIZE_KB;
-    let mut ignore_generated_files = true;
+    let mut ignore_generated_files = false;
 
     opts.optopt(
         "i",
@@ -266,7 +266,7 @@ fn main() -> Result<()> {
 
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
-        ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
+        ignore_generated_files = false;
     } else {
         // if there is no config file, we take the default rules from our APIs.
         if rules_file.is_none() {
