@@ -805,6 +805,48 @@ strict digraph full {
     }
 
     #[test]
+    fn switch_statement_cfg_non_exhaustive() {
+        // Missing alternative
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = initial;
+    switch (conditionA) {
+        case 1:
+            y = alt0;
+            break;
+        case 2:
+            y = alt1;
+            break;
+    }
+    y;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    initial
+    alt0; alt1
+    y0 [text=y,line=2]
+    y1 [text=y,line=5]
+    y2 [text=y,line=8]
+    y3 [text=y,line=11]
+    phi0 [vkind=phi]
+
+    y0 -> initial [kind=assignment]
+    y1 -> alt0 [kind=assignment]
+    y2 -> alt1 [kind=assignment]
+    phi0 -> y0 [kind=dependence]
+    phi0 -> y1 [kind=dependence]
+    phi0 -> y2 [kind=dependence]
+    y3 -> phi0 [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
     fn template_expr() {
         // Only `STR` and `FMT` templates are currently handled.
         assert_digraph!(
@@ -1062,6 +1104,197 @@ strict digraph full {
     objCreation [text="new OuterClass().new InnerClass()",cstkind=object_creation_expression]
 
     var_A -> objCreation [kind=assignment]
+}
+"#
+        );
+    }
+
+    /// A switch statement is only considered exhaustive if it contains a `default` case, regardless
+    /// of whether constant propagation could classify it exhaustive or not.
+    #[test]
+    fn switch_statement_exhaustive_only_default() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = initial;
+    switch (conditionA) {
+        case true:
+            y = alt0;
+            break;
+        case false:
+            y = alt1;
+            break;
+    }
+    y;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    initial
+    alt0; alt1
+    y0 [text=y,line=2]
+    y1 [text=y,line=5]
+    y2 [text=y,line=8]
+    y3 [text=y,line=11]
+    phi0 [vkind=phi]
+
+    y0 -> initial [kind=assignment]
+    y1 -> alt0 [kind=assignment]
+    y2 -> alt1 [kind=assignment]
+
+    phi0 -> y1 [kind=dependence]
+    phi0 -> y2 [kind=dependence]
+    y3 -> phi0 [kind=dependence]
+
+    // This relationship is incorrect.
+    phi0 -> y0 [kind=dependence]
+    //////////
+}
+"#
+        );
+
+        // Switch with a "default".
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = initial;
+    switch (conditionA) {
+        case true:
+            y = alt0;
+            break;
+        default:
+            y = alt1;
+            break;
+    }
+    y;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    initial
+    alt0; alt1
+    y0 [text=y,line=2]
+    y1 [text=y,line=5]
+    y2 [text=y,line=8]
+    y3 [text=y,line=11]
+    phi0 [vkind=phi]
+
+    y0 -> initial [kind=assignment]
+    y1 -> alt0 [kind=assignment]
+    y2 -> alt1 [kind=assignment]
+
+    phi0 -> y1 [kind=dependence]
+    phi0 -> y2 [kind=dependence]
+    y3 -> phi0 [kind=dependence]
+}
+"#
+        );
+    }
+
+    /// Switch case fall-through is not considered.
+    #[test]
+    fn switch_statement_case_fall_through_unsupported() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y;
+    switch (conditionA) {
+        case 1:
+            y = alt0;
+        case 2:
+            y = alt1;
+            break;
+        default:
+            y = alt2;
+    }
+    y;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    alt0; alt1; alt2
+    // y0 [text=y,line=2]
+    y1 [text=y,line=5]
+    y2 [text=y,line=7]
+    y3 [text=y,line=10]
+    y4 [text=y,line=12]
+    phi0 [vkind=phi]
+
+    y1 -> alt0 [kind=assignment]
+    y2 -> alt1 [kind=assignment]
+    y3 -> alt2 [kind=assignment]
+
+    phi0 -> y2 [kind=dependence]
+    phi0 -> y3 [kind=dependence]
+    y4 -> phi0 [kind=dependence]
+
+    // This relationship is incorrect (fall-through should prevent this edge).
+    phi0 -> y1 [kind=dependence]
+    //////////
+}
+"#
+        );
+    }
+
+    /// Expressions that should introduce phi nodes do not.
+    /// (Currently, dependence edges are directly drawn).
+    #[test]
+    fn switch_expression_no_phi() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = switch (conditionA) {
+        case 1 -> alt0;
+        default -> alt1;
+    };
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    alt0; alt1
+    y
+    switchExpr [text="*",cstkind=switch_expression]
+
+    // These relationships are incorrect (they should be encapsulated by a phi node)
+    switchExpr -> alt0 [kind=dependence]
+    switchExpr -> alt1 [kind=dependence]
+    y -> switchExpr [kind=assignment]
+    //////////
+}
+"#
+        );
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = switch (conditionA) {
+        case 1:
+            yield alt0;
+        default:
+            yield alt1;
+    };
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    alt0; alt1
+    y
+    switchExpr [text="*",cstkind=switch_expression]
+
+    // These relationships are incorrect (they should be encapsulated by a phi node)
+    switchExpr -> alt0 [kind=dependence]
+    switchExpr -> alt1 [kind=dependence]
+    y -> switchExpr [kind=assignment]
+    //////////
 }
 "#
         );
