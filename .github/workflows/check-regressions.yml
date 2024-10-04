@@ -5,8 +5,6 @@ name: Check for regressions in static analysis kernel
 
 jobs:
   check_regressions:
-    permissions:
-      actions: write
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
