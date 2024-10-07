@@ -282,11 +282,13 @@ export class MethodFlow {
     /**
      * Visits an `array_creation_expression`.
      * ```java
-     * var test = new String[]{"hello", someVar};
-     * //         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * var example_01 = new String[]{"hello", someVar};
+     * //               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     * var example_02 = new byte[1024];
+     * //               ^^^^^^^^^^^^^^
      * ```
      * ```
-     * (type: (_) dimensions: (dimensions) value: (array_initializer))
+     * (type: (_) dimensions: (dimensions) <value: (array_initializer)>?)
      * ```
      * @param {TreeSitterNode} node
      */
@@ -295,9 +297,11 @@ export class MethodFlow {
         const children = ddsa.getChildren(node);
 
         const valueIdx = findFieldIndex(children, 2, "value");
-        const value = children[valueIdx];
-        this.visit(value);
-        this.propagateLastTaint(node);
+        if (valueIdx !== -1) {
+            const value = children[valueIdx];
+            this.visit(value);
+            this.propagateLastTaint(node);
+        }
     }
 
     /**
@@ -554,17 +558,20 @@ export class MethodFlow {
     visitMethodCall(node) {
         const children = ddsa.getChildren(node);
         const objIdx = findFieldIndex(children, 0, "object");
-        // [(identifier) (field_access)]
+        // `[(identifier) (field_access)]`
         const obj = children[objIdx];
-        if (obj?.cstType === "identifier") {
-            // [simplification]: If the node could represent a local variable, propagate taint as if that local variable
-            // always taints the return value of an instance method (this is clearly not always the case).
-            this.visitIdentifier(obj);
-            this.propagateLastTaint(node);
-            const _ = this.takeLastTainted();
-        }
 
         // [simplification]: Ignore the "name" field (we don't do name or type resolution).
+        // (We don't blanket visit the `obj` because of how we selectively visit `identifier` to track variable references).
+        if (obj !== undefined) {
+            switch (obj.cstType) {
+                case "method_invocation": {
+                    this.visitMethodCall(obj);
+                    this.propagateLastTaint(node);
+                    break;
+                }
+            }
+        }
 
         const argsIdx = findFieldIndex(children, objIdx + 1, "arguments");
         const args = children[argsIdx];
@@ -573,6 +580,13 @@ export class MethodFlow {
         // [simplification]: Propagate tainted arguments as if they _always_ flow through into the return value
         // of the method (this is clearly not always the case).
         this.propagateLastTaint(node);
+
+        if (obj?.cstType === "identifier") {
+            // [simplification]: If the node could represent a local variable, propagate taint as if that local variable
+            // always taints the return value of an instance method (this is clearly not always the case).
+            this.visitIdentifier(obj);
+            this.propagateLastTaint(node);
+        }
     }
 
     /**
@@ -601,10 +615,17 @@ export class MethodFlow {
      * ```
      * (object_creation_expression (object_creation_expression)? type: (_) arguments: (argument_list))
      * ```
-     * @param {TreeSitterNode} _node
+     * @param {TreeSitterNode} node
      */
-    visitObjCreationExpr(_node) {
-        // [simplification]: Ignore this node
+    visitObjCreationExpr(node) {
+        // [simplification]: Propagate arguments as if they _always_ flow through into the return value
+        // of the constructor.
+        const children = ddsa.getChildren(node);
+
+        const argumentsIdx = findFieldIndex(children, 1, "arguments");
+        const args = children[argumentsIdx];
+        this.visitArgList(args);
+        this.propagateLastTaint(node);
     }
 
     /**
@@ -868,6 +889,7 @@ export class MethodFlow {
 
         // The index of the first "update" child field detected.
         let updateFieldIdx = -1;
+        let bodyFieldIdx = -1;
 
         const len = children.length;
         for (let i = 0; i < len; i++) {
@@ -891,6 +913,7 @@ export class MethodFlow {
                     }
                     break;
                 case "body":
+                    bodyFieldIdx = i;
                     this.visitBlockStmt(child);
                     break;
                 default:
@@ -899,7 +922,7 @@ export class MethodFlow {
         }
 
         if (updateFieldIdx !== -1) {
-            for (let i = updateFieldIdx; i < len; i++) {
+            for (let i = updateFieldIdx; i < bodyFieldIdx; i++) {
                 const child = children[i];
                 this.visit(child);
                 // TODO(JF): After scoped variable support: propagate taint here

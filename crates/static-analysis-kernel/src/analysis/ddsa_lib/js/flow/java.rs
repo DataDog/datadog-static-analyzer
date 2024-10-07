@@ -505,9 +505,9 @@ strict digraph {
     }
 
     /// array_creation_expression
-    /// array_initializer
     #[test]
-    fn array_creation_expression_array_initializer() {
+    fn array_creation_expression() {
+        // With array_initializer
         assert_digraph!(
             // language=java
             "\
@@ -527,6 +527,19 @@ strict digraph full {
     arrayInit -> var_A [kind=dependence]
     arrayInit -> var_B [kind=dependence]
 }
+"#
+        );
+        // Without array_initializer
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    new String[123];
+}
+",
+            // language=dot
+            r#"
+strict digraph full {}
 "#
         );
     }
@@ -633,6 +646,66 @@ strict digraph full {
 
     join -> joinArgList [kind=dependence]
     joinArgList -> var_A [kind=dependence]
+}
+"#
+        );
+    }
+
+    /// Chained methods are parsed and taint is propagated from object to method/property.
+    #[test]
+    fn method_invocation_chained() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    echo(x).golf(y).foxtrot(z);
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    x; y; z
+    argList0 [text="(x)",cstkind=argument_list]
+    methodInvo0 [text="echo(x)",cstkind=method_invocation]
+    argList1 [text="(y)",cstkind=argument_list]
+    methodInvo1 [text="echo(x).golf(y)",cstkind=method_invocation]
+    argList2 [text="(z)",cstkind=argument_list]
+    methodInvo2 [text="echo(x).golf(y).foxtrot(z)",cstkind=method_invocation]
+
+    argList0 -> x [kind=dependence]
+    methodInvo0 -> argList0 [kind=dependence]
+    argList1 -> y [kind=dependence]
+    methodInvo1 -> argList1 [kind=dependence]
+    methodInvo1 -> methodInvo0 [kind=dependence]
+    argList2 -> z [kind=dependence]
+    methodInvo2 -> argList2 [kind=dependence]
+    methodInvo2 -> methodInvo1 [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
+    fn obj_creation_expr() {
+        // (simplification: all taint is passed through to the return value)
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    String y = new String(z);
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    y
+    z
+    objCreation [text="*",cstkind=object_creation_expression]
+    argList [text="*",cstkind=argument_list]
+
+    argList -> z [kind=dependence]
+    objCreation -> argList [kind=dependence]
+    y -> objCreation [kind=assignment]
 }
 "#
         );
@@ -1087,28 +1160,6 @@ strict digraph full {
         );
     }
 
-    /// `object_creation_expression` nodes are parsed but not analyzed.
-    #[test]
-    fn obj_creation_expr_unsupported() {
-        assert_digraph!(
-            // language=java
-            "\
-void method() {
-    String var_A = new OuterClass().new InnerClass();
-}
-",
-            // language=dot
-            r#"
-strict digraph full {
-    var_A
-    objCreation [text="new OuterClass().new InnerClass()",cstkind=object_creation_expression]
-
-    var_A -> objCreation [kind=assignment]
-}
-"#
-        );
-    }
-
     /// A switch statement is only considered exhaustive if it contains a `default` case, regardless
     /// of whether constant propagation could classify it exhaustive or not.
     #[test]
@@ -1377,6 +1428,38 @@ strict digraph full {
     //////////
 
     var_A -> methodCall [kind=assignment]
+}
+"#
+        );
+    }
+    /// This simplification is recursive
+    #[test]
+    fn method_call_return_object_recursive() {
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    a = b.get(c.getBytes());
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    a
+    b
+    c
+    methodCall_b [text="*",cstkind=method_invocation,col=9]
+    argList_b [text="*",cstkind=argument_list,col=14]
+    methodCall_c [text="*",cstkind=method_invocation,col=15]
+
+    // The simplification:
+    methodCall_b -> b [kind=dependence]
+    methodCall_c -> c [kind=dependence]
+    //////////
+
+    methodCall_b -> argList_b [kind=dependence]
+    argList_b -> methodCall_c [kind=dependence]
+    a -> methodCall_b [kind=assignment]
 }
 "#
         );
