@@ -1,6 +1,7 @@
 name: GHCR - Test Latest
 on:
   workflow_dispatch:
+  push:
 
 env:
   REGISTRY: ghcr.io
