@@ -40,11 +40,6 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - uses: ./.github/actions/rust-cache
-        with:
-          cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: release
-
       - name: Checkout test repositories
         uses: actions/checkout@v4
         with:
