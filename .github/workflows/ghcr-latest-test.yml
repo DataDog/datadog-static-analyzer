@@ -1,0 +1,29 @@
+name: GHCR - Test Latest
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  test-reassign:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Reassign latest
+        run: |
+          docker pull ghcr.io/datadog/datadog-static-analyzer:sha-e3e71ae
+          docker tag ghcr.io/datadog/datadog-static-analyzer:sha-e3e71ae ghcr.io/datadog/datadog-static-analyzer:latest
+          docker image push --all-tags ghcr.io/datadog/datadog-static-analyzer:latest
