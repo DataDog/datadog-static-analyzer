@@ -1,0 +1,31 @@
+name: Use Rust build cache
+description: Caches compiled rust crates with a stable key across jobs.
+inputs:
+  cargo-target:
+    description: The cargo target triple
+    required: true
+  save-if:
+    description: The value for `save-if` passed through to rust-cache
+    required: false
+    default: 'true'
+  cargo-cache-key:
+    description: An extra key used to mark a cache
+    required: false
+    default: 'default'
+runs:
+  using: composite
+  steps:
+    - name: Use cache for cargo build
+      uses: Swatinem/rust-cache@v2.7.3
+      with:
+        shared-key: ${{ inputs.cargo-target }}
+        save-if: ${{ inputs.save-if }}
+    - name: Cache vectorscan-sys build
+      uses: actions/cache@v4
+      with:
+        path: |
+          **/target/*/deps/libvectorscan_sys-*
+          **/target/*/deps/vectorscan_sys-*
+          **/target/*/build/vectorscan-sys-*
+          **/target/*/libvectorscan_sys.*
+        key: ${{ inputs.cargo-target }}-vectorscan-sys-${{ inputs.cargo-cache-key }}
