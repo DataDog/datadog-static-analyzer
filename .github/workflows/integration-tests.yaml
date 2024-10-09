@@ -32,9 +32,5 @@ jobs:
         with:
           toolchain: stable
           profile: default
-      - uses: ./.github/actions/rust-cache
-        with:
-          cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: release-dev
       - name: Execute script
         run: ${{ matrix.scripts.file }}
