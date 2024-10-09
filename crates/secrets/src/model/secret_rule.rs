@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use common::model::diff_aware::DiffAware;
-use sds::{MatchAction, ProximityKeywordsConfig, RuleConfig};
+use sds::{MatchAction, ProximityKeywordsConfig, RegexRuleConfig};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
@@ -20,8 +20,8 @@ pub struct SecretRule {
 
 impl SecretRule {
     /// Convert the rule into a configuration usable by SDS.
-    pub fn convert_to_sds_ruleconfig(&self) -> RuleConfig {
-        let mut rule_config = RuleConfig::builder(&self.pattern).match_action(MatchAction::None);
+    pub fn convert_to_sds_ruleconfig(&self) -> RegexRuleConfig {
+        let mut rule_config = RegexRuleConfig::new(&self.pattern).match_action(MatchAction::None);
 
         if !self.default_included_keywords.is_empty() {
             rule_config = rule_config.proximity_keywords(ProximityKeywordsConfig {
@@ -31,7 +31,7 @@ impl SecretRule {
             });
         }
 
-        rule_config.build()
+        rule_config
     }
 }
 
