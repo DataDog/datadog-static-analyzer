@@ -10,6 +10,7 @@ use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
 use itertools::Itertools;
 use sds::{RuleConfig, Scanner};
+use std::sync::Arc;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from
 /// our API.
@@ -18,9 +19,11 @@ use sds::{RuleConfig, Scanner};
 pub fn build_sds_scanner(rules: &[SecretRule]) -> Scanner {
     let sds_rules = rules
         .iter()
-        .map(|r| r.convert_to_sds_ruleconfig())
-        .collect::<Vec<RuleConfig>>();
-    Scanner::new(&sds_rules).expect("error when instantiating the scanner")
+        .map(|r| r.convert_to_sds_ruleconfig().build())
+        .collect::<Vec<Arc<dyn RuleConfig>>>();
+    Scanner::builder(&sds_rules)
+        .build()
+        .expect("error when instantiating the scanner")
 }
 
 /// Find secrets in code. This is the main entrypoint for our SDS integration.
@@ -38,7 +41,7 @@ pub fn find_secrets(
     }
 
     let mut codemut = code.to_owned();
-    let matches = scanner.scan(&mut codemut);
+    let matches = scanner.scan(&mut codemut, vec![]);
 
     matches
         .iter()
