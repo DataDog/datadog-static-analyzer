@@ -27,4 +27,6 @@ jobs:
         run: |
           docker pull ghcr.io/datadog/datadog-static-analyzer:sha-e3e71ae
           docker tag ghcr.io/datadog/datadog-static-analyzer:sha-e3e71ae ghcr.io/datadog/datadog-static-analyzer:latest
-          docker image push ghcr.io/datadog/datadog-static-analyzer:latest
+          docker tag ghcr.io/datadog/datadog-static-analyzer:sha-e3e71ae ghcr.io/datadog/datadog-static-analyzer:sha-e3e71ae
+          docker tag ghcr.io/datadog/datadog-static-analyzer:sha-e3e71ae ghcr.io/datadog/datadog-static-analyzer:0.4.4
+          docker image push --all-tags ghcr.io/datadog/datadog-static-analyzer
