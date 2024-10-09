@@ -48,8 +48,6 @@ jobs:
 
       - name: Obtain results before changes
         run: |
-          rm -f Cargo.lock
-          cargo clean
           cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo.org }}/${{ matrix.repo.name }} -o result-pre.json -b -f sarif
 
       - name: Fetch all branches and checkout PR
@@ -60,8 +58,6 @@ jobs:
 
       - name: Obtain results after changes
         run: |
-          rm -f Cargo.lock
-          cargo clean
           cargo run --release --bin datadog-static-analyzer -- -i ${{ matrix.repo.org }}/${{ matrix.repo.name }} -o result-post.json -b -f sarif
 
       - name: Install Node.js dependencies
