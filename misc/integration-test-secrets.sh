@@ -26,6 +26,20 @@ if [ "$RES" -ne "2" ]; then
   exit 1
 fi
 
+status1=`jq '.runs[0].results[0].properties.tags[1]' "${REPO_DIR}/results1.json"`
+
+if [ "$status1" != "\"DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE\"" ]; then
+  echo "did not find DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE in properties, found $status1"
+  exit 1
+fi
+
+status2=`jq '.runs[0].results[1].properties.tags[1]' "${REPO_DIR}/results1.json"`
+
+if [ "$status2" != "\"DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE\"" ]; then
+  echo "did not find DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE in properties, found $status2"
+  exit 1
+fi
+
 echo "All tests passed"
 
 exit 0

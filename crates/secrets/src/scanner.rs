@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::model::secret_result::{SecretResult, SecretResultMatch};
+use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
 use crate::model::secret_rule::SecretRule;
 use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
@@ -32,16 +32,27 @@ pub fn find_secrets(
     sds_rules: &[SecretRule],
     filename: &str,
     code: &str,
-    _options: &AnalysisOptions,
+    options: &AnalysisOptions,
 ) -> Vec<SecretResult> {
     struct Result {
         rule_index: usize,
         start: Position,
         end: Position,
+        validation_status: SecretValidationStatus,
     }
 
     let mut codemut = code.to_owned();
-    let matches = scanner.scan(&mut codemut, vec![]);
+    let mut matches = scanner.scan(&mut codemut, vec![]);
+
+    if matches.is_empty() {
+        return vec![];
+    }
+
+    let matches_validation = futures::executor::block_on(scanner.validate_matches(&mut matches));
+
+    if matches_validation.is_err() && options.use_debug {
+        eprintln!("error when validating secrets for filename {}", filename)
+    }
 
     matches
         .iter()
@@ -53,6 +64,7 @@ pub fn find_secrets(
                 rule_index: sds_match.rule_index,
                 start,
                 end,
+                validation_status: SecretValidationStatus::from(&sds_match.match_status),
             })
         })
         .group_by(|v| v.rule_index)
@@ -66,6 +78,7 @@ pub fn find_secrets(
                 .map(|v| SecretResultMatch {
                     start: v.start,
                     end: v.end,
+                    validation_status: v.validation_status,
                 })
                 .collect(),
         })

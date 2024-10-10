@@ -4,6 +4,7 @@ base64,https://github.com/marshallpierce/rust-base64,Apache-2.0,Copyright (c) 20
 bstr,https://github.com/BurntSushi/bstr,MIT,Copyright (c) 2018-2019 Andrew Gallant
 csv,https://github.com/BurntSushi/rust-csv,MIT,Copyright (c) 2015 Andrew Gallant
 deno-core,https://github.com/denoland/deno,MIT,Copyright 2018-2023 the Deno authors
+futures,https://rust-lang.github.io/futures-rs/,MIT,Copyright (c) 2017 The Tokio Authors
 git2,https://crates.io/crates/git2,MIT,Copyright (c) 2014 Alex Crichton
 globset,https://crates.io/crates/globset,MIT,Copyright (c) 2015 Andrew Gallant
 graphviz-rust,https://github.com/besok/graphviz-rust,MIT,Copyright (c) 2013 Boris Zhguchev

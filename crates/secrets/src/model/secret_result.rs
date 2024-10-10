@@ -3,12 +3,35 @@
 // Copyright 2024 Datadog, Inc.
 
 use common::model::position::Position;
+use sds::MatchStatus;
 use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
+pub enum SecretValidationStatus {
+    NotValidated,
+    Valid,
+    Invalid,
+    ValidationError,
+    NotAvailable,
+}
+
+impl From<&MatchStatus> for SecretValidationStatus {
+    fn from(value: &MatchStatus) -> Self {
+        match value {
+            MatchStatus::NotChecked => SecretValidationStatus::NotValidated,
+            MatchStatus::Valid => SecretValidationStatus::Valid,
+            MatchStatus::Invalid => SecretValidationStatus::Invalid,
+            MatchStatus::Error(_) => SecretValidationStatus::ValidationError,
+            MatchStatus::NotAvailable => SecretValidationStatus::NotAvailable,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct SecretResultMatch {
     pub start: Position,
     pub end: Position,
+    pub validation_status: SecretValidationStatus,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]

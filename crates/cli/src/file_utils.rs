@@ -7,12 +7,11 @@ use anyhow::Result;
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
+use crate::model::cli_configuration::CliConfiguration;
+use crate::model::datadog_api::DiffAwareData;
 use kernel::model::common::Language;
 use kernel::model::config_file::PathConfig;
 use kernel::model::violation::Violation;
-
-use crate::model::cli_configuration::CliConfiguration;
-use crate::model::datadog_api::DiffAwareData;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Csharp, &["cs"]),
