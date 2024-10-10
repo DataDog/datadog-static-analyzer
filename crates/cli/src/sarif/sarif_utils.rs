@@ -11,7 +11,7 @@ use derive_builder::Builder;
 use git2::{BlameOptions, Repository};
 use kernel::constants::CARGO_VERSION;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
-use kernel::model::violation::{Fix, Violation};
+use kernel::model::violation::{Fix};
 use kernel::model::{
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
