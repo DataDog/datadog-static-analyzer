@@ -9,10 +9,10 @@ use walkdir::WalkDir;
 
 use kernel::model::common::Language;
 use kernel::model::config_file::PathConfig;
-use kernel::model::violation::Violation;
 
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
+use crate::sarif::sarif_utils::SarifViolation;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Csharp, &["cs"]),
@@ -304,7 +304,7 @@ pub fn filter_files_by_diff_aware_info(
 ///  SHA2(<file-location-in-repository> - <characters-in-directory> - <content-of-start-line> - <number of characters in start line>)
 pub fn get_fingerprint_for_violation(
     rule_name: String,
-    violation: &Violation,
+    violation: &SarifViolation,
     repository_root: &Path,
     file: &Path,
     use_debug: bool,
@@ -394,7 +394,7 @@ mod tests {
     #[test]
     fn get_fingerprint_for_violation_success_single_region() {
         let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let violation = Violation {
+        let violation = SarifViolation {
             start: Position { line: 10, col: 1 },
             end: Position { line: 12, col: 1 },
             message: "something bad happened".to_string(),
@@ -402,6 +402,7 @@ mod tests {
             category: RuleCategory::Performance,
             fixes: vec![],
             taint_flow: None,
+            validation_status: None,
         };
         let directory_string = d.into_os_string().into_string().unwrap();
         let fingerprint = get_fingerprint_for_violation(
@@ -438,7 +439,7 @@ mod tests {
             end: Position { line: 5, col: 30 },
         };
         let root_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let violation = Violation {
+        let violation = SarifViolation {
             start: region0.start,
             end: region0.end,
             message: "flow violation".to_string(),
@@ -446,6 +447,7 @@ mod tests {
             category: RuleCategory::Security,
             fixes: vec![],
             taint_flow: Some(vec![region0, region1]),
+            validation_status: None,
         };
         let fingerprint = get_fingerprint_for_violation(
             "taint_flow_rule".to_string(),
@@ -468,7 +470,7 @@ mod tests {
         let d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let path = "resources/test/gitignore/test1";
 
-        let violation = Violation {
+        let violation = SarifViolation {
             start: Position { line: 10, col: 1 },
             end: Position { line: 12, col: 1 },
             message: "something bad happened".to_string(),
@@ -476,6 +478,7 @@ mod tests {
             category: RuleCategory::Performance,
             fixes: vec![],
             taint_flow: None,
+            validation_status: None,
         };
         let directory_string = d.into_os_string().into_string().unwrap();
 
