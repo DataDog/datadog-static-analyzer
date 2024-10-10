@@ -7,11 +7,10 @@ use anyhow::Result;
 use base64::Engine;
 use common::model::position::PositionBuilder;
 use common::model::position::{Position, Region};
-use derive_builder::Builder;
 use git2::{BlameOptions, Repository};
 use kernel::constants::CARGO_VERSION;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
-use kernel::model::violation::Fix;
+use kernel::model::violation::{Fix, Violation};
 use kernel::model::{
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
@@ -31,6 +30,7 @@ use serde_sarif::sarif::{
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
+use crate::sarif::sarif_utils::SarifViolation::{Secret, StaticAnalysis};
 
 trait IntoSarif {
     type SarifType;
@@ -121,38 +121,30 @@ impl From<SecretRule> for SarifRule {
 }
 
 /// Generic representation of a violation for both static analysis and secrets
-#[derive(Deserialize, Debug, Serialize, Clone, Builder)]
-pub struct SarifViolation {
-    pub start: Position,
-    pub end: Position,
-    pub message: String,
-    pub severity: RuleSeverity,
-    pub category: RuleCategory,
-    pub fixes: Vec<Fix>,
-    pub taint_flow: Option<Vec<Region>>,
-    pub validation_status: Option<SecretValidationStatus>,
+#[derive(Debug, Clone)]
+pub enum SarifViolation {
+    StaticAnalysis(Violation),
+    Secret(Violation, SecretValidationStatus),
 }
 
 impl SarifViolation {
+    fn get_violation(&self) -> &Violation {
+        match self {
+            StaticAnalysis(v) => v,
+            Secret(v, _) => v,
+        }
+    }
+
     fn get_properties(&self) -> Vec<String> {
-        if let Some(validation_status) = &self.validation_status {
-            match validation_status {
-                SecretValidationStatus::NotValidated => {
-                    vec!["DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED".to_string()]
-                }
-                SecretValidationStatus::Valid => {
-                    vec!["DATADOG_SECRET_VALIDATION_STATUS:VALID".to_string()]
-                }
-                SecretValidationStatus::Invalid => {
-                    vec!["DATADOG_SECRET_VALIDATION_STATUS:INVALID".to_string()]
-                }
-                SecretValidationStatus::ValidationError => {
-                    vec!["DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR".to_string()]
-                }
-                SecretValidationStatus::NotAvailable => {
-                    vec!["DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE".to_string()]
-                }
-            }
+        if let Secret(_, validation_status) = &self {
+            let status = match validation_status {
+                SecretValidationStatus::NotValidated => "NOT_VALIDATED",
+                SecretValidationStatus::Valid => "VALID",
+                SecretValidationStatus::Invalid => "INVALID",
+                SecretValidationStatus::ValidationError => "VALIDATION_ERROR",
+                SecretValidationStatus::NotAvailable => "NOT_AVAILABLE",
+            };
+            vec![format!("DATADOG_SECRET_VALIDATION_STATUS:{}", status).to_string()]
         } else {
             vec![]
         }
@@ -171,16 +163,7 @@ impl SarifRuleResult {
             SarifRuleResult::StaticAnalysis(r) => r
                 .violations
                 .iter()
-                .map(|v| SarifViolation {
-                    start: v.start,
-                    end: v.end,
-                    message: v.message.clone(),
-                    severity: v.severity,
-                    category: v.category,
-                    fixes: v.fixes.clone(),
-                    taint_flow: v.taint_flow.clone(),
-                    validation_status: None,
-                })
+                .map(|v| StaticAnalysis(v.clone()))
                 .collect::<Vec<SarifViolation>>(),
             SarifRuleResult::Secret(secret_result) => secret_result
                 .matches
@@ -191,19 +174,21 @@ impl SarifRuleResult {
                         SecretValidationStatus::Valid => RuleSeverity::Error,
                         SecretValidationStatus::Invalid => RuleSeverity::None,
                         SecretValidationStatus::ValidationError => RuleSeverity::Warning,
-                        SecretValidationStatus::NotAvailable => RuleSeverity::Warning,
+                        SecretValidationStatus::NotAvailable => RuleSeverity::Error,
                     };
 
-                    SarifViolation {
-                        start: r.start,
-                        end: r.end,
-                        message: secret_result.message.clone(),
-                        severity,
-                        category: RuleCategory::Security,
-                        fixes: vec![],
-                        taint_flow: None,
-                        validation_status: Some(r.validation_status.clone()),
-                    }
+                    Secret(
+                        Violation {
+                            start: r.start,
+                            end: r.end,
+                            message: secret_result.message.clone(),
+                            severity,
+                            category: RuleCategory::Security,
+                            fixes: vec![],
+                            taint_flow: None,
+                        },
+                        r.validation_status,
+                    )
                 })
                 .collect::<Vec<SarifViolation>>(),
         }
@@ -484,7 +469,7 @@ fn is_valid_position(position: &Position) -> bool {
 }
 
 /// Check that the violation is valid and must be included
-fn is_valid_violation(violation: &SarifViolation) -> bool {
+fn is_valid_violation(violation: &Violation) -> bool {
     if !is_valid_position(&violation.start) || !is_valid_position(&violation.end) {
         return false;
     }
@@ -612,8 +597,8 @@ fn generate_results(
             let violations = rule_result.violations();
             violations
                 .into_iter()
-                .filter(|violation| {
-                    let is_valid = is_valid_violation(violation);
+                .filter(|sarif_violation| {
+                    let is_valid = is_valid_violation(sarif_violation.get_violation());
                     if !is_valid && options_orig.debug {
                         eprintln!(
                             "Invalid violations detected, check the rule {}",
@@ -622,7 +607,8 @@ fn generate_results(
                     }
                     is_valid
                 })
-                .map(move |violation| {
+                .map(move |sarif_violation| {
+                    let violation = sarif_violation.get_violation();
                     // if we find the rule for this violation, get the id, level and category
                     let location = LocationBuilder::default()
                         .physical_location(
@@ -768,7 +754,7 @@ fn generate_results(
                         )
                         .properties(
                             PropertyBagBuilder::default()
-                                .tags([tags.clone(), violation.get_properties()].concat())
+                                .tags([tags.clone(), sarif_violation.get_properties()].concat())
                                 .build()
                                 .unwrap(),
                         )
@@ -893,7 +879,7 @@ mod tests {
     #[test]
     fn test_is_valid_violation() {
         // bad location in the violation location
-        assert!(!is_valid_violation(&SarifViolation {
+        assert!(!is_valid_violation(&Violation {
             start: Position { line: 0, col: 1 },
             end: Position { line: 42, col: 42 },
             message: "bad stuff".to_string(),
@@ -901,11 +887,10 @@ mod tests {
             category: RuleCategory::BestPractices,
             fixes: vec![],
             taint_flow: None,
-            validation_status: None,
         }));
 
         // good location in the violation location and no fixes
-        assert!(is_valid_violation(&SarifViolation {
+        assert!(is_valid_violation(&Violation {
             start: Position { line: 1, col: 1 },
             end: Position { line: 42, col: 42 },
             message: "bad stuff".to_string(),
@@ -913,11 +898,10 @@ mod tests {
             category: RuleCategory::BestPractices,
             fixes: vec![],
             taint_flow: None,
-            validation_status: None,
         }));
 
         // bad location in the fixes location
-        assert!(!is_valid_violation(&SarifViolation {
+        assert!(!is_valid_violation(&Violation {
             start: Position { line: 1, col: 1 },
             end: Position { line: 42, col: 42 },
             message: "bad stuff".to_string(),
@@ -933,11 +917,10 @@ mod tests {
                 }]
             }],
             taint_flow: None,
-            validation_status: None,
         }));
 
         // good location everywhere
-        assert!(is_valid_violation(&SarifViolation {
+        assert!(is_valid_violation(&Violation {
             start: Position { line: 1, col: 1 },
             end: Position { line: 42, col: 42 },
             message: "bad stuff".to_string(),
@@ -953,7 +936,6 @@ mod tests {
                 }]
             }],
             taint_flow: None,
-            validation_status: None,
         }));
     }
 
@@ -1376,7 +1358,7 @@ mod tests {
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"note","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":2,"endLine":2,"startColumn":1,"startLine":1}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":3,"endLine":3,"startColumn":2,"startLine":2}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"none","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":4,"endLine":4,"startColumn":3,"startLine":3}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:INVALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"warning","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":6,"endLine":6,"startColumn":5,"startLine":5}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"warning","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":7,"endLine":7,"startColumn":6,"startLine":6}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE"]},"ruleId":"secret-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"myfile.py"},"id":"secret-rule","name":"secret-rule","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"secret-rule"}}],"version":"0.4.4"}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"note","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":2,"endLine":2,"startColumn":1,"startLine":1}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":3,"endLine":3,"startColumn":2,"startLine":2}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"none","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":4,"endLine":4,"startColumn":3,"startLine":3}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:INVALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"warning","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":6,"endLine":6,"startColumn":5,"startLine":5}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":7,"endLine":7,"startColumn":6,"startLine":6}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE"]},"ruleId":"secret-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"myfile.py"},"id":"secret-rule","name":"secret-rule","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"secret-rule"}}],"version":"0.4.4"}}}],"version":"2.1.0"})
         );
 
         // validate the schema

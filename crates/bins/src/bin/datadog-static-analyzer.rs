@@ -41,7 +41,7 @@ use kernel::model::common::OutputFormat;
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
-use secrets::model::secret_result::SecretResult;
+use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
 
@@ -660,6 +660,16 @@ fn main() -> Result<()> {
             .collect();
 
         let nb_secrets_found: u32 = secrets_results.iter().map(|x| x.matches.len() as u32).sum();
+        let nb_secrets_validated: u32 = secrets_results
+            .iter()
+            .map(|x| {
+                x.matches
+                    .iter()
+                    .filter(|m| m.validation_status == SecretValidationStatus::Valid)
+                    .collect::<Vec<_>>()
+                    .len() as u32
+            })
+            .sum();
 
         if let Some(pb) = &progress_bar {
             pb.finish();
@@ -668,8 +678,12 @@ fn main() -> Result<()> {
         let secrets_execution_time_secs = secrets_start.elapsed().as_secs();
 
         println!(
-            "Found {} secret(s) in {} file(s) using {} rule(s) within {} sec(s)",
-            nb_secrets_found, nb_secrets_files, nb_secrets_rules, secrets_execution_time_secs
+            "Found {} secret(s) ({} validated) in {} file(s) using {} rule(s) within {} sec(s)",
+            nb_secrets_found,
+            nb_secrets_validated,
+            nb_secrets_files,
+            nb_secrets_rules,
+            secrets_execution_time_secs
         );
     }
 

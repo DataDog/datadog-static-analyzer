@@ -44,6 +44,10 @@ pub fn find_secrets(
     let mut codemut = code.to_owned();
     let mut matches = scanner.scan(&mut codemut, vec![]);
 
+    if matches.is_empty() {
+        return vec![];
+    }
+
     let matches_validation = futures::executor::block_on(scanner.validate_matches(&mut matches));
 
     if matches_validation.is_err() && options.use_debug {

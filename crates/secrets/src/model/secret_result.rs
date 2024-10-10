@@ -6,7 +6,7 @@ use common::model::position::Position;
 use sds::MatchStatus;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub enum SecretValidationStatus {
     NotValidated,
     Valid,
