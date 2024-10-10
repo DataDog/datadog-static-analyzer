@@ -11,7 +11,7 @@ use derive_builder::Builder;
 use git2::{BlameOptions, Repository};
 use kernel::constants::CARGO_VERSION;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
-use kernel::model::violation::{Fix};
+use kernel::model::violation::Fix;
 use kernel::model::{
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
@@ -870,10 +870,9 @@ pub fn generate_sarif_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sarif::sarif_utils::SarifRule::SecretRule;
     use assert_json_diff::assert_json_eq;
     use common::model::position::{Position, PositionBuilder, Region};
-    use kernel::model::violation::Fix;
+    use kernel::model::violation::{Fix, Violation};
     use kernel::model::{
         common::Language,
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
