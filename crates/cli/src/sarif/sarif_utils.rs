@@ -185,15 +185,25 @@ impl SarifRuleResult {
             SarifRuleResult::Secret(secret_result) => secret_result
                 .matches
                 .iter()
-                .map(|r| SarifViolation {
-                    start: r.start,
-                    end: r.end,
-                    message: secret_result.message.clone(),
-                    severity: RuleSeverity::Error,
-                    category: RuleCategory::Security,
-                    fixes: vec![],
-                    taint_flow: None,
-                    validation_status: Some(r.validation_status.clone()),
+                .map(|r| {
+                    let severity = match &r.validation_status {
+                        SecretValidationStatus::NotValidated => RuleSeverity::Notice,
+                        SecretValidationStatus::Valid => RuleSeverity::Error,
+                        SecretValidationStatus::Invalid => RuleSeverity::None,
+                        SecretValidationStatus::ValidationError => RuleSeverity::Warning,
+                        SecretValidationStatus::NotAvailable => RuleSeverity::Warning,
+                    };
+
+                    SarifViolation {
+                        start: r.start,
+                        end: r.end,
+                        message: secret_result.message.clone(),
+                        severity,
+                        category: RuleCategory::Security,
+                        fixes: vec![],
+                        taint_flow: None,
+                        validation_status: Some(r.validation_status.clone()),
+                    }
                 })
                 .collect::<Vec<SarifViolation>>(),
         }
