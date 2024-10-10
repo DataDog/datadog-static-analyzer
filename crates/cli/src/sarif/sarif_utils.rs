@@ -593,6 +593,7 @@ fn generate_results(
                 let category = format!("DATADOG_CATEGORY:{}", rule.category()).to_uppercase();
 
                 result_builder.rule_index(i64::try_from(rule_index).unwrap());
+
                 result_builder.level(get_level_from_severity(rule.severity()));
                 tags.push(category);
 
@@ -747,6 +748,14 @@ fn generate_results(
                         };
 
                     let mut sarif_result = result_builder.clone();
+
+                    // For secrets, the level is set by violation depending on the validation
+                    // status. We override it here. For static analysis, we report the
+                    // severity of the rule before.
+                    if let SarifRuleResult::Secret(_) = rule_result {
+                        sarif_result.level(get_level_from_severity(violation.severity));
+                    }
+
                     sarif_result
                         .rule_id(rule_result.rule_id())
                         .locations([location])
@@ -1368,7 +1377,7 @@ mod tests {
         let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
         assert_json_eq!(
             sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":2,"endLine":2,"startColumn":1,"startLine":1}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":3,"endLine":3,"startColumn":2,"startLine":2}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":4,"endLine":4,"startColumn":3,"startLine":3}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:INVALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":6,"endLine":6,"startColumn":5,"startLine":5}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":7,"endLine":7,"startColumn":6,"startLine":6}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE"]},"ruleId":"secret-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"myfile.py"},"id":"secret-rule","name":"secret-rule","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"secret-rule"}}],"version":"0.4.4"}}}],"version":"2.1.0"})
+            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"note","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":2,"endLine":2,"startColumn":1,"startLine":1}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":3,"endLine":3,"startColumn":2,"startLine":2}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"none","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":4,"endLine":4,"startColumn":3,"startLine":3}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:INVALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"warning","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":6,"endLine":6,"startColumn":5,"startLine":5}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"warning","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":7,"endLine":7,"startColumn":6,"startLine":6}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE"]},"ruleId":"secret-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"myfile.py"},"id":"secret-rule","name":"secret-rule","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"secret-rule"}}],"version":"0.4.4"}}}],"version":"2.1.0"})
         );
 
         // validate the schema
