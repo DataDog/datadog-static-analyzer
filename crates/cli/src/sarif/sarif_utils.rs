@@ -5,12 +5,12 @@ use std::rc::Rc;
 use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
 use anyhow::Result;
 use base64::Engine;
+use common::model::position::Position;
 use common::model::position::PositionBuilder;
-use common::model::position::{Position, Region};
 use git2::{BlameOptions, Repository};
 use kernel::constants::CARGO_VERSION;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
-use kernel::model::violation::{Fix, Violation};
+use kernel::model::violation::Violation;
 use kernel::model::{
     rule::{Rule, RuleResult},
     violation::{Edit, EditType},
@@ -19,7 +19,6 @@ use path_slash::PathExt;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::model::secret_rule::SecretRule;
-use serde::{Deserialize, Serialize};
 use serde_sarif::sarif::{
     self, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder, LocationBuilder,
     MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder, Replacement,
@@ -711,7 +710,7 @@ fn generate_results(
 
                     let fingerprint_option = get_fingerprint_for_violation(
                         rule_result.rule_name().to_string(),
-                        &violation,
+                        violation,
                         Path::new(options.repository_directory.as_str()),
                         Path::new(rule_result.file_path().as_str()),
                         options.debug,
