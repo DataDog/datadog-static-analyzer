@@ -18,7 +18,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Dockerfile, &["docker", "dockerfile"]),
     (Language::Go, &["go"]),
     (Language::Java, &["java"]),
-    (Language::JavaScript, &["js", "jsx"]),
+    (Language::JavaScript, &["js", "jsx", "mjs", "cjs"]),
     (Language::Kotlin, &["kt", "kts"]),
     (Language::Python, &["py", "py3"]),
     (Language::Ruby, &["rb"]),
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn get_extensions_for_language_all_languages() {
         let mut extensions_per_languages: HashMap<Language, usize> = HashMap::new();
-        extensions_per_languages.insert(Language::JavaScript, 2);
+        extensions_per_languages.insert(Language::JavaScript, 4);
         extensions_per_languages.insert(Language::Kotlin, 2);
         extensions_per_languages.insert(Language::Python, 2);
         extensions_per_languages.insert(Language::Rust, 1);
@@ -784,6 +784,22 @@ mod tests {
             filter_files_for_language(
                 &[PathBuf::from("path").join(PathBuf::from("foobar.Dockerfile"))],
                 &Language::Dockerfile
+            )
+            .len()
+        );
+    }
+
+    #[test]
+    fn test_javascript_mjs_cjs_support() {
+        assert_eq!(
+            2,
+            filter_files_for_language(
+                &[
+                    PathBuf::from("path").join(PathBuf::from("foo/bar/baz.mjs")),
+                    PathBuf::from("path").join(PathBuf::from("foo/bar/baz.cjs")),
+                    PathBuf::from("path").join(PathBuf::from("foo/bar/baz.kjs"))
+                ],
+                &Language::JavaScript
             )
             .len()
         );
