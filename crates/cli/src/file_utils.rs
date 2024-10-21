@@ -25,7 +25,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Rust, &["rs"]),
     (Language::Swift, &["swift"]),
     (Language::Terraform, &["tf"]),
-    (Language::TypeScript, &["ts", "tsx"]),
+    (Language::TypeScript, &["ts", "tsx", "mts", "cts"]),
     (Language::Yaml, &["yml", "yaml"]),
     (Language::Starlark, &["bzl"]),
     (Language::Bash, &["sh", "bash"]),
@@ -742,7 +742,7 @@ mod tests {
         extensions_per_languages.insert(Language::Kotlin, 2);
         extensions_per_languages.insert(Language::Python, 2);
         extensions_per_languages.insert(Language::Rust, 1);
-        extensions_per_languages.insert(Language::TypeScript, 2);
+        extensions_per_languages.insert(Language::TypeScript, 4);
         extensions_per_languages.insert(Language::Dockerfile, 2);
         extensions_per_languages.insert(Language::Yaml, 2);
         extensions_per_languages.insert(Language::Starlark, 1);
@@ -800,6 +800,22 @@ mod tests {
                     PathBuf::from("path").join(PathBuf::from("foo/bar/baz.kjs"))
                 ],
                 &Language::JavaScript
+            )
+            .len()
+        );
+    }
+
+    #[test]
+    fn test_javascript_mts_cts_support() {
+        assert_eq!(
+            2,
+            filter_files_for_language(
+                &[
+                    PathBuf::from("path").join(PathBuf::from("foo/bar/baz.cts")),
+                    PathBuf::from("path").join(PathBuf::from("foo/bar/baz.mts")),
+                    PathBuf::from("path").join(PathBuf::from("foo/bar/baz.kts"))
+                ],
+                &Language::TypeScript
             )
             .len()
         );
