@@ -746,7 +746,7 @@ impl From<LocatedEdge<'_>> for dot_structures::Edge {
 
 impl<'a> LocatedNode<'a> {
     /// Constructs a new `LocatedNode` from a tree-sitter node.
-    fn new_cst(node: tree_sitter::Node<'a>, text: &'a str) -> LocatedNode<'a> {
+    fn new_cst(node: tree_sitter::Node, text: &'a str) -> LocatedNode<'a> {
         Self::Cst {
             text,
             line: node.start_position().row + 1,
