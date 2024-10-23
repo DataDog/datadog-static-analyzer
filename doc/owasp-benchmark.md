@@ -9,7 +9,7 @@
 
 ### Benchmark results
 
-These are the results of the OWASP Benchmark for the Datadog Static Analyzer as of 04/09/2024.
+These are the results of the OWASP Benchmark for the Datadog Static Analyzer as of 10/23/2024.
 
 ![Datadog Static Analysis OWASP Benchmark](imgs/owasp.png)
 
@@ -37,7 +37,7 @@ cd BenchmarkUtils && mvn compile && mvn install
 
 
 ### Step 2: Clone BenchmarkJava
-The [BenchmarKjava](https://github.com/OWASP-Benchmark/BenchmarkJava.git) repository contains
+The [BenchmarkJava](https://github.com/OWASP-Benchmark/BenchmarkJava.git) repository contains
 all the code to analyze and generate the scorecards.
 
 Clone it on your local machine.
@@ -59,7 +59,7 @@ git clone https://github.com/DataDog/datadog-static-analyzer.git
 Then, run it. At the top directory of the static analyzer, use
 
 ```
-cargo run --bin datadog-static-analyzer -- --format sarif --output /path/to/BenchmarkJava/results/Benchmark_1.2-DatadogSast.sarif --directory /path/to/BenchmarkJava
+cargo run --release --bin datadog-static-analyzer -- --format sarif --output /path/to/BenchmarkJava/results/Benchmark_1.2-DatadogSast.sarif --directory /path/to/BenchmarkJava
 ```
 
 
