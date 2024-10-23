@@ -33,7 +33,7 @@ mod tests {
     use super::{get_binary_expression_operator, BinOp};
     use crate::analysis::ddsa_lib::common::{compile_script, Instance, NodeId};
     use crate::analysis::ddsa_lib::js::flow::graph::Digraph;
-    use crate::analysis::ddsa_lib::js::flow::graph_test_utils::{cst_dot_digraph, cst_v8_digraph};
+    use crate::analysis::ddsa_lib::js::flow::graph_test_utils::cst_dot_digraph;
     use crate::analysis::ddsa_lib::js::ViolationConverter;
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute, TsTree};
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
@@ -110,29 +110,22 @@ mod tests {
 
             let tsn_bridge = rt.bridge_ts_node();
             let method_decl_id = tsn_bridge.borrow().get_id(method_decl).unwrap();
-            // Create the JavaScript graph, and then return the adjacency list `Map` so we can inspect it.
+            // Create the JavaScript graph, and then return the stringified DOT representation.
             // language=javascript
             let script = format!(
                 "\
 const methodFlow = new {}(getNode({}));
-methodFlow.graph.adjacencyList;
+__ddsaPrivate__.graphToDOT(methodFlow.graph, \"cst_v8_full\");
 ",
                 CLASS_NAME, method_decl_id
             );
             let script = compile_script(&mut rt.v8_handle_scope(), &script).unwrap();
-            let full = rt
-                .scoped_execute(
-                    &script,
-                    |sc, val| {
-                        let full = v8::Local::<v8::Map>::try_from(val).unwrap();
-                        let tsn = &tsn_bridge.borrow();
-                        cst_v8_digraph("cst_v8_full", sc, full, &tree, tsn)
-                    },
-                    None,
-                )
+            let full_str = rt
+                .scoped_execute(&script, |sc, val| val.to_rust_string_lossy(sc), None)
                 .unwrap();
 
             let expected = cst_dot_digraph(expected_dot, &tree, None);
+            let full = graphviz_rust::parse(&full_str).map(Digraph::new).unwrap();
 
             Self { expected, full }
         }

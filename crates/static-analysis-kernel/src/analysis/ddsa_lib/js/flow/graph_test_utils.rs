@@ -165,42 +165,6 @@ pub fn cst_dot_digraph(
     })
 }
 
-/// Converts a JavaScript Map<VertexId, PackedEdge[]> to a `FlowDigraph`.
-///
-/// # Panics
-/// Panics if deserialization is unsuccessful.
-pub(crate) fn cst_v8_digraph(
-    name: &str,
-    scope: &mut v8::HandleScope,
-    map: v8::Local<v8::Map>,
-    ts_tree: &TsTree,
-    bridge: &TsNodeBridge,
-) -> Digraph {
-    // Transformation:
-    // If `VertexKind::CST`: constructs a dot node from metadata from the `TsNodeBridge` and `ts_tree`.
-    // If `VertexKind::Phi`: constructs a dot node from the internal id.
-    let transform_vertex = |node: &dot_structures::Node| -> dot_structures::Node {
-        let vid = VertexId::from_raw(id_str(&node.id.0).parse::<u32>().unwrap());
-        let located = match vid.kind() {
-            VertexKind::Cst => {
-                let raw = bridge.get_raw(vid.internal_id()).unwrap();
-                // This is only used in tests, however...
-                // Safety:
-                // Given that the `ts_tree` provided owns the underlying `tree_sitter::Tree` that
-                // the bridge's `RawTSNode`s are referencing, we know the tree is alive and that
-                // the memory is still allocated.
-                let ts_node = unsafe { raw.to_node() };
-                LocatedNode::new_cst(ts_node, ts_tree.text(ts_node))
-            }
-            VertexKind::Phi => LocatedNode::new_phi(vid.internal_id()),
-        };
-        located.into()
-    };
-
-    let v8_dot_graph = V8DotGraph::try_new(scope, map).unwrap();
-    Digraph::new(v8_dot_graph.to_dot(name, transform_vertex))
-}
-
 /// Searches a list of candidates to find a `LocatedNode` that matches the [`NodeSearchAttrs::Cst`].
 ///
 /// # Panics
