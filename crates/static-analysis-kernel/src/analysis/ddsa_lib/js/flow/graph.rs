@@ -7,6 +7,7 @@ use crate::analysis::ddsa_lib::common::{swallow_v8_error, v8_uint};
 use crate::analysis::ddsa_lib::test_utils::TsTree;
 use deno_core::v8;
 use graphviz_rust::dot_structures;
+use graphviz_rust::dot_structures::{Attribute, Stmt};
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, HashSet};
 
@@ -440,6 +441,126 @@ impl V8DotGraph {
     }
 }
 
+/// A [`dot_structures::Graph`] with an associated human-friendly name.
+#[derive(Debug, Clone)]
+struct NamedGraph {
+    name: String,
+    graph: dot_structures::Graph,
+}
+
+/// A named [`dot_structures::Graph`] containing a collection of child digraphs, with each child represented
+/// as a [subgraph] cluster.
+///
+/// [subgraph]: https://graphviz.org/Gallery/directed/cluster.html
+#[derive(Debug, Clone)]
+pub struct DigraphCollection {
+    pub name: String,
+    graphs: Vec<NamedGraph>,
+}
+
+/// (Subgraphs have special treatment in DOT when their ID starts with the string "cluster").
+const CLUSTER_STR: &str = "cluster: ";
+
+impl DigraphCollection {
+    /// Constructs a new `DigraphCollection`.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            graphs: vec![],
+        }
+    }
+
+    /// Adds `graph` to the collection. Phi nodes (and all references to them) within the graph are renamed
+    /// to be unique across all phi nodes in the collection.
+    pub fn add_graph(&mut self, name: impl Into<String>, mut graph: dot_structures::Graph) {
+        use dot_structures::*;
+
+        // The transformer renames phi nodes to be unique across all graphs in this collection.
+        let name_transformer = |id: &str| -> Option<String> {
+            // Phi node ids will be locally unique (e.g. "phi0", "phi1") but not necessarily
+            // unique within _this_ collection. We use an incrementing id to ensure uniqueness.
+            if id.starts_with(VertexKind::PHI_STR) {
+                let base_id = self.graphs.len();
+                Some(format!("{id}_{base_id}"))
+            } else {
+                None
+            }
+        };
+
+        let (id, statements) = match &mut graph {
+            Graph::Graph { stmts, id, .. } => (id, stmts),
+            Graph::DiGraph { stmts, id, .. } => (id, stmts),
+        };
+        for stmt in statements.iter_mut() {
+            match stmt {
+                Stmt::Node(node) => {
+                    if let Some(new_id) = name_transformer(id_str(&node.id.0).as_ref()) {
+                        let _ = std::mem::replace(&mut node.id.0, encode_id(&new_id));
+                    }
+                }
+                Stmt::Edge(edge) => {
+                    let EdgeTy::Pair(v0, v1) = &mut edge.ty else {
+                        continue;
+                    };
+                    for vertex in [v0, v1] {
+                        if let Vertex::N(node_id) = vertex {
+                            if let Some(new_id) = name_transformer(id_str(&node_id.0).as_ref()) {
+                                let _ = std::mem::replace(&mut node_id.0, encode_id(&new_id));
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        let name = name.into();
+
+        let _ = std::mem::replace(id, encode_id(format!("{CLUSTER_STR}{name}")));
+        Self::ensure_label(statements, &name);
+
+        self.graphs.push(NamedGraph { name, graph })
+    }
+
+    /// Serializes this collection into a [dot_structures::DiGraph](dot_structures::Graph::DiGraph).
+    pub fn to_digraph(&self) -> dot_structures::Graph {
+        use dot_structures::*;
+
+        let mut stmts = self
+            .graphs
+            .iter()
+            .map(|NamedGraph { graph, .. }| {
+                let id = match graph {
+                    Graph::Graph { id, .. } => id,
+                    Graph::DiGraph { id, .. } => id,
+                };
+                Stmt::Subgraph(Subgraph {
+                    id: id.clone(),
+                    stmts: digraph_stmts(graph).to_vec(),
+                })
+            })
+            .collect::<Vec<_>>();
+        Self::ensure_label(&mut stmts, &self.name);
+
+        Graph::DiGraph {
+            id: encode_id(&self.name),
+            strict: true,
+            stmts,
+        }
+    }
+
+    /// Ensures that the provided `stmts` list has a "label" [`Stmt::Attribute`] as its first statement.
+    /// This does not check for duplicates.
+    fn ensure_label(stmts: &mut Vec<Stmt>, label_text: &str) {
+        if let Some(Stmt::Attribute(attr)) = stmts.first() {
+            if id_str(&attr.0) == "label" {
+                return;
+            }
+        }
+        let label_stmt = Stmt::Attribute(Attribute(encode_id("label"), encode_id(label_text)));
+        stmts.insert(0, label_stmt);
+    }
+}
+
 /// Encodes the input as either a [`Plain`](dot_structures::Id::Plain) or [`Escaped`](dot_structures::Id::Escaped) id.
 pub(crate) fn encode_id(input: impl AsRef<str>) -> dot_structures::Id {
     let input = input.as_ref();
@@ -548,7 +669,7 @@ impl From<LocatedNode<'_>> for dot_structures::Node {
 mod tests {
     use crate::analysis::ddsa_lib::common::compile_script;
     use crate::analysis::ddsa_lib::js::flow::graph::{
-        id_str, Digraph, Edge, EdgeKind, V8DotGraph, VertexId, VertexKind, KIND,
+        id_str, Digraph, DigraphCollection, Edge, EdgeKind, V8DotGraph, VertexId, VertexKind, KIND,
     };
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
     use crate::analysis::ddsa_lib::JsRuntime;
@@ -978,5 +1099,92 @@ strict digraph {
             full_transposed, ..
         } = construct_js_graphs(original_graph);
         assert_eq!(full_transposed, dot_graph(expected_graph));
+    }
+
+    /// GraphCollection ensures globally unique phi node ids.
+    /// Additionally, `label` is added for each graph/subgraph.
+    #[test]
+    fn graph_collection_globally_unique_phis() {
+        // language=dot
+        let graph_a = r#"
+strict digraph {
+    a_initial; a_alt0; a_alt1;
+    y0 [text=y,line=2]
+    y1 [text=y,line=4]
+    y2 [text=y,line=6]
+    y3 [text=y,line=8]
+    phi0 [vkind=phi]
+    y0 -> a_initial [kind=assignment]
+    y1 -> a_alt0 [kind=assignment]
+    y2 -> a_alt1 [kind=assignment]
+    phi0 -> y1 [kind=dependence]
+    phi0 -> y2 [kind=dependence]
+    y3 -> phi0 [kind=dependence]
+}
+        "#;
+        let graph_a = graphviz_rust::parse(graph_a).unwrap();
+
+        // language=dot
+        let graph_b = r#"
+strict digraph {
+    b_initial; b_alt0; b_alt1;
+    x0 [text=x,line=22]
+    x1 [text=x,line=24]
+    x2 [text=x,line=26]
+    x3 [text=x,line=28]
+    phi0 [vkind=phi]
+    x0 -> b_initial [kind=assignment]
+    x1 -> b_alt0 [kind=assignment]
+    x2 -> b_alt1 [kind=assignment]
+    phi0 -> x1 [kind=dependence]
+    phi0 -> x2 [kind=dependence]
+    x3 -> phi0 [kind=dependence]
+}
+        "#;
+        let graph_b = graphviz_rust::parse(graph_b).unwrap();
+
+        let mut collection = DigraphCollection::new("TestPhi");
+        collection.add_graph("GraphA", graph_a);
+        collection.add_graph("GraphB", graph_b);
+
+        // language=dot
+        let expected = "\
+strict digraph TestPhi {
+    label=TestPhi
+    subgraph \"cluster: GraphA\" {
+        label=GraphA
+        a_initial; a_alt0; a_alt1;
+        y0 [text=y,line=2]
+        y1 [text=y,line=4]
+        y2 [text=y,line=6]
+        y3 [text=y,line=8]
+        phi0_0 [vkind=phi]
+        y0 -> a_initial [kind=assignment]
+        y1 -> a_alt0 [kind=assignment]
+        y2 -> a_alt1 [kind=assignment]
+        phi0_0 -> y1 [kind=dependence]
+        phi0_0 -> y2 [kind=dependence]
+        y3 -> phi0_0 [kind=dependence]
+    }
+
+    subgraph \"cluster: GraphB\" {
+        label=GraphB
+        b_initial; b_alt0; b_alt1;
+        x0 [text=x,line=22]
+        x1 [text=x,line=24]
+        x2 [text=x,line=26]
+        x3 [text=x,line=28]
+        phi0_1 [vkind=phi]
+        x0 -> b_initial [kind=assignment]
+        x1 -> b_alt0 [kind=assignment]
+        x2 -> b_alt1 [kind=assignment]
+        phi0_1 -> x1 [kind=dependence]
+        phi0_1 -> x2 [kind=dependence]
+        x3 -> phi0_1 [kind=dependence]
+    }
+}
+";
+        let expected = graphviz_rust::parse(expected).unwrap();
+        assert_eq!(collection.to_digraph(), expected);
     }
 }
