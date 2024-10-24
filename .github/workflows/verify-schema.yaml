@@ -1,5 +1,10 @@
-on: push
 name: Check that the JSON schema for the configuration file matches the examples
+
+on:
+  push:
+    branches:
+      - "**"
+
 jobs:
   test_json_schema:
     runs-on: ubuntu-latest

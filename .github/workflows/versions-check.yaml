@@ -1,5 +1,10 @@
-on: push
 name: Check the versions.json file is correct
+
+on:
+  push:
+    branches:
+      - "**"
+
 jobs:
   integration_tests:
     runs-on: ubuntu-latest

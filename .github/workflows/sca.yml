@@ -1,6 +1,10 @@
-on: push
-
 name: Software Composition Analysis
+
+on:
+  push:
+    branches:
+      - "**"
+
 jobs:
   software-composition-analysis:
     runs-on: ubuntu-latest

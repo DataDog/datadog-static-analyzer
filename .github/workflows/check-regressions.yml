@@ -1,5 +1,7 @@
 on:
   push:
+    branches:
+      - "**"
 
 name: Check for regressions in static analysis kernel
 
