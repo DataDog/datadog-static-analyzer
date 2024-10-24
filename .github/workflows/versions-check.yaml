@@ -1,9 +1,15 @@
-on: push
 name: Check the versions.json file is correct
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_call:
+
 jobs:
   integration_tests:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v1
+      - uses: actions/checkout@v4
       - name: Ensure versions
         run: python -mjson.tool versions.json >/dev/null

@@ -1,11 +1,17 @@
-on: push
 name: Check that the JSON schema for the configuration file matches the examples
+
+on:
+  push:
+    branches:
+      - "**"
+  workflow_call:
+
 jobs:
   test_json_schema:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Use Node.js
-        uses: actions/setup-node@v1
+        uses: actions/setup-node@v4
       - run: npm install -g pajv
       - run: make -C schema
