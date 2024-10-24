@@ -397,7 +397,7 @@ impl V8DotGraph {
 
     /// Converts this graph into a [`dot_structures::Graph`].
     #[rustfmt::skip]
-    pub fn to_dot<T>(&self, name: impl Into<String>, vertex_transformer: T) -> dot_structures::Graph
+    pub fn to_dot<T>(&self, name: &str, vertex_transformer: T) -> dot_structures::Graph
     where
         for<'a> T: Fn(&'a dot_structures::Node) -> Option<dot_structures::Node>,
     {
@@ -433,7 +433,7 @@ impl V8DotGraph {
             .collect::<Vec<_>>();
 
         Graph::DiGraph {
-            id: Id::Plain(name.into()),
+            id: encode_id(name),
             strict: true,
             stmts: [vertices, edges].concat(),
         }
