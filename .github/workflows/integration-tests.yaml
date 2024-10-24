@@ -8,6 +8,7 @@ on:
   schedule:
     # run every day at 9am UTC
     - cron: '0 9 * * *'
+  workflow_call:
 
 jobs:
   test_scripts:

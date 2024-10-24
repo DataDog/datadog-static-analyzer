@@ -1,41 +1,38 @@
 name: Release new version
 
 on:
-  release:
-    types: [created]
+  push:
+    tags:
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
 
 jobs:
-  upload-versions:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Upload versions
-        uses: softprops/action-gh-release@v2
-        with:
-          files: versions.json
-  upload-assets:
+  test-rules:
+    uses: './.github/workflows/test-rules.yaml'
+
+  integration-tests:
+    uses: './.github/workflows/integration-tests.yaml'
+    secrets: inherit
+
+  verify-schema:
+    uses: './.github/workflows/verify-schema.yaml'
+
+  versions-check:
+    uses: './.github/workflows/versions-check.yaml'
+
+  build:
     strategy:
+      fail-fast: false
       matrix:
         include:
-          # Ubuntu
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            image: ubuntu:20.04
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            image: ubuntu:20.04
-          # Mac OS
-          - target: aarch64-apple-darwin
-            os: macos-latest
-          - target: x86_64-apple-darwin
-            os: macos-13
-          # Windows
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
+          - { target: aarch64-unknown-linux-gnu, os: ubuntu-latest, image: 'ubuntu:20.04' }
+          - { target: x86_64-unknown-linux-gnu,  os: ubuntu-latest, image: 'ubuntu:20.04' }
+          - { target: aarch64-apple-darwin,      os: macos-latest                         }
+          - { target: x86_64-apple-darwin,       os: macos-13                             }
+          - { target: x86_64-pc-windows-msvc,    os: windows-latest                       }
+    name: Build binaries for ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
     container:
       image: ${{ matrix.image || '' }}
@@ -46,79 +43,94 @@ jobs:
         run: |
           apt-get update
           apt-get --no-install-recommends install -y build-essential ca-certificates curl git jq wget zip
-          mkdir -p -m 755 /etc/apt/keyrings
-          wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
-          chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          apt-get update
-          apt-get install gh -y
           git config --global --add safe.directory $GITHUB_WORKSPACE
-      - uses: actions/checkout@v4
-      - name: Install Stable + Rustfmt + Clippy
-        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          toolchain: stable
-          components: rustfmt, clippy
-        # Set the current SHA as the version so that it's exposed on the server.
+          target: ${{ matrix.target }}
+
       - name: Install cross-compilation tools
         uses: taiki-e/setup-cross-toolchain-action@v1
         with:
           target: ${{ matrix.target }}
-        if: startsWith(matrix.os, 'ubuntu')
+
+      # Set the current SHA as the version so that it's exposed on the server.
       - name: Set the version
         shell: bash
-        run: sed  "s/development/$GITHUB_SHA/g" crates/static-analysis-kernel/src/constants.rs > bla && rm crates/static-analysis-kernel/src/constants.rs && mv bla crates/static-analysis-kernel/src/constants.rs
-      - name: Release the CLI
-        uses: taiki-e/upload-rust-binary-action@v1
+        run: sed "s/development/$GITHUB_SHA/g" crates/static-analysis-kernel/src/constants.rs > bla && rm crates/static-analysis-kernel/src/constants.rs && mv bla crates/static-analysis-kernel/src/constants.rs
+
+      - name: Build Rust binaries
+        run: |
+          cargo build --release --target ${{ matrix.target }} --bin datadog-static-analyzer
+          cargo build --release --target ${{ matrix.target }} --bin datadog-static-analyzer-git-hook
+          cargo build --release --target ${{ matrix.target }} --bin datadog-static-analyzer-server
+
+      - name: Zip Rust binaries (Unix)
+        if: ${{ !startsWith(matrix.os, 'windows') }}
+        run: |
+          zip -j datadog-static-analyzer-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer
+          zip -j datadog-static-analyzer-git-hook-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer-git-hook
+          zip -j datadog-static-analyzer-server-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer-server
+
+      - name: Zip Rust binaries (Windows)
+        if: startsWith(matrix.os, 'windows')
+        run: |
+          7z a datadog-static-analyzer-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer.exe
+          7z a datadog-static-analyzer-git-hook-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer-git-hook.exe
+          7z a datadog-static-analyzer-server-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer-server.exe
+
+      - name: Upload assets
+        uses: actions/upload-artifact@v4
         with:
-          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
-          # Note that glob pattern is not supported yet.
-          bin: datadog-static-analyzer
-          # (optional) On which platform to distribute the `.tar.gz` file.
-          # [default value: unix]
-          # [possible values: all, unix, windows, none]
-          tar: none
-          # (optional) On which platform to distribute the `.zip` file.
-          # [default value: windows]
-          # [possible values: all, unix, windows, none]
-          zip: all
-          target: ${{ matrix.target }}
-          # (required) GitHub token for uploading assets to GitHub Releases.
-          token: ${{ secrets.GITHUB_TOKEN }}
-          archive: 'datadog-static-analyzer-$target'
-      - name: Release datadog-static-analyzer-git-hook
-        uses: taiki-e/upload-rust-binary-action@v1
+          name: ${{ matrix.target }}
+          path: |
+            datadog-static-analyzer-${{ matrix.target }}.zip
+            datadog-static-analyzer-git-hook-${{ matrix.target }}.zip
+            datadog-static-analyzer-server-${{ matrix.target }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    name: Release on GitHub
+    needs:
+      - test-rules
+      - integration-tests
+      - verify-schema
+      - versions-check
+      - build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
         with:
-          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
-          # Note that glob pattern is not supported yet.
-          bin: datadog-static-analyzer-git-hook
-          # (optional) On which platform to distribute the `.tar.gz` file.
-          # [default value: unix]
-          # [possible values: all, unix, windows, none]
-          tar: none
-          # (optional) On which platform to distribute the `.zip` file.
-          # [default value: windows]
-          # [possible values: all, unix, windows, none]
-          zip: all
-          target: ${{ matrix.target }}
-          # (required) GitHub token for uploading assets to GitHub Releases.
-          token: ${{ secrets.GITHUB_TOKEN }}
-          archive: 'datadog-static-analyzer-git-hook-$target'
-      - name: Release the server
-        uses: taiki-e/upload-rust-binary-action@v1
-        with:
-          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
-          # Note that glob pattern is not supported yet.
-          bin: datadog-static-analyzer-server
-          # (optional) On which platform to distribute the `.tar.gz` file.
-          # [default value: unix]
-          # [possible values: all, unix, windows, none]
-          tar: none
-          # (optional) On which platform to distribute the `.zip` file.
-          # [default value: windows]
-          # [possible values: all, unix, windows, none]
-          zip: all
-          target: ${{ matrix.target }}
-          # (required) GitHub token for uploading assets to GitHub Releases.
-          token: ${{ secrets.GITHUB_TOKEN }}
-          archive: 'datadog-static-analyzer-server-$target'
+          path: artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -lR
+        working-directory: artifacts
+
+      - name: Create release
+        run: |-
+          gh release create --generate-notes  \
+            ${{ github.ref_name }} \
+            versions.json \
+            artifacts/*/datadog-static-analyzer*.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  ghcr:
+    needs: release
+    uses: './.github/workflows/ghcr.yml'
+    permissions:
+      contents: read
+      packages: write
+      id-token: write

@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - "**"
+  workflow_call:
 
 jobs:
   integration_tests:
