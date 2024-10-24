@@ -872,12 +872,25 @@ export class MethodFlow {
      * @param {TreeSitterNode} node
      */
     visitEnhancedForStmt(node) {
+        this.enterBlock(false);
         const children = ddsa.getChildren(node);
-        ignoreMutatingField(/* "value" */);
 
-        const bodyIdx = findFieldIndex(children, 3, "body");
+        const nameIdx = findFieldIndex(children, 1, "name");
+        const name = children[nameIdx];
+
+        const valueIdx = findFieldIndex(children, nameIdx + 1, "value");
+        const value = children[valueIdx];
+        this.visit(value);
+
+        // Visiting the `value` will mark the identifier within it as a taint source, and so it needs
+        // to be propagated to the newly-defined item variable.
+        this.propagateLastTaint(name);
+        this.markCurrentDefinition(name.text, name);
+
+        const bodyIdx = findFieldIndex(children, valueIdx + 1, "body");
         const body = children[bodyIdx];
         this.visitBlockStmt(body);
+        this.exitBlock();
     }
 
     /**

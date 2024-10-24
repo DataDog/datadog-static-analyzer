@@ -716,6 +716,38 @@ strict digraph full {
     ///////////////////////////////////////////////////////////////////////////
 
     #[test]
+    fn enhanced_for_stmt() {
+        // A dependence edge is drawn from the newly-defined item variable to the array it is
+        // derived from.
+        assert_digraph!(
+            // language=java
+            "\
+void method() {
+    char[] y = {'a', 'b', 'c'};
+    for (char z : y) {
+        z;
+    }
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    y0 [text=y,line=2]
+    y1 [text=y,line=3]
+    z0 [text=z,line=3]
+    z1 [text=z,line=4]
+    arrayInitializer [text="*",cstkind=array_initializer]
+
+    y0 -> arrayInitializer [kind=assignment]
+    y1 -> y0 [kind=dependence]
+    z0 -> y1 [kind=dependence]
+    z1 -> z0 [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
     fn if_statement_cfg_exhaustive_non_exhaustive() {
         assert_digraph!(
             // language=java
