@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::bridge::TsNodeBridge;
+use crate::analysis::ddsa_lib::common::{swallow_v8_error, v8_uint};
 use crate::analysis::ddsa_lib::test_utils::TsTree;
 use deno_core::v8;
 use graphviz_rust::dot_structures;
@@ -139,8 +140,7 @@ impl Edge {
 
     /// The type of edge this is.
     pub fn kind(&self) -> EdgeKind {
-        EdgeKind::try_from_id((self.0 & Self::KIND_BIT_MASK) as usize)
-            .expect("js should serialize PackedEdge correctly")
+        EdgeKind::try_from_id((self.0 & Self::KIND_BIT_MASK) as usize).unwrap_or(EdgeKind::Untyped)
     }
 }
 
@@ -329,9 +329,10 @@ pub(crate) struct V8DotGraph {
 
 impl V8DotGraph {
     /// Creates a new `V8DotGraph` from the provided `v8::Map`.
-    /// # Panics
-    /// Panics if deserialization is unsuccessful.
-    pub fn new(scope: &mut v8::HandleScope, map: v8::Local<v8::Map>) -> Self {
+    pub fn try_new(
+        scope: &mut v8::HandleScope,
+        map: v8::Local<v8::Map>,
+    ) -> Result<Self, &'static str> {
         use dot_structures::*;
         use graphviz_rust::dot_generator::*;
 
@@ -348,20 +349,35 @@ impl V8DotGraph {
         for i in (0..len).step_by(2) {
             let key_idx = i;
             let val_idx = key_idx + 1;
-            let source_vid = map_arr.get_index(scope, key_idx).unwrap();
-            assert!(source_vid.is_number());
-            let source_vid = source_vid.uint32_value(scope).unwrap();
+            let source_vid = map_arr
+                .get_index(scope, key_idx)
+                .unwrap_or_else(|| swallow_v8_error(|| v8_uint(scope, 0).into()));
+            if !source_vid.is_number() {
+                return Err("map key should be a number");
+            }
+            let source_vid = source_vid
+                .uint32_value(scope)
+                .unwrap_or_else(|| swallow_v8_error(|| 0));
             known_sources.insert(VertexId(source_vid));
-            let adj_list =
-                v8::Local::<v8::Array>::try_from(map_arr.get_index(scope, val_idx).unwrap())
-                    .unwrap();
+            let adj_list = map_arr
+                .get_index(scope, val_idx)
+                .unwrap_or_else(|| swallow_v8_error(|| v8::Array::new(scope, 0).into()));
+            let Ok(adj_list) = v8::Local::<v8::Array>::try_from(adj_list) else {
+                return Err("map value should be an array");
+            };
             vertices.push(node!(source_vid));
 
             let adj_len = adj_list.length();
             for j in 0..adj_len {
-                let v8_packed_edge = adj_list.get_index(scope, j).unwrap();
-                assert!(v8_packed_edge.is_number());
-                let v8_packed_edge = v8_packed_edge.uint32_value(scope).unwrap();
+                let v8_packed_edge = adj_list
+                    .get_index(scope, j)
+                    .unwrap_or_else(|| swallow_v8_error(|| v8_uint(scope, 0).into()));
+                if !v8_packed_edge.is_number() {
+                    return Err("array value should be a number");
+                };
+                let v8_packed_edge = v8_packed_edge
+                    .uint32_value(scope)
+                    .unwrap_or_else(|| swallow_v8_error(|| 0));
                 let packed_edge = Edge(v8_packed_edge);
                 let target_vid = packed_edge.target();
                 known_targets.insert(target_vid);
@@ -376,14 +392,14 @@ impl V8DotGraph {
             vertices.push(node!(sink_vid));
         }
 
-        Self { vertices, edges }
+        Ok(Self { vertices, edges })
     }
 
     /// Converts this graph into a [`dot_structures::Graph`].
     #[rustfmt::skip]
     pub fn to_dot<T>(&self, name: impl Into<String>, vertex_transformer: T) -> dot_structures::Graph
     where
-        for<'a> T: Fn(&'a dot_structures::Node) -> dot_structures::Node,
+        for<'a> T: Fn(&'a dot_structures::Node) -> Option<dot_structures::Node>,
     {
         use dot_structures::*;
         // A cache storing the result of `vertex_transformer`'s mutation of a `dot_structures::NodeId`.
@@ -391,27 +407,27 @@ impl V8DotGraph {
         let vertices = self
             .vertices
             .iter()
-            .map(|node| {
+            .filter_map(|node| {
                 let before_id = id_str(&node.id.0).to_string();
-                let transformed = vertex_transformer(node);
+                let transformed = vertex_transformer(node)?;
                 let after_id = transformed.id.clone();
                 vertex_id_map.insert(before_id, after_id);
-                transformed
+                Some(transformed)
             })
             .map(Stmt::Node)
             .collect::<Vec<_>>();
         let edges = self
             .edges
             .iter()
-            .map(|edge| {
+            .filter_map(|edge| {
                 // Edges remain the same, except the vertex ids they reference are updated to their transformed form.
                 let mut cloned = edge.clone();
                 let EdgeTy::Pair(Vertex::N(source), Vertex::N(target)) = &mut cloned.ty else { unreachable!(); };
-                let new_source_id = vertex_id_map.get(id_str(&source.0).as_ref()).expect("edge should refer to known id").clone();
+                let new_source_id = vertex_id_map.get(id_str(&source.0).as_ref()).cloned()?;
                 let _ = std::mem::replace(source, new_source_id);
-                let new_target_id = vertex_id_map.get(id_str(&target.0).as_ref()).expect("edge should refer to known id").clone();
+                let new_target_id = vertex_id_map.get(id_str(&target.0).as_ref()).cloned()?;
                 let _ = std::mem::replace(target, new_target_id);
-                cloned
+                Some(cloned)
             })
             .map(Stmt::Edge)
             .collect::<Vec<_>>();
@@ -667,10 +683,10 @@ graph.adjacencyList;
 ";
         let js_script = compile_script(&mut rt.v8_handle_scope(), &js_script).unwrap();
 
-        let vertex_transformer = |node: &dot_structures::Node| -> dot_structures::Node {
+        let vertex_transformer = |node: &dot_structures::Node| -> Option<dot_structures::Node> {
             let vid = id_str(&node.id.0).parse::<u32>().unwrap();
             let vertex = TestVertex::from_js_id(vid);
-            vertex.to_dot()
+            Some(vertex.to_dot())
         };
 
         let (full, full_transposed) = rt
@@ -680,10 +696,10 @@ graph.adjacencyList;
                     let arr = v8::Local::<v8::Array>::try_from(val).unwrap();
                     let full =
                         v8::Local::<v8::Map>::try_from(arr.get_index(sc, 0).unwrap()).unwrap();
-                    let full = V8DotGraph::new(sc, full);
+                    let full = V8DotGraph::try_new(sc, full).unwrap();
                     let full_transposed =
                         v8::Local::<v8::Map>::try_from(arr.get_index(sc, 1).unwrap()).unwrap();
-                    let full_transposed = V8DotGraph::new(sc, full_transposed);
+                    let full_transposed = V8DotGraph::try_new(sc, full_transposed).unwrap();
                     (
                         full.to_dot("full", vertex_transformer),
                         full_transposed.to_dot("full_transposed", vertex_transformer),

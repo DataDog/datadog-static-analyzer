@@ -197,7 +197,7 @@ pub(crate) fn cst_v8_digraph(
         located.into()
     };
 
-    let v8_dot_graph = V8DotGraph::new(scope, map);
+    let v8_dot_graph = V8DotGraph::try_new(scope, map).unwrap();
     Digraph::new(v8_dot_graph.to_dot(name, transform_vertex))
 }
 
