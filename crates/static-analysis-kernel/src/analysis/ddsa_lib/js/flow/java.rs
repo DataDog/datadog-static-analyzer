@@ -32,7 +32,8 @@ pub(crate) fn get_binary_expression_operator(node: tree_sitter::Node) -> Option<
 mod tests {
     use super::{get_binary_expression_operator, BinOp};
     use crate::analysis::ddsa_lib::common::{compile_script, Instance, NodeId};
-    use crate::analysis::ddsa_lib::js::flow::graph::{cst_dot_digraph, cst_v8_digraph, Digraph};
+    use crate::analysis::ddsa_lib::js::flow::graph::Digraph;
+    use crate::analysis::ddsa_lib::js::flow::graph_test_utils::{cst_dot_digraph, cst_v8_digraph};
     use crate::analysis::ddsa_lib::js::ViolationConverter;
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute, TsTree};
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
