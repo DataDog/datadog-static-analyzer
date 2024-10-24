@@ -27,11 +27,8 @@ jobs:
     name: Run integration test - ${{ matrix.scripts.gha_alias }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          profile: default
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
       - uses: ./.github/actions/rust-cache
         with:
           cargo-target: x86_64-unknown-linux-gnu
