@@ -1,13 +1,14 @@
 use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
+use crate::analysis::ddsa_lib::js::flow::java::{ClassGraph, FileGraph};
 use crate::analysis::ddsa_lib::runtime::ExecutionResult;
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::generated_content::{is_generated_file, is_minified_file};
-use crate::analysis::tree_sitter::get_tree;
+use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
 use crate::model::analysis::{
     FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
 };
 use crate::model::common::Language;
-use crate::model::rule::{RuleInternal, RuleResult};
+use crate::model::rule::{RuleCategory, RuleInternal, RuleResult, RuleSeverity};
 use crate::rule_config::RuleConfig;
 use common::analysis_options::AnalysisOptions;
 use std::borrow::Borrow;
@@ -292,6 +293,109 @@ where
             }
         })
         .collect()
+}
+
+/// Returns a [DOT Language] graph that models taint flow within the file.
+/// If the file contains an unsupported language, `None` is returned.
+///
+/// This is an expensive, unoptimized function.
+///
+/// [DOT Language]: https://graphviz.org/doc/info/lang.html
+pub fn generate_flow_graph_dot(
+    language: Language,
+    file_name: &Arc<str>,
+    file_contents: &Arc<str>,
+    rule_config: &RuleConfig,
+    analysis_option: &AnalysisOptions,
+) -> Option<String> {
+    // language=javascript
+    let rule_code = r#"
+function visit(captures) {
+    const classNode = captures.get("class");
+    if (classNode?.cstType !== "class_declaration") {
+        return;
+    }
+    const classChildren = ddsa.getChildren(classNode);
+    const className = classChildren.find((n) => n.fieldName === "name");
+
+    const classBody = classChildren.find((n) => n.fieldName === "body");
+    const bodyChildren = ddsa.getChildren(classBody);
+    const graphs = [];
+    for (const bodyChild of bodyChildren) {
+        if (bodyChild.cstType === "method_declaration") {
+            const graph = __ddsaPrivate__.generateJavaFlowGraph(bodyChild);
+
+            // Create a method signature:
+            const methodChildren = ddsa.getChildren(bodyChild);
+            const type = (methodChildren.find((n) => n.fieldName === "type"))?.text ?? "";
+            const name = (methodChildren.find((n) => n.fieldName === "name"))?.text ?? "";
+            const params = (methodChildren.find((n) => n.fieldName === "parameters"))?.text ?? "";
+            const methodSig = `${type} ${name}${params}`
+            graphs.push(__ddsaPrivate__.graphToDOT(graph, methodSig));
+        }
+    }
+    if (graphs.length === 0) {
+        return;
+    }
+    // HACK: Pass structured string data back by repurposing fields of a "Violation":
+    // Violation.description -> class name
+    // Violation.fixes[i].description -> Serialized DOT graph for individual method
+    const violation = Violation.new(className.text, classNode);
+    for (const dotGraph of graphs) {
+        violation.addFix(Fix.new(dotGraph, []));
+    }
+    addError(violation);
+}
+"#;
+    let class_tsq = "\
+(program (class_declaration) @class)
+";
+    match language {
+        Language::Java => {
+            let tree_sitter_query =
+                TSQuery::try_new(&get_tree_sitter_language(&language), class_tsq).ok()?;
+            let rule = RuleInternal {
+                name: "<java-debug>/dataflow-dot".to_string(),
+                short_description: None,
+                description: None,
+                category: RuleCategory::Unknown,
+                severity: RuleSeverity::None,
+                language,
+                code: rule_code.to_string(),
+                tree_sitter_query,
+            };
+
+            let results = analyze(
+                &language,
+                [rule],
+                file_name,
+                file_contents,
+                rule_config,
+                analysis_option,
+            );
+            let result = results.first().expect("there should be exactly one result");
+
+            if result.violations.is_empty() {
+                return None;
+            }
+            let mut file_graph = FileGraph::new(file_name.as_ref());
+            for v in &result.violations {
+                let class_name = &v.message;
+                let mut class_graph = ClassGraph::new(class_name);
+                for fix in &v.fixes {
+                    // We pass already-serialized graphs for each method as a "fix description".
+                    // Thus, we need to reparse this into a `dot_structures::Graph`.
+                    if let Ok(graph) = graphviz_rust::parse(&fix.description) {
+                        // (The JavaScript implementation already provides the method signature)
+                        class_graph.add_method(graph, None);
+                    };
+                }
+                file_graph.add_class(class_graph);
+            }
+            Some(file_graph.to_dot())
+        }
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -1199,5 +1303,66 @@ rulesets:
             results.get(1).unwrap().violations[0].severity,
             RuleSeverity::Warning
         );
+    }
+
+    #[test]
+    fn java_taint_flow_dot_graph() {
+        // language=java
+        let file_contents = "\
+public class ClassA {
+    void echo(String a) {
+		someMethod(a);
+    }
+}
+
+public class ClassB {
+    void echo(String a) {
+		someMethod(a);
+    }
+}
+";
+        let parsed_dot = generate_flow_graph_dot(
+            Language::Java,
+            &Arc::from("path/to/file.java"),
+            &Arc::from(file_contents),
+            &RuleConfig::default(),
+            &AnalysisOptions::default(),
+        );
+        // language=dot
+        let expected = r#"
+strict digraph "path/to/file.java" {
+    label="path/to/file.java"
+    subgraph "cluster: ClassA" {
+        label=ClassA
+        subgraph "cluster: void echo(String a)" {
+            label="void echo(String a)"
+            "a:3:14"[text=a,line=3,col=14,cstkind=identifier,vkind=cst]
+            "(a):3:13"[text="(a)",line=3,col=13,cstkind=argument_list,vkind=cst]
+            "someMethod(a):3:3"[text="someMethod(a)",line=3,col=3,cstkind=method_invocation,vkind=cst]
+            "a:2:22"[text=a,line=2,col=22,cstkind=identifier,vkind=cst]
+            "a:3:14" -> "a:2:22" [kind=dependence]
+            "(a):3:13" -> "a:3:14" [kind=dependence]
+            "someMethod(a):3:3" -> "(a):3:13" [kind=dependence]
+        }
+    }
+    subgraph "cluster: ClassB" {
+        label=ClassB
+        subgraph "cluster: void echo(String a)" {
+            label="void echo(String a)"
+            "a:9:14"[text=a,line=9,col=14,cstkind=identifier,vkind=cst]
+            "(a):9:13"[text="(a)",line=9,col=13,cstkind=argument_list,vkind=cst]
+            "someMethod(a):9:3"[text="someMethod(a)",line=9,col=3,cstkind=method_invocation,vkind=cst]
+            "a:8:22"[text=a,line=8,col=22,cstkind=identifier,vkind=cst]
+            "a:9:14" -> "a:8:22" [kind=dependence]
+            "(a):9:13" -> "a:9:14" [kind=dependence]
+            "someMethod(a):9:3" -> "(a):9:13" [kind=dependence]
+        }
+    }
+}
+"#;
+        // Reparse and compare structs
+        let parsed_dot = graphviz_rust::parse(&parsed_dot.unwrap()).unwrap();
+        let expected_dot = graphviz_rust::parse(expected).unwrap();
+        assert_eq!(parsed_dot, expected_dot);
     }
 }

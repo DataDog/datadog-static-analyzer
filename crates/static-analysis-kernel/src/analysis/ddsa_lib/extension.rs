@@ -15,6 +15,7 @@ deno_core::extension!(
         ops::op_ts_node_text,
         // Language-specific
         ops::op_java_get_bin_expr_operator,
+        ops::op_digraph_adjacency_list_to_dot,
     ],
     esm_entry_point = "ext:ddsa_lib/__bootstrap.js",
     esm = [ dir "src/analysis/ddsa_lib/js", "__bootstrap.js" ],

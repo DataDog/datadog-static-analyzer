@@ -229,6 +229,61 @@ impl OpSafeRawTSNode {
     }
 }
 
+/// Returns the canonical DOT representation of the provided JavaScript `Digraph` adjacency list, or
+/// [`v8::null`] if the input is invalid.
+#[op2]
+#[string]
+pub fn op_digraph_adjacency_list_to_dot(
+    state: &OpState,
+    scope: &mut v8::HandleScope,
+    adjacency_list: v8::Local<v8::Map>,
+    #[string] fn_signature: &str,
+) -> Option<String> {
+    use crate::analysis::ddsa_lib::js::flow::graph::{
+        id_str, Digraph, LocatedNode, V8DotGraph, VertexId, VertexKind,
+    };
+    use graphviz_rust::dot_structures;
+
+    let tsn_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>();
+    let tsn_bridge = tsn_bridge.borrow();
+    let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
+    let ctx_bridge = ctx_bridge.borrow();
+    let text = ctx_bridge
+        .ddsa_root_context()
+        .get_text()
+        .expect("tree text should always be `Some` during rule execution");
+
+    // Transformation:
+    // If `VertexKind::CST`: constructs a dot node from metadata from the `TsNodeBridge` and `RootContext`.
+    // If `VertexKind::Phi`: constructs a dot node from the internal id.
+    let transform_vertex = |node: &dot_structures::Node| -> Option<dot_structures::Node> {
+        let vid = id_str(&node.id.0)
+            .parse::<u32>()
+            .ok()
+            .map(VertexId::from_raw)?;
+        let located = match vid.kind() {
+            VertexKind::Cst => {
+                let safe_raw_ts_node =
+                    OpSafeRawTSNode::from_tsn_bridge(&tsn_bridge, vid.internal_id())?;
+                let ts_node = safe_raw_ts_node.to_node();
+                let node_text = ts_node
+                    .utf8_text(text.as_bytes())
+                    .expect("bytes should be utf8 sequence");
+                LocatedNode::new_cst(ts_node, node_text)
+            }
+            VertexKind::Phi => LocatedNode::new_phi(vid.internal_id()),
+        };
+        Some(located.into())
+    };
+
+    V8DotGraph::try_new(scope, adjacency_list)
+        .ok()
+        .map(|v8_dot_graph| {
+            let digraph = Digraph::new(v8_dot_graph.to_dot(fn_signature, transform_vertex));
+            digraph.to_dot()
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};

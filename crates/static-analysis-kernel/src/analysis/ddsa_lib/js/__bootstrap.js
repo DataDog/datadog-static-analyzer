@@ -5,13 +5,14 @@
 "use strict";
 
 import {CodeRegion} from "ext:ddsa_lib/region";
-import {DDSA} from "ext:ddsa_lib/ddsa";
+import {DDSA, DDSAPrivate} from "ext:ddsa_lib/ddsa";
 import {DDSA_Console} from "ext:ddsa_lib/utility";
 import {Digraph} from "ext:ddsa_lib/flow/graph";
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
 import {FileContextTerraform, TerraformResource} from "ext:ddsa_lib/context_file_tf";
 import {FileContextJavaScript, PackageImport} from "ext:ddsa_lib/context_file_js";
+import {Fix} from "ext:ddsa_lib/fix";
 import {QueryMatch} from "ext:ddsa_lib/query_match";
 import {QueryMatchCompat} from "ext:ddsa_lib/query_match_compat";
 import {RootContext} from "ext:ddsa_lib/context_root";
@@ -30,6 +31,7 @@ globalThis.FileContextGo = FileContextGo;
 globalThis.FileContextJavaScript = FileContextJavaScript;
 globalThis.PackageImport = PackageImport;
 globalThis.FileContextTerraform = FileContextTerraform;
+globalThis.Fix = Fix;
 globalThis.TerraformResource = TerraformResource;
 globalThis.QueryMatch = QueryMatch;
 globalThis.QueryMatchCompat = QueryMatchCompat;
@@ -51,3 +53,5 @@ for (const [name, obj] of Object.entries(stellaCompat)) {
 
 globalThis.console = new DDSA_Console();
 globalThis.ddsa = new DDSA();
+// Note: The name "private" is just used to communicate intent -- there is no enforcement preventing rules from using this.
+globalThis.__ddsaPrivate__ = new DDSAPrivate();

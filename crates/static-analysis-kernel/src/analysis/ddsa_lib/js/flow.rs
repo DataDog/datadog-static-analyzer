@@ -3,4 +3,5 @@
 // Copyright 2024 Datadog, Inc.
 
 pub(crate) mod graph;
+pub(crate) mod graph_test_utils;
 pub(crate) mod java;

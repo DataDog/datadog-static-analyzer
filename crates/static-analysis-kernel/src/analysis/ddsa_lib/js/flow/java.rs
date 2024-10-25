@@ -2,6 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::analysis::ddsa_lib::js::flow::graph::{id_str, DigraphCollection};
+use graphviz_rust::dot_structures;
+
 /// A non-exhaustive list of binary expression operators.
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub(crate) enum BinOp {
@@ -28,11 +31,67 @@ pub(crate) fn get_binary_expression_operator(node: tree_sitter::Node) -> Option<
     Some(operator.unwrap_or(BinOp::Ignored))
 }
 
+/// A collection of [`dot_structures::Graph`] representing the individual methods within a Java class.
+#[derive(Debug, Clone)]
+pub struct ClassGraph(DigraphCollection);
+
+impl ClassGraph {
+    /// Constructs a new `ClassGraph` for the given class name.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self(DigraphCollection::new(name))
+    }
+
+    /// Adds `method_graph` to the collection. If `method_signature` is provided, it will be used.
+    /// Otherwise, the existing graph's id will be used.
+    pub fn add_method(
+        &mut self,
+        method_graph: dot_structures::Graph,
+        method_signature: Option<&str>,
+    ) {
+        let graph_id = method_signature.map(str::to_string).unwrap_or_else(|| {
+            if let dot_structures::Graph::DiGraph { id, .. } = &method_graph {
+                id_str(id).to_string()
+            } else {
+                "".to_string()
+            }
+        });
+        self.0.add_graph(graph_id, method_graph);
+    }
+}
+
+/// A collection of [`dot_structures::Graph`] representing the individual classes within a Java file.
+#[derive(Debug, Clone)]
+pub struct FileGraph(DigraphCollection);
+
+impl FileGraph {
+    /// Constructs a new `FileGraph` for the given file name.
+    pub fn new(file_path: impl Into<String>) -> Self {
+        Self(DigraphCollection::new(file_path))
+    }
+
+    /// Adds `class_graph` to the collection.
+    pub fn add_class(&mut self, class_graph: ClassGraph) {
+        let cg = class_graph.0.to_digraph();
+        let class_name = class_graph.0.name;
+        self.0.add_graph(&class_name, cg);
+    }
+
+    pub fn to_digraph(&self) -> dot_structures::Graph {
+        self.0.to_digraph()
+    }
+
+    pub fn to_dot(&self) -> String {
+        use graphviz_rust::printer::DotPrinter;
+        self.to_digraph().print(&mut Default::default())
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{get_binary_expression_operator, BinOp};
+    use super::{get_binary_expression_operator, BinOp, ClassGraph, FileGraph};
     use crate::analysis::ddsa_lib::common::{compile_script, Instance, NodeId};
-    use crate::analysis::ddsa_lib::js::flow::graph::{cst_dot_digraph, cst_v8_digraph, Digraph};
+    use crate::analysis::ddsa_lib::js::flow::graph::Digraph;
+    use crate::analysis::ddsa_lib::js::flow::graph_test_utils::cst_dot_digraph;
     use crate::analysis::ddsa_lib::js::ViolationConverter;
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute, TsTree};
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
@@ -109,29 +168,22 @@ mod tests {
 
             let tsn_bridge = rt.bridge_ts_node();
             let method_decl_id = tsn_bridge.borrow().get_id(method_decl).unwrap();
-            // Create the JavaScript graph, and then return the adjacency list `Map` so we can inspect it.
+            // Create the JavaScript graph, and then return the stringified DOT representation.
             // language=javascript
             let script = format!(
                 "\
 const methodFlow = new {}(getNode({}));
-methodFlow.graph.adjacencyList;
+__ddsaPrivate__.graphToDOT(methodFlow.graph, \"cst_v8_full\");
 ",
                 CLASS_NAME, method_decl_id
             );
             let script = compile_script(&mut rt.v8_handle_scope(), &script).unwrap();
-            let full = rt
-                .scoped_execute(
-                    &script,
-                    |sc, val| {
-                        let full = v8::Local::<v8::Map>::try_from(val).unwrap();
-                        let tsn = &tsn_bridge.borrow();
-                        cst_v8_digraph("cst_v8_full", sc, full, &tree, tsn)
-                    },
-                    None,
-                )
+            let full_str = rt
+                .scoped_execute(&script, |sc, val| val.to_rust_string_lossy(sc), None)
                 .unwrap();
 
             let expected = cst_dot_digraph(expected_dot, &tree, None);
+            let full = graphviz_rust::parse(&full_str).map(Digraph::new).unwrap();
 
             Self { expected, full }
         }
@@ -423,6 +475,79 @@ v;
             .for_each(|(&region, node)| {
                 assert!(position_eq(region, node));
             });
+    }
+
+    /// Tests that a single digraph properly serializes multiple classes with multiple methods.
+    #[test]
+    fn file_graph_dot() {
+        let mut file_graph = FileGraph::new("test.java");
+
+        let classes = ["ClassA", "ClassB"];
+        classes
+            .into_iter()
+            .enumerate()
+            .for_each(|(class_idx, name)| {
+                let mut class_graph = ClassGraph::new(name);
+                let method_sigs = [
+                    "void greet()",
+                    "void greet(String name)",
+                    "private int getCount()",
+                ];
+                method_sigs
+                    .into_iter()
+                    .zip(["a", "b", "c"])
+                    .for_each(|(method_sig, variable)| {
+                        let dot = format!(
+                            "\
+strict digraph MethodGraph {{
+    {variable}{class_idx}
+}}
+"
+                        );
+                        let method_graph = graphviz_rust::parse(&dot).unwrap();
+                        class_graph.add_method(method_graph, Some(method_sig));
+                    });
+                file_graph.add_class(class_graph);
+            });
+
+        // language=dot
+        let expected = r#"
+strict digraph "test.java" {
+    label="test.java"
+    subgraph "cluster: ClassA" {
+        label=ClassA
+        subgraph "cluster: void greet()" {
+            label="void greet()"
+            a0
+        }
+        subgraph "cluster: void greet(String name)" {
+            label="void greet(String name)"
+            b0
+        }
+        subgraph "cluster: private int getCount()" {
+            label="private int getCount()"
+            c0
+        }
+    }
+    subgraph "cluster: ClassB" {
+        label=ClassB
+        subgraph "cluster: void greet()" {
+            label="void greet()"
+            a1
+        }
+        subgraph "cluster: void greet(String name)" {
+            label="void greet(String name)"
+            b1
+        }
+        subgraph "cluster: private int getCount()" {
+            label="private int getCount()"
+            c1
+        }
+    }
+}
+"#;
+        let expected = graphviz_rust::parse(expected).unwrap();
+        assert_eq!(file_graph.to_digraph(), expected);
     }
 }
 

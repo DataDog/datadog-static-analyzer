@@ -206,6 +206,7 @@ for (const [name, obj] of Object.entries({})) {{
     entrypoint_code += "
 globalThis.console = new DDSA_Console();
 globalThis.ddsa = new DDSA();
+globalThis.__ddsaPrivate__ = new DDSAPrivate();
 ";
     let entrypoint_code = leaked(entrypoint_code);
     let specifier = leaked("ext:test/__entrypoint");

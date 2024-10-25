@@ -33,11 +33,11 @@ use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
-use kernel::analysis::analyze::analyze;
+use kernel::analysis::analyze::{analyze, generate_flow_graph_dot};
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
-use kernel::model::common::OutputFormat;
+use kernel::model::common::{Language, OutputFormat};
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
@@ -78,6 +78,7 @@ fn main() -> Result<()> {
         "/path/to/rules.json",
     );
     opts.optopt("d", "debug", "use debug mode", "yes/no");
+    opts.optflag("", "debug-export-java-dfa", "export Java flow graphs by writing a `{filename}.dot` file next to each Java file scanned; this dirties the working directory");
     opts.optopt("f", "format", "format of the output file", "json/sarif/csv");
     opts.optopt("o", "output", "output file name", "output.json");
     opts.optflag(
@@ -186,6 +187,8 @@ fn main() -> Result<()> {
         .opt_str("d")
         .map(|value| value == "yes" || value == "true")
         .get_or_insert(env::var_os("DD_SA_DEBUG").is_some());
+    let debug_java_dfa = matches.opt_present("debug-export-java-dfa");
+
     let output_file = matches
         .opt_str("o")
         .context("output file must be specified")?;
@@ -560,6 +563,20 @@ fn main() -> Result<()> {
 
                             should_retain
                         });
+
+                        if debug_java_dfa && *language == Language::Java {
+                            if let Some(graph) = generate_flow_graph_dot(
+                                *language,
+                                &relative_path,
+                                &file_content,
+                                &rule_config,
+                                &analysis_options,
+                            ) {
+                                let dot_path = path.with_extension("dot");
+                                let _ = fs::write(dot_path, graph);
+                            }
+                        }
+
                         results
                     } else {
                         eprintln!("error when getting content of path {}", &path.display());

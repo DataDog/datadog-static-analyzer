@@ -3,9 +3,11 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::bridge::TsNodeBridge;
+use crate::analysis::ddsa_lib::common::{swallow_v8_error, v8_uint};
 use crate::analysis::ddsa_lib::test_utils::TsTree;
 use deno_core::v8;
 use graphviz_rust::dot_structures;
+use graphviz_rust::dot_structures::{Attribute, Stmt};
 use std::borrow::{Borrow, Cow};
 use std::collections::{HashMap, HashSet};
 
@@ -101,7 +103,7 @@ impl PartialEq for Digraph {
 }
 
 /// Returns the [`Stmt`](dot_structures::Stmt)s in a [`dot_structures::Graph::DiGraph`].
-fn digraph_stmts(graph: &dot_structures::Graph) -> &[dot_structures::Stmt] {
+pub(crate) fn digraph_stmts(graph: &dot_structures::Graph) -> &[dot_structures::Stmt] {
     let dot_structures::Graph::DiGraph { stmts, .. } = graph else {
         panic!("graph should be a digraph");
     };
@@ -109,13 +111,12 @@ fn digraph_stmts(graph: &dot_structures::Graph) -> &[dot_structures::Stmt] {
 }
 
 // DOT attribute keys
-const KIND: &str = "kind";
-const TEXT: &str = "text";
-const LINE: &str = "line";
-const COL: &str = "col";
-const CST_KIND: &str = "cstkind";
-const V_KIND: &str = "vkind";
-const NODE_ATTRS: &[&str] = &[TEXT, LINE, COL, CST_KIND, V_KIND];
+pub(crate) const KIND: &str = "kind";
+pub(crate) const TEXT: &str = "text";
+pub(crate) const LINE: &str = "line";
+pub(crate) const COL: &str = "col";
+pub(crate) const CST_KIND: &str = "cstkind";
+pub(crate) const V_KIND: &str = "vkind";
 
 /// A graph edge storing a target [`VertexId`] and an [`EdgeKind`].
 ///
@@ -140,8 +141,7 @@ impl Edge {
 
     /// The type of edge this is.
     pub fn kind(&self) -> EdgeKind {
-        EdgeKind::try_from_id((self.0 & Self::KIND_BIT_MASK) as usize)
-            .expect("js should serialize PackedEdge correctly")
+        EdgeKind::try_from_id((self.0 & Self::KIND_BIT_MASK) as usize).unwrap_or(EdgeKind::Untyped)
     }
 }
 
@@ -197,7 +197,7 @@ impl EdgeKind {
 ///         internalNodeId          kind
 /// ```
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
-struct VertexId(u32);
+pub(crate) struct VertexId(u32);
 
 impl VertexId {
     /// The number of bits used to represent a [`VertexKind`].
@@ -215,6 +215,11 @@ impl VertexId {
     /// if the vertex is a [`VertexKind::Cst`], or a phi node id if it's a [`VertexKind::Phi`].
     pub fn internal_id(&self) -> u32 {
         self.0 >> Self::KIND_BITS
+    }
+
+    /// Creates a `VertexId` directly from the provided `raw_id`.
+    pub fn from_raw(raw_id: u32) -> Self {
+        Self(raw_id)
     }
 
     /// Creates a `VertexId`, given a CST node id.
@@ -296,7 +301,7 @@ impl VertexKind {
 }
 
 /// Returns the string form of a `dot_structures::Id`.
-fn id_str(id: &dot_structures::Id) -> Cow<str> {
+pub(crate) fn id_str(id: &dot_structures::Id) -> Cow<str> {
     use dot_structures::Id;
     match id {
         Id::Html(s) | Id::Plain(s) | Id::Anonymous(s) => Cow::Borrowed(s),
@@ -325,9 +330,10 @@ pub(crate) struct V8DotGraph {
 
 impl V8DotGraph {
     /// Creates a new `V8DotGraph` from the provided `v8::Map`.
-    /// # Panics
-    /// Panics if deserialization is unsuccessful.
-    pub fn new(scope: &mut v8::HandleScope, map: v8::Local<v8::Map>) -> Self {
+    pub fn try_new(
+        scope: &mut v8::HandleScope,
+        map: v8::Local<v8::Map>,
+    ) -> Result<Self, &'static str> {
         use dot_structures::*;
         use graphviz_rust::dot_generator::*;
 
@@ -344,20 +350,35 @@ impl V8DotGraph {
         for i in (0..len).step_by(2) {
             let key_idx = i;
             let val_idx = key_idx + 1;
-            let source_vid = map_arr.get_index(scope, key_idx).unwrap();
-            assert!(source_vid.is_number());
-            let source_vid = source_vid.uint32_value(scope).unwrap();
+            let source_vid = map_arr
+                .get_index(scope, key_idx)
+                .unwrap_or_else(|| swallow_v8_error(|| v8_uint(scope, 0).into()));
+            if !source_vid.is_number() {
+                return Err("map key should be a number");
+            }
+            let source_vid = source_vid
+                .uint32_value(scope)
+                .unwrap_or_else(|| swallow_v8_error(|| 0));
             known_sources.insert(VertexId(source_vid));
-            let adj_list =
-                v8::Local::<v8::Array>::try_from(map_arr.get_index(scope, val_idx).unwrap())
-                    .unwrap();
+            let adj_list = map_arr
+                .get_index(scope, val_idx)
+                .unwrap_or_else(|| swallow_v8_error(|| v8::Array::new(scope, 0).into()));
+            let Ok(adj_list) = v8::Local::<v8::Array>::try_from(adj_list) else {
+                return Err("map value should be an array");
+            };
             vertices.push(node!(source_vid));
 
             let adj_len = adj_list.length();
             for j in 0..adj_len {
-                let v8_packed_edge = adj_list.get_index(scope, j).unwrap();
-                assert!(v8_packed_edge.is_number());
-                let v8_packed_edge = v8_packed_edge.uint32_value(scope).unwrap();
+                let v8_packed_edge = adj_list
+                    .get_index(scope, j)
+                    .unwrap_or_else(|| swallow_v8_error(|| v8_uint(scope, 0).into()));
+                if !v8_packed_edge.is_number() {
+                    return Err("array value should be a number");
+                };
+                let v8_packed_edge = v8_packed_edge
+                    .uint32_value(scope)
+                    .unwrap_or_else(|| swallow_v8_error(|| 0));
                 let packed_edge = Edge(v8_packed_edge);
                 let target_vid = packed_edge.target();
                 known_targets.insert(target_vid);
@@ -372,14 +393,14 @@ impl V8DotGraph {
             vertices.push(node!(sink_vid));
         }
 
-        Self { vertices, edges }
+        Ok(Self { vertices, edges })
     }
 
     /// Converts this graph into a [`dot_structures::Graph`].
     #[rustfmt::skip]
-    pub fn to_dot<T>(&self, name: impl Into<String>, vertex_transformer: T) -> dot_structures::Graph
+    pub fn to_dot<T>(&self, name: &str, vertex_transformer: T) -> dot_structures::Graph
     where
-        for<'a> T: Fn(&'a dot_structures::Node) -> dot_structures::Node,
+        for<'a> T: Fn(&'a dot_structures::Node) -> Option<dot_structures::Node>,
     {
         use dot_structures::*;
         // A cache storing the result of `vertex_transformer`'s mutation of a `dot_structures::NodeId`.
@@ -387,333 +408,180 @@ impl V8DotGraph {
         let vertices = self
             .vertices
             .iter()
-            .map(|node| {
+            .filter_map(|node| {
                 let before_id = id_str(&node.id.0).to_string();
-                let transformed = vertex_transformer(node);
+                let transformed = vertex_transformer(node)?;
                 let after_id = transformed.id.clone();
                 vertex_id_map.insert(before_id, after_id);
-                transformed
+                Some(transformed)
             })
             .map(Stmt::Node)
             .collect::<Vec<_>>();
         let edges = self
             .edges
             .iter()
-            .map(|edge| {
+            .filter_map(|edge| {
                 // Edges remain the same, except the vertex ids they reference are updated to their transformed form.
                 let mut cloned = edge.clone();
                 let EdgeTy::Pair(Vertex::N(source), Vertex::N(target)) = &mut cloned.ty else { unreachable!(); };
-                let new_source_id = vertex_id_map.get(id_str(&source.0).as_ref()).expect("edge should refer to known id").clone();
+                let new_source_id = vertex_id_map.get(id_str(&source.0).as_ref()).cloned()?;
                 let _ = std::mem::replace(source, new_source_id);
-                let new_target_id = vertex_id_map.get(id_str(&target.0).as_ref()).expect("edge should refer to known id").clone();
+                let new_target_id = vertex_id_map.get(id_str(&target.0).as_ref()).cloned()?;
                 let _ = std::mem::replace(target, new_target_id);
-                cloned
+                Some(cloned)
             })
             .map(Stmt::Edge)
             .collect::<Vec<_>>();
 
         Graph::DiGraph {
-            id: Id::Plain(name.into()),
+            id: encode_id(name),
             strict: true,
             stmts: [vertices, edges].concat(),
         }
     }
 }
 
-/// Creates a new `Digraph` from the provided [DOT Language] graph using a DSL that
-/// allows CST/phi nodes to be searched for/specified succinctly. If provided, `root_node` will constrain
-/// the search to the provided CST node and its children.
-///
-/// # Specifying Vertices
-/// CST nodes are defined by specifying attributes that identify exactly one node within the syntax tree.
-/// * `text`: an exact string match for the node's text, or `*` for any text _(default: <the DOT-specified node id>)_.
-/// * `line`: an absolute line number for where the CST node is located in the source text.
-/// * `col`: an absolute column number for where the CST node is located in the source text.
-/// * `cstkind`: a CST node type for the node, or `*` for any type _(default: `identifier`)_.
-///
-/// Phi nodes should follow the id pattern of `phi{index}`, using a zero-based index (e.g. `phi0`, `phi1`)
-/// that corresponds to the order in which it is created by the construction algorithm, and additionally
-/// have the following attribute set to `phi`:
-/// * `vkind`: a vertex kind (either `phi` or `cst`) _(default: `cst`)_.
-///
-/// For example, the following two are equivalent:
-/// ```dot
-/// strict digraph {
-///     A1 [text=var_01,line=3]
-///     A2 [text=var_01,line=5,col=22]
-///     phi0 [vkind=phi]
-///     var_02
-///     1234 [cstkind="*"]
-///     9876 [cstkind=decimal_integer_literal]
-///
-///     A1 -> 1234 [kind=assignment]
-///     A2 -> 9876 [kind=assignment]
-///     phi0 -> A1 [kind=dependence]
-///     phi0 -> A2 [kind=dependence]
-///     var_02 -> phi0 [kind=assignment]
-/// }
-/// // Equivalent:
-/// strict digraph {
-///     A1 [text=var_01,line=3,cstkind=identifier,vkind=cst]
-///     A2 [text=var_01,line=5,col=22,cstkind=identifier,vkind=cst]
-///     phi0 [vkind=phi]
-///     var_02 [text=var_02,cstkind=identifier,vkind=cst]
-///     1234 [text=1234,cstkind="*",vkind=cst]
-///     9876 [text=9876,cstkind=decimal_integer_literal,vkind=cst]
-///
-///     A1 -> 1234 [kind=assignment]
-///     A2 -> 9876 [kind=assignment]
-///     phi0 -> A1 [kind=dependence]
-///     phi0 -> A2 [kind=dependence]
-///     var_02 -> phi0 [kind=assignment]
-/// }
-/// ```
-/// [DOT Language]: https://graphviz.org/doc/info/lang.html
-///
-/// # Panics
-/// Panics if any configuration is not as-expected or if any digraph CST node does not have
-/// exactly 1 matching tree-sitter node.
-pub fn cst_dot_digraph(
-    dot: &str,
-    ts_tree: &TsTree,
-    root_node: Option<tree_sitter::Node>,
-) -> Digraph {
-    use dot_structures::*;
-
-    let graph = graphviz_rust::parse(dot).unwrap();
-    let stmts = digraph_stmts(&graph);
-
-    let tree = ts_tree.tree();
-    let candidates = TsTree::preorder_nodes(root_node.unwrap_or(tree.root_node()))
-        .iter()
-        .map(|&node| LocatedNode::new_cst(node, ts_tree.text(node)))
-        .collect::<Vec<_>>();
-
-    // The `String` in the tuple is the original ID of the vertex (as specified in the DOT).
-    // Because we normalize all vertices to have a canonical vertex id, we use the original id as
-    // a key to map it to its canonical form.
-    let located: Vec<(LocatedNode, String)> = stmts
-        .iter()
-        .filter_map(|stmt| {
-            if let Stmt::Node(node) = stmt {
-                let attrs = NodeSearchAttrs::from_vertex(node);
-                let original_text = id_str(&node.id.0).to_string();
-                let located = match attrs {
-                    NodeSearchAttrs::Phi => {
-                        // Because phi nodes have no obvious serialization of a unique name (unlike CST nodes),
-                        // despite the coupling with the graph construction algorithm, it vastly reduces
-                        // implementation complexity to require a tests to specify the exact phi id in the DOT.
-                        let num_id = original_text
-                            .split_once("phi")
-                            .and_then(|(pre, id)| {
-                                if !pre.is_empty() {
-                                    return None;
-                                }
-                                id.parse::<u32>().ok()
-                            })
-                            .expect("phi node id should have correct format: `phi{index}`");
-                        let phi = LocatedNode::new_phi(num_id);
-                        // (A lightweight "test" to keep this logic in sync with `canonical_id`).
-                        assert_eq!(original_text, phi.canonical_id());
-                        phi
-                    }
-                    NodeSearchAttrs::Cst { .. } => locate_node(attrs, &candidates),
-                };
-                Some((located, original_text))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    let edges = stmts
-        .iter()
-        .filter_map(|stmt| {
-            if let Stmt::Edge(edge) = stmt {
-                let EdgeTy::Pair(Vertex::N(source), Vertex::N(target)) = &edge.ty else {
-                    panic!("edge should be between two `node`s")
-                };
-                assert_eq!(id_str(&edge.attributes[0].0), KIND);
-                let kind = EdgeKind::try_from(&*id_str(&edge.attributes[0].1)).unwrap();
-                assert_eq!(edge.attributes.len(), 1, "edge should only have 1 attr");
-
-                // Locate the node based on the original id:
-                let source_id = id_str(&source.0);
-                let source = located.iter().find(|&(_, id)| &source_id == id);
-                let (source, _) = source
-                    .unwrap_or_else(|| panic!("edge-declared node `{source_id}` should exist"));
-                let target_id = id_str(&target.0);
-                let target = located.iter().find(|&(_, id)| &target_id == id);
-                let (target, _) = target
-                    .unwrap_or_else(|| panic!("edge-declared node `{target_id}` should exist"));
-                let located = LocatedEdge {
-                    source: *source,
-                    target: *target,
-                    kind,
-                };
-                Some(Stmt::Edge(Edge::from(located)))
-            } else {
-                None
-            }
-        })
-        .collect::<Vec<_>>();
-
-    let nodes = located
-        .into_iter()
-        .map(|(located, _)| Stmt::Node(Node::from(located)))
-        .collect::<Vec<_>>();
-
-    Digraph::new(Graph::DiGraph {
-        id: Id::Plain("cst_dot".to_string()),
-        strict: true,
-        stmts: [nodes, edges].concat(),
-    })
+/// A [`dot_structures::Graph`] with an associated human-friendly name.
+#[derive(Debug, Clone)]
+struct NamedGraph {
+    name: String,
+    graph: dot_structures::Graph,
 }
 
-/// Converts a JavaScript Map<VertexId, PackedEdge[]> to a `FlowDigraph`.
+/// A named [`dot_structures::Graph`] containing a collection of child digraphs, with each child represented
+/// as a [subgraph] cluster.
 ///
-/// # Panics
-/// Panics if deserialization is unsuccessful.
-pub(crate) fn cst_v8_digraph(
-    name: &str,
-    scope: &mut v8::HandleScope,
-    map: v8::Local<v8::Map>,
-    ts_tree: &TsTree,
-    bridge: &TsNodeBridge,
-) -> Digraph {
-    // Transformation:
-    // If `VertexKind::CST`: constructs a dot node from metadata from the `TsNodeBridge` and `ts_tree`.
-    // If `VertexKind::Phi`: constructs a dot node from the internal id.
-    let transform_vertex = |node: &dot_structures::Node| -> dot_structures::Node {
-        let vid = VertexId(id_str(&node.id.0).parse::<u32>().unwrap());
-        let located = match vid.kind() {
-            VertexKind::Cst => {
-                let raw = bridge.get_raw(vid.internal_id()).unwrap();
-                // This is only used in tests, however...
-                // Safety:
-                // Given that the `ts_tree` provided owns the underlying `tree_sitter::Tree` that
-                // the bridge's `RawTSNode`s are referencing, we know the tree is alive and that
-                // the memory is still allocated.
-                let ts_node = unsafe { raw.to_node() };
-                LocatedNode::new_cst(ts_node, ts_tree.text(ts_node))
-            }
-            VertexKind::Phi => LocatedNode::new_phi(vid.internal_id()),
-        };
-        located.into()
-    };
-
-    let v8_dot_graph = V8DotGraph::new(scope, map);
-    Digraph::new(v8_dot_graph.to_dot(name, transform_vertex))
+/// [subgraph]: https://graphviz.org/Gallery/directed/cluster.html
+#[derive(Debug, Clone)]
+pub struct DigraphCollection {
+    pub name: String,
+    graphs: Vec<NamedGraph>,
 }
 
-/// Searches a list of candidates to find a `LocatedNode` that matches the [`NodeSearchAttrs::Cst`].
-///
-/// # Panics
-/// Panics if the number of matches is not exactly 1 or if the `attrs` is not `NodeSearchAttrs::CST`.
-#[rustfmt::skip]
-fn locate_node<'a>(
-    attrs: NodeSearchAttrs,
-    candidates: &[LocatedNode<'a>],
-) -> LocatedNode<'a> {
-    let NodeSearchAttrs::Cst { text,  line, col, cst_kind } = &attrs else {
-        panic!("attrs should be `NodeSearchAttrs::CST`");
-    };
-    let mut located: Option<LocatedNode> = None;
-    for &cand in candidates {
-        let LocatedNode::Cst { text: cand_text, line: cand_line, col: cand_col, cst_kind: cand_cst_kind } = cand else {
-            panic!("candidate should be `LocatedNode::CST`");
-        };
-        if text.as_ref().map_or(true, |text| text == "*" || cand_text == text)
-            && line.map_or(true, |line| cand_line == line)
-            && col.map_or(true, |col| cand_col == col)
-            && cst_kind.as_ref().map_or(true, |ty| ty == "*" || cand_cst_kind == ty)
-        {
-            if let Some(prev) = located.replace(cand) {
-                panic!("two CST nodes matched {:?}: ({:?}, {:?})", attrs, prev, cand);
-            }
+/// (Subgraphs have special treatment in DOT when their ID starts with the string "cluster").
+const CLUSTER_STR: &str = "cluster: ";
+
+impl DigraphCollection {
+    /// Constructs a new `DigraphCollection`.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            graphs: vec![],
         }
     }
-    located.unwrap_or_else(|| panic!("{:?} should have matched", attrs))
-}
 
-/// Search metadata to identify a vertex.
-#[derive(Debug, Clone)]
-enum NodeSearchAttrs {
-    Phi,
-    Cst {
-        text: Option<String>,
-        line: Option<usize>,
-        col: Option<usize>,
-        cst_kind: Option<String>,
-    },
-}
+    /// Adds `graph` to the collection. Phi nodes (and all references to them) within the graph are renamed
+    /// to be unique across all phi nodes in the collection.
+    pub fn add_graph(&mut self, name: impl Into<String>, mut graph: dot_structures::Graph) {
+        use dot_structures::*;
 
-impl NodeSearchAttrs {
-    /// Parses a `NodeSearchAttrs` from a `dot_structured::Node`. Panics if the node
-    /// is improperly formatted.
-    fn from_vertex(node: &dot_structures::Node) -> Self {
-        use std::str::FromStr;
-
-        let mut vertex_kind: Option<VertexKind> = None;
-        for n in &node.attributes {
-            let (key, value) = (id_str(&n.0), id_str(&n.1));
-            if key == V_KIND {
-                let _ = vertex_kind.insert(
-                    VertexKind::try_from(value.as_ref())
-                        .expect("caller should provide valid value"),
-                );
+        // The transformer renames phi nodes to be unique across all graphs in this collection.
+        let name_transformer = |id: &str| -> Option<String> {
+            // Phi node ids will be locally unique (e.g. "phi0", "phi1") but not necessarily
+            // unique within _this_ collection. We use an incrementing id to ensure uniqueness.
+            if id.starts_with(VertexKind::PHI_STR) {
+                let base_id = self.graphs.len();
+                Some(format!("{id}_{base_id}"))
+            } else {
+                None
             }
-        }
-        // Default to CST node
-        let vertex_kind = vertex_kind.unwrap_or(VertexKind::Cst);
+        };
 
-        let mut text: Option<String> = None;
-        let mut line: Option<usize> = None;
-        let mut col: Option<usize> = None;
-        let mut cst_kind: Option<String> = None;
-
-        for n in &node.attributes {
-            let (key, value) = (id_str(&n.0), id_str(&n.1));
-            match vertex_kind {
-                VertexKind::Cst => {
-                    match key.as_ref() {
-                        V_KIND => continue,
-                        TEXT => drop(text.insert(value.to_string())),
-                        LINE => drop(line.insert(usize::from_str(&value).unwrap())),
-                        COL => drop(col.insert(usize::from_str(&value).unwrap())),
-                        CST_KIND => drop(cst_kind.insert(value.to_string())),
-                        _ => panic!("cst node: unexpected attribute `{key}`"),
-                    };
-                }
-                VertexKind::Phi => {
-                    if key != V_KIND {
-                        panic!("phi node: unexpected attribute `{key}`");
+        let (id, statements) = match &mut graph {
+            Graph::Graph { stmts, id, .. } => (id, stmts),
+            Graph::DiGraph { stmts, id, .. } => (id, stmts),
+        };
+        for stmt in statements.iter_mut() {
+            match stmt {
+                Stmt::Node(node) => {
+                    if let Some(new_id) = name_transformer(id_str(&node.id.0).as_ref()) {
+                        let _ = std::mem::replace(&mut node.id.0, encode_id(&new_id));
                     }
                 }
-            }
-        }
-
-        match vertex_kind {
-            VertexKind::Cst => {
-                // Defaults
-                let _ = text.get_or_insert_with(|| id_str(&node.id.0).to_string());
-                let _ = cst_kind.get_or_insert_with(|| "identifier".to_string());
-
-                Self::Cst {
-                    text,
-                    line,
-                    col,
-                    cst_kind,
+                Stmt::Edge(edge) => {
+                    let EdgeTy::Pair(v0, v1) = &mut edge.ty else {
+                        continue;
+                    };
+                    for vertex in [v0, v1] {
+                        if let Vertex::N(node_id) = vertex {
+                            if let Some(new_id) = name_transformer(id_str(&node_id.0).as_ref()) {
+                                let _ = std::mem::replace(&mut node_id.0, encode_id(&new_id));
+                            }
+                        }
+                    }
                 }
+                _ => {}
             }
-            VertexKind::Phi => Self::Phi,
         }
+        let name = name.into();
+
+        let _ = std::mem::replace(id, encode_id(format!("{CLUSTER_STR}{name}")));
+        Self::ensure_label(statements, &name);
+
+        self.graphs.push(NamedGraph { name, graph })
+    }
+
+    /// Serializes this collection into a [dot_structures::DiGraph](dot_structures::Graph::DiGraph).
+    pub fn to_digraph(&self) -> dot_structures::Graph {
+        use dot_structures::*;
+
+        let mut stmts = self
+            .graphs
+            .iter()
+            .map(|NamedGraph { graph, .. }| {
+                let id = match graph {
+                    Graph::Graph { id, .. } => id,
+                    Graph::DiGraph { id, .. } => id,
+                };
+                Stmt::Subgraph(Subgraph {
+                    id: id.clone(),
+                    stmts: digraph_stmts(graph).to_vec(),
+                })
+            })
+            .collect::<Vec<_>>();
+        Self::ensure_label(&mut stmts, &self.name);
+
+        Graph::DiGraph {
+            id: encode_id(&self.name),
+            strict: true,
+            stmts,
+        }
+    }
+
+    /// Ensures that the provided `stmts` list has a "label" [`Stmt::Attribute`] as its first statement.
+    /// This does not check for duplicates.
+    fn ensure_label(stmts: &mut Vec<Stmt>, label_text: &str) {
+        if let Some(Stmt::Attribute(attr)) = stmts.first() {
+            if id_str(&attr.0) == "label" {
+                return;
+            }
+        }
+        let label_stmt = Stmt::Attribute(Attribute(encode_id("label"), encode_id(label_text)));
+        stmts.insert(0, label_stmt);
+    }
+}
+
+/// Encodes the input as either a [`Plain`](dot_structures::Id::Plain) or [`Escaped`](dot_structures::Id::Escaped) id.
+pub(crate) fn encode_id(input: impl AsRef<str>) -> dot_structures::Id {
+    let input = input.as_ref();
+
+    // (The char ranges below are from the official DOT language grammar spec)
+    let needs_escape = input
+        .chars()
+        .any(|ch| !matches!(ch, '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' ));
+    if needs_escape {
+        let mut text = input.replace("\"", "\\\"");
+        text = text.replace("\r\n", "\\r\\n");
+        text = text.replace("\n", "\\n");
+        dot_structures::Id::Escaped(format!("\"{}\"", text))
+    } else {
+        dot_structures::Id::Plain(input.to_string())
     }
 }
 
 /// A located CST or phi node, along with all metadata needed to construct a [`dot_structures::Node`].
 #[derive(Debug, Copy, Clone)]
-enum LocatedNode<'a> {
+pub(crate) enum LocatedNode<'a> {
     Phi {
         id: u32,
     },
@@ -727,10 +595,10 @@ enum LocatedNode<'a> {
 
 /// A directed edge from a source [`LocatedNode`] to a target.
 #[derive(Debug, Copy, Clone)]
-struct LocatedEdge<'a> {
-    source: LocatedNode<'a>,
-    target: LocatedNode<'a>,
-    kind: EdgeKind,
+pub(crate) struct LocatedEdge<'a> {
+    pub source: LocatedNode<'a>,
+    pub target: LocatedNode<'a>,
+    pub kind: EdgeKind,
 }
 
 impl From<LocatedEdge<'_>> for dot_structures::Edge {
@@ -746,7 +614,7 @@ impl From<LocatedEdge<'_>> for dot_structures::Edge {
 
 impl<'a> LocatedNode<'a> {
     /// Constructs a new `LocatedNode` from a tree-sitter node.
-    fn new_cst(node: tree_sitter::Node<'a>, text: &'a str) -> LocatedNode<'a> {
+    pub fn new_cst(node: tree_sitter::Node, text: &'a str) -> LocatedNode<'a> {
         Self::Cst {
             text,
             line: node.start_position().row + 1,
@@ -756,12 +624,12 @@ impl<'a> LocatedNode<'a> {
     }
 
     /// Constructs a new `LocatedNode` from a phi node id.
-    fn new_phi(id: u32) -> LocatedNode<'a> {
+    pub fn new_phi(id: u32) -> LocatedNode<'a> {
         Self::Phi { id }
     }
 
     /// A canonical id for this node.
-    fn canonical_id(&self) -> String {
+    pub fn canonical_id(&self) -> String {
         match *self {
             LocatedNode::Phi { id } => format!("phi{id}"),
             LocatedNode::Cst {
@@ -770,7 +638,7 @@ impl<'a> LocatedNode<'a> {
         }
     }
 
-    fn kind(&self) -> VertexKind {
+    pub fn kind(&self) -> VertexKind {
         match self {
             LocatedNode::Phi { .. } => VertexKind::Phi,
             LocatedNode::Cst { .. } => VertexKind::Cst,
@@ -797,29 +665,11 @@ impl From<LocatedNode<'_>> for dot_structures::Node {
     }
 }
 
-/// Encodes the input as either a [`Plain`](dot_structures::Id::Plain) or [`Escaped`](dot_structures::Id::Escaped) id.
-fn encode_id(input: impl AsRef<str>) -> dot_structures::Id {
-    let input = input.as_ref();
-
-    // (The char ranges below are from the official DOT language grammar spec)
-    let needs_escape = input
-        .chars()
-        .any(|ch| !matches!(ch, '0'..='9' | 'a'..='z' | 'A'..='Z' | '_' ));
-    if needs_escape {
-        let mut text = input.replace("\"", "\\\"");
-        text = text.replace("\r\n", "\\r\\n");
-        text = text.replace("\n", "\\n");
-        dot_structures::Id::Escaped(format!("\"{}\"", text))
-    } else {
-        dot_structures::Id::Plain(input.to_string())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::common::compile_script;
     use crate::analysis::ddsa_lib::js::flow::graph::{
-        id_str, Digraph, Edge, EdgeKind, V8DotGraph, VertexId, VertexKind, KIND,
+        id_str, Digraph, DigraphCollection, Edge, EdgeKind, V8DotGraph, VertexId, VertexKind, KIND,
     };
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
     use crate::analysis::ddsa_lib::JsRuntime;
@@ -954,10 +804,10 @@ graph.adjacencyList;
 ";
         let js_script = compile_script(&mut rt.v8_handle_scope(), &js_script).unwrap();
 
-        let vertex_transformer = |node: &dot_structures::Node| -> dot_structures::Node {
+        let vertex_transformer = |node: &dot_structures::Node| -> Option<dot_structures::Node> {
             let vid = id_str(&node.id.0).parse::<u32>().unwrap();
             let vertex = TestVertex::from_js_id(vid);
-            vertex.to_dot()
+            Some(vertex.to_dot())
         };
 
         let (full, full_transposed) = rt
@@ -967,10 +817,10 @@ graph.adjacencyList;
                     let arr = v8::Local::<v8::Array>::try_from(val).unwrap();
                     let full =
                         v8::Local::<v8::Map>::try_from(arr.get_index(sc, 0).unwrap()).unwrap();
-                    let full = V8DotGraph::new(sc, full);
+                    let full = V8DotGraph::try_new(sc, full).unwrap();
                     let full_transposed =
                         v8::Local::<v8::Map>::try_from(arr.get_index(sc, 1).unwrap()).unwrap();
-                    let full_transposed = V8DotGraph::new(sc, full_transposed);
+                    let full_transposed = V8DotGraph::try_new(sc, full_transposed).unwrap();
                     (
                         full.to_dot("full", vertex_transformer),
                         full_transposed.to_dot("full_transposed", vertex_transformer),
@@ -1249,5 +1099,92 @@ strict digraph {
             full_transposed, ..
         } = construct_js_graphs(original_graph);
         assert_eq!(full_transposed, dot_graph(expected_graph));
+    }
+
+    /// GraphCollection ensures globally unique phi node ids.
+    /// Additionally, `label` is added for each graph/subgraph.
+    #[test]
+    fn graph_collection_globally_unique_phis() {
+        // language=dot
+        let graph_a = r#"
+strict digraph {
+    a_initial; a_alt0; a_alt1;
+    y0 [text=y,line=2]
+    y1 [text=y,line=4]
+    y2 [text=y,line=6]
+    y3 [text=y,line=8]
+    phi0 [vkind=phi]
+    y0 -> a_initial [kind=assignment]
+    y1 -> a_alt0 [kind=assignment]
+    y2 -> a_alt1 [kind=assignment]
+    phi0 -> y1 [kind=dependence]
+    phi0 -> y2 [kind=dependence]
+    y3 -> phi0 [kind=dependence]
+}
+        "#;
+        let graph_a = graphviz_rust::parse(graph_a).unwrap();
+
+        // language=dot
+        let graph_b = r#"
+strict digraph {
+    b_initial; b_alt0; b_alt1;
+    x0 [text=x,line=22]
+    x1 [text=x,line=24]
+    x2 [text=x,line=26]
+    x3 [text=x,line=28]
+    phi0 [vkind=phi]
+    x0 -> b_initial [kind=assignment]
+    x1 -> b_alt0 [kind=assignment]
+    x2 -> b_alt1 [kind=assignment]
+    phi0 -> x1 [kind=dependence]
+    phi0 -> x2 [kind=dependence]
+    x3 -> phi0 [kind=dependence]
+}
+        "#;
+        let graph_b = graphviz_rust::parse(graph_b).unwrap();
+
+        let mut collection = DigraphCollection::new("TestPhi");
+        collection.add_graph("GraphA", graph_a);
+        collection.add_graph("GraphB", graph_b);
+
+        // language=dot
+        let expected = "\
+strict digraph TestPhi {
+    label=TestPhi
+    subgraph \"cluster: GraphA\" {
+        label=GraphA
+        a_initial; a_alt0; a_alt1;
+        y0 [text=y,line=2]
+        y1 [text=y,line=4]
+        y2 [text=y,line=6]
+        y3 [text=y,line=8]
+        phi0_0 [vkind=phi]
+        y0 -> a_initial [kind=assignment]
+        y1 -> a_alt0 [kind=assignment]
+        y2 -> a_alt1 [kind=assignment]
+        phi0_0 -> y1 [kind=dependence]
+        phi0_0 -> y2 [kind=dependence]
+        y3 -> phi0_0 [kind=dependence]
+    }
+
+    subgraph \"cluster: GraphB\" {
+        label=GraphB
+        b_initial; b_alt0; b_alt1;
+        x0 [text=x,line=22]
+        x1 [text=x,line=24]
+        x2 [text=x,line=26]
+        x3 [text=x,line=28]
+        phi0_1 [vkind=phi]
+        x0 -> b_initial [kind=assignment]
+        x1 -> b_alt0 [kind=assignment]
+        x2 -> b_alt1 [kind=assignment]
+        phi0_1 -> x1 [kind=dependence]
+        phi0_1 -> x2 [kind=dependence]
+        x3 -> phi0_1 [kind=dependence]
+    }
+}
+";
+        let expected = graphviz_rust::parse(expected).unwrap();
+        assert_eq!(collection.to_digraph(), expected);
     }
 }

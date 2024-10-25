@@ -7,7 +7,7 @@ import { MethodFlow } from "ext:ddsa_lib/flow/java";
 import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
 import { TreeSitterFieldChildNode } from "ext:ddsa_lib/ts_node";
 
-const { op_ts_node_named_children, op_ts_node_parent } = Deno.core.ops;
+const { op_digraph_adjacency_list_to_dot, op_ts_node_named_children, op_ts_node_parent } = Deno.core.ops;
 
 /**
  * The main entrypoint to the ddsa JavaScript runtime's API.
@@ -104,5 +104,39 @@ export class DDSA {
         ////////
 
         return _findTaintFlows(transposed, vertexId(sourceNode), true);
+    }
+}
+
+/**
+ * The entrypoint to the private (unpublished) API of the ddsa JavaScript runtime.
+ * This API has no guarantee of stability.
+ */
+export class DDSAPrivate {
+    /**
+     * Converts a {@link Digraph} to its canonical DOT form with the provided graph name.
+     * @param {Digraph} graph
+     * @param {string} name
+     *
+     * @returns {string}
+     */
+    graphToDOT(graph, name) {
+        return op_digraph_adjacency_list_to_dot(graph.adjacencyList, name) ?? "";
+    }
+
+    /**
+     * Generates a {@link Digraph} from CST node, returning `undefined` if the node is not
+     * a "method_declaration" node.
+     *
+     * NOTE: This method assumes it is running in a Java context.
+     *
+     * @param {TreeSitterNode}
+     * @returns {Digraph | undefined}
+     */
+    generateJavaFlowGraph(node) {
+        if (node?.cstType !== "method_declaration") {
+            return undefined;
+        }
+        const methodFlow = new MethodFlow(node);
+        return methodFlow.graph;
     }
 }
