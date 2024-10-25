@@ -3,7 +3,7 @@ name: Release new version
 on:
   push:
     tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
+      - '**'
 
 permissions:
   contents: write
@@ -105,9 +105,23 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    outputs:
+      release: ${{ steps.set-release.outputs.release }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set release variable
+        id: set-release
+        run: |
+          mainCount=$(git branch -r --contains ${{ github.ref }} --format "%(refname:lstrip=3)" | grep -xc main)
+          if [[ $GITHUB_REF =~ ^refs/tags/[0-9]+.[0-9]+.[0-9]+$ && $mainCount -gt 0 ]]; then
+            echo "release=true" >> $GITHUB_OUTPUT
+          else
+            echo "release=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -119,8 +133,19 @@ jobs:
         working-directory: artifacts
 
       - name: Create release
+        if: ${{ steps.set-release.outputs.release == 'true' }}
         run: |-
           gh release create --generate-notes  \
+            ${{ github.ref_name }} \
+            versions.json \
+            artifacts/*/datadog-static-analyzer*.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Create pre-release
+        if: ${{ steps.set-release.outputs.release == 'false' }}
+        run: |-
+          gh release create --generate-notes --prerelease \
             ${{ github.ref_name }} \
             versions.json \
             artifacts/*/datadog-static-analyzer*.zip
@@ -130,6 +155,8 @@ jobs:
   ghcr:
     needs: release
     uses: './.github/workflows/ghcr.yml'
+    with:
+      release: ${{ needs.release.outputs.release == 'true' }}
     permissions:
       contents: read
       packages: write

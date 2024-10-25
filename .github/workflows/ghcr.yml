@@ -2,6 +2,12 @@ name: Publish to GHCR
 
 on:
   workflow_call:
+    inputs:
+      release:
+        description: "Whether this is a release build or not"
+        required: true
+        default: false
+        type: boolean
   workflow_dispatch:
 
 env:
@@ -39,6 +45,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            latest=${{ inputs.release }}
+          tags: |
+            type=raw,value=latest,enable=${{ inputs.release }}
+            type=ref,event=tag
+            type=sha
 
       - name: Build and push Docker image
         id: push
