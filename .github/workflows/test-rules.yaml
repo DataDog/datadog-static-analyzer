@@ -21,10 +21,6 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
-      - uses: ./.github/actions/rust-cache
-        with:
-          cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: release
       - name: Test all production rules
         run: |
           cargo build --profile release-dev --bin datadog-static-analyzer && \
@@ -43,10 +39,6 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           components: clippy
-      - uses: ./.github/actions/rust-cache
-        with:
-          cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: release
       - name: Test all staging rules
         run: |
           cargo build --profile release-dev --bin datadog-static-analyzer && \

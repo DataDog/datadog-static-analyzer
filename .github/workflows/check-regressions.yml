@@ -42,11 +42,6 @@ jobs:
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - uses: ./.github/actions/rust-cache
-        with:
-          cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: regression-test
-
       - name: Checkout test repositories
         uses: actions/checkout@v4
         with:
