@@ -8,7 +8,6 @@ on:
         required: true
         default: false
         type: boolean
-  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
