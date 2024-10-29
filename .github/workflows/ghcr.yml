@@ -1,10 +1,13 @@
 name: Publish to GHCR
 
 on:
-  release:
-    types:
-      - published
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      release:
+        description: "Whether this is a release build or not"
+        required: true
+        default: false
+        type: boolean
 
 env:
   REGISTRY: ghcr.io
@@ -42,9 +45,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
-            latest=false
+            latest=${{ inputs.release }}
           tags: |
-            type=raw,value=latest,enable=${{ !github.event.release.prerelease && github.event_name == 'release' }}
+            type=raw,value=latest,enable=${{ inputs.release }}
             type=ref,event=tag
             type=sha
 

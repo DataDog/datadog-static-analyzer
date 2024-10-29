@@ -1,10 +1,15 @@
+name: Test Rules (staging + prod)
+
 on:
   push:
+    branches:
+      - "**"
   pull_request:
   schedule:
     # run every day at 9am UTC
     - cron:  '0 9 * * *'
-name: Test Rules (staging + prod)
+  workflow_call:
+
 jobs:
   production_rules:
     runs-on: ubuntu-latest
@@ -12,15 +17,10 @@ jobs:
       DD_SITE: datadoghq.com
     steps:
       - uses: actions/checkout@v4
-      - name: Install Stable + Rustfmt + Clippy
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.10.1
         with:
-            toolchain: stable
-            components: clippy
-      - uses: ./.github/actions/rust-cache
-        with:
-          cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: release
+          components: clippy
       - name: Test all production rules
         run: |
           cargo build --profile release-dev --bin datadog-static-analyzer && \
@@ -35,15 +35,10 @@ jobs:
       DD_SITE: datad0g.com
     steps:
       - uses: actions/checkout@v4
-      - name: Install Stable + Rustfmt + Clippy
-        uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1.10.1
         with:
-          toolchain: stable
           components: clippy
-      - uses: ./.github/actions/rust-cache
-        with:
-          cargo-target: x86_64-unknown-linux-gnu
-          cargo-cache-key: release
       - name: Test all staging rules
         run: |
           cargo build --profile release-dev --bin datadog-static-analyzer && \
