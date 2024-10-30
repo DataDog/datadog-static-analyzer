@@ -114,6 +114,7 @@ pub enum RocketPreparation {
 /// This function can panic or end the process in the case keep-alive is on and:
 /// -  graceful exit doesn't work (abort)
 /// -  the keep-alive channel is disconnected (exit code 70)
+///
 /// Although it should not happen frequently, it's certainly a possibility.
 pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
     let args: Vec<String> = env::args().collect();
@@ -160,10 +161,11 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
     // server state
     tracing::debug!("Preparing the server state and rocket configuration");
     let mut server_state = ServerState::new(matches.opt_str("s"), matches.opt_present("e"));
-    let mut rocket_configuration = rocket::config::Config::default();
-
-    // disable rocket colors and emojis if we're logging to a file as we will be using json format
-    rocket_configuration.cli_colors = !matches.opt_present("l");
+    let mut rocket_configuration = rocket::config::Config {
+        // disable rocket colors and emojis if we're logging to a file as we will be using json format
+        cli_colors: !matches.opt_present("l"),
+        ..Default::default()
+    };
 
     // set up the port if present
     if let Some(port_str) = matches.opt_str("p") {
