@@ -1,9 +1,10 @@
-use getopts::Options;
+use getopts::{Fail, Options};
 use kernel::constants::{CARGO_VERSION, VERSION};
 use rocket::{Build, Rocket, Shutdown};
 use std::sync::mpsc::{channel, Sender};
 use std::time::Duration;
 use std::{env, process, thread};
+use thiserror::Error;
 
 use super::state::ServerState;
 use super::utils::get_current_timestamp_ms;
@@ -37,12 +38,30 @@ fn get_opts() -> Options {
     opts
 }
 
+#[derive(Debug, Error)]
+pub enum CliError {
+    #[error("Error parsing arguments: {0:?}")]
+    Parsing(#[from] Fail),
+    #[error("Invalid port argument {0:?}. It must be a number.")]
+    InvalidPort(String),
+}
+
+pub enum RocketPreparation {
+    ServerInfo {
+        rocket: Rocket<Build>,
+        state: ServerState,
+        tx_shutdown: Sender<Shutdown>,
+    },
+    NoServerInteraction,
+}
+
 /// Prepares the rocket and sets the configuration and the shared state.
 ///
 /// # Panics
 ///
-/// This function can panic or end the process in case the configuration is not correct.
-pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
+/// This function can panic or end the process in case keep-alive is on and graceful exit doesn't work.
+/// It should not happen frequently, but it's one of the possibilities.
+pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
     let args: Vec<String> = env::args().collect();
     let program = args[0].clone();
     let opts = get_opts();
@@ -50,19 +69,18 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
         Err(f) => {
-            eprintln!("error when parsing arguments: {}", f);
-            process::exit(22); // invalid argument code
+            return Err(f.into());
         }
     };
 
     if matches.opt_present("v") {
         println!("Version: {}, revision: {}", CARGO_VERSION, VERSION);
-        process::exit(0);
+        return Ok(RocketPreparation::NoServerInteraction);
     }
 
     if matches.opt_present("h") {
         print_usage(&program, &opts);
-        process::exit(0);
+        return Ok(RocketPreparation::NoServerInteraction);
     }
 
     // server state
@@ -75,8 +93,7 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
         if let Some(port_str) = port_opt {
             let port_res = port_str.parse::<u16>();
             if port_res.is_err() {
-                eprintln!("Invalid port argument");
-                process::exit(1)
+                return Err(CliError::InvalidPort(port_str));
             }
             rocket_configuration.port = port_res.unwrap();
         }
@@ -109,6 +126,8 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
             let last_ping_request_timestamp_ms =
                 server_state.last_ping_request_timestamp_ms.clone();
 
+            // TODO: (ROB) handle the case where the thread can die/error
+
             // thread that periodically checks if we should exit the server
             thread::spawn(move || {
                 let shutdown_handle: Shutdown = rx.recv().unwrap();
@@ -135,8 +154,14 @@ pub fn prepare_rocket() -> (Rocket<Build>, ServerState, Sender<Shutdown>) {
         }
     }
 
+    // TODO: (ROB) add tracing subscriber here!
+
     let state = server_state.clone();
     let rocket = rocket::custom(rocket_configuration).manage(state);
 
-    (rocket, server_state, tx)
+    Ok(RocketPreparation::ServerInfo {
+        rocket,
+        state: server_state,
+        tx_shutdown: tx,
+    })
 }
