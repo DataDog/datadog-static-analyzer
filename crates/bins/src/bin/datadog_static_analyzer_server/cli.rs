@@ -64,7 +64,7 @@ fn get_log_dir() -> PathBuf {
                 // Fallback in case TEMP is not set
                 PathBuf::from("C:\\Temp")
             });
-        log_dir.push("static-analysis-server/logs");
+        log_dir.push(path);
         log_dir
     }
 }
