@@ -18,7 +18,7 @@ git2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 derive_builder = { workspace = true }
-num_cpus = { workspace = true}
+num_cpus = { workspace = true }
 serde-sarif = { workspace = true }
 sha2 = { workspace = true }
 uuid = { workspace = true }
@@ -29,7 +29,7 @@ percent-encoding = "2.3.1"
 prettytable-rs = "0.10.0"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 valico = "4.0.0"
-walkdir = "2.3.3"
+walkdir = "2.5.0"
 itertools = "0.12.1"
 
 [dev-dependencies]
