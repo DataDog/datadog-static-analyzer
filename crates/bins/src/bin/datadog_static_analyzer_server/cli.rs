@@ -1,10 +1,14 @@
 use getopts::{Fail, Options};
 use kernel::constants::{CARGO_VERSION, VERSION};
 use rocket::{Build, Rocket, Shutdown};
+use std::path::PathBuf;
 use std::sync::mpsc::{channel, Sender};
+use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process, thread};
 use thiserror::Error;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::EnvFilter;
 
 use super::state::ServerState;
 use super::utils::get_current_timestamp_ms;
@@ -33,9 +37,20 @@ fn get_opts() -> Options {
     opts.optflag("e", "enable-shutdown", "enables the shutdown endpoint");
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the tool version");
+    opts.optflag(
+        "l",
+        "logs",
+        "Enables logs to a file. Usually /tmp/static-analyzer-server/logs",
+    );
     // TODO (JF): Remove this when releasing 0.3.8
     opts.optflag("", "ddsa-runtime", "(deprecated)");
     opts
+}
+
+fn get_log_dir() -> PathBuf {
+    let mut log_dir = env::temp_dir();
+    log_dir.push("static-analysis-server/logs");
+    log_dir
 }
 
 #[derive(Debug, Error)]
@@ -44,6 +59,8 @@ pub enum CliError {
     Parsing(#[from] Fail),
     #[error("Invalid port argument {0:?}. It must be a number.")]
     InvalidPort(String),
+    #[error("Invalid address argument {0:?}.")]
+    InvalidAddress(String),
 }
 
 pub enum RocketPreparation {
@@ -51,6 +68,7 @@ pub enum RocketPreparation {
         rocket: Rocket<Build>,
         state: ServerState,
         tx_shutdown: Sender<Shutdown>,
+        guard: Option<Arc<WorkerGuard>>,
     },
     NoServerInteraction,
 }
@@ -66,12 +84,7 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
     let program = args[0].clone();
     let opts = get_opts();
 
-    let matches = match opts.parse(&args[1..]) {
-        Ok(m) => m,
-        Err(f) => {
-            return Err(f.into());
-        }
-    };
+    let matches = opts.parse(&args[1..])?;
 
     if matches.opt_present("v") {
         println!("Version: {}, revision: {}", CARGO_VERSION, VERSION);
@@ -83,26 +96,50 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
         return Ok(RocketPreparation::NoServerInteraction);
     }
 
+    // initialize the tracing subscriber here
+    // we're only interested in the server logs
+    let guard = if matches.opt_present("l") {
+        // tracing with logs
+        let log_dir = get_log_dir();
+        let pid = std::process::id();
+        let file_appender = tracing_appender::rolling::daily(log_dir, format!("server.{pid}.log"));
+        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+        // check levels compatibility with from default env
+        tracing_subscriber::fmt()
+            // .with_env_filter(EnvFilter::from_default_env())
+            .with_max_level(tracing::Level::TRACE)
+            .json()
+            .with_writer(non_blocking)
+            .init();
+        Some(Arc::new(guard))
+    } else {
+        // regular tracing subscriber
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::from_default_env())
+            .init();
+        None
+    };
+
     // server state
     let mut server_state = ServerState::new(matches.opt_str("s"), matches.opt_present("e"));
     let mut rocket_configuration = rocket::config::Config::default();
 
     // Set up the port in rocket configuration if --port is passed
-    if matches.opt_present("p") {
-        let port_opt = matches.opt_str("p");
-        if let Some(port_str) = port_opt {
-            let port_res = port_str.parse::<u16>();
-            if port_res.is_err() {
-                return Err(CliError::InvalidPort(port_str));
-            }
-            rocket_configuration.port = port_res.unwrap();
+    if let Some(port_str) = matches.opt_str("p") {
+        rocket_configuration.port = match port_str.parse::<u16>() {
+            Ok(port) => port,
+            Err(_e) => return Err(CliError::InvalidPort(port_str)),
         }
     }
 
     if matches.opt_present("a") {
         let addr_opt = matches.opt_str("a");
         if let Some(addr) = addr_opt {
-            rocket_configuration.address = addr.parse().expect("should be able to parse addr");
+            rocket_configuration.address = match addr.parse() {
+                Ok(parsed_addr) => parsed_addr,
+                Err(_) => return Err(CliError::InvalidAddress(addr)),
+            };
         }
     }
 
@@ -117,6 +154,15 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
     //   1. Get the timeout value as parameter
     //   2. Start the thread that checks every 5 seconds if we should exit the server
     if matches.opt_present("k") {
+        // TODO: (ROB) review this
+        // let timeout_sec = match keepalive_timeout.parse::<u128>() {
+        //     Ok(sec) => sec,
+        //     Err(_) => {
+        //         eprintln!("Invalid keep-alive timeout value");
+        //         process::exit(1);
+        //     }
+        // };
+
         let keepalive_timeout_sec = matches.opt_str("k");
 
         if let Some(keepalive_timeout) = keepalive_timeout_sec {
@@ -154,8 +200,6 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
         }
     }
 
-    // TODO: (ROB) add tracing subscriber here!
-
     let state = server_state.clone();
     let rocket = rocket::custom(rocket_configuration).manage(state);
 
@@ -163,5 +207,6 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
         rocket,
         state: server_state,
         tx_shutdown: tx,
+        guard,
     })
 }
