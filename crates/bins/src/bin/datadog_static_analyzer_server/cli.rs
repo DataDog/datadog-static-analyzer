@@ -41,7 +41,7 @@ fn get_opts() -> Options {
     opts.optopt(
         "l",
         "logs",
-        "Enables logs to a file. Usually /tmp/static-analyzer-server/logs",
+        "Enables log rotation and saves logs to a file in a system temp folder. Options: minutely, hourly, daily",
         "[minutely, hourly, daily]",
     );
 
