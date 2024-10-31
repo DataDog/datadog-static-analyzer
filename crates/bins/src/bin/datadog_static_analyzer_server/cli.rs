@@ -11,6 +11,10 @@ use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::RollingFileAppender;
 use tracing_subscriber::EnvFilter;
 
+use crate::datadog_static_analyzer_server::error_codes::{
+    ERROR_CHANNEL_DISCONNECTED, ERROR_SHUTDOWN_FAILURE,
+};
+
 use super::state::ServerState;
 use super::utils::get_current_timestamp_ms;
 
@@ -237,7 +241,7 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
                                 "No graceful exit on first attempt. Trying another channel"
                             );
                             // signal the main thread to kill itself. wait for 10 secs and use abort if needed.
-                            let _ = tx_keep_alive_error.send(101).await;
+                            let _ = tx_keep_alive_error.send(ERROR_SHUTDOWN_FAILURE).await;
                             thread::sleep(Duration::from_secs(10));
                             tracing::error!(
                                 "No graceful exit on suicide channel.  Aborting the process"
@@ -249,7 +253,7 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
                 } else {
                     tracing::error!("CRITICAL: The channel has disconnected");
                     // if the channel dies we're going to exit the process with a custom error code.
-                    let _ = tx_keep_alive_error.send(100).await;
+                    let _ = tx_keep_alive_error.send(ERROR_CHANNEL_DISCONNECTED).await;
                 };
             });
         }
