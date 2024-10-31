@@ -1,9 +1,9 @@
 use getopts::{Fail, Options};
 use kernel::constants::{CARGO_VERSION, VERSION};
+use rocket::tokio::sync::mpsc::{channel, Sender};
+use rocket::tokio::time::sleep;
 use rocket::{Build, Rocket, Shutdown};
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, Sender};
-use std::sync::Arc;
 use std::time::Duration;
 use std::{env, process, thread};
 use thiserror::Error;
@@ -101,8 +101,8 @@ pub enum RocketPreparation {
     ServerInfo {
         rocket: Box<Rocket<Build>>,
         state: ServerState,
-        tx_shutdown: Sender<Shutdown>,
-        guard: Option<Arc<WorkerGuard>>,
+        tx_rocket_shutdown: rocket::tokio::sync::mpsc::Sender<Shutdown>,
+        guard: Option<WorkerGuard>,
     },
     NoServerInteraction,
 }
@@ -113,10 +113,8 @@ pub enum RocketPreparation {
 ///
 /// This function can panic or end the process in the case keep-alive is on and:
 /// -  graceful exit doesn't work (abort)
-/// -  the keep-alive channel is disconnected (exit code 70)
 ///
-/// Although it should not happen frequently, it's certainly a possibility.
-pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
+pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparation, CliError> {
     let args: Vec<String> = env::args().collect();
     let program = &args[0];
     let opts = get_opts();
@@ -149,7 +147,7 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
             .json()
             .with_writer(non_blocking)
             .init();
-        Some(Arc::new(guard))
+        Some(guard)
     } else {
         // regular tracing subscriber
         tracing_subscriber::fmt()
@@ -197,7 +195,7 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
     }
 
     // channel used to send the shutdown handler so that we can exit the server gracefully
-    let (tx, rx) = channel();
+    let (tx_rocket_shutdown, mut rx_rocket_shutdown) = channel::<Shutdown>(1);
 
     // if we set up the keepalive mechanism (option -k)
     //   1. Get the timeout value as parameter
@@ -213,43 +211,46 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
             let last_ping_request_timestamp_ms =
                 server_state.last_ping_request_timestamp_ms.clone();
 
-            let cloned_guard = guard.clone();
-
             // thread that periodically checks if we should exit the server
-            thread::spawn(move || {
-                let Ok(shutdown_handle): Result<Shutdown, _> = rx.recv() else {
+            rocket::tokio::spawn(async move {
+                if let Some(shutdown_handle) = rx_rocket_shutdown.recv().await {
+                    tracing::info!("Starting the keep alive loop");
+
+                    loop {
+                        // get the latest request timestamp and the current one
+                        // remember that the `last_ping_request_timestamp_ms` state will be written by a fairing on every successful request
+                        let latest_timestamp = last_ping_request_timestamp_ms
+                            .try_read()
+                            .map(|x| *x)
+                            .unwrap_or_default();
+
+                        let current_timestamp = get_current_timestamp_ms();
+
+                        if latest_timestamp > 0 && current_timestamp > latest_timestamp + timeout_ms
+                        {
+                            tracing::info!("Exiting because of timeout. Trying to exit gracefully");
+                            shutdown_handle.notify();
+                            // we give 10 seconds for the process to terminate
+                            // if it does not, we abort
+                            sleep(Duration::from_secs(10)).await;
+                            tracing::error!(
+                                "No graceful exit on first attempt. Trying another channel"
+                            );
+                            // signal the main thread to kill itself. wait for 10 secs and use abort if needed.
+                            let _ = tx_keep_alive_error.send(101).await;
+                            thread::sleep(Duration::from_secs(10));
+                            tracing::error!(
+                                "No graceful exit on suicide channel.  Aborting the process"
+                            );
+                            process::abort();
+                        }
+                        thread::sleep(Duration::from_secs(5));
+                    }
+                } else {
                     tracing::error!("CRITICAL: The channel has disconnected");
                     // if the channel dies we're going to exit the process with a custom error code.
-                    process::exit(100);
+                    let _ = tx_keep_alive_error.send(100).await;
                 };
-
-                tracing::info!("Starting the keep alive loop");
-
-                loop {
-                    // get the latest request timestamp and the current one
-                    // remember that the `last_ping_request_timestamp_ms` state will be written by a fairing on every successful request
-                    let latest_timestamp = last_ping_request_timestamp_ms
-                        .try_read()
-                        .map(|x| *x)
-                        .unwrap_or_default();
-
-                    let current_timestamp = get_current_timestamp_ms();
-
-                    if latest_timestamp > 0 && current_timestamp > latest_timestamp + timeout_ms {
-                        eprintln!("Exiting because of timeout. Trying to exit gracefully");
-                        tracing::info!("Exiting because of timeout. Trying to exit gracefully");
-                        shutdown_handle.notify();
-                        // we give 10 seconds for the process to terminate
-                        // if it does not, we abort
-                        thread::sleep(Duration::from_secs(10));
-                        eprintln!("No graceful exit, aborting the process");
-                        tracing::error!("No graceful exit, aborting the process");
-                        // dropping the guard here to flush the pending tracing messages before exiting abruptly
-                        drop(cloned_guard);
-                        process::abort();
-                    }
-                    thread::sleep(Duration::from_secs(5));
-                }
             });
         }
     }
@@ -260,7 +261,7 @@ pub fn prepare_rocket() -> Result<RocketPreparation, CliError> {
     Ok(RocketPreparation::ServerInfo {
         rocket: Box::new(rocket),
         state: server_state,
-        tx_shutdown: tx,
+        tx_rocket_shutdown,
         guard,
     })
 }
