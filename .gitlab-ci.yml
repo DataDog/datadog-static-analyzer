@@ -23,7 +23,7 @@ test-and-build-arm64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
     KUBERNETES_MEMORY_REQUEST: 6Gi
-    KUBERNETES_MEMORY_LIMIT: 8Gi
+    KUBERNETES_MEMORY_LIMIT: 12Gi
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
   tags:
@@ -48,7 +48,7 @@ test-and-build-amd64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
     KUBERNETES_MEMORY_REQUEST: 6Gi
-    KUBERNETES_MEMORY_LIMIT: 8Gi
+    KUBERNETES_MEMORY_LIMIT: 12Gi
     KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
   tags:
