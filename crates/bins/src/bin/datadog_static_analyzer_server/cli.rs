@@ -101,7 +101,7 @@ pub enum RocketPreparation {
     ServerInfo {
         rocket: Box<Rocket<Build>>,
         state: ServerState,
-        tx_rocket_shutdown: rocket::tokio::sync::mpsc::Sender<Shutdown>,
+        tx_rocket_shutdown: Sender<Shutdown>,
         guard: Option<WorkerGuard>,
     },
     NoServerInteraction,
