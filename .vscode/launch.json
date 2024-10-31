@@ -20,6 +20,9 @@
         }
       },
       "args": ["-p", "49159", "-e"],
+      "env": {
+        "RUST_LOG": "trace"
+      },
       "cwd": "${workspaceFolder}"
     },
     {

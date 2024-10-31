@@ -89,6 +89,7 @@ impl Fairing for KeepAlive {
             if state.is_keepalive_enabled {
                 // mutate the keep alive ms
                 if let Ok(mut x) = state.last_ping_request_timestamp_ms.try_write() {
+                    tracing::trace!("Updating the last_ping_request_timestamp_ms");
                     *x = get_current_timestamp_ms();
                 }
             }
