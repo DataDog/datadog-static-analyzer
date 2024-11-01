@@ -24,7 +24,6 @@ test-and-build-arm64:
   variables:
     KUBERNETES_MEMORY_REQUEST: 6Gi
     KUBERNETES_MEMORY_LIMIT: 12Gi
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
   tags:
     - arch:arm64
@@ -49,7 +48,6 @@ test-and-build-amd64:
   variables:
     KUBERNETES_MEMORY_REQUEST: 6Gi
     KUBERNETES_MEMORY_LIMIT: 12Gi
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
   tags:
     - arch:amd64
@@ -64,7 +62,6 @@ trigger_internal_image:
     strategy: depend
   variables:
     DD_IMAGES_BRANCH: master
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: images
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
     RELEASE_TAG: ${CI_COMMIT_SHORT_SHA}
