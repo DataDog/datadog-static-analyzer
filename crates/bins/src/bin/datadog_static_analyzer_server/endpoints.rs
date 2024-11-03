@@ -1,17 +1,19 @@
+use std::path::Path;
+
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
 use rocket::{
     fs::NamedFile,
     futures::FutureExt,
     http::Status,
     serde::json::{json, Json, Value},
-    Build, Error, Rocket, Shutdown, State,
+    Build, Rocket, Shutdown, State,
 };
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
 };
 use server::request::process_analysis_request;
 use server::tree_sitter_tree::process_tree_sitter_tree_request;
-use std::{path::Path, process::exit, sync::mpsc::Sender};
+use thiserror::Error;
 
 use crate::datadog_static_analyzer_server::state::ServerState;
 
@@ -181,30 +183,40 @@ fn mount_endpoints(rocket: Rocket<Build>) -> Rocket<Build> {
         .mount("/ide", ide_routes())
 }
 
+#[derive(Debug, Error)]
+pub enum EndpointError {
+    #[error("Error trying to start the rocket thread")]
+    JoinHandleError,
+    #[error("Rocket error {0:?}")]
+    RocketError(#[from] rocket::Error),
+    #[error("Error from exit code {0:?}")]
+    ExitCode(i32),
+}
+
+impl From<i32> for EndpointError {
+    fn from(value: i32) -> Self {
+        Self::ExitCode(value)
+    }
+}
+
+/// Starts the rocket with endpoints
 pub async fn launch_rocket_with_endpoints(
     rocket: Rocket<Build>,
-    tx: Sender<Shutdown>,
-) -> Result<(), Error> {
+    tx_rocket_shutdown: rocket::tokio::sync::mpsc::Sender<Shutdown>,
+) -> Result<(), EndpointError> {
     let ignited = mount_endpoints(rocket).ignite().await?;
     let shutdown_handle = ignited.shutdown();
-    let rocket_handle = rocket::tokio::spawn(async {
-        let result = ignited.launch().await;
-        if let Err(e) = result {
-            eprintln!("Rocket launch error {}", e);
-            match e.kind() {
-                rocket::error::ErrorKind::Bind(_) => exit(14), // 14 (Bad Address)
-                _ => exit(1),
-            }
-        }
-    });
+    let rocket_handle = rocket::tokio::spawn(async { ignited.launch().await });
 
-    let _ = tx.send(shutdown_handle.clone());
+    let _ = tx_rocket_shutdown.send(shutdown_handle.clone()).await;
     // Will shutdown if the keep alive option has been passed
     // or if the rocket thread stops.
     rocket::futures::select! {
-        a = shutdown_handle.fuse() => a,
-        _ = rocket_handle.fuse() => ()
-    };
-
-    Ok(())
+        a = shutdown_handle.fuse() => Ok(a),
+        b = rocket_handle.fuse() => match b {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(e.into()),
+            Err(_) => Err(EndpointError::JoinHandleError),
+        }
+    }
 }
