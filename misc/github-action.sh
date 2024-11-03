@@ -13,16 +13,6 @@ if [ -z "$DD_APP_KEY" ]; then
 	exit 1
 fi
 
-if [ -z "$DD_ENV" ]; then
-	echo "DD_ENV not set. Please set this variable and try again."
-	exit 1
-fi
-
-if [ -z "$DD_SERVICE" ]; then
-	echo "DD_SERVICE not set. Please set this variable and try again."
-	exit 1
-fi
-
 if [ -z "$CPU_COUNT" ]; then
 	# the default CPU count is 2
 	CPU_COUNT=2
@@ -98,5 +88,5 @@ datadog-static-analyzer -i "$GITHUB_WORKSPACE" -g -o "$OUTPUT_FILE" -f sarif --c
 echo "Done"
 
 echo "Uploading Static Analysis Results to Datadog"
-datadog-ci sarif upload "$OUTPUT_FILE" --service "$DD_SERVICE" --env "$DD_ENV" || exit 1
+datadog-ci sarif upload "$OUTPUT_FILE" --service datadog-static-analyzer --env ci || exit 1
 echo "Done"
