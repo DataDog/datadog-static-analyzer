@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use common::model::position::Position;
-use sds::MatchStatus;
+use dd_sds::MatchStatus;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]

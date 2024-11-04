@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use common::model::diff_aware::DiffAware;
-use sds::{MatchAction, ProximityKeywordsConfig, RegexRuleConfig};
+use dd_sds::{MatchAction, ProximityKeywordsConfig, RegexRuleConfig};
 use serde::{Deserialize, Serialize};
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
