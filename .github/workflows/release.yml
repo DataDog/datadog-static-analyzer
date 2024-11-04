@@ -79,9 +79,11 @@ jobs:
       - name: Zip Rust binaries (Windows)
         if: startsWith(matrix.os, 'windows')
         run: |
-          7z a datadog-static-analyzer-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer.exe
-          7z a datadog-static-analyzer-git-hook-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer-git-hook.exe
-          7z a datadog-static-analyzer-server-${{ matrix.target }}.zip target/${{ matrix.target }}/release/datadog-static-analyzer-server.exe
+          cd target\${{ matrix.target }}\release
+          7z a datadog-static-analyzer-${{ matrix.target }}.zip datadog-static-analyzer.exe
+          7z a datadog-static-analyzer-git-hook-${{ matrix.target }}.zip datadog-static-analyzer-git-hook.exe
+          7z a datadog-static-analyzer-server-${{ matrix.target }}.zip datadog-static-analyzer-server.exe
+          move *.zip ..\..\..\
 
       - name: Upload assets
         uses: actions/upload-artifact@v4
