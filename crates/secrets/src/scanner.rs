@@ -112,8 +112,10 @@ mod tests {
             description: "super secret!".to_string(),
             pattern: "FOO(BAR|BAZ)".to_string(),
             default_included_keywords: vec![],
+            validators: Some(vec![]),
+            match_validation: None,
         }];
-        let scanner = build_sds_scanner(rules.as_slice());
+        let scanner = build_sds_scanner(rules.as_slice(), false);
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
         let matches = find_secrets(
             &scanner,

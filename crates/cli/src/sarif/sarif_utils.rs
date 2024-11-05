@@ -1297,6 +1297,8 @@ mod tests {
             description: "myfile.py".to_string(),
             pattern: "foobarbaz".to_string(),
             default_included_keywords: vec![],
+            validators: Some(vec![]),
+            match_validation: None,
         };
 
         let secret_results = vec![SecretResult {
