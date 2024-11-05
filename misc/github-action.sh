@@ -13,6 +13,14 @@ if [ -z "$DD_APP_KEY" ]; then
 	exit 1
 fi
 
+if [ -n "$DD_ENV" ]; then
+	echo "::warning title=Deprecated environment variable::DD_ENV has been set, but it is no longer functional. This warning will be removed in a future update."
+fi
+
+if [ -n "$DD_SERVICE" ]; then
+	echo "::warning title=Deprecated environment variable::DD_SERVICE has been set, but it is no longer functional. This warning will be removed in a future update."
+fi
+
 if [ -z "$CPU_COUNT" ]; then
 	# the default CPU count is 2
 	CPU_COUNT=2
