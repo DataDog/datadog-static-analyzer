@@ -96,15 +96,15 @@ impl TryFrom<SecretRuleMatchValidation>  for MatchValidationType {
                 Ok(MatchValidationType::Aws(AwsSession))
             }
             CUSTOM_HTTP_STRING => {
-                let invalid_ports: Vec<Range<u16>> = value.invalid_http_status_code.clone().unwrap_or(vec![]).iter().map(|v| {
-                    Range{start: v.start.into(), end: v.end.into()}
+                let invalid_ports: Vec<Range<u16>> = value.invalid_http_status_code.clone().unwrap_or_default().iter().map(|v| {
+                    Range{start: v.start, end: v.end}
                 }).collect();
-                let valid_ports: Vec<Range<u16>> = value.valid_http_status_code.clone().unwrap_or(vec![]).iter().map(|v| {
-                    Range{start: v.start.into(), end: v.end.into()}
+                let valid_ports: Vec<Range<u16>> = value.valid_http_status_code.clone().unwrap_or_default().iter().map(|v| {
+                    Range{start: v.start, end: v.end}
                 }).collect();
                 Ok(MatchValidationType::CustomHttp(
                     HttpValidatorConfigBuilder::new(value.endpoint.clone().unwrap())
-                        .set_hosts(value.hosts.clone().unwrap_or(vec![]))
+                        .set_hosts(value.hosts.clone().unwrap_or_default())
                         .set_invalid_http_status_code(invalid_ports)
                         .set_request_header(
                             value.clone().get_request_headers()
@@ -155,12 +155,9 @@ impl SecretRule {
         if let Some(match_validation) = &self.match_validation {
             if let Ok(mvt) = match_validation.clone().try_into() {
                 rule_config = rule_config.match_validation_type(mvt);
-            } else {
-                if use_debug {
-                    eprintln!("invalid validation: {:?}", match_validation);
-                }
+            } else if use_debug {
+                eprintln!("invalid validation: {:?}", match_validation);
             }
-
         }
 
 
