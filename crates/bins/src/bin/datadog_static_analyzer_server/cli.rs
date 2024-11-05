@@ -148,7 +148,7 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
         // tracing with logs
         let log_dir = matches
             .opt_str("d")
-            .map_or_else(get_default_log_dir, |d| d.into());
+            .map_or_else(get_default_log_dir, std::convert::Into::into);
         let file_appender = try_to_file_appender(
             log_rolling,
             log_dir,
