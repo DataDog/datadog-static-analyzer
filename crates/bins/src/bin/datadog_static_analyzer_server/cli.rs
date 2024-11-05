@@ -31,17 +31,18 @@ fn get_opts() -> Options {
         "directory for static files",
         "/path/to/directory",
     );
-    opts.optopt("p", "port", "port to run the server on", "8000");
-    opts.optopt("a", "address", "address to listen on", "127.0.0.1");
+    opts.optopt("p", "port", "Port to run the server on", "8000");
+    opts.optopt("a", "address", "Address to listen on", "127.0.0.1");
     opts.optopt(
         "k",
         "keep-alive-timeout",
-        "how many seconds without a request the server will exit",
+        "How many seconds without a request the server will exit",
         "90",
     );
-    opts.optflag("e", "enable-shutdown", "enables the shutdown endpoint");
-    opts.optflag("h", "help", "print this help");
-    opts.optflag("v", "version", "shows the tool version");
+    opts.optflag("e", "enable-shutdown", "Enables the shutdown endpoint");
+    opts.optflag("h", "help", "Print this help");
+    opts.optflag("v", "version", "Shows the tool version");
+
     opts.optopt(
         "l",
         "logs",
@@ -49,12 +50,22 @@ fn get_opts() -> Options {
         "[minutely, hourly, daily]",
     );
 
+    opts.optopt(
+        "d",
+        "logs-dir",
+        "Allows to define the directory where the logs will be saved",
+        "/tmp/static-analysis-server",
+    );
+
     // TODO (JF): Remove this when releasing 0.3.8
     opts.optflag("", "ddsa-runtime", "(deprecated)");
     opts
 }
 
-fn get_log_dir() -> PathBuf {
+fn get_log_dir(custom_dir: Option<String>) -> PathBuf {
+    if let Some(custom_dir) = custom_dir {
+        return custom_dir.into();
+    }
     let path = "static-analysis-server/logs";
     #[cfg(unix)]
     {
@@ -138,7 +149,7 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
     // initialize the tracing subscriber here as we're only interested in the server logs not the other CLI instructions
     let guard = if let Some(log_rolling) = matches.opt_str("l") {
         // tracing with logs
-        let log_dir = get_log_dir();
+        let log_dir = get_log_dir(matches.opt_str("d"));
         let file_appender = try_to_file_appender(
             log_rolling,
             log_dir,
