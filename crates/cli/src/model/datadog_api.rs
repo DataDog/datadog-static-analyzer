@@ -273,9 +273,9 @@ pub enum SecretRuleApiMatchValidationHttpMethod {
     Delete,
 }
 
-impl Into<SecretRuleMatchValidationHttpMethod> for SecretRuleApiMatchValidationHttpMethod {
-    fn into(self) -> SecretRuleMatchValidationHttpMethod {
-        match self {
+impl From<SecretRuleApiMatchValidationHttpMethod> for SecretRuleMatchValidationHttpMethod {
+    fn from(val: SecretRuleApiMatchValidationHttpMethod) -> Self {
+        match val {
             SecretRuleApiMatchValidationHttpMethod::Get => {
                 SecretRuleMatchValidationHttpMethod::Get
             }
@@ -308,19 +308,19 @@ pub struct SecretRuleApiMatchValidation {
     pub invalid_http_status_code: Option<Vec<SecretRuleApiMatchValidationHttpCode>>,
 }
 
-impl Into<SecretRuleMatchValidation> for SecretRuleApiMatchValidation {
-    fn into(self) -> SecretRuleMatchValidation {
+impl From<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
+    fn from(val: SecretRuleApiMatchValidation) -> Self {
 
 
         SecretRuleMatchValidation{
-            r#type: self.r#type,
-            endpoint: self.endpoint.clone(),
-            hosts: self.hosts.clone(),
-            request_headers: self.request_headers.map(|v| v.into()),
-            http_method: self.http_method.map(|v| v.into()),
-            timeout_seconds: self.timeout_seconds,
-            valid_http_status_code: self.valid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
-            invalid_http_status_code: self.invalid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
+            r#type: val.r#type,
+            endpoint: val.endpoint.clone(),
+            hosts: val.hosts.clone(),
+            request_headers: val.request_headers,
+            http_method: val.http_method.map(|v| v.into()),
+            timeout_seconds: val.timeout_seconds,
+            valid_http_status_code: val.valid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
+            invalid_http_status_code: val.invalid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
         }
     }
 }
@@ -343,20 +343,20 @@ pub struct SecretRuleApiType {
     pub attributes: SecretRuleApiAttributes,
 }
 
-impl Into<SecretRule> for SecretRuleApiType {
-    fn into(self) -> SecretRule {
+impl From<SecretRuleApiType> for SecretRule {
+    fn from(val: SecretRuleApiType) -> Self {
         SecretRule {
-            id: self.id.clone(),
-            name: self.attributes.name.clone(),
-            description: self.attributes.description.clone(),
-            pattern: self.attributes.pattern.clone(),
-            default_included_keywords: self
+            id: val.id.clone(),
+            name: val.attributes.name.clone(),
+            description: val.attributes.description.clone(),
+            pattern: val.attributes.pattern.clone(),
+            default_included_keywords: val
                 .attributes
                 .default_included_keywords
                 .clone()
                 .unwrap_or_default(),
-            validators: self.attributes.validators.clone(),
-            match_validation: self.attributes.match_validation.map(|v| v.into())
+            validators: val.attributes.validators.clone(),
+            match_validation: val.attributes.match_validation.map(|v| v.into())
 
         }
     }
