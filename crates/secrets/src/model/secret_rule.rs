@@ -2,14 +2,17 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use common::model::diff_aware::DiffAware;
+use dd_sds::AwsType::{AwsId, AwsSecret, AwsSession};
+use dd_sds::SecondaryValidator::JwtExpirationChecker;
+use dd_sds::{
+    AwsConfig, HttpMethod, HttpValidatorConfigBuilder, MatchAction, MatchValidationType,
+    ProximityKeywordsConfig, RegexRuleConfig, RequestHeader,
+};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::string::ToString;
-use common::model::diff_aware::DiffAware;
-use dd_sds::{HttpValidatorConfigBuilder, MatchAction, MatchValidationType, ProximityKeywordsConfig, RegexRuleConfig, HttpMethod, AwsConfig, RequestHeader};
-use dd_sds::AwsType::{AwsId, AwsSecret, AwsSession};
-use dd_sds::SecondaryValidator::JwtExpirationChecker;
-use serde::{Deserialize, Serialize};
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 const AWS_ID_STRING: &str = "AwsId";
@@ -50,7 +53,6 @@ impl From<SecretRuleMatchValidationHttpMethod> for HttpMethod {
     }
 }
 
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SecretRuleMatchValidation {
     #[serde(rename = "type")]
@@ -67,56 +69,60 @@ pub struct SecretRuleMatchValidation {
 impl SecretRuleMatchValidation {
     pub fn get_request_headers(&self) -> Vec<RequestHeader> {
         if let Some(rhs) = &self.request_headers {
-            rhs.iter().map(|(k, v)| {
-                RequestHeader{
+            rhs.iter()
+                .map(|(k, v)| RequestHeader {
                     key: k.clone(),
-                    value: v.clone()
-                }
-            }).collect()
+                    value: v.clone(),
+                })
+                .collect()
         } else {
             Vec::new()
         }
     }
 }
 
-impl TryFrom<SecretRuleMatchValidation>  for MatchValidationType {
-
-
+impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
     type Error = &'static str;
 
     fn try_from(value: SecretRuleMatchValidation) -> Result<Self, Self::Error> {
         match value.r#type.as_str() {
-            AWS_ID_STRING => {
-                Ok(MatchValidationType::Aws(AwsId))
-            }
-            AWS_SECRET_STRING => {
-                Ok(MatchValidationType::Aws(AwsSecret(AwsConfig::default())))
-            }
-            AWS_SESSION_STRING => {
-                Ok(MatchValidationType::Aws(AwsSession))
-            }
+            AWS_ID_STRING => Ok(MatchValidationType::Aws(AwsId)),
+            AWS_SECRET_STRING => Ok(MatchValidationType::Aws(AwsSecret(AwsConfig::default()))),
+            AWS_SESSION_STRING => Ok(MatchValidationType::Aws(AwsSession)),
             CUSTOM_HTTP_STRING => {
-                let invalid_ports: Vec<Range<u16>> = value.invalid_http_status_code.clone().unwrap_or_default().iter().map(|v| {
-                    Range{start: v.start, end: v.end}
-                }).collect();
-                let valid_ports: Vec<Range<u16>> = value.valid_http_status_code.clone().unwrap_or_default().iter().map(|v| {
-                    Range{start: v.start, end: v.end}
-                }).collect();
+                let invalid_ports: Vec<Range<u16>> = value
+                    .invalid_http_status_code
+                    .clone()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|v| Range {
+                        start: v.start,
+                        end: v.end,
+                    })
+                    .collect();
+                let valid_ports: Vec<Range<u16>> = value
+                    .valid_http_status_code
+                    .clone()
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|v| Range {
+                        start: v.start,
+                        end: v.end,
+                    })
+                    .collect();
                 Ok(MatchValidationType::CustomHttp(
                     HttpValidatorConfigBuilder::new(value.endpoint.clone().unwrap())
                         .set_hosts(value.hosts.clone().unwrap_or_default())
                         .set_invalid_http_status_code(invalid_ports)
-                        .set_request_header(
-                            value.clone().get_request_headers()
-                        )
+                        .set_request_header(value.clone().get_request_headers())
                         .set_valid_http_status_code(valid_ports)
                         .set_method(value.http_method.unwrap().into())
                         .build()
-                        .unwrap()
+                        .unwrap(),
                 ))
             }
 
-            _ => {Err("invalid type")}
+            _ => Err("invalid type"),
         }
     }
 }
@@ -159,7 +165,6 @@ impl SecretRule {
                 eprintln!("invalid validation: {:?}", match_validation);
             }
         }
-
 
         rule_config
     }

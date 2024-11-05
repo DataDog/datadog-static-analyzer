@@ -8,8 +8,8 @@ use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
-use itertools::Itertools;
 use dd_sds::{RuleConfig, Scanner};
+use itertools::Itertools;
 use std::sync::Arc;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from

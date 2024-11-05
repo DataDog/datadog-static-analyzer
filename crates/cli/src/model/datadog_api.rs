@@ -1,10 +1,13 @@
-use std::collections::HashMap;
 use kernel::model::common::Language;
 use kernel::model::rule::{Argument, EntityChecked, Rule, RuleCategory, RuleSeverity, RuleType};
 use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
+use secrets::model::secret_rule::{
+    SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttpCode,
+    SecretRuleMatchValidationHttpMethod,
+};
 use serde::{Deserialize, Serialize};
-use secrets::model::secret_rule::{SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod};
+use std::collections::HashMap;
 
 // Data for diff-aware scanning
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -252,7 +255,7 @@ pub struct SecretRuleApiMatchValidationHttpCode {
 
 impl From<SecretRuleApiMatchValidationHttpCode> for SecretRuleMatchValidationHttpCode {
     fn from(value: SecretRuleApiMatchValidationHttpCode) -> Self {
-        SecretRuleMatchValidationHttpCode{
+        SecretRuleMatchValidationHttpCode {
             start: value.start,
             end: value.end,
         }
@@ -276,15 +279,11 @@ pub enum SecretRuleApiMatchValidationHttpMethod {
 impl From<SecretRuleApiMatchValidationHttpMethod> for SecretRuleMatchValidationHttpMethod {
     fn from(val: SecretRuleApiMatchValidationHttpMethod) -> Self {
         match val {
-            SecretRuleApiMatchValidationHttpMethod::Get => {
-                SecretRuleMatchValidationHttpMethod::Get
-            }
+            SecretRuleApiMatchValidationHttpMethod::Get => SecretRuleMatchValidationHttpMethod::Get,
             SecretRuleApiMatchValidationHttpMethod::Post => {
                 SecretRuleMatchValidationHttpMethod::Post
             }
-            SecretRuleApiMatchValidationHttpMethod::Put => {
-                SecretRuleMatchValidationHttpMethod::Put
-            }
+            SecretRuleApiMatchValidationHttpMethod::Put => SecretRuleMatchValidationHttpMethod::Put,
             SecretRuleApiMatchValidationHttpMethod::Patch => {
                 SecretRuleMatchValidationHttpMethod::Patch
             }
@@ -310,17 +309,19 @@ pub struct SecretRuleApiMatchValidation {
 
 impl From<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
     fn from(val: SecretRuleApiMatchValidation) -> Self {
-
-
-        SecretRuleMatchValidation{
+        SecretRuleMatchValidation {
             r#type: val.r#type,
             endpoint: val.endpoint.clone(),
             hosts: val.hosts.clone(),
             request_headers: val.request_headers,
             http_method: val.http_method.map(|v| v.into()),
             timeout_seconds: val.timeout_seconds,
-            valid_http_status_code: val.valid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
-            invalid_http_status_code: val.invalid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
+            valid_http_status_code: val
+                .valid_http_status_code
+                .map(|v| v.iter().map(|w| w.clone().into()).collect()),
+            invalid_http_status_code: val
+                .invalid_http_status_code
+                .map(|v| v.iter().map(|w| w.clone().into()).collect()),
         }
     }
 }
@@ -356,8 +357,7 @@ impl From<SecretRuleApiType> for SecretRule {
                 .clone()
                 .unwrap_or_default(),
             validators: val.attributes.validators.clone(),
-            match_validation: val.attributes.match_validation.map(|v| v.into())
-
+            match_validation: val.attributes.match_validation.map(|v| v.into()),
         }
     }
 }

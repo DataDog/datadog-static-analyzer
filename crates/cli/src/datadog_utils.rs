@@ -59,11 +59,7 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
     let api_response = serde_json::from_str::<StaticAnalysisSecretsAPIResponse>(response_text);
 
     match api_response {
-        Ok(d) => Ok(d
-            .data
-            .iter()
-            .map(|v| v.clone().into())
-            .collect()),
+        Ok(d) => Ok(d.data.iter().map(|v| v.clone().into()).collect()),
         Err(e) => {
             eprintln!("Error when parsing the secret rules {e:?}");
             eprintln!("{response_text}");
