@@ -60,10 +60,7 @@ pub async fn start() {
             // launch the rocket and check if we receive a keep-alive error
             let result = rocket::tokio::select! {
                 a = endpoints::launch_rocket_with_endpoints(*rocket, tx_rocket_shutdown) => a,
-                b = rx_keep_alive_error.recv() => match b {
-                    Some(c) => Err(c.into()),
-                    _ => Err(EndpointError::ExitCode(ERROR_CHANNEL_SENDER_DROPPED))
-                },
+                b = rx_keep_alive_error.recv() => b.map_or_else(|| Err(EndpointError::ExitCode(ERROR_CHANNEL_SENDER_DROPPED)), |c| Err(c.into())),
             };
 
             if let Err(e) = result {
