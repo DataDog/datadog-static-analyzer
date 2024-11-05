@@ -62,10 +62,7 @@ fn get_opts() -> Options {
     opts
 }
 
-fn get_log_dir(custom_dir: Option<String>) -> PathBuf {
-    if let Some(custom_dir) = custom_dir {
-        return custom_dir.into();
-    }
+fn get_default_log_dir() -> PathBuf {
     let path = "static-analysis-server/logs";
     #[cfg(unix)]
     {
@@ -149,7 +146,9 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
     // initialize the tracing subscriber here as we're only interested in the server logs not the other CLI instructions
     let guard = if let Some(log_rolling) = matches.opt_str("l") {
         // tracing with logs
-        let log_dir = get_log_dir(matches.opt_str("d"));
+        let log_dir = matches
+            .opt_str("d")
+            .map_or_else(get_default_log_dir, |d| d.into());
         let file_appender = try_to_file_appender(
             log_rolling,
             log_dir,
