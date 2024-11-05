@@ -62,17 +62,7 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
         Ok(d) => Ok(d
             .data
             .iter()
-            .map(|v| SecretRule {
-                id: v.id.clone(),
-                name: v.attributes.name.clone(),
-                description: v.attributes.description.clone(),
-                pattern: v.attributes.pattern.clone(),
-                default_included_keywords: v
-                    .attributes
-                    .default_included_keywords
-                    .clone()
-                    .unwrap_or_default(),
-            })
+            .map(|v| v.clone().into())
             .collect()),
         Err(e) => {
             eprintln!("Error when parsing the secret rules {e:?}");

@@ -16,10 +16,10 @@ use std::sync::Arc;
 /// our API.
 ///
 /// Once the scanner is built, use scanner.scan() to find secrets.
-pub fn build_sds_scanner(rules: &[SecretRule]) -> Scanner {
+pub fn build_sds_scanner(rules: &[SecretRule], use_debug: bool) -> Scanner {
     let sds_rules = rules
         .iter()
-        .map(|r| r.convert_to_sds_ruleconfig().build())
+        .map(|r| r.convert_to_sds_ruleconfig(use_debug).build())
         .collect::<Vec<Arc<dyn RuleConfig>>>();
     Scanner::builder(&sds_rules)
         .build()

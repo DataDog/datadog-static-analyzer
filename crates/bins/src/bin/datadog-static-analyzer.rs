@@ -640,7 +640,7 @@ fn main() -> Result<()> {
             None
         };
 
-        let sds_scanner = build_sds_scanner(&secrets_rules);
+        let sds_scanner = build_sds_scanner(&secrets_rules, use_debug);
 
         let nb_secrets_rules: usize = secrets_rules.len();
         let nb_secrets_files = secrets_files.len();

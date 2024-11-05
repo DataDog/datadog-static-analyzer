@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use kernel::model::common::Language;
 use kernel::model::rule::{Argument, EntityChecked, Rule, RuleCategory, RuleSeverity, RuleType};
 use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
 use serde::{Deserialize, Serialize};
+use secrets::model::secret_rule::{SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod};
 
 // Data for diff-aware scanning
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -243,11 +245,94 @@ pub struct StaticAnalysisRulesAPIResponse {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiMatchValidationHttpCode {
+    pub start: u16,
+    pub end: u16,
+}
+
+impl From<SecretRuleApiMatchValidationHttpCode> for SecretRuleMatchValidationHttpCode {
+    fn from(value: SecretRuleApiMatchValidationHttpCode) -> Self {
+        SecretRuleMatchValidationHttpCode{
+            start: value.start,
+            end: value.end,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum SecretRuleApiMatchValidationHttpMethod {
+    #[serde(rename = "GET")]
+    Get,
+    #[serde(rename = "POST")]
+    Post,
+    #[serde(rename = "PATCH")]
+    Patch,
+    #[serde(rename = "PUT")]
+    Put,
+    #[serde(rename = "DELETE")]
+    Delete,
+}
+
+impl Into<SecretRuleMatchValidationHttpMethod> for SecretRuleApiMatchValidationHttpMethod {
+    fn into(self) -> SecretRuleMatchValidationHttpMethod {
+        match self {
+            SecretRuleApiMatchValidationHttpMethod::Get => {
+                SecretRuleMatchValidationHttpMethod::Get
+            }
+            SecretRuleApiMatchValidationHttpMethod::Post => {
+                SecretRuleMatchValidationHttpMethod::Post
+            }
+            SecretRuleApiMatchValidationHttpMethod::Put => {
+                SecretRuleMatchValidationHttpMethod::Put
+            }
+            SecretRuleApiMatchValidationHttpMethod::Patch => {
+                SecretRuleMatchValidationHttpMethod::Patch
+            }
+            SecretRuleApiMatchValidationHttpMethod::Delete => {
+                SecretRuleMatchValidationHttpMethod::Delete
+            }
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiMatchValidation {
+    #[serde(rename = "type")]
+    pub r#type: String,
+    pub endpoint: Option<String>,
+    pub hosts: Option<Vec<String>>,
+    pub request_headers: Option<HashMap<String, String>>,
+    pub http_method: Option<SecretRuleApiMatchValidationHttpMethod>,
+    pub timeout_seconds: Option<u64>,
+    pub valid_http_status_code: Option<Vec<SecretRuleApiMatchValidationHttpCode>>,
+    pub invalid_http_status_code: Option<Vec<SecretRuleApiMatchValidationHttpCode>>,
+}
+
+impl Into<SecretRuleMatchValidation> for SecretRuleApiMatchValidation {
+    fn into(self) -> SecretRuleMatchValidation {
+
+
+        SecretRuleMatchValidation{
+            r#type: self.r#type,
+            endpoint: self.endpoint.clone(),
+            hosts: self.hosts.clone(),
+            request_headers: self.request_headers.map(|v| v.into()),
+            http_method: self.http_method.map(|v| v.into()),
+            timeout_seconds: self.timeout_seconds,
+            valid_http_status_code: self.valid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
+            invalid_http_status_code: self.invalid_http_status_code.map(|v| v.iter().map(|w| w.clone().into()).collect()),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SecretRuleApiAttributes {
     pub name: String,
     pub description: String,
     pub pattern: String,
     pub default_included_keywords: Option<Vec<String>>,
+    pub validators: Option<Vec<String>>,
+    pub match_validation: Option<SecretRuleApiMatchValidation>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -256,6 +341,25 @@ pub struct SecretRuleApiType {
     pub id: String,
     #[serde(rename = "attributes")]
     pub attributes: SecretRuleApiAttributes,
+}
+
+impl Into<SecretRule> for SecretRuleApiType {
+    fn into(self) -> SecretRule {
+        SecretRule {
+            id: self.id.clone(),
+            name: self.attributes.name.clone(),
+            description: self.attributes.description.clone(),
+            pattern: self.attributes.pattern.clone(),
+            default_included_keywords: self
+                .attributes
+                .default_included_keywords
+                .clone()
+                .unwrap_or_default(),
+            validators: self.attributes.validators.clone(),
+            match_validation: self.attributes.match_validation.map(|v| v.into())
+
+        }
+    }
 }
 
 #[derive(Deserialize, Clone)]
