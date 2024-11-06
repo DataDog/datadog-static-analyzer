@@ -8,6 +8,7 @@ use rocket::{
     serde::json::{json, Json, Value},
     Build, Rocket, Shutdown, State,
 };
+use server::model::analysis_response::AnalysisResponse;
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
 };
@@ -109,7 +110,14 @@ fn languages(span: TraceSpan) -> Value {
 fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
     let _entered = span.enter();
     tracing::debug!("{:?}", &request.0);
-    json!(process_analysis_request(request.into_inner()))
+    let (rule_responses, errors) = match process_analysis_request(request.into_inner()) {
+        Ok(rule_responses) => (rule_responses, vec![]),
+        Err(err) => (vec![], vec![err]),
+    };
+    json!(AnalysisResponse {
+        rule_responses,
+        errors
+    })
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
