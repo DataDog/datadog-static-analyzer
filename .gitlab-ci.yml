@@ -9,8 +9,8 @@ stages:
     # Sized resources using https://app.datadoghq.com/dashboard/xff-wqx-4a2/ci-reliability-kubernetes-runner-sizing-and-diagnotic
     KUBERNETES_CPU_REQUEST: "6"
     KUBERNETES_CPU_LIMIT: "6"
-    KUBERNETES_MEMORY_REQUEST: "12Gi"
-    KUBERNETES_MEMORY_LIMIT: "12Gi"
+    KUBERNETES_MEMORY_REQUEST: "24Gi"
+    KUBERNETES_MEMORY_LIMIT: "24Gi"
     # Using non-integer CPU requests/limits to avoid the static CPU policy to be set on the helper container.
     # Static CPU policy reserves full CPU cores for containers with integer requests. It is used to isolate
     # CI job containers from each other and prevent noisy ones to starve resources on a CI node.
