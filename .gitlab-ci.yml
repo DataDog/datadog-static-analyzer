@@ -1,10 +1,29 @@
-image: 486234852809.dkr.ecr.us-east-1.amazonaws.com/ubuntu:22.04
+image: registry.ddbuild.io/ubuntu:22.04
 
 stages:
   - test
   - release
 
+.jobs-resource-allocation:
+  variables:
+    # Sized resources using https://app.datadoghq.com/dashboard/xff-wqx-4a2/ci-reliability-kubernetes-runner-sizing-and-diagnotic
+    KUBERNETES_CPU_REQUEST: "6"
+    KUBERNETES_CPU_LIMIT: "6"
+    KUBERNETES_MEMORY_REQUEST: "12Gi"
+    KUBERNETES_MEMORY_LIMIT: "12Gi"
+    # Using non-integer CPU requests/limits to avoid the static CPU policy to be set on the helper container.
+    # Static CPU policy reserves full CPU cores for containers with integer requests. It is used to isolate
+    # CI job containers from each other and prevent noisy ones to starve resources on a CI node.
+    # By using non-integer CPU request and limits for the helper container, responsible for cloning,
+    # we can leverage multi-cores to speed-up git clones while preserving isolation for the build container.
+    KUBERNETES_HELPER_CPU_REQUEST: "200m"
+    KUBERNETES_HELPER_CPU_LIMIT: "200m"
+    KUBERNETES_HELPER_MEMORY_REQUEST: "1Gi"
+    KUBERNETES_HELPER_MEMORY_LIMIT: "1Gi"
+
 test-and-build-arm64:
+  extends:
+    - .jobs-resource-allocation
   stage: test
   script:
     - apt-get update
@@ -22,14 +41,13 @@ test-and-build-arm64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
-    KUBERNETES_MEMORY_REQUEST: 6Gi
-    KUBERNETES_MEMORY_LIMIT: 12Gi
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
   tags:
     - arch:arm64
 
 test-and-build-amd64:
+  extends:
+    - .jobs-resource-allocation
   stage: test
   script:
     - apt-get update
@@ -47,9 +65,6 @@ test-and-build-amd64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
-    KUBERNETES_MEMORY_REQUEST: 6Gi
-    KUBERNETES_MEMORY_LIMIT: 12Gi
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: $CI_PROJECT_NAME
     DD_SITE: datadoghq.com
   tags:
     - arch:amd64
@@ -64,7 +79,6 @@ trigger_internal_image:
     strategy: depend
   variables:
     DD_IMAGES_BRANCH: master
-    KUBERNETES_SERVICE_ACCOUNT_OVERWRITE: images
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
     RELEASE_TAG: ${CI_COMMIT_SHORT_SHA}
