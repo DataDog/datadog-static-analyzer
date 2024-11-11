@@ -16,8 +16,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// The duration an individual execution of `v8` may run before it will be forcefully halted.
-const JAVASCRIPT_EXECUTION_TIMEOUT: Duration = Duration::from_millis(5000);
+/// The duration an individual execution of a rule may run before it will be forcefully halted.
+/// This includes the time it takes for the tree-sitter query to collect its matches, as well as
+/// the time it takes for the JavaScript rule to execute.
+const RULE_EXECUTION_TIMEOUT: Duration = Duration::from_millis(2000);
 
 thread_local! {
     /// A thread-local `JsRuntime`
@@ -200,6 +202,12 @@ where
     let tree = Arc::new(tree);
     let cst_parsing_time = now.elapsed();
 
+    let timeout = if let Some(timeout) = analysis_option.timeout {
+        Some(Duration::from_millis(timeout))
+    } else {
+        Some(RULE_EXECUTION_TIMEOUT)
+    };
+
     rules
         .into_iter()
         .filter(|rule| rule_config.rule_is_enabled(&rule.borrow().name))
@@ -215,7 +223,7 @@ where
                 filename,
                 rule,
                 &rule_config.get_arguments(&rule.name),
-                Some(JAVASCRIPT_EXECUTION_TIMEOUT),
+                timeout,
             );
 
             // NOTE: This is a translation layer to map Result<T, E> to a `RuleResult` struct.
@@ -258,7 +266,8 @@ where
                 Err(err) => {
                     let r_f = format!("{}:{}", rule.name, filename);
                     let (err_kind, execution_error) = match err {
-                        DDSAJsRuntimeError::JavaScriptTimeout { timeout } => {
+                        DDSAJsRuntimeError::JavaScriptTimeout { timeout }
+                        | DDSAJsRuntimeError::TreeSitterTimeout { timeout } => {
                             if analysis_option.use_debug {
                                 eprintln!(
                                     "rule:file {} TIMED OUT ({} ms)",
@@ -1216,6 +1225,7 @@ function visit(node, filename, code) {
             log_output: true,
             use_debug: false,
             ignore_generated_files: false,
+            timeout: None,
         };
         let rule_config_provider = RuleConfigProvider::from_config(
             &parse_config_file(

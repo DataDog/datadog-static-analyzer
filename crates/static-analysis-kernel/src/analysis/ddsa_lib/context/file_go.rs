@@ -8,6 +8,7 @@ use crate::analysis::tree_sitter::get_tree_sitter_language;
 use crate::model::common::Language;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
+use streaming_iterator::StreamingIterator;
 
 /// Structure for the file context that is specific to Go.
 #[derive(Debug)]
@@ -44,8 +45,9 @@ impl FileContextGo {
         // the second capture is the name of the package.
 
         let mut query_cursor = tree_sitter::QueryCursor::new();
-        let query_result = query_cursor.matches(&self.ts_query, tree.root_node(), code.as_bytes());
-        for query_match in query_result {
+        let mut query_result =
+            query_cursor.matches(&self.ts_query, tree.root_node(), code.as_bytes());
+        while let Some(query_match) = query_result.next() {
             let mut package_name: Option<&str> = None;
             let mut package_alias: Option<&str> = None;
 

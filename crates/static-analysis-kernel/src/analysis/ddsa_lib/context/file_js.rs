@@ -4,6 +4,7 @@
 
 use deno_core::v8;
 use deno_core::v8::HandleScope;
+use streaming_iterator::StreamingIterator;
 
 use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError};
 use crate::analysis::ddsa_lib::js::JSPackageImport;
@@ -165,8 +166,7 @@ impl FileContextJavaScript {
 
         let query_result = query_cursor.matches(&self.query, tree.root_node(), code.as_bytes());
         let imports = query_result
-            .into_iter()
-            .filter_map(|query_match| {
+            .filter_map_deref(|query_match| {
                 let mut name = None;
                 let mut imported_from = None;
                 let mut has_default = false;

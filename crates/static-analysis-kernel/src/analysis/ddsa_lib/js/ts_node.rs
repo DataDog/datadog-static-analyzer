@@ -106,6 +106,7 @@ mod tests {
     use crate::model::common::Language;
     use deno_core::v8;
     use std::marker::PhantomData;
+    use streaming_iterator::StreamingIterator;
 
     #[test]
     fn js_properties_canary() {

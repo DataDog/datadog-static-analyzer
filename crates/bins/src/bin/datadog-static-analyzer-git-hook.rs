@@ -159,6 +159,12 @@ fn main() -> Result<()> {
     opts.optflag("t", "include-testing-rules", "include testing rules");
     opts.optflag("", "secrets", "enable secrets detection (BETA)");
     opts.optflag("", "static-analysis", "enable static-analysis");
+    opts.optopt(
+        "",
+        "rule-timeout-ms",
+        "how long a rule can run before being killed, in milliseconds",
+        "1000",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -329,10 +335,19 @@ fn main() -> Result<()> {
         print_configuration(&configuration);
     }
 
+    let timeout = matches
+        .opt_str("rule-timeout-ms")
+        .map(|val| {
+            val.parse::<u64>()
+                .context("unable to parse `rule-timeout-ms` flag as integer")
+        })
+        .transpose()?;
+
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug,
         ignore_generated_files,
+        timeout,
     };
 
     if should_verify_checksum {

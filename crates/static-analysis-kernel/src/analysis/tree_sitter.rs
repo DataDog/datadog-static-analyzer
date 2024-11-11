@@ -4,6 +4,8 @@ use common::model::position::Position;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
+use streaming_iterator::StreamingIterator;
 use tree_sitter::CaptureQuantifier;
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
@@ -170,13 +172,15 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
         &'a mut self,
         node: tree_sitter::Node<'tree>,
         text: &'tree str,
+        timeout: Option<Duration>,
     ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> + 'a {
         let cursor = match &mut self.cursor {
             MaybeOwnedMut::Borrowed(cursor) => cursor,
             MaybeOwnedMut::Owned(cursor) => cursor,
         };
+        cursor.set_timeout_micros(timeout.map(|t| t.as_micros()).unwrap_or_default() as u64);
         let matches = cursor.matches(self.query, node, text.as_bytes());
-        matches.map(|q_match| {
+        matches.map_deref(|q_match| {
             for capture in q_match.captures {
                 self.captures_scratch
                     .entry(capture.index)
@@ -276,7 +280,7 @@ pub fn get_query_nodes(
 ) -> Vec<MatchNode> {
     let mut match_nodes: Vec<MatchNode> = vec![];
 
-    for query_match in query.cursor().matches(tree.root_node(), code) {
+    for query_match in query.cursor().matches(tree.root_node(), code, None) {
         let mut captures: HashMap<String, TreeSitterNode> = HashMap::new();
         let mut captures_list: HashMap<String, Vec<TreeSitterNode>> = HashMap::new();
         for capture in query_match {

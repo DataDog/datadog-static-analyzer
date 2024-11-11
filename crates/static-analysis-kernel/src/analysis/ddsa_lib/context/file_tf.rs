@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use deno_core::v8::{self, HandleScope};
+use streaming_iterator::StreamingIterator;
 
 use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError};
 use crate::analysis::ddsa_lib::js;
@@ -55,8 +56,7 @@ impl FileContextTerraform {
         let query_result = query_cursor.matches(&self.query, tree.root_node(), code.as_bytes());
 
         let resources = query_result
-            .into_iter()
-            .map(|query_match| {
+            .map_deref(|query_match| {
                 let mut resource_type = None;
                 let mut resource_name = None;
 

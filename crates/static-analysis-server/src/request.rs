@@ -203,6 +203,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
+            timeout: None,
         },
     );
 
@@ -234,6 +235,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
 mod tests {
     use crate::model::analysis_request::{AnalysisRequestOptions, ServerRule};
     use kernel::model::{
+        analysis::ERROR_RULE_TIMEOUT,
         common::Language,
         rule::{RuleCategory, RuleSeverity, RuleType},
     };
@@ -921,5 +923,47 @@ rulesets:
         let response = process_analysis_request(duplicate_req);
         // We should've logged the `int_node`
         assert_eq!(response.rule_responses[0].output, Some("123".to_string()));
+    }
+
+    /// Tests that a rule with an expensive tree-sitter query won't get stuck processing for a long
+    /// time, and will return a rule response that contains a timeout error.
+    #[test]
+    fn test_query_execution_timeout() {
+        let base_rule =
+            ServerRule{
+                    name: "ruleset/rule-name".to_string(),
+                    short_description_base64: None,
+                    description_base64: None,
+                    category: Some(RuleCategory::BestPractices),
+                    severity: Some(RuleSeverity::Warning),
+                    language: Language::JavaScript,
+                    rule_type: RuleType::TreeSitterQuery,
+                    entity_checked: None,
+                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaWRfbm9kZSJdOwoJY29uc29sZS5sb2coZ2V0Q29kZUZvck5vZGUoY2FwdHVyZWQsIGNvZGUpKTsKfQ==".to_string(),
+                    checksum: Some("f7e512c599b80f91b3e483f40c63192156cc3ad8cf53efae87315d0db22755c4".to_string()),
+                    pattern: None,
+                    tree_sitter_query_base64: Some("KAogIChmdW5jdGlvbl9kZWNsYXJhdGlvbgogICAgYm9keTogKHN0YXRlbWVudF9ibG9jawogICAgICAobGV4aWNhbF9kZWNsYXJhdGlvbgogICAgICAgICh2YXJpYWJsZV9kZWNsYXJhdG9yCiAgICAgICAgICBuYW1lOiAoaWRlbnRpZmllcikKICAgICAgICAgIHZhbHVlOiAobnVtYmVyKQogICAgICAgICkKICAgICAgKQogICAgKQogICkgQGZvbwogIChmdW5jdGlvbl9kZWNsYXJhdGlvbgogICAgYm9keTogKHN0YXRlbWVudF9ibG9jawogICAgICAobGV4aWNhbF9kZWNsYXJhdGlvbgogICAgICAgICh2YXJpYWJsZV9kZWNsYXJhdG9yCiAgICAgICAgICBuYW1lOiAoaWRlbnRpZmllcikKICAgICAgICAgIHZhbHVlOiAobnVtYmVyKQogICAgICAgICkKICAgICAgKQogICAgKQogICkgQGZvbwogIChmdW5jdGlvbl9kZWNsYXJhdGlvbgogICAgYm9keTogKHN0YXRlbWVudF9ibG9jawogICAgICAobGV4aWNhbF9kZWNsYXJhdGlvbgogICAgICAgICh2YXJpYWJsZV9kZWNsYXJhdG9yCiAgICAgICAgICBuYW1lOiAoaWRlbnRpZmllcikKICAgICAgICAgIHZhbHVlOiAobnVtYmVyKQogICAgICAgICkKICAgICAgKQogICAgKQogICkgQGZvbwop".to_string()),
+                    arguments: vec![],
+                };
+
+        let request = AnalysisRequest {
+            filename: "myfile.js".to_string(),
+            language: Language::JavaScript,
+            file_encoding: "utf-8".to_string(),
+            code_base64: encode_base64_string("function foo() { const baz = 1; }=".repeat(10000)),
+            configuration_base64: None,
+            options: Some(AnalysisRequestOptions {
+                use_tree_sitter: None,
+                log_output: Some(true),
+            }),
+            rules: vec![base_rule.clone()],
+        };
+        let response = process_analysis_request(request.clone());
+        assert_eq!(response.rule_responses.len(), 1);
+        assert_eq!(response.rule_responses[0].errors.len(), 1);
+        assert_eq!(
+            response.rule_responses[0].errors[0],
+            ERROR_RULE_TIMEOUT.to_string()
+        );
     }
 }
