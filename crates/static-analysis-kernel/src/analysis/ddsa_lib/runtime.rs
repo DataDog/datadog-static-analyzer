@@ -143,7 +143,7 @@ impl JsRuntime {
         file_name: &Arc<str>,
         rule: &RuleInternal,
         rule_arguments: &HashMap<String, String>,
-        timeout: Option<Duration>,
+        mut timeout: Option<Duration>,
     ) -> Result<ExecutionResult, DDSAJsRuntimeError> {
         let script_cache = Rc::clone(&self.script_cache);
         let mut script_cache_ref = script_cache.borrow_mut();
@@ -162,11 +162,24 @@ impl JsRuntime {
         let mut ts_qc = ts_query_cursor.borrow_mut();
         let mut query_cursor = rule.tree_sitter_query.with_cursor(&mut ts_qc);
         let query_matches = query_cursor
-            .matches(source_tree.root_node(), source_text.as_ref())
+            .matches(source_tree.root_node(), source_text.as_ref(), timeout)
             .filter(|captures| !captures.is_empty())
             .collect::<Vec<_>>();
 
         let ts_query_time = now.elapsed();
+
+        // It's possible that the TS query took about as long as the timeout itself, and since
+        // we compute the time just a little bit before matches are run, `ts_query_time` could be
+        // larger than the timeout. In this case, we assume that execution timed out.
+        // Otherwise, we pass the remaining time left to the rule execution.
+        timeout = timeout.map(|t| t.checked_sub(ts_query_time).unwrap_or_default());
+        if timeout == Some(Duration::ZERO) {
+            return Err(DDSAJsRuntimeError::TreeSitterTimeout {
+                timeout: timeout
+                    .expect("timeout should exist if we had tree-sitter query execution timeout"),
+            });
+        }
+
         let now = Instant::now();
 
         let js_violations = self.execute_rule_internal(
@@ -612,7 +625,7 @@ mod tests {
 
         let mut curs = ts_query.cursor();
         let q_matches = curs
-            .matches(tree.root_node(), source_text.as_ref())
+            .matches(tree.root_node(), source_text.as_ref(), None)
             .collect::<Vec<_>>();
         runtime.execute_rule_internal(
             source_text,
@@ -633,7 +646,7 @@ mod tests {
         filename: &str,
         ts_query: &str,
         rule_code: &str,
-        timeout: Option<Duration>,
+        mut timeout: Option<Duration>,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
         let source_text: Arc<str> = Arc::from(source_text);
         let filename: Arc<str> = Arc::from(filename);
@@ -646,10 +659,24 @@ mod tests {
 
         let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
 
+        let now = Instant::now();
         let mut curs = ts_query.cursor();
         let q_matches = curs
-            .matches(tree.root_node(), source_text.as_ref())
+            .matches(tree.root_node(), source_text.as_ref(), timeout)
             .collect::<Vec<_>>();
+        let ts_query_time = now.elapsed();
+
+        // It's possible that the TS query took about as long as the timeout itself, and since
+        // we compute the time just a little bit before matches are run, `ts_query_time` could be
+        // larger than the timeout. In this case, we assume that execution timed out.
+        // Otherwise, we pass the remaining time left to the rule execution.
+        timeout = timeout.map(|t| t.checked_sub(ts_query_time).unwrap_or_default());
+        if timeout == Some(Duration::ZERO) {
+            return Err(DDSAJsRuntimeError::TreeSitterTimeout {
+                timeout: timeout
+                    .expect("timeout should exist if we had tree-sitter query execution timeout"),
+            });
+        }
 
         runtime.execute_rule_internal(
             &source_text,
@@ -829,6 +856,74 @@ function visit(captures) {
         assert!(err
             .to_string()
             .contains("ReferenceError: abc is not defined"));
+    }
+
+    #[test]
+    fn query_execute_timeout() {
+        let mut runtime = JsRuntime::try_new().unwrap();
+        let timeout = Duration::from_millis(1000);
+        let code = "function foo() { const baz = 1; }".repeat(100000);
+        let filename = "some_filename.js";
+        // This query is expensive, because it's trying to check three items in succession.
+        // Because they do not have to be strictly after each other, it will try every single
+        // combination of the 1000 foo's with each other, so this query has O(n^3) time complexity by nature.
+        let ts_query = r#"
+(
+  (function_declaration
+    body: (statement_block
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier)
+          value: (number)
+        )
+      )
+    )
+  ) @foo
+  (function_declaration
+    body: (statement_block
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier)
+          value: (number)
+        )
+      )
+    )
+  ) @foo
+  (function_declaration
+    body: (statement_block
+      (lexical_declaration
+        (variable_declarator
+          name: (identifier)
+          value: (number)
+        )
+      )
+    )
+  ) @foo
+)"#;
+        let rule_code = r#"
+function visit(captures) {
+    const node = captures.get("foo");
+    const error = buildError(
+        node.start.line,
+        node.start.col,
+        node.end.line,
+        node.end.col,
+        "Function `foo` is too long"
+    );
+    addError(error);
+}
+"#;
+        let err = shorthand_execute_rule_internal(
+            &mut runtime,
+            &code,
+            filename,
+            ts_query,
+            rule_code,
+            Some(timeout),
+        )
+        .expect_err("Expected a timeout error");
+
+        assert!(matches!(err, DDSAJsRuntimeError::TreeSitterTimeout { .. }));
     }
 
     /// `scoped_execute` can terminate JavaScript execution that goes on for too long.
@@ -1026,7 +1121,7 @@ function visit(captures) {
             let ts_query = TSQuery::try_new(&ts_lang, ts_query).unwrap();
             let captures = ts_query
                 .cursor()
-                .matches(tree.root_node(), text.as_ref())
+                .matches(tree.root_node(), text.as_ref(), None)
                 .filter(|captures| !captures.is_empty())
                 .collect::<Vec<_>>();
             let _ = rt.execute_rule_internal(

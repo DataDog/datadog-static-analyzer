@@ -126,7 +126,7 @@ const ghi = 'hello' + ' world';
         let query = TSQuery::try_new(&tree.language(), query).unwrap();
         let matches = query
             .cursor()
-            .matches(tree.root_node(), text)
+            .matches(tree.root_node(), text, None)
             .collect::<Vec<_>>();
         assert!(query_match_bridge.is_empty());
         assert!(ts_node_bridge.is_empty());
@@ -152,7 +152,7 @@ const alpha = 'bravo';
         let tree = get_tree(text, &Language::JavaScript).unwrap();
         let matches = query
             .cursor()
-            .matches(tree.root_node(), text)
+            .matches(tree.root_node(), text, None)
             .collect::<Vec<_>>();
         query_match_bridge.set_data(scope, matches, &mut ts_node_bridge);
         assert_eq!(get_node_id_at_idx(&query_match_bridge, 0), 3);

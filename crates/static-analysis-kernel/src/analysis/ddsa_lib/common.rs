@@ -15,6 +15,8 @@ pub type NodeId = u32;
 pub enum DDSAJsRuntimeError {
     #[error("{error}")]
     Execution { error: JsError },
+    #[error("Tree-sitter query execution timeout")]
+    TreeSitterTimeout { timeout: Duration },
     #[error("JavaScript execution timeout")]
     JavaScriptTimeout { timeout: Duration },
     #[error("expected `{name}` to exist within the v8 context")]

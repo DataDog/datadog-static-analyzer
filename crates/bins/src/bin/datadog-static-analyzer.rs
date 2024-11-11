@@ -131,6 +131,12 @@ fn main() -> Result<()> {
     );
     // TODO (JF): Remove this when releasing 0.3.8
     opts.optflag("", "ddsa-runtime", "(deprecated)");
+    opts.optopt(
+        "",
+        "rule-timeout-ms",
+        "how long a rule can run before being killed, in milliseconds",
+        "1000",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -368,10 +374,19 @@ fn main() -> Result<()> {
     if matches.opt_present("ddsa-runtime") {
         println!("[WARNING] the --ddsa-runtime flag is deprecated and will be removed in the next version");
     }
+    let timeout = matches
+        .opt_str("rule-timeout-ms")
+        .map(|val| {
+            val.parse::<u64>()
+                .context("unable to parse `rule-timeout-ms` flag as integer")
+        })
+        .transpose()?;
+
     let analysis_options = AnalysisOptions {
         log_output: true,
         use_debug,
         ignore_generated_files,
+        timeout,
     };
 
     if should_verify_checksum {
