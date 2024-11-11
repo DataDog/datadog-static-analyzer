@@ -4,6 +4,7 @@ use common::model::position::Position;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
+use streaming_iterator::StreamingIterator;
 use tree_sitter::CaptureQuantifier;
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
@@ -176,7 +177,7 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
             MaybeOwnedMut::Owned(cursor) => cursor,
         };
         let matches = cursor.matches(self.query, node, text.as_bytes());
-        matches.map(|q_match| {
+        matches.map_deref(|q_match| {
             for capture in q_match.captures {
                 self.captures_scratch
                     .entry(capture.index)

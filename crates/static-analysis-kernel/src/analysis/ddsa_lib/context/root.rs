@@ -118,7 +118,10 @@ impl RootContext {
         /////
 
         let mut depth = 0;
-        while let Some(child) = current_node.child_containing_descendant(node) {
+        while let Some(child) = current_node.child_with_descendant(node) {
+            if child == node {
+                break;
+            }
             // Cache the relationship discovered as a side effect of traversing down from the root.
             // Note that because the `child_containing_descendant` API filter its output, we
             // only end up caching the path directly from the root to this node.
