@@ -430,13 +430,13 @@ impl StaticAnalysisRulesAPIResponse {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::model::datadog_api::SecretRuleApiMatchValidationHttpMethod::Get;
     use kernel::model::{
         common::Language,
         rule::{RuleCategory, RuleSeverity, RuleType},
     };
     use serde_json::json;
-    use crate::model::datadog_api::SecretRuleApiMatchValidationHttpMethod::Get;
-    use super::*;
 
     // correctly map all the data from the API
     #[test]
@@ -578,5 +578,107 @@ mod tests {
             api_secret_rule_invalid_match_validation_type,
         );
         assert!(converted.is_ok());
+    }
+
+    #[test]
+    fn convert_secrets_rules_from_api_to_lib_aws_secret() {
+        let api_secret_rule_invalid_match_validation_type = SecretRuleApiType {
+            id: "secret_type".to_string(),
+            attributes: SecretRuleApiAttributes {
+                name: "secret_rule_name".to_string(),
+                description: "secret_rule_description".to_string(),
+                pattern: "pattern".to_string(),
+                default_included_keywords: None,
+                validators: None,
+                match_validation: Some(SecretRuleApiMatchValidation {
+                    r#type: SecretRuleApiMatchValidation::AWS_SECRET_STRING.to_string(),
+                    endpoint: None,
+                    hosts: None,
+                    request_headers: None,
+                    http_method: None,
+                    timeout_seconds: None,
+                    valid_http_status_code: None,
+                    invalid_http_status_code: None,
+                }),
+            },
+        };
+        let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
+            api_secret_rule_invalid_match_validation_type,
+        );
+        assert_eq!(
+            converted
+                .expect("get converted value")
+                .match_validation
+                .unwrap(),
+            SecretRuleMatchValidation::AwsSecret
+        );
+    }
+
+    #[test]
+    fn convert_secrets_rules_from_api_to_lib_aws_id() {
+        let api_secret_rule_invalid_match_validation_type = SecretRuleApiType {
+            id: "secret_type".to_string(),
+            attributes: SecretRuleApiAttributes {
+                name: "secret_rule_name".to_string(),
+                description: "secret_rule_description".to_string(),
+                pattern: "pattern".to_string(),
+                default_included_keywords: None,
+                validators: None,
+                match_validation: Some(SecretRuleApiMatchValidation {
+                    r#type: SecretRuleApiMatchValidation::AWS_ID_STRING.to_string(),
+                    endpoint: None,
+                    hosts: None,
+                    request_headers: None,
+                    http_method: None,
+                    timeout_seconds: None,
+                    valid_http_status_code: None,
+                    invalid_http_status_code: None,
+                }),
+            },
+        };
+        let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
+            api_secret_rule_invalid_match_validation_type,
+        );
+        assert_eq!(
+            converted
+                .expect("get converted value")
+                .match_validation
+                .unwrap(),
+            SecretRuleMatchValidation::AwsId
+        );
+    }
+
+    #[test]
+    fn convert_secrets_rules_from_api_to_lib_aws_session() {
+        let api_secret_rule_invalid_match_validation_type = SecretRuleApiType {
+            id: "secret_type".to_string(),
+            attributes: SecretRuleApiAttributes {
+                name: "secret_rule_name".to_string(),
+                description: "secret_rule_description".to_string(),
+                pattern: "pattern".to_string(),
+                default_included_keywords: None,
+                validators: None,
+                match_validation: Some(SecretRuleApiMatchValidation {
+                    r#type: SecretRuleApiMatchValidation::AWS_SESSION_STRING.to_string(),
+                    endpoint: None,
+                    hosts: None,
+                    request_headers: None,
+                    http_method: None,
+                    timeout_seconds: None,
+                    valid_http_status_code: None,
+                    invalid_http_status_code: None,
+                }),
+            },
+        };
+        let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
+            api_secret_rule_invalid_match_validation_type,
+        );
+        assert_eq!(
+            converted
+                .expect("get converted value")
+                .match_validation
+                .unwrap(),
+            SecretRuleMatchValidation::AwsSession
+        );
     }
 }
