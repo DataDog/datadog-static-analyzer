@@ -3,8 +3,8 @@ use kernel::model::rule::{Argument, EntityChecked, Rule, RuleCategory, RuleSever
 use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
 use secrets::model::secret_rule::{
-    SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttpCode,
-    SecretRuleMatchValidationHttpMethod,
+    SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttp,
+    SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -263,7 +263,7 @@ impl From<&SecretRuleApiMatchValidationHttpCode> for SecretRuleMatchValidationHt
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq, Hash)]
-#[serde(rename_all="UPPERCASE")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum SecretRuleApiMatchValidationHttpMethod {
     Get,
     Post,
@@ -303,21 +303,47 @@ pub struct SecretRuleApiMatchValidation {
     pub invalid_http_status_code: Option<Vec<SecretRuleApiMatchValidationHttpCode>>,
 }
 
-impl From<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
-    fn from(val: SecretRuleApiMatchValidation) -> Self {
-        SecretRuleMatchValidation {
-            r#type: val.r#type,
-            endpoint: val.endpoint.clone(),
-            hosts: val.hosts.clone(),
-            request_headers: val.request_headers,
-            http_method: val.http_method.map(|v| v.into()),
-            timeout_seconds: val.timeout_seconds,
-            valid_http_status_code: val
-                .valid_http_status_code
-                .map(|v| v.iter().map(|w| w.into()).collect()),
-            invalid_http_status_code: val
-                .invalid_http_status_code
-                .map(|v| v.iter().map(|w| w.into()).collect()),
+impl SecretRuleApiMatchValidation {
+    const AWS_ID_STRING: &'static str = "AwsId";
+    const AWS_SECRET_STRING: &'static str = "AwsSecret";
+    const AWS_SESSION_STRING: &'static str = "AwsSession";
+    const CUSTOM_HTTP_STRING: &'static str = "CustomHttp";
+}
+
+impl TryFrom<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
+    type Error = &'static str;
+
+    fn try_from(value: SecretRuleApiMatchValidation) -> Result<Self, Self::Error> {
+        match value.r#type.as_str() {
+            SecretRuleApiMatchValidation::AWS_SECRET_STRING => {
+                Ok(SecretRuleMatchValidation::AwsSecret)
+            }
+            SecretRuleApiMatchValidation::AWS_ID_STRING => Ok(SecretRuleMatchValidation::AwsId),
+            SecretRuleApiMatchValidation::AWS_SESSION_STRING => {
+                Ok(SecretRuleMatchValidation::AwsSession)
+            }
+            SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING => Ok(
+                SecretRuleMatchValidation::CustomHttp(SecretRuleMatchValidationHttp {
+                    endpoint: value.endpoint.expect("no endpoint"),
+                    hosts: value.hosts.unwrap_or_default(),
+                    request_headers: value.request_headers.unwrap_or_default(),
+                    http_method: value.http_method.expect("missing http method").into(),
+                    timeout_seconds: value.timeout_seconds,
+                    valid_http_status_code: value
+                        .valid_http_status_code
+                        .unwrap_or(vec![])
+                        .iter()
+                        .map(|v| v.into())
+                        .collect(),
+                    invalid_http_status_code: value
+                        .invalid_http_status_code
+                        .unwrap_or(vec![])
+                        .iter()
+                        .map(|v| v.into())
+                        .collect(),
+                }),
+            ),
+            _ => Err("invalid match validation type"),
         }
     }
 }
@@ -340,20 +366,43 @@ pub struct SecretRuleApiType {
     pub attributes: SecretRuleApiAttributes,
 }
 
-impl From<SecretRuleApiType> for SecretRule {
-    fn from(val: SecretRuleApiType) -> Self {
-        SecretRule {
-            id: val.id.clone(),
-            name: val.attributes.name.clone(),
-            description: val.attributes.description.clone(),
-            pattern: val.attributes.pattern.clone(),
-            default_included_keywords: val
-                .attributes
-                .default_included_keywords
-                .clone()
-                .unwrap_or_default(),
-            validators: val.attributes.validators.clone(),
-            match_validation: val.attributes.match_validation.map(|v| v.into()),
+impl TryFrom<SecretRuleApiType> for SecretRule {
+    type Error = &'static str;
+
+    fn try_from(val: SecretRuleApiType) -> Result<Self, Self::Error> {
+        if let Some(match_validation) = val.attributes.match_validation {
+            match <SecretRuleApiMatchValidation as TryInto<SecretRuleMatchValidation>>::try_into(
+                match_validation,
+            ) {
+                Ok(validation) => Ok(SecretRule {
+                    id: val.id.clone(),
+                    name: val.attributes.name.clone(),
+                    description: val.attributes.description.clone(),
+                    pattern: val.attributes.pattern.clone(),
+                    default_included_keywords: val
+                        .attributes
+                        .default_included_keywords
+                        .clone()
+                        .unwrap_or_default(),
+                    validators: val.attributes.validators.clone(),
+                    match_validation: Some(validation),
+                }),
+                Err(s) => Err(s),
+            }
+        } else {
+            Ok(SecretRule {
+                id: val.id.clone(),
+                name: val.attributes.name.clone(),
+                description: val.attributes.description.clone(),
+                pattern: val.attributes.pattern.clone(),
+                default_included_keywords: val
+                    .attributes
+                    .default_included_keywords
+                    .clone()
+                    .unwrap_or_default(),
+                validators: val.attributes.validators.clone(),
+                match_validation: None,
+            })
         }
     }
 }
@@ -474,5 +523,63 @@ mod tests {
         let res = serde_json::from_value::<StaticAnalysisRulesAPIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
         assert_eq!(0, ruleset.rules.len());
+    }
+
+    #[test]
+    fn convert_secrets_rules_from_api_to_lib_invalid_match_validation_type() {
+        let api_secret_rule_invalid_match_validation_type = SecretRuleApiType {
+            id: "secret_type".to_string(),
+            attributes: SecretRuleApiAttributes {
+                name: "secret_rule_name".to_string(),
+                description: "secret_rule_description".to_string(),
+                pattern: "pattern".to_string(),
+                default_included_keywords: None,
+                validators: None,
+                match_validation: Some(SecretRuleApiMatchValidation {
+                    r#type: "foo".to_string(),
+                    endpoint: None,
+                    hosts: None,
+                    request_headers: None,
+                    http_method: None,
+                    timeout_seconds: None,
+                    valid_http_status_code: None,
+                    invalid_http_status_code: None,
+                }),
+            },
+        };
+        let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
+            api_secret_rule_invalid_match_validation_type,
+        );
+        assert!(converted.is_err());
+        assert_eq!(converted.unwrap_err(), "invalid match validation type")
+    }
+
+    #[test]
+    fn convert_secrets_rules_from_api_to_lib_success() {
+        let api_secret_rule_invalid_match_validation_type = SecretRuleApiType {
+            id: "secret_type".to_string(),
+            attributes: SecretRuleApiAttributes {
+                name: "secret_rule_name".to_string(),
+                description: "secret_rule_description".to_string(),
+                pattern: "pattern".to_string(),
+                default_included_keywords: None,
+                validators: None,
+                match_validation: Some(SecretRuleApiMatchValidation {
+                    r#type: SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING.to_string(),
+                    endpoint: None,
+                    hosts: None,
+                    request_headers: None,
+                    http_method: None,
+                    timeout_seconds: None,
+                    valid_http_status_code: None,
+                    invalid_http_status_code: None,
+                }),
+            },
+        };
+        let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
+            api_secret_rule_invalid_match_validation_type,
+        );
+        assert!(converted.is_err());
+        assert_eq!(converted.unwrap_err(), "invalid match validation type")
     }
 }

@@ -2,20 +2,20 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
 use common::model::diff_aware::DiffAware;
-use dd_sds::AwsType::{AwsId, AwsSecret, AwsSession};
 use dd_sds::SecondaryValidator::JwtExpirationChecker;
 use dd_sds::{
-    AwsConfig, HttpMethod, HttpValidatorConfigBuilder, MatchAction, MatchValidationType,
+    AwsConfig, AwsType, HttpMethod, HttpValidatorConfigBuilder, MatchAction, MatchValidationType,
     ProximityKeywordsConfig, RegexRuleConfig, RequestHeader,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::ops::Range;
 use std::string::ToString;
+use std::time::Duration;
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
-
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct SecretRuleMatchValidationHttpCode {
@@ -24,7 +24,7 @@ pub struct SecretRuleMatchValidationHttpCode {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-#[serde(rename_all="UPPERCASE")]
+#[serde(rename_all = "UPPERCASE")]
 pub enum SecretRuleMatchValidationHttpMethod {
     Get,
     Post,
@@ -46,61 +46,38 @@ impl From<SecretRuleMatchValidationHttpMethod> for HttpMethod {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
-pub struct SecretRuleMatchValidation {
-    #[serde(rename = "type")]
-    pub r#type: String,
-    pub endpoint: Option<String>,
-    pub hosts: Option<Vec<String>>,
-    pub request_headers: Option<HashMap<String, String>>,
-    pub http_method: Option<SecretRuleMatchValidationHttpMethod>,
-    pub timeout_seconds: Option<u64>,
-    pub valid_http_status_code: Option<Vec<SecretRuleMatchValidationHttpCode>>,
-    pub invalid_http_status_code: Option<Vec<SecretRuleMatchValidationHttpCode>>,
-}
-
-impl SecretRuleMatchValidation {
-    const AWS_ID_STRING: &'static str = "AwsId";
-    const AWS_SECRET_STRING: &'static str = "AwsSecret";
-    const AWS_SESSION_STRING: &'static str = "AwsSession";
-    const CUSTOM_HTTP_STRING: &'static str = "CustomHttp";
-
-    pub fn get_request_headers(&self) -> Vec<RequestHeader> {
-        if let Some(rhs) = &self.request_headers {
-            rhs.iter()
-                .map(|(k, v)| RequestHeader {
-                    key: k.clone(),
-                    value: v.clone(),
-                })
-                .collect()
-        } else {
-            Vec::new()
-        }
-    }
+pub enum SecretRuleMatchValidation {
+    AwsId,
+    AwsSecret,
+    AwsSession,
+    CustomHttp(SecretRuleMatchValidationHttp),
 }
 
 impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
     type Error = &'static str;
 
     fn try_from(value: SecretRuleMatchValidation) -> Result<Self, Self::Error> {
-        match value.r#type.as_str() {
-            SecretRuleMatchValidation::AWS_ID_STRING => Ok(MatchValidationType::Aws(AwsId)),
-            SecretRuleMatchValidation::AWS_SECRET_STRING => Ok(MatchValidationType::Aws(AwsSecret(AwsConfig::default()))),
-            SecretRuleMatchValidation::AWS_SESSION_STRING => Ok(MatchValidationType::Aws(AwsSession)),
-            SecretRuleMatchValidation::CUSTOM_HTTP_STRING => {
-                let invalid_ports: Vec<Range<u16>> = value
+        match value {
+            SecretRuleMatchValidation::AwsId => Ok(MatchValidationType::Aws(AwsType::AwsId)),
+            SecretRuleMatchValidation::AwsSecret => Ok(MatchValidationType::Aws(
+                AwsType::AwsSecret(AwsConfig::default()),
+            )),
+            SecretRuleMatchValidation::AwsSession => {
+                Ok(MatchValidationType::Aws(AwsType::AwsSession))
+            }
+            CustomHttp(custom_http) => {
+                let invalid_ports: Vec<Range<u16>> = custom_http
                     .invalid_http_status_code
                     .clone()
-                    .unwrap_or_default()
                     .iter()
                     .map(|v| Range {
                         start: v.start,
                         end: v.end,
                     })
                     .collect();
-                let valid_ports: Vec<Range<u16>> = value
+                let valid_ports: Vec<Range<u16>> = custom_http
                     .valid_http_status_code
                     .clone()
-                    .unwrap_or_default()
                     .iter()
                     .map(|v| Range {
                         start: v.start,
@@ -108,19 +85,41 @@ impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
                     })
                     .collect();
                 Ok(MatchValidationType::CustomHttp(
-                    HttpValidatorConfigBuilder::new(value.endpoint.clone().expect("missing endpoint"))
-                        .set_hosts(value.hosts.clone().unwrap_or_default())
+                    HttpValidatorConfigBuilder::new(custom_http.endpoint.clone())
+                        .set_hosts(custom_http.hosts.clone())
                         .set_invalid_http_status_code(invalid_ports)
-                        .set_request_header(value.clone().get_request_headers())
+                        .set_timeout(Duration::from_secs(custom_http.timeout_seconds.unwrap()))
+                        .set_request_header(custom_http.clone().get_request_headers())
                         .set_valid_http_status_code(valid_ports)
-                        .set_method(value.http_method.unwrap().into())
+                        .set_method(custom_http.http_method.into())
                         .build()
                         .unwrap(),
                 ))
             }
-
-            _ => Err("invalid type"),
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleMatchValidationHttp {
+    pub endpoint: String,
+    pub hosts: Vec<String>,
+    pub request_headers: HashMap<String, String>,
+    pub http_method: SecretRuleMatchValidationHttpMethod,
+    pub timeout_seconds: Option<u64>,
+    pub valid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
+    pub invalid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
+}
+
+impl SecretRuleMatchValidationHttp {
+    pub fn get_request_headers(&self) -> Vec<RequestHeader> {
+        self.request_headers
+            .iter()
+            .map(|(k, v)| RequestHeader {
+                key: k.clone(),
+                value: v.clone(),
+            })
+            .collect()
     }
 }
 
@@ -137,7 +136,7 @@ pub struct SecretRule {
 }
 
 impl SecretRule {
-    const VALIDATOR_JWT_EXPIRATION_CHECKER : &'static str = "JwtExpirationChecker";
+    const VALIDATOR_JWT_EXPIRATION_CHECKER: &'static str = "JwtExpirationChecker";
 
     /// Convert the rule into a configuration usable by SDS.
     pub fn convert_to_sds_ruleconfig(&self, use_debug: bool) -> RegexRuleConfig {
@@ -152,7 +151,10 @@ impl SecretRule {
         }
 
         if let Some(validators) = &self.validators {
-            if validators.iter().any(|v| v == SecretRule::VALIDATOR_JWT_EXPIRATION_CHECKER) {
+            if validators
+                .iter()
+                .any(|v| v == SecretRule::VALIDATOR_JWT_EXPIRATION_CHECKER)
+            {
                 rule_config = rule_config.validator(JwtExpirationChecker);
             }
         }
