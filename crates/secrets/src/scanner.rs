@@ -8,18 +8,18 @@ use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
+use dd_sds::{RuleConfig, Scanner};
 use itertools::Itertools;
-use sds::{RuleConfig, Scanner};
 use std::sync::Arc;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from
 /// our API.
 ///
 /// Once the scanner is built, use scanner.scan() to find secrets.
-pub fn build_sds_scanner(rules: &[SecretRule]) -> Scanner {
+pub fn build_sds_scanner(rules: &[SecretRule], use_debug: bool) -> Scanner {
     let sds_rules = rules
         .iter()
-        .map(|r| r.convert_to_sds_ruleconfig().build())
+        .map(|r| r.convert_to_sds_ruleconfig(use_debug).build())
         .collect::<Vec<Arc<dyn RuleConfig>>>();
     Scanner::builder(&sds_rules)
         .build()
@@ -48,7 +48,7 @@ pub fn find_secrets(
         return vec![];
     }
 
-    let matches_validation = futures::executor::block_on(scanner.validate_matches(&mut matches));
+    let matches_validation = scanner.validate_matches(&mut matches);
 
     if matches_validation.is_err() && options.use_debug {
         eprintln!("error when validating secrets for filename {}", filename)
@@ -112,8 +112,10 @@ mod tests {
             description: "super secret!".to_string(),
             pattern: "FOO(BAR|BAZ)".to_string(),
             default_included_keywords: vec![],
+            validators: Some(vec![]),
+            match_validation: None,
         }];
-        let scanner = build_sds_scanner(rules.as_slice());
+        let scanner = build_sds_scanner(rules.as_slice(), false);
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
         let matches = find_secrets(
             &scanner,

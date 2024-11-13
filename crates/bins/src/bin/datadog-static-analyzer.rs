@@ -655,7 +655,7 @@ fn main() -> Result<()> {
             None
         };
 
-        let sds_scanner = build_sds_scanner(&secrets_rules);
+        let sds_scanner = build_sds_scanner(&secrets_rules, use_debug);
 
         let nb_secrets_rules: usize = secrets_rules.len();
         let nb_secrets_files = secrets_files.len();
@@ -710,7 +710,7 @@ fn main() -> Result<()> {
         let secrets_execution_time_secs = secrets_start.elapsed().as_secs();
 
         println!(
-            "Found {} secret(s) ({} validated) in {} file(s) using {} rule(s) within {} sec(s)",
+            "Found {} secret(s) (including {} valid) in {} file(s) using {} rule(s) within {} sec(s)",
             nb_secrets_found,
             nb_secrets_validated,
             nb_secrets_files,

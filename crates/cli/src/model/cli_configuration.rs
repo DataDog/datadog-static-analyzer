@@ -191,6 +191,8 @@ mod tests {
             description: "description1".to_string(),
             pattern: "pattern1".to_string(),
             default_included_keywords: vec![],
+            validators: Some(vec![]),
+            match_validation: None,
         };
 
         let secret_rule2 = SecretRule {
@@ -199,6 +201,8 @@ mod tests {
             description: "description2".to_string(),
             pattern: "pattern2".to_string(),
             default_included_keywords: vec![],
+            validators: Some(vec![]),
+            match_validation: None,
         };
 
         let cli_configuration_base = CliConfiguration {

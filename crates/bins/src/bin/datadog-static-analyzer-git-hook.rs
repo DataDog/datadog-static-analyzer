@@ -524,7 +524,7 @@ fn main() -> Result<()> {
             .filter(|f| !should_ignore_file_for_secret(f))
             .collect();
 
-        let sds_scanner = build_sds_scanner(&secrets_rules);
+        let sds_scanner = build_sds_scanner(&secrets_rules, use_debug);
 
         secrets_results = secrets_files
             .par_iter()
