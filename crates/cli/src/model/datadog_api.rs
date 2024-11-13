@@ -247,7 +247,7 @@ pub struct StaticAnalysisRulesAPIResponse {
     pub data: APIResponseRuleset,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct SecretRuleApiMatchValidationHttpCode {
     pub start: u16,
     pub end: u16,
@@ -262,17 +262,13 @@ impl From<SecretRuleApiMatchValidationHttpCode> for SecretRuleMatchValidationHtt
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[serde(rename_all="UPPERCASE")]
 pub enum SecretRuleApiMatchValidationHttpMethod {
-    #[serde(rename = "GET")]
     Get,
-    #[serde(rename = "POST")]
     Post,
-    #[serde(rename = "PATCH")]
     Patch,
-    #[serde(rename = "PUT")]
     Put,
-    #[serde(rename = "DELETE")]
     Delete,
 }
 

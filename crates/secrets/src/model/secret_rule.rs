@@ -15,29 +15,21 @@ use std::ops::Range;
 use std::string::ToString;
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
-const AWS_ID_STRING: &str = "AwsId";
 
-const AWS_SECRET_STRING: &str = "AwsSecret";
-const AWS_SESSION_STRING: &str = "AwsSession";
-const CUSTOM_HTTP_STRING: &str = "CustomHttp";
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct SecretRuleMatchValidationHttpCode {
     pub start: u16,
     pub end: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[serde(rename_all="UPPERCASE")]
 pub enum SecretRuleMatchValidationHttpMethod {
-    #[serde(rename = "GET")]
     Get,
-    #[serde(rename = "POST")]
     Post,
-    #[serde(rename = "PUT")]
     Put,
-    #[serde(rename = "PATCH")]
     Patch,
-    #[serde(rename = "DELETE")]
     Delete,
 }
 
@@ -53,7 +45,7 @@ impl From<SecretRuleMatchValidationHttpMethod> for HttpMethod {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct SecretRuleMatchValidation {
     #[serde(rename = "type")]
     pub r#type: String,
@@ -67,6 +59,11 @@ pub struct SecretRuleMatchValidation {
 }
 
 impl SecretRuleMatchValidation {
+    const AWS_ID_STRING: &'static str = "AwsId";
+    const AWS_SECRET_STRING: &'static str = "AwsSecret";
+    const AWS_SESSION_STRING: &'static str = "AwsSession";
+    const CUSTOM_HTTP_STRING: &'static str = "CustomHttp";
+
     pub fn get_request_headers(&self) -> Vec<RequestHeader> {
         if let Some(rhs) = &self.request_headers {
             rhs.iter()
@@ -86,10 +83,10 @@ impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
 
     fn try_from(value: SecretRuleMatchValidation) -> Result<Self, Self::Error> {
         match value.r#type.as_str() {
-            AWS_ID_STRING => Ok(MatchValidationType::Aws(AwsId)),
-            AWS_SECRET_STRING => Ok(MatchValidationType::Aws(AwsSecret(AwsConfig::default()))),
-            AWS_SESSION_STRING => Ok(MatchValidationType::Aws(AwsSession)),
-            CUSTOM_HTTP_STRING => {
+            SecretRuleMatchValidation::AWS_ID_STRING => Ok(MatchValidationType::Aws(AwsId)),
+            SecretRuleMatchValidation::AWS_SECRET_STRING => Ok(MatchValidationType::Aws(AwsSecret(AwsConfig::default()))),
+            SecretRuleMatchValidation::AWS_SESSION_STRING => Ok(MatchValidationType::Aws(AwsSession)),
+            SecretRuleMatchValidation::CUSTOM_HTTP_STRING => {
                 let invalid_ports: Vec<Range<u16>> = value
                     .invalid_http_status_code
                     .clone()
@@ -111,7 +108,7 @@ impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
                     })
                     .collect();
                 Ok(MatchValidationType::CustomHttp(
-                    HttpValidatorConfigBuilder::new(value.endpoint.clone().unwrap())
+                    HttpValidatorConfigBuilder::new(value.endpoint.clone().expect("missing endpoint"))
                         .set_hosts(value.hosts.clone().unwrap_or_default())
                         .set_invalid_http_status_code(invalid_ports)
                         .set_request_header(value.clone().get_request_headers())
@@ -128,7 +125,7 @@ impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
 }
 
 // This is the secret rule exposed by SDS
-#[derive(Clone, Deserialize, Debug, Serialize)]
+#[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub struct SecretRule {
     pub id: String,
     pub name: String,
@@ -140,6 +137,8 @@ pub struct SecretRule {
 }
 
 impl SecretRule {
+    const VALIDATOR_JWT_EXPIRATION_CHECKER : &'static str = "JwtExpirationChecker";
+
     /// Convert the rule into a configuration usable by SDS.
     pub fn convert_to_sds_ruleconfig(&self, use_debug: bool) -> RegexRuleConfig {
         let mut rule_config = RegexRuleConfig::new(&self.pattern).match_action(MatchAction::None);
@@ -153,7 +152,7 @@ impl SecretRule {
         }
 
         if let Some(validators) = &self.validators {
-            if validators.contains(&"JwtExpirationChecker".to_string()) {
+            if validators.iter().any(|v| v == SecretRule::VALIDATOR_JWT_EXPIRATION_CHECKER) {
                 rule_config = rule_config.validator(JwtExpirationChecker);
             }
         }

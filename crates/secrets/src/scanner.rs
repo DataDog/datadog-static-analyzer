@@ -48,7 +48,7 @@ pub fn find_secrets(
         return vec![];
     }
 
-    let matches_validation = futures::executor::block_on(scanner.validate_matches(&mut matches));
+    let matches_validation = scanner.blocking_validate_matches(&mut matches);
 
     if matches_validation.is_err() && options.use_debug {
         eprintln!("error when validating secrets for filename {}", filename)
