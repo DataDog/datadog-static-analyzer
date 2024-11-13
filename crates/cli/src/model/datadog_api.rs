@@ -253,8 +253,8 @@ pub struct SecretRuleApiMatchValidationHttpCode {
     pub end: u16,
 }
 
-impl From<SecretRuleApiMatchValidationHttpCode> for SecretRuleMatchValidationHttpCode {
-    fn from(value: SecretRuleApiMatchValidationHttpCode) -> Self {
+impl From<&SecretRuleApiMatchValidationHttpCode> for SecretRuleMatchValidationHttpCode {
+    fn from(value: &SecretRuleApiMatchValidationHttpCode) -> Self {
         SecretRuleMatchValidationHttpCode {
             start: value.start,
             end: value.end,
@@ -314,10 +314,10 @@ impl From<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
             timeout_seconds: val.timeout_seconds,
             valid_http_status_code: val
                 .valid_http_status_code
-                .map(|v| v.iter().map(|w| w.clone().into()).collect()),
+                .map(|v| v.iter().map(|w| w.into()).collect()),
             invalid_http_status_code: val
                 .invalid_http_status_code
-                .map(|v| v.iter().map(|w| w.clone().into()).collect()),
+                .map(|v| v.iter().map(|w| w.into()).collect()),
         }
     }
 }
