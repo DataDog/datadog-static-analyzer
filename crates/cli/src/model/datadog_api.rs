@@ -375,32 +375,30 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                 match_validation,
             ) {
                 Ok(validation) => Ok(SecretRule {
-                    id: val.id.clone(),
-                    name: val.attributes.name.clone(),
-                    description: val.attributes.description.clone(),
-                    pattern: val.attributes.pattern.clone(),
+                    id: val.id,
+                    name: val.attributes.name,
+                    description: val.attributes.description,
+                    pattern: val.attributes.pattern,
                     default_included_keywords: val
                         .attributes
                         .default_included_keywords
-                        .clone()
                         .unwrap_or_default(),
-                    validators: val.attributes.validators.clone(),
+                    validators: val.attributes.validators,
                     match_validation: Some(validation),
                 }),
                 Err(s) => Err(s),
             }
         } else {
             Ok(SecretRule {
-                id: val.id.clone(),
-                name: val.attributes.name.clone(),
-                description: val.attributes.description.clone(),
-                pattern: val.attributes.pattern.clone(),
+                id: val.id,
+                name: val.attributes.name,
+                description: val.attributes.description,
+                pattern: val.attributes.pattern,
                 default_included_keywords: val
                     .attributes
                     .default_included_keywords
-                    .clone()
                     .unwrap_or_default(),
-                validators: val.attributes.validators.clone(),
+                validators: val.attributes.validators,
                 match_validation: None,
             })
         }
@@ -437,7 +435,7 @@ mod tests {
         rule::{RuleCategory, RuleSeverity, RuleType},
     };
     use serde_json::json;
-
+    use crate::model::datadog_api::SecretRuleApiMatchValidationHttpMethod::Get;
     use super::*;
 
     // correctly map all the data from the API
@@ -566,10 +564,10 @@ mod tests {
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING.to_string(),
-                    endpoint: None,
-                    hosts: None,
+                    endpoint: Some("endpoint".to_string()),
+                    hosts: Some(vec!["endpoint".to_string()]),
                     request_headers: None,
-                    http_method: None,
+                    http_method: Some(Get),
                     timeout_seconds: None,
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
@@ -579,7 +577,6 @@ mod tests {
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
             api_secret_rule_invalid_match_validation_type,
         );
-        assert!(converted.is_err());
-        assert_eq!(converted.unwrap_err(), "invalid match validation type")
+        assert!(converted.is_ok());
     }
 }

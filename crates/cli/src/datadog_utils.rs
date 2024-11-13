@@ -61,8 +61,8 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
     match api_response {
         Ok(d) => Ok(d
             .data
-            .iter()
-            .map(|v| v.clone().try_into().expect("cannot convert rule"))
+            .into_iter()
+            .map(|v| v.try_into().expect("cannot convert rule"))
             .collect()),
         Err(e) => {
             eprintln!("Error when parsing the secret rules {e:?}");

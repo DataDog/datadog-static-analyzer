@@ -23,7 +23,7 @@ pub struct SecretRuleMatchValidationHttpCode {
     pub end: u16,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Copy)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum SecretRuleMatchValidationHttpMethod {
     Get,
@@ -53,10 +53,10 @@ pub enum SecretRuleMatchValidation {
     CustomHttp(SecretRuleMatchValidationHttp),
 }
 
-impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
+impl TryFrom<&SecretRuleMatchValidation> for MatchValidationType {
     type Error = &'static str;
 
-    fn try_from(value: SecretRuleMatchValidation) -> Result<Self, Self::Error> {
+    fn try_from(value: &SecretRuleMatchValidation) -> Result<Self, Self::Error> {
         match value {
             SecretRuleMatchValidation::AwsId => Ok(MatchValidationType::Aws(AwsType::AwsId)),
             SecretRuleMatchValidation::AwsSecret => Ok(MatchValidationType::Aws(
@@ -68,7 +68,6 @@ impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
             CustomHttp(custom_http) => {
                 let invalid_ports: Vec<Range<u16>> = custom_http
                     .invalid_http_status_code
-                    .clone()
                     .iter()
                     .map(|v| Range {
                         start: v.start,
@@ -77,7 +76,6 @@ impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
                     .collect();
                 let valid_ports: Vec<Range<u16>> = custom_http
                     .valid_http_status_code
-                    .clone()
                     .iter()
                     .map(|v| Range {
                         start: v.start,
@@ -86,10 +84,10 @@ impl TryFrom<SecretRuleMatchValidation> for MatchValidationType {
                     .collect();
                 Ok(MatchValidationType::CustomHttp(
                     HttpValidatorConfigBuilder::new(custom_http.endpoint.clone())
-                        .set_hosts(custom_http.hosts.clone())
+                        .set_hosts(custom_http.clone().hosts)
                         .set_invalid_http_status_code(invalid_ports)
                         .set_timeout(Duration::from_secs(custom_http.timeout_seconds.unwrap()))
-                        .set_request_header(custom_http.clone().get_request_headers())
+                        .set_request_header(custom_http.get_request_headers())
                         .set_valid_http_status_code(valid_ports)
                         .set_method(custom_http.http_method.into())
                         .build()
@@ -160,7 +158,7 @@ impl SecretRule {
         }
 
         if let Some(match_validation) = &self.match_validation {
-            if let Ok(mvt) = match_validation.clone().try_into() {
+            if let Ok(mvt) = match_validation.try_into() {
                 rule_config = rule_config.match_validation_type(mvt);
             } else if use_debug {
                 eprintln!("invalid validation: {:?}", match_validation);
