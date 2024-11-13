@@ -331,13 +331,13 @@ impl TryFrom<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
                     timeout_seconds: value.timeout_seconds,
                     valid_http_status_code: value
                         .valid_http_status_code
-                        .unwrap_or(vec![])
+                        .unwrap_or_default()
                         .iter()
                         .map(|v| v.into())
                         .collect(),
                     invalid_http_status_code: value
                         .invalid_http_status_code
-                        .unwrap_or(vec![])
+                        .unwrap_or_default()
                         .iter()
                         .map(|v| v.into())
                         .collect(),
