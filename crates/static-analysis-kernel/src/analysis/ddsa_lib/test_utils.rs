@@ -462,7 +462,7 @@ pub fn cfg_test_v8() -> V8Platform<CfgTest> {
         // In order to get around this, we can use the "unprotected" v8 platform.
         let platform = v8::new_unprotected_default_platform(0, false);
         let shared_platform = platform.make_shared();
-        deno_core::JsRuntime::init_platform(Some(shared_platform));
+        deno_core::JsRuntime::init_platform(Some(shared_platform), false);
     });
 
     V8Platform::<CfgTest>(std::marker::PhantomData)

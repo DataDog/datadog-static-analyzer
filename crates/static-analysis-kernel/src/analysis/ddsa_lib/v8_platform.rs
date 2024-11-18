@@ -29,7 +29,7 @@ impl V8Platform<Uninitialized> {
     fn initialize(self, thread_pool_size: u32) -> V8Platform<Initialized> {
         let platform = v8::new_default_platform(thread_pool_size, false);
         let shared_platform = platform.make_shared();
-        deno_core::JsRuntime::init_platform(Some(shared_platform));
+        deno_core::JsRuntime::init_platform(Some(shared_platform), false);
 
         V8Platform::<Initialized>(std::marker::PhantomData)
     }
