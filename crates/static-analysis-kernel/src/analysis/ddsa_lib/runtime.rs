@@ -106,6 +106,8 @@ impl JsRuntime {
             true_global.set_prototype(scope, v8_ddsa_object.into());
             // Freeze the true global
             true_global.set_integrity_level(scope, v8::IntegrityLevel::Frozen);
+            // Freeze the global proxy
+            global_proxy.set_integrity_level(scope, v8::IntegrityLevel::Frozen);
 
             let v8_ddsa_global = v8::Global::new(scope, v8_ddsa_object);
             (context, query_match, ts_node, violation, v8_ddsa_global)
@@ -756,69 +758,76 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
         assert_eq!(global_proto_hash, v8_ddsa_global_hash);
     }
 
-    /// Tests that the `v8_ddsa_global` object is the prototype of the default context's global object.
+    /// Tests that the default context's 1) true global object and 2) global proxy objects are frozen.
     #[test]
-    fn default_context_frozen_global() {
+    fn default_context_frozen_objects() {
         let mut runtime = cfg_test_v8().new_runtime();
         let scope = &mut runtime.runtime.handle_scope();
-        let value = try_execute(scope, "Object.isFrozen(globalThis);").unwrap();
-        assert!(value.is_true());
+        for obj in ["globalThis", "Object.getPrototypeOf(globalThis)"] {
+            let value = try_execute(scope, &format!("Object.isFrozen({obj});")).unwrap();
+            assert!(value.is_true());
+        }
     }
 
     /// Ensures that scripts can't modify values on `v8_ddsa_global`, even though Rust can.
-    /// (Although this test is partially redundant with `default_context_frozen_global`, this
+    /// (Although this test is partially redundant with `default_context_frozen_objects`, this
     /// additionally tests that Rust can mutate the object, but that JavaScript can't).
     #[test]
     fn scoped_execute_rust_mutation_vs_javascript() {
-        let mut rt = cfg_test_v8().new_runtime();
-        let type_of = "typeof __RUST_BRIDGE__ts_node;";
-        let type_of = compile_script(&mut rt.v8_handle_scope(), type_of).unwrap();
+        for obj in ["globalThis", "Object.getPrototypeOf(globalThis)"] {
+            let mut rt = cfg_test_v8().new_runtime();
+            let type_of = "typeof __RUST_BRIDGE__ts_node;";
+            let type_of = compile_script(&mut rt.v8_handle_scope(), type_of).unwrap();
 
-        // Baseline: the bridge should be an object
-        let value = rt.scoped_execute(&type_of, |s, v| v.to_rust_string_lossy(s), None);
-        assert_eq!(value.unwrap(), "object");
+            // Baseline: the bridge should be an object
+            let value = rt.scoped_execute(&type_of, |s, v| v.to_rust_string_lossy(s), None);
+            assert_eq!(value.unwrap(), "object");
 
-        let code = r#"
+            let code = format!(
+                "
 'use strict';
-globalThis.__RUST_BRIDGE__ts_node = 123;
+{obj}.__RUST_BRIDGE__ts_node = 123;
 typeof __RUST_BRIDGE__ts_node;
-"#;
-        let script = compile_script(&mut rt.v8_handle_scope(), code).unwrap();
-        let value = rt.scoped_execute(&script, |s, v| v.to_rust_string_lossy(s), None);
-        // JavaScript should not be able to mutate the value.
-        assert!(value.unwrap_err().to_string().contains(
-            "TypeError: Cannot add property __RUST_BRIDGE__ts_node, object is not extensible",
-            // NOTE: The reason we should get the above error instead of
-            // "TypeError: Cannot assign to read only property '__RUST_BRIDGE__ts_node' of object '#<Object>'"
-            // is that our ddsa variables should be exposed via the global object's prototype. They
-            // should not be on the global object directly (if they were, we'd get the above
-            // "Cannot assign to read only property" error).
-        ));
+"
+            );
+            let script = compile_script(&mut rt.v8_handle_scope(), &code).unwrap();
+            let value = rt.scoped_execute(&script, |s, v| v.to_rust_string_lossy(s), None);
+            // JavaScript should not be able to mutate the value.
+            assert!(value.unwrap_err().to_string().contains(
+                "TypeError: Cannot add property __RUST_BRIDGE__ts_node, object is not extensible",
+                // NOTE: The reason we should get the above error instead of
+                // "TypeError: Cannot assign to read only property '__RUST_BRIDGE__ts_node' of object '#<Object>'"
+                // is that our ddsa variables should be exposed via the global object's prototype. They
+                // should not be on the global object directly (if they were, we'd get the above
+                // "Cannot assign to read only property" error).
+            ));
 
-        // We need to work around the borrow checker to get a reference to the v8::Global contained
-        // in `v8_ddsa_global` without needing to borrow `rt`. We achieve this by using mem::replace
-        // with a stub v8::Global object, which doesn't affect execution behavior.
-        let stub_obj = {
-            let scope = &mut rt.v8_handle_scope();
-            let stub_obj = v8::Object::new(scope);
-            v8::Global::new(scope, stub_obj)
-        };
-        let ddsa_global = {
-            let ddsa_global = std::mem::replace(&mut rt.v8_ddsa_global, stub_obj);
-            let scope = &mut rt.v8_handle_scope();
+            // We need to work around the borrow checker to get a reference to the v8::Global contained
+            // in `v8_ddsa_global` without needing to borrow `rt`. We achieve this by using mem::replace
+            // with a stub v8::Global object, which doesn't affect execution behavior.
+            let stub_obj = {
+                let scope = &mut rt.v8_handle_scope();
+                let stub_obj = v8::Object::new(scope);
+                v8::Global::new(scope, stub_obj)
+            };
+            let ddsa_global = {
+                let ddsa_global = std::mem::replace(&mut rt.v8_ddsa_global, stub_obj);
+                let scope = &mut rt.v8_handle_scope();
 
-            let opened = ddsa_global.open(scope);
-            let key = v8_interned(scope, "__RUST_BRIDGE__ts_node");
-            let arbitrary_number = v8_uint(scope, 123);
-            opened.set(scope, key.into(), arbitrary_number.into());
-            ddsa_global
-        };
-        // Restore the original `ddsa_global`, dropping the `stub_obj` v8::Global.
-        drop(std::mem::replace(&mut rt.v8_ddsa_global, ddsa_global));
+                let opened = ddsa_global.open(scope);
+                let key = v8_interned(scope, "__RUST_BRIDGE__ts_node");
+                let arbitrary_number = v8_uint(scope, 123);
+                opened.set(scope, key.into(), arbitrary_number.into());
+                ddsa_global
+            };
+            // Restore the original `ddsa_global`, dropping the `stub_obj` v8::Global.
+            drop(std::mem::replace(&mut rt.v8_ddsa_global, ddsa_global));
 
-        let value = rt.scoped_execute(&type_of, |sc, value| value.to_rust_string_lossy(sc), None);
-        // Rust should be able to mutate the value.
-        assert_eq!(value.unwrap(), "number");
+            let value =
+                rt.scoped_execute(&type_of, |sc, value| value.to_rust_string_lossy(sc), None);
+            // Rust should be able to mutate the value.
+            assert_eq!(value.unwrap(), "number");
+        }
     }
 
     /// Tests that `scoped_execute` re-uses the default context. We use the global proxy's identity hash
