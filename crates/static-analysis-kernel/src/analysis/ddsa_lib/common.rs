@@ -329,28 +329,18 @@ pub fn create_base_runtime(
     extensions: Vec<deno_core::Extension>,
     config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
 ) -> deno_core::JsRuntime {
+    let mut snapshot_runtime = deno_core::JsRuntimeForSnapshot::new(Default::default());
     if let Some(config_fn) = config_default_v8_context {
-        // If a function is provided to configure the default v8::Context, first create a v8::Snapshot,
-        // mutate the default context, and then create a new JsRuntime with that snapshot.
-        let mut snapshot_runtime =
-            deno_core::JsRuntimeForSnapshot::new(Default::default(), Default::default());
-        {
-            let scope = &mut snapshot_runtime.handle_scope();
-            let default_ctx = scope.get_current_context();
-            config_fn(scope, default_ctx);
-        }
-        let snapshot = snapshot_runtime.snapshot();
-        deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-            extensions,
-            startup_snapshot: Some(deno_core::Snapshot::JustCreated(snapshot)),
-            ..Default::default()
-        })
-    } else {
-        deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-            extensions,
-            ..Default::default()
-        })
+        let scope = &mut snapshot_runtime.handle_scope();
+        let default_ctx = scope.get_current_context();
+        config_fn(scope, default_ctx);
     }
+    let snapshot = snapshot_runtime.snapshot();
+    deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+        extensions,
+        startup_snapshot: Some(deno_core::Snapshot::JustCreated(snapshot)),
+        ..Default::default()
+    })
 }
 
 /// This function allows the caller to ignore an error associated with a call to v8.
