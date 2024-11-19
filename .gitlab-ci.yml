@@ -21,30 +21,6 @@ stages:
     KUBERNETES_HELPER_MEMORY_REQUEST: "1Gi"
     KUBERNETES_HELPER_MEMORY_LIMIT: "1Gi"
 
-test-and-build-arm64:
-  extends:
-    - .jobs-resource-allocation
-  stage: test
-  script:
-    - apt-get update
-    - apt-get install -y git curl build-essential pkg-config libssl-dev
-    - curl https://sh.rustup.rs -sSf  > rustup.sh && chmod a+x rustup.sh && ./rustup.sh -y && rm -f rustup.sh
-    - source "$HOME/.cargo/env"
-    - cargo build -r
-    - cargo test
-    - apt-get install -y python3 python3-requests
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l java
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l javascript
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l typescript
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l go
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l ruby
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l csharp
-    - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
-  variables:
-    DD_SITE: datadoghq.com
-  tags:
-    - arch:arm64
-
 test-and-build-amd64:
   extends:
     - .jobs-resource-allocation
