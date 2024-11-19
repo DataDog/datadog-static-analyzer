@@ -3,9 +3,10 @@
 // Copyright 2024 Datadog, Inc.
 
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::{HandleScope, SharedRef};
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
+use std::sync::LazyLock;
 use std::time::Duration;
 
 /// A unique `u32` id used to identify a tree-sitter node sent from Rust to v8.
@@ -320,6 +321,25 @@ pub fn compile_script(
 
 pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Context>);
 
+static V8_PLATFORM_REF: LazyLock<SharedRef<v8::Platform>> = LazyLock::new(|| {
+    let platform = if cfg!(test) {
+        // When running with PKU support, only the thread that initialized the v8 platform (or that thread's
+        // spawned children) can access the v8 isolates. This is problematic in `cargo` unit tests because there is
+        // currently no way that we can guarantee that the main thread will be the first to initialize v8.
+        // In order to get around this, we can use the "unprotected" v8 platform.
+        //
+        // Safety: This is not a security issue (or potential one) because this is only used in unit tests.
+        assert!(
+            cfg!(test),
+            "extra guard: unprotected platform can only be used in unit tests."
+        );
+        v8::new_unprotected_default_platform(0, false)
+    } else {
+        v8::new_default_platform(0, false)
+    };
+    platform.make_shared()
+});
+
 /// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
 ///
 /// If provided, a `config_default_v8_context` can configure the default `v8::Context`
@@ -339,6 +359,7 @@ pub fn create_base_runtime(
     deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         extensions,
         startup_snapshot: Some(deno_core::Snapshot::JustCreated(snapshot)),
+        v8_platform: Some(V8_PLATFORM_REF.clone()),
         ..Default::default()
     })
 }
