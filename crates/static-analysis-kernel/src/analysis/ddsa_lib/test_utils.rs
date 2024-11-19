@@ -16,8 +16,7 @@ use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
 use crate::model::rule::{RuleCategory, RuleInternal, RuleSeverity};
 use deno_core::v8::HandleScope;
-use deno_core::{v8, ExtensionFileSource};
-use std::borrow::Cow;
+use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
@@ -164,15 +163,19 @@ pub(crate) fn cfg_test_runtime() -> deno_core::JsRuntime {
 /// used for production, we don't add every class to `globalThis`. Unit tests use `v8::Script`
 /// to execute JavaScript (and, because it's not an ES module, a script can't perform imports).
 fn cfg_test_deno_ext() -> deno_core::Extension {
+    fn leaked(string: impl ToString) -> &'static str {
+        Box::leak(string.to_string().into_boxed_str())
+    }
+
     // The extension we use in production.
     let mut production_extension = ddsa_lib::init_ops_and_esm();
     let prod_entrypoint = production_extension.get_esm_entry_point().unwrap();
-    let prod_ops = production_extension.init_ops().to_owned();
+    let prod_ops = production_extension.init_ops().unwrap();
     #[allow(unused_mut)]
     let mut ops = prod_ops;
 
     // Clone all ES modules, minus the entrypoint.
-    let mut esm_sources = production_extension.get_esm_sources().to_owned();
+    let mut esm_sources = production_extension.get_esm_sources().clone();
     esm_sources.retain(|efs| efs.specifier != prod_entrypoint);
 
     // Add additional cfg(test) ES modules
@@ -180,8 +183,10 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     {
         use crate::analysis::ddsa_lib::extension::ddsa_lib_cfg_test;
         let mut cfg_test_extension = ddsa_lib_cfg_test::init_ops_and_esm();
-        esm_sources.extend(cfg_test_extension.get_esm_sources().to_owned());
-        ops.extend(cfg_test_extension.init_ops().to_owned());
+        let cfg_test_esm_sources = cfg_test_extension.get_esm_sources().clone();
+        let cfg_test_ops = cfg_test_extension.init_ops().unwrap();
+        esm_sources.extend(cfg_test_esm_sources);
+        ops.extend(cfg_test_ops);
     }
 
     // Create an entrypoint that adds all exports to `globalThis`.
@@ -203,20 +208,18 @@ globalThis.console = new DDSA_Console();
 globalThis.ddsa = new DDSA();
 globalThis.__ddsaPrivate__ = new DDSAPrivate();
 ";
-    let specifier = "ext:test/__entrypoint";
-
-    esm_sources.push(ExtensionFileSource::new_computed(
+    let entrypoint_code = leaked(entrypoint_code);
+    let specifier = leaked("ext:test/__entrypoint");
+    esm_sources.push(ExtensionFileSource {
         specifier,
-        Arc::from(entrypoint_code),
-    ));
+        code: ExtensionFileSourceCode::IncludedInBinary(entrypoint_code),
+    });
 
-    deno_core::Extension {
-        name: "cfg_test_ddsa_lib",
-        esm_entry_point: Some(specifier),
-        esm_files: Cow::Owned(esm_sources),
-        ops: Cow::Owned(ops),
-        ..Default::default()
-    }
+    ExtensionBuilder::default()
+        .esm(esm_sources)
+        .esm_entry_point(specifier)
+        .ops(ops)
+        .build()
 }
 
 /// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
