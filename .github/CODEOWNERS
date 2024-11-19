@@ -1,2 +1,0 @@
-**/*                                                              @DataDog/static-analysis-core
-/crates/bins/src/bin/datadog_static_analyzer_server/ide/**/*      @DataDog/ide-integration-static-analysis-server
