@@ -7,7 +7,8 @@
 //       They should only be used in unit tests.
 
 use crate::analysis::ddsa_lib::common::{
-    iter_v8_array, load_function, v8_interned, v8_string, v8_uint, DDSAJsRuntimeError,
+    create_base_runtime, iter_v8_array, load_function, v8_interned, v8_string, v8_uint,
+    DDSAJsRuntimeError,
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use crate::analysis::ddsa_lib::runtime::ExecutionResult;
@@ -151,10 +152,7 @@ pub(crate) fn parse_code(code: impl AsRef<str>, language: Language) -> tree_sitt
 
 /// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.
 pub(crate) fn cfg_test_runtime() -> deno_core::JsRuntime {
-    deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-        extensions: vec![cfg_test_deno_ext()],
-        ..Default::default()
-    })
+    create_base_runtime(vec![cfg_test_deno_ext()], None)
 }
 
 /// A [`deno_core::Extension`] that clones the ES modules from [`ddsa_lib`] and uses an
