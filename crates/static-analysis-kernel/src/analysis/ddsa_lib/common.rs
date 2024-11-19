@@ -332,8 +332,7 @@ pub fn create_base_runtime(
     if let Some(config_fn) = config_default_v8_context {
         // If a function is provided to configure the default v8::Context, first create a v8::Snapshot,
         // mutate the default context, and then create a new JsRuntime with that snapshot.
-        let mut snapshot_runtime =
-            deno_core::JsRuntimeForSnapshot::new(Default::default(), Default::default());
+        let mut snapshot_runtime = deno_core::JsRuntimeForSnapshot::new(Default::default());
         {
             let scope = &mut snapshot_runtime.handle_scope();
             let default_ctx = scope.get_current_context();
