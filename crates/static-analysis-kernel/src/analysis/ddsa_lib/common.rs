@@ -6,7 +6,6 @@ use deno_core::v8;
 use deno_core::v8::{HandleScope, SharedRef};
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
-use std::sync::LazyLock;
 use std::time::Duration;
 
 /// A unique `u32` id used to identify a tree-sitter node sent from Rust to v8.
@@ -321,8 +320,8 @@ pub fn compile_script(
 
 pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Context>);
 
-static V8_PLATFORM_REF: LazyLock<SharedRef<v8::Platform>> = LazyLock::new(|| {
-    let platform = if cfg!(test) {
+fn v8_platform_ref() -> SharedRef<v8::Platform> {
+    if cfg!(test) {
         // When running with PKU support, only the thread that initialized the v8 platform (or that thread's
         // spawned children) can access the v8 isolates. This is problematic in `cargo` unit tests because there is
         // currently no way that we can guarantee that the main thread will be the first to initialize v8.
@@ -336,11 +335,9 @@ static V8_PLATFORM_REF: LazyLock<SharedRef<v8::Platform>> = LazyLock::new(|| {
         v8::new_unprotected_default_platform(0, false)
     } else {
         v8::new_default_platform(0, false)
-    };
-    let shared = platform.make_shared();
-    deno_core::JsRuntime::init_platform(Some(shared.clone()));
-    shared
-});
+    }
+    .make_shared()
+}
 
 /// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
 ///
@@ -361,7 +358,7 @@ pub fn create_base_runtime(
     deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         extensions,
         startup_snapshot: Some(deno_core::Snapshot::JustCreated(snapshot)),
-        v8_platform: Some(V8_PLATFORM_REF.clone()),
+        v8_platform: Some(v8_platform_ref()),
         ..Default::default()
     })
 }
