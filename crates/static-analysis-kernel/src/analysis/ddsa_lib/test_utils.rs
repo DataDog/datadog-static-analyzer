@@ -7,11 +7,11 @@
 //       They should only be used in unit tests.
 
 use crate::analysis::ddsa_lib::common::{
-    create_base_runtime, iter_v8_array, load_function, v8_interned, v8_string, v8_uint,
-    DDSAJsRuntimeError,
+    iter_v8_array, load_function, v8_interned, v8_string, v8_uint, DDSAJsRuntimeError,
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
-use crate::analysis::ddsa_lib::runtime::ExecutionResult;
+use crate::analysis::ddsa_lib::runtime::{make_base_deno_core_runtime, ExecutionResult};
+use crate::analysis::ddsa_lib::v8_platform::V8Platform;
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
@@ -59,7 +59,7 @@ where
     T: for<'s> FnMut(&mut HandleScope<'s>) -> v8::Local<'s, v8::Object>,
 {
     use std::collections::HashSet;
-    let mut runtime = cfg_test_runtime();
+    let mut runtime = cfg_test_v8().deno_core_rt();
     let scope = &mut runtime.handle_scope();
     let object = object_creator(scope);
 
@@ -148,11 +148,6 @@ pub(crate) fn parse_code(code: impl AsRef<str>, language: Language) -> tree_sitt
         .set_language(&get_tree_sitter_language(&language))
         .unwrap();
     parser.parse(code.as_ref(), None).unwrap()
-}
-
-/// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.
-pub(crate) fn cfg_test_runtime() -> deno_core::JsRuntime {
-    create_base_runtime(vec![cfg_test_deno_ext()], None)
 }
 
 /// A [`deno_core::Extension`] that clones the ES modules from [`ddsa_lib`] and uses an
@@ -454,4 +449,43 @@ impl TsTree {
         }
         nodes
     }
+}
+
+/// A ZWT used to indicate that a [`V8Platform`] is operating in a test environment.
+#[derive(Debug, Copy, Clone)]
+pub struct CfgTest;
+
+pub fn cfg_test_v8() -> V8Platform<CfgTest> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static V8_PLATFORM_INIT: AtomicBool = AtomicBool::new(false);
+
+    if V8_PLATFORM_INIT
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_ok()
+    {
+        // When running with PKU support, only the thread that initialized the v8 platform (or that thread's
+        // spawned children) can access the v8 isolates. This is problematic in `cargo` unit tests because there is
+        // currently no way that we can guarantee that the main thread will be the first to initialize v8.
+        // In order to get around this, we can use the "unprotected" v8 platform.
+        let platform = v8::new_unprotected_default_platform(0, false);
+        let shared_platform = platform.make_shared();
+        deno_core::JsRuntime::init_platform(Some(shared_platform));
+    }
+    V8Platform::<CfgTest>(std::marker::PhantomData)
+}
+
+impl V8Platform<CfgTest> {
+    pub fn new_runtime(&self) -> JsRuntime {
+        let test_deno_core_runtime = self.deno_core_rt();
+        JsRuntime::try_new(test_deno_core_runtime).unwrap()
+    }
+
+    pub fn deno_core_rt(&self) -> deno_core::JsRuntime {
+        make_base_deno_core_runtime(vec![cfg_test_deno_ext()])
+    }
+}
+
+// TEMPORARY: REMOVE
+pub fn cfg_test_runtime() -> deno_core::JsRuntime {
+    cfg_test_v8().deno_core_rt()
 }

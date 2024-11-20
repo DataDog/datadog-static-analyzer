@@ -471,7 +471,7 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime};
     use crate::analysis::ddsa_lib::v8_ds::{MirroredIndexMap, MirroredVec, SyncedV8Array};
     use deno_core::v8::HandleScope;
-    use deno_core::{v8, JsRuntime, RuntimeOptions};
+    use deno_core::{v8, JsRuntime};
 
     struct IntConverter;
     rust_converter!((IntConverter, i32), |&self, scope, value| {

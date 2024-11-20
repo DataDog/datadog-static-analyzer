@@ -318,31 +318,6 @@ pub fn compile_script(
     Ok(v8::Global::new(tc_scope, unbound_script))
 }
 
-pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Context>);
-
-/// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
-///
-/// If provided, a `config_default_v8_context` can configure the default `v8::Context`
-/// that will be used as the base for all newly-created `v8::Context`s within the
-/// runtime's `v8::Isolate`.
-pub fn create_base_runtime(
-    extensions: Vec<deno_core::Extension>,
-    config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
-) -> deno_core::JsRuntime {
-    let mut snapshot_runtime = deno_core::JsRuntimeForSnapshot::new(Default::default());
-    if let Some(config_fn) = config_default_v8_context {
-        let scope = &mut snapshot_runtime.handle_scope();
-        let default_ctx = scope.get_current_context();
-        config_fn(scope, default_ctx);
-    }
-    let snapshot = snapshot_runtime.snapshot();
-    deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-        extensions,
-        startup_snapshot: Some(deno_core::Snapshot::JustCreated(snapshot)),
-        ..Default::default()
-    })
-}
-
 /// This function allows the caller to ignore an error associated with a call to v8.
 ///
 /// # Safety
@@ -370,14 +345,14 @@ pub fn swallow_v8_error<F: FnOnce() -> T, T>(f: F) -> T {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::common::{
-        compile_script, create_base_runtime, v8_interned, v8_string, DDSAJsRuntimeError,
+        compile_script, v8_interned, v8_string, DDSAJsRuntimeError,
     };
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
-    use crate::analysis::ddsa_lib::JsRuntime;
+    use crate::analysis::ddsa_lib::runtime::inner_make_deno_core_runtime;
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
 
     #[test]
     fn compile_script_invalid() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let invalid_js = r#"
 const invalidSyntax = const;
 "#;
@@ -390,24 +365,25 @@ const invalidSyntax = const;
 
     #[test]
     fn compile_script_valid() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let invalid_js = r#"
 const validSyntax = 123;
 "#;
         assert!(compile_script(&mut runtime.v8_handle_scope(), invalid_js).is_ok());
     }
 
-    /// Tests that `create_base_runtime` can modify the default v8::Context for the runtime's v8 isolate.
+    /// Tests that [`inner_new_deno_core_runtime`](V8Platform::<Initialized>::inner_new_deno_core_runtime)
+    /// can modify the default v8::Context for the runtime's v8 isolate.
     #[test]
     fn create_base_runtime_mutate_ctx() {
-        let mut runtime = create_base_runtime(vec![], None);
+        let mut runtime = inner_make_deno_core_runtime(vec![], None);
         // We use the ES6 `Map` constructor because it will always be present
         let code = "Map;";
 
         let value = try_execute(&mut runtime.handle_scope(), code).unwrap();
         assert!(value.is_object());
 
-        let mut runtime = create_base_runtime(
+        let mut runtime = inner_make_deno_core_runtime(
             vec![],
             Some(Box::new(|scope, default_ctx| {
                 let key = v8_interned(scope, "Map");
@@ -429,7 +405,7 @@ const validSyntax = 123;
     /// [`v8_string`] should be able to create strings utilizing the whole UTF-8 range.
     #[test]
     fn v8_string_fn_utf8() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
 
         // Round-trip the strings through v8 to ensure a lossless conversion.
@@ -444,7 +420,7 @@ const validSyntax = 123;
     /// [`v8_interned`] should be able to create v8 "OneByte" strings from ASCII.
     #[test]
     fn v8_interned_fn_ascii() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
 
         let v8_str = v8_interned(scope, ASCII);
@@ -458,7 +434,7 @@ const validSyntax = 123;
     fn v8_interned_fn_not_ascii() {
         for text in [LATIN_1_SUPPLEMENT, WIDE] {
             let result = std::panic::catch_unwind(|| {
-                let mut runtime = cfg_test_runtime();
+                let mut runtime = cfg_test_v8().deno_core_rt();
                 let scope = &mut runtime.handle_scope();
                 let _v8_str = v8_interned(scope, text);
             });
