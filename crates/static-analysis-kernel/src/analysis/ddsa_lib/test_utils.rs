@@ -151,17 +151,6 @@ pub(crate) fn parse_code(code: impl AsRef<str>, language: Language) -> tree_sitt
 
 /// A [`deno_core::JsRuntime`] with all `ddsa_lib` ES modules exposed via `globalThis`.
 pub(crate) fn cfg_test_runtime() -> deno_core::JsRuntime {
-    // v8's PKU feature enforces that only the thread (or its spawned children) that initialized the v8
-    // platform can access the v8 isolates. This is problematic in `cargo` unit tests because there is
-    // currently no way that we can guarantee that the main thread will be the first to initialize v8.
-    // In order to get around this, we can use the "unprotected" v8 platform.
-    //
-    // Safety: This is not a security issue (or potential one) because this function can only be used in unit tests.
-    if !cfg!(test) {
-        panic!("this function can only safely be used in unit tests");
-    }
-    let test_platform = v8::new_unprotected_default_platform(0, false).make_shared();
-    deno_core::JsRuntime::init_platform(Some(test_platform), false);
     deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         extensions: vec![cfg_test_deno_ext()],
         ..Default::default()
