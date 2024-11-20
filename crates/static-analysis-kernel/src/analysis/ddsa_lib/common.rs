@@ -337,7 +337,9 @@ static V8_PLATFORM_REF: LazyLock<SharedRef<v8::Platform>> = LazyLock::new(|| {
     } else {
         v8::new_default_platform(0, false)
     };
-    platform.make_shared()
+    let shared = platform.make_shared();
+    deno_core::JsRuntime::init_platform(Some(shared.clone()));
+    shared
 });
 
 /// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
