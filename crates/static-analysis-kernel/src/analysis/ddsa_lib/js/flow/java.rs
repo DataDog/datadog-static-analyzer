@@ -93,9 +93,11 @@ mod tests {
     use crate::analysis::ddsa_lib::js::flow::graph::Digraph;
     use crate::analysis::ddsa_lib::js::flow::graph_test_utils::cst_dot_digraph;
     use crate::analysis::ddsa_lib::js::ViolationConverter;
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute, TsTree};
+    use crate::analysis::ddsa_lib::test_utils::{
+        cfg_test_runtime, cfg_test_v8, try_execute, TsTree,
+    };
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
-    use crate::analysis::ddsa_lib::{js, JsRuntime};
+    use crate::analysis::ddsa_lib::{initialize_v8, js, JsRuntime};
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::analysis::TreeSitterNode;
     use crate::model::common::Language;
@@ -116,7 +118,7 @@ mod tests {
     /// and injects helper functions into the JavaScript context.
     #[rustfmt::skip]
     pub(crate) fn setup(source_text: &str) -> (JsRuntime, TsTree) {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let tree = TsTree::new(source_text, Language::Java);
         let source_text = Arc::<str>::from(source_text);
         let filename = Arc::<str>::from("test_doesnt_use_filename");

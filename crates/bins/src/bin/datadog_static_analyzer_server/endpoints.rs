@@ -105,11 +105,12 @@ fn languages(span: TraceSpan) -> Value {
     json!(languages)
 }
 
+#[allow(unreachable_code)]
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
 fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
     let _entered = span.enter();
     tracing::debug!("{:?}", &request.0);
-    json!(process_analysis_request(request.into_inner()))
+    json!(process_analysis_request(request.into_inner(), todo!()))
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
