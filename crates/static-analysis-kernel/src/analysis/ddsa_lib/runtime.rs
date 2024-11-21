@@ -14,8 +14,8 @@ use crate::analysis::ddsa_lib::js::{VisitArgCodeCompat, VisitArgFilenameCompat};
 use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
+use deno_core::v8;
 use deno_core::v8::HandleScope;
-use deno_core::{v8, Snapshot};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -442,6 +442,9 @@ impl Drop for JsRuntime {
 }
 
 /// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
+///
+/// # Warning
+/// This will leak memory for each `deno_core::JsRuntime` created. Thus, this runtime should be reused where possible.
 pub(crate) fn make_base_deno_core_runtime(
     extensions: Vec<deno_core::Extension>,
 ) -> deno_core::JsRuntime {
@@ -469,6 +472,9 @@ pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Conte
 /// If provided, a `config_default_v8_context` can configure the default `v8::Context`
 /// that will be used as the base for all newly-created `v8::Context`s within the
 /// runtime's `v8::Isolate`.
+///
+/// # Warning
+/// This will leak memory for each `deno_core::JsRuntime` created. Thus, this runtime should be reused where possible.
 pub(crate) fn inner_make_deno_core_runtime(
     extensions: Vec<deno_core::Extension>,
     config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
@@ -483,9 +489,10 @@ pub(crate) fn inner_make_deno_core_runtime(
         config_fn(scope, default_ctx);
     }
     let snapshot = snapshot_runtime.snapshot();
+    let leaked = Box::leak(snapshot);
     deno_core::JsRuntime::new(deno_core::RuntimeOptions {
         extensions,
-        startup_snapshot: Some(Snapshot::JustCreated(snapshot)),
+        startup_snapshot: Some(leaked),
         ..Default::default()
     })
 }
