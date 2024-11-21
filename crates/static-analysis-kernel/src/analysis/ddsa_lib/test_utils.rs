@@ -16,7 +16,8 @@ use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
 use crate::model::rule::{RuleCategory, RuleInternal, RuleSeverity};
 use deno_core::v8::HandleScope;
-use deno_core::{v8, ExtensionBuilder, ExtensionFileSource, ExtensionFileSourceCode};
+use deno_core::{v8, ExtensionFileSource, ExtensionFileSourceCode};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::ops::Deref;
@@ -170,12 +171,12 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     // The extension we use in production.
     let mut production_extension = ddsa_lib::init_ops_and_esm();
     let prod_entrypoint = production_extension.get_esm_entry_point().unwrap();
-    let prod_ops = production_extension.init_ops().unwrap();
+    let prod_ops = production_extension.init_ops().to_owned();
     #[allow(unused_mut)]
     let mut ops = prod_ops;
 
     // Clone all ES modules, minus the entrypoint.
-    let mut esm_sources = production_extension.get_esm_sources().clone();
+    let mut esm_sources = production_extension.get_esm_sources().to_owned();
     esm_sources.retain(|efs| efs.specifier != prod_entrypoint);
 
     // Add additional cfg(test) ES modules
@@ -183,10 +184,8 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     {
         use crate::analysis::ddsa_lib::extension::ddsa_lib_cfg_test;
         let mut cfg_test_extension = ddsa_lib_cfg_test::init_ops_and_esm();
-        let cfg_test_esm_sources = cfg_test_extension.get_esm_sources().clone();
-        let cfg_test_ops = cfg_test_extension.init_ops().unwrap();
-        esm_sources.extend(cfg_test_esm_sources);
-        ops.extend(cfg_test_ops);
+        esm_sources.extend(cfg_test_extension.get_esm_sources().to_owned());
+        ops.extend(cfg_test_extension.init_ops().to_owned());
     }
 
     // Create an entrypoint that adds all exports to `globalThis`.
@@ -215,11 +214,13 @@ globalThis.__ddsaPrivate__ = new DDSAPrivate();
         code: ExtensionFileSourceCode::IncludedInBinary(entrypoint_code),
     });
 
-    ExtensionBuilder::default()
-        .esm(esm_sources)
-        .esm_entry_point(specifier)
-        .ops(ops)
-        .build()
+    deno_core::Extension {
+        name: "cfg_test_ddsa_lib",
+        esm_entry_point: Some(specifier),
+        esm_files: Cow::Owned(esm_sources),
+        ops: Cow::Owned(ops),
+        ..Default::default()
+    }
 }
 
 /// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
