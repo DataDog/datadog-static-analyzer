@@ -7,7 +7,8 @@ use crate::model::analysis_request::{AnalysisRequest, ServerRule};
 use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
 use crate::model::violation::ServerViolation;
 use common::analysis_options::AnalysisOptions;
-use kernel::analysis::analyze::{analyze, DEFAULT_JS_RUNTIME};
+use kernel::analysis::analyze::analyze_with;
+use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::config_file::parse_config_file;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleInternalError, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
@@ -15,7 +16,10 @@ use kernel::utils::decode_base64_string;
 use std::sync::Arc;
 
 #[tracing::instrument(skip_all)]
-pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
+pub fn process_analysis_request(
+    request: AnalysisRequest,
+    runtime: &mut JsRuntime,
+) -> AnalysisResponse {
     tracing::debug!("Processing analysis request");
 
     // Decode the configuration, if present.
@@ -183,14 +187,13 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
     // NOTE: We would ideally handle this more elegantly, but for now, always clear the cache
     // for the incoming rules before making a request. This is needed because during rule authoring,
     // the rule will change, despite its name being the same (and the cache is keyed only by the rule name).
-    DEFAULT_JS_RUNTIME.with_borrow(|runtime| {
-        for rule in &rules {
-            runtime.clear_rule_cache(&rule.name);
-        }
-    });
+    for rule in &rules {
+        runtime.clear_rule_cache(&rule.name);
+    }
 
     // execute the rule. If we fail to convert, return an error.
-    let rule_results = analyze(
+    let rule_results = analyze_with(
+        runtime,
         &request.language,
         &rules,
         &Arc::from(request.filename),
@@ -234,6 +237,7 @@ pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
 #[cfg(test)]
 mod tests {
     use crate::model::analysis_request::{AnalysisRequestOptions, ServerRule};
+    use kernel::analysis::ddsa_lib;
     use kernel::model::{
         analysis::ERROR_RULE_TIMEOUT,
         common::Language,
@@ -242,6 +246,14 @@ mod tests {
     use kernel::utils::encode_base64_string;
 
     use super::*;
+
+    /// A shorthand helper function to call [`super::process_analysis_request`] without requiring
+    /// an explicitly-created [`JsRuntime`].
+    pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
+        let v8 = ddsa_lib::test_utils::cfg_test_v8();
+        let mut runtime = v8.new_runtime();
+        super::process_analysis_request(request, &mut runtime)
+    }
 
     #[test]
     fn test_request_single_region_correct_response() {

@@ -10,10 +10,11 @@ pub mod extension;
 pub(crate) mod js;
 pub(crate) mod ops;
 pub(crate) mod runtime;
-pub(crate) use runtime::JsRuntime;
+pub use runtime::JsRuntime;
 #[allow(dead_code)]
-mod test_utils;
+pub mod test_utils;
 pub mod v8_ds;
+pub mod v8_platform;
 
 use std::hash::{Hash, Hasher};
 

@@ -78,7 +78,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, NodeId};
     use crate::analysis::ddsa_lib::js::{MultiCaptureTemplate, QueryMatch, SingleCaptureTemplate};
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_tsn_bridge,
+        attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_tsn_bridge,
         try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::RustConverter;
@@ -106,7 +106,7 @@ mod tests {
     /// Tests that a call to `_getId` on a `SingleCapture` properly returns the captured node's id.
     #[test]
     fn get_id_single_on_single() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
         let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
@@ -127,7 +127,7 @@ mod tests {
     /// This behavior has been preserved from the original stella library.
     #[test]
     fn get_id_single_on_multi_is_last() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
         let multi_cap =
@@ -143,7 +143,7 @@ mod tests {
     /// Tests that a call to `_getManyIds` on a `SingleCapture` returns an array containing only the single node id.
     #[test]
     fn get_many_ids_on_single() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
         let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
@@ -169,7 +169,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     /// Tests that a call to `_getManyIds` on a `MultiCapture` returns an array of node ids.
     #[test]
     fn get_many_ids_on_multi() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
         let multi_cap =
@@ -192,7 +192,7 @@ assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
     /// still returns an array (with a single node id).
     #[test]
     fn get_many_ids_on_multi_with_one_element() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
         let multi_cap = TSQueryCapture::<NodeId>::new_multi(Arc::<str>::from("cap_name"), vec![10]);
@@ -214,7 +214,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     #[rustfmt::skip]
     #[test]
     fn query_match_converter_empty_undefined() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
         let captures = vec![];
@@ -230,7 +230,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     /// Tests that `get` properly retrieves nodes from the `TsNodeBridge`.
     #[test]
     fn get_node() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10]);
@@ -250,7 +250,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     /// Tests that `getMany` properly retrieves nodes from the `TsNodeBridge`.
     #[test]
     fn get_many_nodes() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20]);

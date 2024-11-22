@@ -85,14 +85,14 @@ mod tests {
     use crate::analysis::ddsa_lib::bridge::ts_node::TsNodeBridge;
     use crate::analysis::ddsa_lib::common::{Class, NodeId, StellaCompat};
     use crate::analysis::ddsa_lib::js;
-    use crate::analysis::ddsa_lib::test_utils::cfg_test_runtime;
+    use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
     use crate::analysis::tree_sitter::{get_tree, QueryMatch, TSCaptureContent, TSQuery};
     use crate::model::common::Language;
     use deno_core::JsRuntime;
 
     fn setup_bridge() -> (JsRuntime, QueryMatchBridge, TsNodeBridge) {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let qm_bridge = QueryMatchBridge::try_new(&mut runtime.handle_scope()).unwrap();
         let tsn_bridge = TsNodeBridge::try_new(&mut runtime.handle_scope()).unwrap();
         (runtime, qm_bridge, tsn_bridge)

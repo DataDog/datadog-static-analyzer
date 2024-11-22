@@ -67,7 +67,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{v8_interned, Instance};
     use crate::analysis::ddsa_lib::js::context_file_go::FileContextGo;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, try_execute,
     };
     use deno_core::v8;
     use deno_core::v8::HandleScope;
@@ -107,7 +107,7 @@ mod tests {
     /// Thus, we use `packages` as a getter, and this test ensures the getter properly returns de-duplicated names.
     #[test]
     fn unique_packages_array() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mapping = &[
             ("alias_1", "alpha/pkg"),
@@ -129,7 +129,7 @@ GO.packages.join(',');
     /// Thus, we use `packages` as a getter, and this test ensures the getter properly returns de-duplicated names.
     #[test]
     fn package_name_lookup() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mapping = &[
             ("alias_1", "alpha/pkg"),

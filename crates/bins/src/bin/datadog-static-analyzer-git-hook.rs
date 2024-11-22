@@ -19,7 +19,9 @@ use common::model::diff_aware::DiffAware;
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
-use kernel::analysis::analyze::analyze;
+use kernel::analysis::analyze::analyze_with;
+use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
+use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
@@ -29,6 +31,7 @@ use rayon::prelude::*;
 use rocket::yansi::Paint;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
@@ -438,6 +441,8 @@ fn main() -> Result<()> {
         );
     }
 
+    let v8 = initialize_v8(num_cpus as u32);
+
     let analysis_start_instant = Instant::now();
 
     // static analysis part
@@ -459,6 +464,11 @@ fn main() -> Result<()> {
             let rule_results: Vec<RuleResult> = files_for_language
                 .into_par_iter()
                 .flat_map(|path| {
+                    thread_local! {
+                        // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
+                        static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
+                    }
+
                     let relative_path = path
                         .strip_prefix(directory_path)
                         .unwrap()
@@ -469,15 +479,24 @@ fn main() -> Result<()> {
                         .rule_config_provider
                         .config_for_file(relative_path.as_ref());
                     if let Ok(file_content) = fs::read_to_string(&path) {
+                        let mut opt = JS_RUNTIME.replace(None);
+                        let runtime_ref = opt.get_or_insert_with(|| {
+                            v8.try_new_runtime().expect("ddsa init should succeed")
+                        });
+
                         let file_content = Arc::from(file_content);
-                        analyze(
+                        let rule_result = analyze_with(
+                            runtime_ref,
                             language,
                             &rules_for_language,
                             &relative_path,
                             &file_content,
                             &rule_config,
                             &analysis_options,
-                        )
+                        );
+                        JS_RUNTIME.replace(opt);
+
+                        rule_result
                     } else {
                         vec![]
                     }

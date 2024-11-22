@@ -21,14 +21,6 @@ use std::time::{Duration, Instant};
 /// the time it takes for the JavaScript rule to execute.
 const RULE_EXECUTION_TIMEOUT: Duration = Duration::from_millis(2000);
 
-thread_local! {
-    /// A thread-local `JsRuntime`
-    pub static DEFAULT_JS_RUNTIME: std::cell::RefCell<JsRuntime> = {
-        let runtime = JsRuntime::try_new().expect("runtime should have all data required to init");
-        std::cell::RefCell::new(runtime)
-    };
-}
-
 /// Split the code and extract all the logic that reports to lines to ignore.
 /// If a no-dd-sa statement occurs on the first line, it applies to the whole file.
 /// Otherwise, it only applies to the line below.
@@ -135,36 +127,6 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         lines_to_ignore_per_rule: lines_to_ignore_per_rules,
         ignore_file,
     }
-}
-
-// main function
-// 1. Build the context (tree-sitter tree, etc)
-// 2. Run the tree-sitter query and build the object that hold the match
-// 3. Execute the rule
-// 4. Collect results and errors
-pub fn analyze<I>(
-    language: &Language,
-    rules: I,
-    filename: &Arc<str>,
-    code: &Arc<str>,
-    rule_config: &RuleConfig,
-    analysis_option: &AnalysisOptions,
-) -> Vec<RuleResult>
-where
-    I: IntoIterator,
-    I::Item: Borrow<RuleInternal>,
-{
-    DEFAULT_JS_RUNTIME.with_borrow_mut(|runtime| {
-        analyze_with(
-            runtime,
-            language,
-            rules,
-            filename,
-            code,
-            rule_config,
-            analysis_option,
-        )
-    })
 }
 
 pub fn analyze_with<I>(
@@ -311,6 +273,7 @@ where
 ///
 /// [DOT Language]: https://graphviz.org/doc/info/lang.html
 pub fn generate_flow_graph_dot(
+    runtime: &mut JsRuntime,
     language: Language,
     file_name: &Arc<str>,
     file_contents: &Arc<str>,
@@ -374,7 +337,8 @@ function visit(captures) {
                 tree_sitter_query,
             };
 
-            let results = analyze(
+            let results = analyze_with(
+                runtime,
                 &language,
                 [rule],
                 file_name,
@@ -411,6 +375,7 @@ function visit(captures) {
 mod tests {
 
     use super::*;
+    use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::tree_sitter::get_query;
     use crate::config_file::parse_config_file;
     use crate::model::common::Language;
@@ -428,6 +393,28 @@ mod tests {
 def foo(arg1):
     pass
         "#;
+
+    /// A shorthand function to avoid needing to manually create a v8 platform in unit tests.
+    fn analyze(
+        language: &Language,
+        rules: &[RuleInternal],
+        filename: &Arc<str>,
+        code: &Arc<str>,
+        rule_config: &RuleConfig,
+        analysis_option: &AnalysisOptions,
+    ) -> Vec<RuleResult> {
+        let v8 = cfg_test_v8();
+        let mut runtime = v8.new_runtime();
+        analyze_with(
+            &mut runtime,
+            language,
+            rules,
+            filename,
+            code,
+            rule_config,
+            analysis_option,
+        )
+    }
 
     // execution time must be more than 0
     #[test]
@@ -1331,7 +1318,9 @@ public class ClassB {
     }
 }
 ";
+        let mut runtime = cfg_test_v8().new_runtime();
         let parsed_dot = generate_flow_graph_dot(
+            &mut runtime,
             Language::Java,
             &Arc::from("path/to/file.java"),
             &Arc::from(file_contents),

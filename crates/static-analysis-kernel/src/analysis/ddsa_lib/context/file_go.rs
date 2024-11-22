@@ -115,13 +115,13 @@ impl FileContextGo {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::context::file_go::FileContextGo;
-    use crate::analysis::ddsa_lib::test_utils::cfg_test_runtime;
+    use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
 
     #[test]
     fn test_get_file_context_go() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mut ctx_go = FileContextGo::new(scope);
 

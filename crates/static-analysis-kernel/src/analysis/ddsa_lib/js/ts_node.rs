@@ -99,7 +99,7 @@ mod tests {
     use crate::analysis::ddsa_lib::js::ts_node::FIELD_CHILD_NODE_CLASS_NAME;
     use crate::analysis::ddsa_lib::js::{TreeSitterNode, TreeSitterNodeFn};
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_root_context,
+        attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_root_context,
         try_execute,
     };
     use crate::analysis::tree_sitter::get_tree_sitter_language;
@@ -195,7 +195,7 @@ mod tests {
     /// Tests that the getter for `start` and `end` is lazily instantiated and returned.
     #[test]
     fn position_getters() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
 
@@ -251,7 +251,7 @@ mod tests {
     /// Tests that the `type` getter returns the node type as a name string.
     #[test]
     fn type_getter() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
 
@@ -289,7 +289,7 @@ mod tests {
     /// but that it provides all the same properties as the node itself.
     #[test]
     fn field_child_interface() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
 

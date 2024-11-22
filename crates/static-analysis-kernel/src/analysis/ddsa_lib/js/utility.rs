@@ -4,11 +4,11 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
 
     #[test]
     fn console_basic_serialization() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         // NOTE: There are special cases where certain class instances serialize to a different format.
         // These are tested in the `runtime` module, as they might require multiple bridges to be configured.

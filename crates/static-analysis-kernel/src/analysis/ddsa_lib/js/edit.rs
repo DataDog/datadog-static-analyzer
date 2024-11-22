@@ -166,7 +166,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{DDSAJsRuntimeError, Instance};
     use crate::analysis::ddsa_lib::js::{Edit, EditConverter, EditKind};
     use crate::analysis::ddsa_lib::test_utils::{
-        cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        cfg_test_v8, js_class_eq, js_instance_eq, try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
     use deno_core::v8::HandleScope;
@@ -211,7 +211,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn edit_converter_deserialization() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let s = &mut runtime.handle_scope();
         // Users should not be creating `Edit` instances via the constructor, it's tested regardless
         // Missing `startCol`
@@ -242,7 +242,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn edit_converter_deserialize_superfluous() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mut deserialize = |input: &str| -> Edit<Instance> {
             let c = EditConverter::new();

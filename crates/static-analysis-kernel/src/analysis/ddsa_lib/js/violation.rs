@@ -127,7 +127,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::Instance;
     use crate::analysis::ddsa_lib::js::{CodeRegion, Violation, ViolationConverter};
     use crate::analysis::ddsa_lib::test_utils::{
-        cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        cfg_test_v8, js_class_eq, js_instance_eq, try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
     use std::marker::PhantomData;
@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn variadic_violation_creation() {
         let converter = ViolationConverter::new();
-        let mut rt = cfg_test_runtime();
+        let mut rt = cfg_test_v8().deno_core_rt();
         let scope = &mut rt.handle_scope();
 
         let region0 = CodeRegion::<Instance> {
