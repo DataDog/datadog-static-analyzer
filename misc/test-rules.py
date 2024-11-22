@@ -21,6 +21,7 @@ import time
 
 import requests
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 RETRY_DELAY = 1
 
@@ -161,30 +162,37 @@ def stop_server(server_pid: int):
     os.kill(server_pid, signal.SIGKILL)
 
 def test_ruleset_server(ruleset, port: int):
+    def post_request(payload):
+        req = requests.post(f"http://localhost:{port}/analyze", json=payload)
+        return req.json()
+
     print(f"Testing ruleset {ruleset['data']['id']} on the server")
     rules = ruleset['data']['attributes']['rules']
 
-    for rule in rules:
-        print(f"   Testing rule {rule['name']}")
+    with ThreadPoolExecutor() as executor:
+        futures = []
 
-        # for each test of the rule
-        for test in rule['tests']:
-            test_code = test['code']
-            test_file = test['filename']
-            test_annotations_count = int(test['annotation_count'])
+        for rule in rules:
+            print(f"   [{rule['name']}] Testing rule")
 
-            payload = {
-                "code": test_code,
-                "file_encoding": "utf-8",
-                "filename": test_file,
-                "language": rule['language'],
-                "rules": [transform_rule(rule)]
-            }
+            # for each test of the rule
+            for test in rule['tests']:
+                test_code = test['code']
+                test_file = test['filename']
+                test_annotations_count = int(test['annotation_count'])
 
-            req = requests.post(f"http://localhost:{port}/analyze", json=payload)
+                payload = {
+                    "code": test_code,
+                    "file_encoding": "utf-8",
+                    "filename": test_file,
+                    "language": rule['language'],
+                    "rules": [transform_rule(rule)]
+                }
 
-            response = req.json()
+                futures.append((executor.submit(post_request, payload), rule['name'], test_annotations_count))
 
+        for future, rule_name, test_annotations_count in futures:
+            response = future.result()
             test_results = response['rule_responses']
             if len(test_results) == 0:
                 results_annotations_count = 0
@@ -192,9 +200,7 @@ def test_ruleset_server(ruleset, port: int):
                 results_annotations_count = len(test_results[0]['violations'])
 
             if results_annotations_count != test_annotations_count:
-                print(f"number of annotations mismatch for rule {rule['name']}")
-                print(f"Expected number of annotations: {test_annotations_count}")
-                print(f"Got number of annotations: {results_annotations_count}")
+                print(f"[{rule['name']}] number of annotations mismatch (expected: {test_annotations_count}, got: {results_annotations_count})")
                 sys.exit(1)
 
 
