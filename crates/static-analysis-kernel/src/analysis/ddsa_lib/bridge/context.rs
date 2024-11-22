@@ -232,7 +232,7 @@ mod tests {
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
     use crate::analysis::ddsa_lib::common::v8_string;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, format_ts_lang_pointer, parse_code, try_execute,
+        attach_as_global, cfg_test_v8, format_ts_lang_pointer, parse_code, try_execute,
         KEY_TS_LANGUAGE_PTR,
     };
     use crate::analysis::tree_sitter::get_tree;
@@ -270,7 +270,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn set_root_context_clears_cache() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let contents_1: Arc<str> = Arc::from("const fileContents = '11111'");
         let filename_1: Arc<str> = Arc::from("11111.js");
@@ -299,7 +299,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn set_rule_context_args_is_exact() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mut bridge = ContextBridge::try_new(scope).unwrap();
         assert!(bridge.rule.js.v8_arguments_map(scope).is_some());
@@ -328,7 +328,7 @@ mod tests {
     /// Tests that the tree-sitter language context is updated when the `RootContext` is set.
     #[test]
     fn set_root_context_ts_lang() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mut bridge = ContextBridge::try_new(scope).unwrap();
 
@@ -358,7 +358,7 @@ mod tests {
     #[test]
     /// Tests that go module aliases are eagerly calculated by calling `set_file_context`.
     fn test_fetch_go_module_alias_eagerly() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
         attach_as_global(&mut runtime.handle_scope(), bridge.file.js.v8_object(), "FILE_CTX_BRIDGE");
         let bridge = Rc::new(RefCell::new(bridge));
@@ -396,7 +396,7 @@ FILE_CTX_BRIDGE.go.getResolvedPackage("mrand");
     #[test]
     /// Tests that terraform resources are eagerly calculated by calling `set_file_context`.
     fn test_fetch_terraform_resources_eagerly() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
         attach_as_global(
             &mut runtime.handle_scope(),
@@ -443,7 +443,7 @@ FILE_CTX_BRIDGE.terraform.resources.map(r => `${r.type}:${r.name}`).join(',');
     #[test]
     /// Tests that JavaScript package imports are eagerly calculated by calling `set_file_context`.
     fn test_fetch_js_package_imports_eagerly() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
         attach_as_global(
             &mut runtime.handle_scope(),

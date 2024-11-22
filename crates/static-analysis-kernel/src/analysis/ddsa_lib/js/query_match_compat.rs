@@ -58,7 +58,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{v8_interned, NodeId};
     use crate::analysis::ddsa_lib::js::query_match_compat::QueryMatchCompat;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_root_context,
+        attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_root_context,
         make_stub_tsn_bridge, try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::RustConverter;
@@ -85,7 +85,7 @@ const abc = 123; thisStringRepresents(\"File Contents\");\
     /// Tests the interface for `<QueryMatchCompat>.captures`.
     #[test]
     fn compat_layer_captures() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10]);
@@ -108,7 +108,7 @@ assert(QUERY_MATCH.captures.cap_name.id === 10);
     /// Tests the edge case in `QueryMatchCompat` where a capture name collides with a `QueryMatch` instance method.
     #[test]
     fn compat_layer_captures_name_collision() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20]);
@@ -147,7 +147,7 @@ QUERY_MATCH.captures.{}(\"cap_name\");",
     /// Tests the interface for `<QueryMatchCompat>.capturesList`.
     #[test]
     fn compat_layer_captures_list() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20]);
@@ -173,7 +173,7 @@ assert(stubNodes[1].id === 20);
     /// `QueryMatch` returns `undefined` for an empty capture list. `<QueryMatchCompat>.capturesList` should also return undefined.
     #[test]
     fn compat_layer_captures_list_empty() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[]);
@@ -196,7 +196,7 @@ assert(stubNodes === undefined);
     #[rustfmt::skip]
     #[test]
     fn compat_layer_context() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_root_context = make_stub_root_context(scope, &[("arg_name1", "123")], COMPAT_FILENAME, COMPAT_FILE_CONTENTS, None);
@@ -231,7 +231,7 @@ QUERY_MATCH.context.filename;
     #[rustfmt::skip]
     #[test]
     fn compat_layer_native_ddsa() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
 
         let scope = &mut runtime.handle_scope();
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20, 30]);

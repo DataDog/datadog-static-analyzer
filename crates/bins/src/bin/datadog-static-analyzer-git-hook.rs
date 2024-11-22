@@ -19,7 +19,9 @@ use common::model::diff_aware::DiffAware;
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
-use kernel::analysis::analyze::analyze;
+use kernel::analysis::analyze::analyze_with;
+use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
+use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
@@ -29,6 +31,7 @@ use rayon::prelude::*;
 use rocket::yansi::Paint;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
@@ -438,6 +441,8 @@ fn main() -> Result<()> {
         );
     }
 
+    let v8 = initialize_v8(num_cpus as u32).expect("v8 should have been previously uninit");
+
     let analysis_start_instant = Instant::now();
 
     // static analysis part
@@ -459,6 +464,10 @@ fn main() -> Result<()> {
             let rule_results: Vec<RuleResult> = files_for_language
                 .into_par_iter()
                 .flat_map(|path| {
+                    thread_local! {
+                        static JS_RUNTIME: RefCell<Option<JsRuntime>> = const { RefCell::new(None) };
+                    }
+
                     let relative_path = path
                         .strip_prefix(directory_path)
                         .unwrap()
@@ -469,15 +478,26 @@ fn main() -> Result<()> {
                         .rule_config_provider
                         .config_for_file(relative_path.as_ref());
                     if let Ok(file_content) = fs::read_to_string(&path) {
-                        let file_content = Arc::from(file_content);
-                        analyze(
-                            language,
-                            &rules_for_language,
-                            &relative_path,
-                            &file_content,
-                            &rule_config,
-                            &analysis_options,
-                        )
+                        JS_RUNTIME.with_borrow_mut(|opt| {
+                            if opt.is_none() {
+                                let runtime = v8
+                                    .try_new_runtime()
+                                    .expect("runtime should have all data required to init");
+                                let _ = opt.insert(runtime);
+                            }
+                            let runtime_ref = opt.as_mut().expect("Option should always be Some");
+
+                            let file_content = Arc::from(file_content);
+                            analyze_with(
+                                runtime_ref,
+                                language,
+                                &rules_for_language,
+                                &relative_path,
+                                &file_content,
+                                &rule_config,
+                                &analysis_options,
+                            )
+                        })
                     } else {
                         vec![]
                     }

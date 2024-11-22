@@ -1,6 +1,9 @@
+use std::cell::RefCell;
 use std::path::Path;
 
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
+use crate::V8_PLATFORM;
+use kernel::analysis::ddsa_lib::JsRuntime;
 use rocket::{
     fs::NamedFile,
     futures::FutureExt,
@@ -105,11 +108,32 @@ fn languages(span: TraceSpan) -> Value {
     json!(languages)
 }
 
+#[allow(unreachable_code)]
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
 fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
+    // NB: This is a temporary solution that runs the JsRuntime using the same threads that are
+    // managed by tokio's executor (which isn't ideal because the analysis is CPU-bound). A
+    // better solution would run a separate rayon threadpool and have these tokio threads send
+    // jobs to the rayon pool via a channel.
+    thread_local! {
+        static JS_RUNTIME: RefCell<Option<JsRuntime>> = const { RefCell::new(None) };
+    }
+
     let _entered = span.enter();
     tracing::debug!("{:?}", &request.0);
-    json!(process_analysis_request(request.into_inner()))
+
+    let response = JS_RUNTIME.with_borrow_mut(|opt| {
+        if opt.is_none() {
+            let v8 = V8_PLATFORM.get().expect("v8 should have been initialized");
+            let runtime = v8
+                .try_new_runtime()
+                .expect("runtime should have all data required to init");
+            let _ = opt.insert(runtime);
+        }
+        let runtime_ref = opt.as_mut().expect("Option should always be Some");
+        process_analysis_request(request.into_inner(), runtime_ref)
+    });
+    json!(response)
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]

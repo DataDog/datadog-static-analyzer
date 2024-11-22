@@ -33,7 +33,9 @@ use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
-use kernel::analysis::analyze::{analyze, generate_flow_graph_dot};
+use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
+use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
+use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
@@ -44,6 +46,7 @@ use kernel::rule_config::RuleConfigProvider;
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
+use std::cell::RefCell;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -488,6 +491,8 @@ fn main() -> Result<()> {
         );
     }
 
+    let v8 = initialize_v8(num_threads as u32).expect("v8 should have been previously uninit");
+
     let mut number_of_rules_used = 0;
     // Finally run the analysis
     for language in &languages {
@@ -532,6 +537,10 @@ fn main() -> Result<()> {
             .fold(
                 || (AnalysisStatistics::new(), Vec::<RuleResult>::new()),
                 |(mut stats, mut fold_results), path| {
+                    thread_local! {
+                        static JS_RUNTIME: RefCell<Option<JsRuntime>> = const { RefCell::new(None) };
+                    }
+
                     let relative_path = path
                         .strip_prefix(directory_path)
                         .unwrap()
@@ -542,57 +551,71 @@ fn main() -> Result<()> {
                         .rule_config_provider
                         .config_for_file(relative_path.as_ref());
                     let res = if let Ok(file_content) = fs::read_to_string(&path) {
-                        let file_content = Arc::from(file_content);
-                        let mut results = analyze(
-                            language,
-                            &rules_for_language,
-                            &relative_path,
-                            &file_content,
-                            &rule_config,
-                            &analysis_options,
-                        );
-                        results.retain_mut(|r| {
-                            // We'll drop all `RuleResult` that don't contain violations
-                            let should_retain = !r.violations.is_empty();
-
-                            // Register the timings:
-                            // (The `RuleResult` vector for `errors` contains exactly 0 or 1 elements)
-                            if let Some(err) = r.errors.first() {
-                                if err == ERROR_RULE_TIMEOUT {
-                                    stats.mark_timeout(&r.filename, &r.rule_name);
-                                } else {
-                                    stats.mark_error(&r.filename, &r.rule_name);
-                                }
+                        JS_RUNTIME.with_borrow_mut(|opt| {
+                            if opt.is_none() {
+                                let runtime = v8
+                                    .try_new_runtime()
+                                    .expect("runtime should have all data required to init");
+                                let _ = opt.insert(runtime);
                             }
-                            let exe_time = Duration::from_millis(r.execution_time_ms as u64);
-                            stats.execution(&r.rule_name, exe_time);
-                            let query_time = Duration::from_millis(r.query_node_time_ms as u64);
-                            stats.query(&r.rule_name, query_time);
-                            // For stats: re-use the RuleResult's allocation if it's going to be dropped anyway.
-                            let filename = if should_retain {
-                                r.filename.clone()
-                            } else {
-                                std::mem::take(&mut r.filename)
-                            };
-                            stats.parse(filename, Duration::from_millis(r.parsing_time_ms as u64));
+                            let runtime_ref = opt.as_mut().expect("Option should always be Some");
 
-                            should_retain
-                        });
-
-                        if debug_java_dfa && *language == Language::Java {
-                            if let Some(graph) = generate_flow_graph_dot(
-                                *language,
+                            let file_content = Arc::from(file_content);
+                            let mut results = analyze_with(
+                                runtime_ref,
+                                language,
+                                &rules_for_language,
                                 &relative_path,
                                 &file_content,
                                 &rule_config,
                                 &analysis_options,
-                            ) {
-                                let dot_path = path.with_extension("dot");
-                                let _ = fs::write(dot_path, graph);
-                            }
-                        }
+                            );
+                            results.retain_mut(|r| {
+                                // We'll drop all `RuleResult` that don't contain violations
+                                let should_retain = !r.violations.is_empty();
 
-                        results
+                                // Register the timings:
+                                // (The `RuleResult` vector for `errors` contains exactly 0 or 1 elements)
+                                if let Some(err) = r.errors.first() {
+                                    if err == ERROR_RULE_TIMEOUT {
+                                        stats.mark_timeout(&r.filename, &r.rule_name);
+                                    } else {
+                                        stats.mark_error(&r.filename, &r.rule_name);
+                                    }
+                                }
+                                let exe_time = Duration::from_millis(r.execution_time_ms as u64);
+                                stats.execution(&r.rule_name, exe_time);
+                                let query_time = Duration::from_millis(r.query_node_time_ms as u64);
+                                stats.query(&r.rule_name, query_time);
+                                // For stats: re-use the RuleResult's allocation if it's going to be dropped anyway.
+                                let filename = if should_retain {
+                                    r.filename.clone()
+                                } else {
+                                    std::mem::take(&mut r.filename)
+                                };
+                                stats.parse(
+                                    filename,
+                                    Duration::from_millis(r.parsing_time_ms as u64),
+                                );
+
+                                should_retain
+                            });
+
+                            if debug_java_dfa && *language == Language::Java {
+                                if let Some(graph) = generate_flow_graph_dot(
+                                    runtime_ref,
+                                    *language,
+                                    &relative_path,
+                                    &file_content,
+                                    &rule_config,
+                                    &analysis_options,
+                                ) {
+                                    let dot_path = path.with_extension("dot");
+                                    let _ = fs::write(dot_path, graph);
+                                }
+                            }
+                            results
+                        })
                     } else {
                         eprintln!("error when getting content of path {}", &path.display());
                         vec![]

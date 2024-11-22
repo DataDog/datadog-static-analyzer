@@ -10,7 +10,7 @@ const CLASS_NAME: &str = "DDSA";
 mod tests {
     use super::CLASS_NAME;
     use crate::analysis::ddsa_lib::test_utils::{
-        js_class_eq, js_instance_eq, shorthand_execute_rule,
+        cfg_test_v8, js_class_eq, js_instance_eq, shorthand_execute_rule,
     };
     use crate::analysis::ddsa_lib::JsRuntime;
     use crate::analysis::tree_sitter::get_tree_sitter_language;
@@ -44,7 +44,7 @@ mod tests {
     /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
     fn compat_helper_op_ts_node_named_children(get_children: &str) {
         use crate::model::common::Language::JavaScript;
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo(a, b, c) {}";
         let ts_query = r#"
 ((function_declaration
@@ -87,7 +87,7 @@ function visit(captures) {{
         let ts_lang = get_tree_sitter_language(&JavaScript);
         assert_eq!(ts_lang.field_name_for_id(26).unwrap(), "name");
 
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo(a, b) { /* ... */ }";
         let tsq_with_fields = r#"
     (function_declaration) @cap_name
@@ -118,7 +118,7 @@ function visit(captures) {{
     #[test]
     fn op_ts_node_parent() {
         use crate::model::common::Language::JavaScript;
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo() { /* code */ }";
         let ts_query = r#"
 (statement_block) @stmt
@@ -147,7 +147,7 @@ function visit(captures) {
     #[test]
     fn op_ts_node_parent_lazy_serialization() {
         use crate::model::common::Language::JavaScript;
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo() { /* code */ }";
         let ts_query = r#"
 (statement_block) @stmt

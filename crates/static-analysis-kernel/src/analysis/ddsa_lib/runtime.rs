@@ -7,15 +7,15 @@ use crate::analysis::ddsa_lib::bridge::{
     ContextBridge, QueryMatchBridge, TsNodeBridge, ViolationBridge,
 };
 use crate::analysis::ddsa_lib::common::{
-    compile_script, create_base_runtime, v8_interned, v8_string, DDSAJsRuntimeError, Instance,
+    compile_script, v8_interned, v8_string, DDSAJsRuntimeError, Instance,
 };
-use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::js::{VisitArgCodeCompat, VisitArgFilenameCompat};
 use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
-use deno_core::v8;
+use deno_core::v8::HandleScope;
+use deno_core::{v8, Snapshot};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -52,13 +52,13 @@ pub struct JsRuntime {
 }
 
 impl JsRuntime {
-    pub fn try_new() -> Result<Self, DDSAJsRuntimeError> {
-        let mut runtime = base_js_runtime();
-
+    pub(crate) fn try_new(
+        mut deno_runtime: deno_core::JsRuntime,
+    ) -> Result<Self, DDSAJsRuntimeError> {
         // Construct the bridges and attach their underlying `v8:Global` object to the
         // default context's `globalThis` variable.
         let (context, query_match, ts_node, violation, v8_ddsa_global) = {
-            let scope = &mut runtime.handle_scope();
+            let scope = &mut deno_runtime.handle_scope();
             let v8_ddsa_object = v8::Object::new(scope);
 
             let context = ContextBridge::try_new(scope)?;
@@ -111,7 +111,7 @@ impl JsRuntime {
             (context, query_match, ts_node, violation, v8_ddsa_global)
         };
 
-        let op_state = runtime.op_state();
+        let op_state = deno_runtime.op_state();
         let mut op_state = op_state.borrow_mut();
         op_state.put(Rc::clone(&context));
         op_state.put(Rc::clone(&ts_node));
@@ -119,11 +119,11 @@ impl JsRuntime {
         let console = Rc::new(RefCell::new(JsConsole::new()));
         op_state.put(Rc::clone(&console));
 
-        let v8_isolate_handle = runtime.v8_isolate().thread_safe_handle();
+        let v8_isolate_handle = deno_runtime.v8_isolate().thread_safe_handle();
         let watchdog_pair = spawn_watchdog_thread(v8_isolate_handle);
 
         Ok(Self {
-            runtime,
+            runtime: deno_runtime,
             watchdog_pair,
             console,
             bridge_context: context,
@@ -441,6 +441,59 @@ impl Drop for JsRuntime {
     }
 }
 
+/// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
+pub(crate) fn make_base_deno_core_runtime(
+    extensions: Vec<deno_core::Extension>,
+) -> deno_core::JsRuntime {
+    /// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
+    const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
+        // `deno_core`, by default, injects its own `console` implementation.
+        "console",
+    ];
+    inner_make_deno_core_runtime(
+        extensions,
+        Some(Box::new(|scope, default_ctx| {
+            let global_proxy = default_ctx.global(scope);
+            for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
+                let key = v8_string(scope, prop);
+                global_proxy.delete(scope, key.into());
+            }
+        })),
+    )
+}
+
+pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Context>);
+
+/// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
+///
+/// If provided, a `config_default_v8_context` can configure the default `v8::Context`
+/// that will be used as the base for all newly-created `v8::Context`s within the
+/// runtime's `v8::Isolate`.
+pub(crate) fn inner_make_deno_core_runtime(
+    extensions: Vec<deno_core::Extension>,
+    config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
+) -> deno_core::JsRuntime {
+    // [11-20-24]: There appears to be an issue on Linux systems with PKU support where multiple
+    // deno_core::JsRuntime will attempt to use the same memory map (because not passing in a
+    // "startup_snapshot" in practice behaves like a single, global snapshot), leading to segfaults.
+    //
+    // By always creating and using a snapshot, each runtime will use its own memory space.
+    //
+    // NB: It's not clear if the origin of this issue is deno_core or v8
+    let mut snapshot_runtime = deno_core::JsRuntimeForSnapshot::new(Default::default());
+    if let Some(config_fn) = config_default_v8_context {
+        let scope = &mut snapshot_runtime.handle_scope();
+        let default_ctx = scope.get_current_context();
+        config_fn(scope, default_ctx);
+    }
+    let snapshot = snapshot_runtime.snapshot();
+    deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+        extensions,
+        startup_snapshot: Some(Snapshot::JustCreated(snapshot)),
+        ..Default::default()
+    })
+}
+
 /// Spawns a watchdog thread that invokes [`v8::Isolate::terminate_execution`] when a JavaScript execution
 /// runs past a specified timeout duration. Returns a tuple containing the `JsExecutionState` used
 /// to communicate state to the watchdog thread, as well as a `Condvar` to notify the watchdog.
@@ -546,29 +599,6 @@ impl JsExecutionState {
     }
 }
 
-/// Constructs a [`deno_core::JsRuntime`] with the [`ddsa_lib`] extension enabled.
-fn base_js_runtime() -> deno_core::JsRuntime {
-    if cfg!(test) {
-        analysis::ddsa_lib::test_utils::cfg_test_runtime()
-    } else {
-        /// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
-        const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
-            // `deno_core`, by default, injects its own `console` implementation.
-            "console",
-        ];
-        create_base_runtime(
-            vec![ddsa_lib::init_ops_and_esm()],
-            Some(Box::new(|scope, default_ctx| {
-                let global_proxy = default_ctx.global(scope);
-                for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
-                    let key = v8_string(scope, prop);
-                    global_proxy.delete(scope, key.into());
-                }
-            })),
-        )
-    }
-}
-
 /// A mutable scratch space that collects the output of the `console.log` function invoked by JavaScript code.
 pub(crate) struct JsConsole(Vec<String>);
 
@@ -599,7 +629,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{
         compile_script, v8_interned, v8_uint, DDSAJsRuntimeError, Instance,
     };
-    use crate::analysis::ddsa_lib::test_utils::try_execute;
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
     use crate::analysis::ddsa_lib::{js, JsRuntime};
     use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
     use crate::model::common::Language;
@@ -693,7 +723,7 @@ mod tests {
     /// Ensures that the bridge globals exist within the JavaScript scope, and are of the expected type.
     #[test]
     fn bridge_global_defined() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let scope = &mut runtime.runtime.handle_scope();
         let code = r#"
 assert(globalThis.__RUST_BRIDGE__context instanceof RootContext, "ContextBridge global has wrong type");
@@ -710,7 +740,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
     /// Tests that the `v8_ddsa_global` object is the prototype of the default context's global object.
     #[test]
     fn ddsa_global_prototype_chain() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let scope = &mut runtime.runtime.handle_scope();
         let global_proxy = scope.get_current_context().global(scope);
         let global = global_proxy
@@ -726,7 +756,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
     /// Tests that the `v8_ddsa_global` object is the prototype of the default context's global object.
     #[test]
     fn default_context_frozen_global() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let scope = &mut runtime.runtime.handle_scope();
         let value = try_execute(scope, "Object.isFrozen(globalThis);").unwrap();
         assert!(value.is_true());
@@ -737,7 +767,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
     /// additionally tests that Rust can mutate the object, but that JavaScript can't).
     #[test]
     fn scoped_execute_rust_mutation_vs_javascript() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let type_of = "typeof __RUST_BRIDGE__ts_node;";
         let type_of = compile_script(&mut rt.v8_handle_scope(), type_of).unwrap();
 
@@ -792,7 +822,7 @@ typeof __RUST_BRIDGE__ts_node;
     /// to determine context equivalence.
     #[test]
     fn scoped_execute_uses_default_context() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
 
         // Any arbitrary, valid JavaScript code works here. We are only running a script to
         // inspect the v8 context that it executes within.
@@ -825,7 +855,7 @@ typeof __RUST_BRIDGE__ts_node;
     /// Ensures that `execute_rule_internal` can define functions, but they don't mutate the v8 context.
     #[test]
     fn execute_rule_internal_no_side_effects() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "const someName = 123;";
         let filename = "some_filename.js";
         let ts_query = "(identifier) @cap_name";
@@ -846,7 +876,7 @@ function visit(captures) {
     /// `scoped_execute` catches and reports JavaScript errors.
     #[test]
     fn scoped_execute_runtime_error() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
 
         let code = "abc;";
         let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
@@ -860,7 +890,7 @@ function visit(captures) {
 
     #[test]
     fn query_execute_timeout() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let timeout = Duration::from_millis(1000);
         let code = "function foo() { const baz = 1; }".repeat(100000);
         let filename = "some_filename.js";
@@ -929,7 +959,7 @@ function visit(captures) {
     /// `scoped_execute` can terminate JavaScript execution that goes on for too long.
     #[test]
     fn scoped_execute_timeout() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let timeout = Duration::from_millis(500);
         let loop_code = "while (true) {}";
         let loop_script = compile_script(&mut runtime.v8_handle_scope(), loop_code).unwrap();
@@ -961,7 +991,7 @@ function visit(captures) {
     /// that didn't explicitly clear the console).
     #[test]
     fn scoped_execute_console_empty() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let code = "console.log(1234);";
         let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
         assert!(runtime.console.borrow().0.is_empty());
@@ -974,7 +1004,7 @@ function visit(captures) {
 
     #[test]
     fn execute_rule_internal_single_region() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
@@ -1019,7 +1049,7 @@ function visit(captures) {
     /// Tests that a rule can define variables before the visit function and have them accessible.
     #[test]
     fn execute_rule_internal_init_order() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "const someName = 123;";
         let filename = "some_filename.js";
         let ts_query = "(identifier) @cap_name";
@@ -1051,7 +1081,7 @@ function visit(captures) {
     /// TsNode     - preserved
     #[test]
     fn execute_rule_internal_bridge_state() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "123; 456; 789;";
         let filename = "some_filename.js";
         let ts_query = "(number) @cap_name";
@@ -1088,7 +1118,7 @@ function visit(captures) {
         // Make sure our definitions for `A` and `B` as described above hold.
         // (We currently don't have a cleaner/more robust way to test this)
         {
-            let mut rt = JsRuntime::try_new().unwrap();
+            let mut rt = cfg_test_v8().new_runtime();
             let scope = &mut rt.v8_handle_scope();
             let script_a = "__RUST_BRIDGE__context.fileCtx.go === undefined;";
             assert!(!try_execute(scope, script_a).unwrap().is_true());
@@ -1174,7 +1204,7 @@ func main() {{
         // Case 1: A -> A
         ///////////////////////////////////////////////////////////////////////
         {
-            let mut rt = JsRuntime::try_new().unwrap();
+            let mut rt = cfg_test_v8().new_runtime();
 
             let go_imports_1 = &["fmt", "pkgname"];
             let go_code_1 = make_go_code(go_imports_1);
@@ -1191,7 +1221,7 @@ func main() {{
         // Case 2: A -> B
         ///////////////////////////////////////////////////////////////////////
         {
-            let mut rt = JsRuntime::try_new().unwrap();
+            let mut rt = cfg_test_v8().new_runtime();
 
             let go_imports = &["fmt", "pkgname"];
             let go_code = make_go_code(go_imports);
@@ -1206,7 +1236,7 @@ func main() {{
         // Case 2: B -> A
         ///////////////////////////////////////////////////////////////////////
         {
-            let mut rt = JsRuntime::try_new().unwrap();
+            let mut rt = cfg_test_v8().new_runtime();
 
             execute_for_side_effects(&mut rt, Language::Rust, rust_code_1).unwrap();
             // The FileContextGo should be empty
@@ -1222,7 +1252,7 @@ func main() {{
         // Case 3: B -> B
         ///////////////////////////////////////////////////////////////////////
         {
-            let mut rt = JsRuntime::try_new().unwrap();
+            let mut rt = cfg_test_v8().new_runtime();
 
             execute_for_side_effects(&mut rt, Language::Rust, rust_code_1).unwrap();
             // The FileContextGo should be empty
@@ -1237,7 +1267,7 @@ func main() {{
     /// Tests that we don't call out to v8 to execute JavaScript if there are no `query_matches`.
     #[test]
     fn execute_rule_internal_no_unnecessary_invocations() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "123; 456; 789;";
         let filename = "some_filename.js";
         let ts_query = "(identifier) @cap_name";
@@ -1255,7 +1285,7 @@ throw new Error("script should not have been executed");
     /// Tests that the compatibility layer allows a rule written for the stella runtime to execute.
     #[test]
     fn stella_compat_execute_rule_internal() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "const someName = 123; const protectedName = 456;";
         let filename = "some_filename.js";
         let ts_query = r#"
@@ -1302,7 +1332,7 @@ function visit(query, filename, code) {
     /// tree but is cleared when the tree changes.
     #[test]
     fn runtime_ts_node_bridge_state() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let ts_query_1 = "(number) @cap_name";
         let rule_code_1 = r#"
 function visit(captures) {
@@ -1339,7 +1369,7 @@ function visit(captures) {
     /// Tests that `console` resolves to our `DDSA_Console` implementation, not deno's
     #[test]
     fn ddsa_console_global() {
-        let mut runtime = JsRuntime::try_new().unwrap();
+        let mut runtime = cfg_test_v8().new_runtime();
         let code = "console instanceof DDSA_Console;";
         let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
         let correct_instance = runtime.scoped_execute(&script, |_, value| value.is_true(), None);
@@ -1349,7 +1379,7 @@ function visit(captures) {
     /// Tests that `TreeSitterNode` serializes to a human-friendly representation via the DDSA_Console.
     #[test]
     fn ddsa_console_ts_node() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let source_text = "const abc = 123;";
         let filename = "some_filename.js";
         let ts_query = r#"
@@ -1375,7 +1405,7 @@ function visit(captures) {
     /// Tests that `TreeSitterFieldChildNode` serializes to a human-friendly representation via the DDSA_Console.
     #[test]
     fn ddsa_console_ts_node_field_name() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo(a, b) { /* ... */ }";
         let filename = "some_filename.js";
         let tsq_with_fields = r#"
