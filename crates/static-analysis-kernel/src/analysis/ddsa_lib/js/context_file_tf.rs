@@ -110,7 +110,7 @@ mod tests {
     use super::{FileContextTerraform, TerraformResource};
     use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, Instance};
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, try_execute,
+        attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, try_execute,
     };
 
     /// Creates a `FileContextTerraform`, prepopulated with the provided `resource_array` and exposed on `globalThis`
@@ -183,7 +183,7 @@ mod tests {
     /// It's also possible we want every resource of a given type, so we also use `getResourcesOfType` to test this.
     #[test]
     fn unique_resources() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let tf_resources = &[
             ("aws_instance", "app"),
@@ -212,7 +212,7 @@ TERRAFORM.getResourcesOfType('aws_instance').map(r => r.name).join(',');
     /// Here we test that we can fetch all the resources.
     #[test]
     fn get_all_resources() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let tf_resources = &[
             ("aws_instance", "app"),

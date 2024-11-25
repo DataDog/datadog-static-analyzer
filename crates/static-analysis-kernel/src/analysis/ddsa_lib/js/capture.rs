@@ -121,7 +121,7 @@ impl MultiCaptureTemplate {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::js::{MultiCaptureTemplate, SingleCaptureTemplate};
-    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_v8, try_execute};
 
     // These objects are created entirely in v8, so the property canary tests are implemented
     // slightly differently than in other files where we use `js_instance_eq`.
@@ -129,7 +129,7 @@ mod tests {
     /// Verifies the object shape of a `SingleCapture`.
     #[test]
     fn single_capture_js_properties_canary() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let template = SingleCaptureTemplate::new(scope);
         let capture = template.new_instance(scope, "alpha", 16);
@@ -147,7 +147,7 @@ assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
     /// Verifies the object shape of a `MultiCapture`.
     #[test]
     fn multi_capture_js_properties_canary() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let template = MultiCaptureTemplate::new(scope);
         let capture = template.new_instance(scope, "bravo", &[16, 32, 48]);

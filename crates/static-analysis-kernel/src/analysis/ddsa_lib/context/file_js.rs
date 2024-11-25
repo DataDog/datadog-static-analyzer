@@ -236,12 +236,12 @@ impl FileContextJavaScript {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::ddsa_lib::test_utils::cfg_test_runtime;
+    use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::tree_sitter::get_tree;
 
     #[test]
     fn test_get_js_imports() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mut ctx_js = FileContextJavaScript::new(scope).unwrap();
 

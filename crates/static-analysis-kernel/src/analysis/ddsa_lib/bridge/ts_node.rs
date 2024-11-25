@@ -154,7 +154,7 @@ mod tests {
     use crate::analysis::ddsa_lib::bridge::ContextBridge;
     use crate::analysis::ddsa_lib::common::get_field;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, try_execute, TsTree,
+        attach_as_global, cfg_test_v8, try_execute, TsTree,
     };
     use crate::analysis::ddsa_lib::RawTSNode;
     use crate::model::common::Language;
@@ -184,7 +184,7 @@ mod tests {
     }
 
     fn setup_bridge() -> (deno_core::JsRuntime, Rc<RefCell<TsNodeBridge>>) {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let bridge = TsNodeBridge::try_new(&mut runtime.handle_scope()).unwrap();
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));

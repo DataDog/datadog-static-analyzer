@@ -468,10 +468,10 @@ macro_rules! v8_converter {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::common::{v8_interned, v8_string, v8_uint, DDSAJsRuntimeError};
-    use crate::analysis::ddsa_lib::test_utils::attach_as_global;
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_v8};
     use crate::analysis::ddsa_lib::v8_ds::{MirroredIndexMap, MirroredVec, SyncedV8Array};
+    use deno_core::v8;
     use deno_core::v8::HandleScope;
-    use deno_core::{v8, JsRuntime, RuntimeOptions};
 
     struct IntConverter;
     rust_converter!((IntConverter, i32), |&self, scope, value| {
@@ -536,8 +536,10 @@ mod tests {
         (key.into(), value.into())
     }
 
-    fn setup_vec_from_v8(name: &str) -> (JsRuntime, SyncedV8Array<Object, ObjConverter>) {
-        let mut rt = JsRuntime::new(RuntimeOptions::default());
+    fn setup_vec_from_v8(
+        name: &str,
+    ) -> (deno_core::JsRuntime, SyncedV8Array<Object, ObjConverter>) {
+        let mut rt = cfg_test_v8().deno_core_rt();
         let synced = {
             let scope = &mut rt.handle_scope();
             let v8_array = v8::Array::new(scope, 0);
@@ -561,7 +563,7 @@ mod tests {
 
     #[test]
     fn mirrored_vec_set_get() {
-        let mut runtime = JsRuntime::new(RuntimeOptions::default());
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
 
         let mut synced = MirroredVec::new(IntConverter, scope);
@@ -583,7 +585,7 @@ mod tests {
     /// Tests that clear wipes the existing data, preserving the original allocation.
     #[test]
     fn mirrored_vec_clear() {
-        let mut runtime = JsRuntime::new(RuntimeOptions::default());
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
 
         let mut synced = MirroredVec::with_capacity(IntConverter, scope, 16);
@@ -604,7 +606,7 @@ mod tests {
     /// Tests that existing values are properly cleared when setting the data (tested because we re-use the v8 array).
     #[test]
     fn mirrored_vec_replace() {
-        let mut runtime = JsRuntime::new(RuntimeOptions::default());
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
 
         // Long -> Short
@@ -625,7 +627,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn mirrored_im_insert_with_get_full() {
-        let mut runtime = JsRuntime::new(RuntimeOptions::default());
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mut synced = MirroredIndexMap::new(scope);
 
@@ -645,7 +647,7 @@ mod tests {
     #[rustfmt::skip]
     #[test]
     fn mirrored_im_replace() {
-        let mut runtime = JsRuntime::new(RuntimeOptions::default());
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let mut synced = MirroredIndexMap::new(scope);
 

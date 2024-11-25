@@ -109,9 +109,7 @@ impl JSPackageImport<Class> {
 mod tests {
     use super::*;
     use crate::analysis::ddsa_lib::common::v8_uint;
-    use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq,
-    };
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, js_class_eq, js_instance_eq};
 
     #[test]
     fn js_properties_canary() {

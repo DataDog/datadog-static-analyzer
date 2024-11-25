@@ -1,10 +1,12 @@
 use cli::datadog_utils::get_ruleset;
 use common::analysis_options::AnalysisOptions;
-use kernel::analysis::analyze::analyze;
+use kernel::analysis::analyze::analyze_with;
 use kernel::model::rule::Rule;
 
 use anyhow::{Error, Result};
 use getopts::Options;
+use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
+use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::model::rule_test::RuleTest;
 use kernel::rule_config::RuleConfig;
 use kernel::utils::decode_base64_string;
@@ -17,7 +19,7 @@ fn print_usage(program: &str, opts: Options) {
     print!("{}", opts.usage(&brief));
 }
 
-fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
+fn test_rule(runtime: &mut JsRuntime, rule: &Rule, test: &RuleTest) -> Result<String> {
     let rule_internal = rule.to_rule_internal().unwrap();
     let code = decode_base64_string(test.code_base64.to_string()).unwrap();
     let code = Arc::from(code);
@@ -28,7 +30,8 @@ fn test_rule(rule: &Rule, test: &RuleTest) -> Result<String> {
         timeout: None,
     };
     let rules = vec![rule_internal];
-    let analyze_result = analyze(
+    let analyze_result = analyze_with(
+        runtime,
         &rule.language,
         &rules,
         &Arc::from(test.filename.clone()),
@@ -82,6 +85,11 @@ fn main() {
         exit(1);
     }
 
+    let v8 = initialize_v8(0);
+    let mut runtime = v8
+        .try_new_runtime()
+        .expect("runtime should have all data required to init");
+
     let use_staging = matches.opt_present("s");
     let rulesets = matches.opt_strs("r");
     let mut num_failures = 0;
@@ -93,7 +101,7 @@ fn main() {
                     println!("   rule {} ... ", rule.name);
                     let c = rule.clone();
                     for t in rule.tests {
-                        match test_rule(&c, &t) {
+                        match test_rule(&mut runtime, &c, &t) {
                             Ok(_) => {
                                 println!("      test {} passed", t.filename);
                             }

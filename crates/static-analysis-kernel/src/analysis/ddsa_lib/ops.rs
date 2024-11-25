@@ -286,13 +286,13 @@ pub fn op_digraph_adjacency_list_to_dot(
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
 
     /// A [`deno_core::op2`] should serialize [`Option::None`] to [`v8::null`], not [`v8::undefined`].
     /// This test is mostly for explicit documentation, as we don't expect any upstream changes to this.
     #[test]
     fn none_serialization_to_null() {
-        let mut rt = cfg_test_runtime();
+        let mut rt = cfg_test_v8().deno_core_rt();
         let scope = &mut rt.handle_scope();
         let res = try_execute(scope, "Deno.core.ops.cfg_test_op_rust_option(true);").unwrap();
         assert_eq!(res.uint32_value(scope).unwrap(), 123);

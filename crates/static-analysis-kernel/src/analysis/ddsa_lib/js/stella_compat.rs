@@ -77,7 +77,7 @@ mod tests {
         VisitArgCodeCompat, VisitArgFilenameCompat,
     };
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, make_stub_root_context,
+        attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_root_context,
         try_execute,
     };
     use deno_core::v8;
@@ -106,7 +106,7 @@ thisStringRepresents('The file contents');\
     /// Tests that the class instance behaves like a `String` object, but accessing it returns the filename.
     #[test]
     fn filename_proxy() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
 
         let stub_root_context = make_stub_root_context(scope, &[], CTX_FILENAME, "", None);
@@ -129,7 +129,7 @@ assert(__FILENAME_PROXY__.includes("name"), "method invocation doesn't work");
     /// Tests that the class instance behaves like a `String` object, but accessing it returns the code.
     #[test]
     fn file_contents_proxy() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
 
         let stub_root_context = make_stub_root_context(scope, &[], "", CTX_FILE_CONTENTS, None);

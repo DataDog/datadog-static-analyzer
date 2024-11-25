@@ -152,14 +152,14 @@ where
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::context::ts_lang;
-    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_v8, try_execute};
     use crate::analysis::tree_sitter::get_tree_sitter_language;
     use crate::model::common::Language;
 
     /// Tests the metadata mapping for a tree-sitter language's "node kind"
     #[test]
     fn metadata_node_kind() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let metadata = ts_lang::Metadata::new(scope, &ts_lang);
@@ -179,7 +179,7 @@ mod tests {
     /// Tests the metadata mapping for a tree-sitter language's "field"
     #[test]
     fn metadata_field() {
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let metadata = ts_lang::Metadata::new(scope, &ts_lang);

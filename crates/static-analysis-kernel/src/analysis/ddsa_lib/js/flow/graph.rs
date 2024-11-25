@@ -671,7 +671,7 @@ mod tests {
     use crate::analysis::ddsa_lib::js::flow::graph::{
         id_str, Digraph, DigraphCollection, Edge, EdgeKind, V8DotGraph, VertexId, VertexKind, KIND,
     };
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_runtime, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
     use crate::analysis::ddsa_lib::JsRuntime;
     use deno_core::v8;
     use graphviz_rust::dot_structures;
@@ -795,7 +795,7 @@ graph.adjacencyList;
     /// Builds a JavaScript `Digraph` from the provided `reference` and then deserializes it to
     /// a [`Digraph`] so it can be inspected.
     fn construct_js_graphs(reference: &str) -> JsGraphs {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         let reference_graph = graphviz_rust::parse(reference).unwrap();
         let mut js_script = generate_graph_creation_js(&reference_graph);
         // language=javascript
@@ -848,7 +848,7 @@ graph.adjacencyList;
     #[test]
     fn vertex_kind_js_synchronization() {
         let tests = [VertexKind::Cst, VertexKind::Phi];
-        let mut rt = cfg_test_runtime();
+        let mut rt = cfg_test_v8().deno_core_rt();
         let scope = &mut rt.handle_scope();
         for rust_kind in tests {
             let js_const = match rust_kind {
@@ -869,7 +869,7 @@ graph.adjacencyList;
             EdgeKind::Assignment,
             EdgeKind::Dependence,
         ];
-        let mut rt = cfg_test_runtime();
+        let mut rt = cfg_test_v8().deno_core_rt();
         let scope = &mut rt.handle_scope();
         for rust_kind in tests {
             // (The name of the const exported from `graph.js`)
@@ -887,7 +887,7 @@ graph.adjacencyList;
     /// The Rust logic for unpacking an "Edge" JavaScript number is in sync with JavaScript.
     #[test]
     fn js_edge_rust_deserialize() {
-        let mut rt = cfg_test_runtime();
+        let mut rt = cfg_test_v8().deno_core_rt();
         let sc = &mut rt.handle_scope();
         let cases = [
             (VertexId::from_cst(1234), VertexKind::Cst),
@@ -908,7 +908,7 @@ graph.adjacencyList;
     /// The JavaScript logic for serializing and deserializing an "Edge" is correct.
     #[test]
     fn js_edge_js_ser_des() {
-        let mut rt = cfg_test_runtime();
+        let mut rt = cfg_test_v8().deno_core_rt();
         let sc = &mut rt.handle_scope();
         // language=javascript
         let js_code = "\
@@ -1006,7 +1006,7 @@ strict digraph {
     /// Phi nodes are preserved. Cycles are handled by ignoring the entire path.
     #[test]
     fn find_taint_flows_all_paths() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         // language=js
         let js_code = "\
 // A helper function to construct a dependence edge.
@@ -1056,7 +1056,7 @@ serialized;
     /// `TaintFlow` acts like an array (i.e. has Array as its prototype).
     #[test]
     fn taint_flow_array() {
-        let mut rt = JsRuntime::try_new().unwrap();
+        let mut rt = cfg_test_v8().new_runtime();
         // language=js
         let js_code = "\
 const flow = new TaintFlow([], false);

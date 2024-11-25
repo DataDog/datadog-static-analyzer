@@ -165,7 +165,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::v8_string;
     use crate::analysis::ddsa_lib::js::RootContext;
     use crate::analysis::ddsa_lib::test_utils::{
-        attach_as_global, cfg_test_runtime, js_class_eq, js_instance_eq, parse_code, try_execute,
+        attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, parse_code, try_execute,
     };
     use crate::model::common::Language;
     use std::cell::RefCell;
@@ -214,7 +214,7 @@ const sampleFileContents = 0 + 1 + 2;
         let file_contents = Arc::<str>::from(file_contents);
         let file_name = Arc::<str>::from("file_name.js");
 
-        let mut runtime = cfg_test_runtime();
+        let mut runtime = cfg_test_v8().deno_core_rt();
         let bridge = setup_bridge(&mut runtime, "ROOT");
         let tree = Arc::new(parse_code(&file_contents, Language::JavaScript));
         let scope = &mut runtime.handle_scope();

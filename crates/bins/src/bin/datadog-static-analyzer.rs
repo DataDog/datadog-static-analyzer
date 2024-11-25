@@ -33,7 +33,9 @@ use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
-use kernel::analysis::analyze::{analyze, generate_flow_graph_dot};
+use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
+use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
+use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
@@ -44,6 +46,7 @@ use kernel::rule_config::RuleConfigProvider;
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
+use std::cell::Cell;
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -488,6 +491,8 @@ fn main() -> Result<()> {
         );
     }
 
+    let v8 = initialize_v8(num_threads as u32);
+
     let mut number_of_rules_used = 0;
     // Finally run the analysis
     for language in &languages {
@@ -532,6 +537,11 @@ fn main() -> Result<()> {
             .fold(
                 || (AnalysisStatistics::new(), Vec::<RuleResult>::new()),
                 |(mut stats, mut fold_results), path| {
+                    thread_local! {
+                        // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
+                        static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
+                    }
+
                     let relative_path = path
                         .strip_prefix(directory_path)
                         .unwrap()
@@ -542,8 +552,14 @@ fn main() -> Result<()> {
                         .rule_config_provider
                         .config_for_file(relative_path.as_ref());
                     let res = if let Ok(file_content) = fs::read_to_string(&path) {
+                        let mut opt = JS_RUNTIME.replace(None);
+                        let runtime_ref = opt.get_or_insert_with(|| {
+                            v8.try_new_runtime().expect("ddsa init should succeed")
+                        });
+
                         let file_content = Arc::from(file_content);
-                        let mut results = analyze(
+                        let mut results = analyze_with(
+                            runtime_ref,
                             language,
                             &rules_for_language,
                             &relative_path,
@@ -581,6 +597,7 @@ fn main() -> Result<()> {
 
                         if debug_java_dfa && *language == Language::Java {
                             if let Some(graph) = generate_flow_graph_dot(
+                                runtime_ref,
                                 *language,
                                 &relative_path,
                                 &file_content,
@@ -591,6 +608,7 @@ fn main() -> Result<()> {
                                 let _ = fs::write(dot_path, graph);
                             }
                         }
+                        JS_RUNTIME.replace(opt);
 
                         results
                     } else {

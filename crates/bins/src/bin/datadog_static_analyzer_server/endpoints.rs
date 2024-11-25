@@ -1,6 +1,9 @@
+use std::cell::Cell;
 use std::path::Path;
 
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
+use crate::{RAYON_POOL, V8_PLATFORM};
+use kernel::analysis::ddsa_lib::JsRuntime;
 use rocket::{
     fs::NamedFile,
     futures::FutureExt,
@@ -105,11 +108,33 @@ fn languages(span: TraceSpan) -> Value {
     json!(languages)
 }
 
+#[allow(unreachable_code)]
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
-fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
+async fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
     let _entered = span.enter();
     tracing::debug!("{:?}", &request.0);
-    json!(process_analysis_request(request.into_inner()))
+
+    rocket::tokio::task::spawn_blocking(|| {
+        let pool = RAYON_POOL.get().expect("pool should have been created");
+        pool.scope_fifo(|_| {
+            thread_local! {
+                // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
+                static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
+            }
+            tracing::warn!("performing job on {:?}", std::thread::current().id());
+            let mut opt = JS_RUNTIME.replace(None);
+            let runtime_ref = opt.get_or_insert_with(|| {
+                let v8 = V8_PLATFORM.get().expect("v8 should have been initialized");
+                v8.try_new_runtime().expect("ddsa init should succeed")
+            });
+            let response = process_analysis_request(request.into_inner(), runtime_ref);
+            JS_RUNTIME.replace(opt);
+
+            json!(response)
+        })
+    })
+    .await
+    .unwrap()
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
