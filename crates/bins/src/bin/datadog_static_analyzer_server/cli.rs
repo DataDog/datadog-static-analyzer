@@ -57,8 +57,6 @@ fn get_opts() -> Options {
         "/tmp/static-analysis-server",
     );
 
-    // TODO (JF): Remove this when releasing 0.3.8
-    opts.optflag("", "ddsa-runtime", "(deprecated)");
     opts
 }
 
@@ -201,11 +199,6 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
             }
         };
         tracing::debug!("Address set to {addr}");
-    }
-
-    // TODO: should this be removed already?
-    if matches.opt_present("ddsa-runtime") {
-        println!("[WARNING] the --ddsa-runtime flag is deprecated and will be removed in the next version");
     }
 
     // channel used to send the shutdown handler so that we can exit the server gracefully
