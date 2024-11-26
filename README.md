@@ -21,7 +21,7 @@ datadog-static-analyzer --directory /path/to/directory --output report.csv --for
 #### Using Docker
 
 ```shell
-docker run ghcr.io/datadog/datadog-static-analyzer:latest -v /path/to/directory:/data --directory /data --output /data/report.csv --format csv
+docker run -it --rm -v /path/to/directory:/data ghcr.io/datadog/datadog-static-analyzer:latest --directory /data --output /data/report.csv --format csv
 ```
 
 For more information on the Docker container, see the documentation [here](./doc/docker-container.md).
