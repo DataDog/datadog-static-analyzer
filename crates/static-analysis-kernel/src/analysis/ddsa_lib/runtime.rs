@@ -696,10 +696,13 @@ mod tests {
 
         let now = Instant::now();
         let mut curs = ts_query.cursor();
+        println!("Starting query with timeout: {:?}", timeout);
         let q_matches = curs
             .matches(tree.root_node(), source_text.as_ref(), timeout)
             .collect::<Vec<_>>();
         let ts_query_time = now.elapsed();
+        println!("Query completed in: {:?}", ts_query_time);
+        println!("Got {} matches", q_matches.len());
 
         // It's possible that the TS query took about as long as the timeout itself, and since
         // we compute the time just a little bit before matches are run, `ts_query_time` could be

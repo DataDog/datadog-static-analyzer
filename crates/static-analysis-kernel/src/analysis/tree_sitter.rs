@@ -174,41 +174,61 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
         text: &'tree str,
         timeout: Option<Duration>,
     ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> + 'a {
+        println!("Starting matches() with timeout: {:?}", timeout);
+        let start = std::time::Instant::now();
         let cursor = match &mut self.cursor {
             MaybeOwnedMut::Borrowed(cursor) => cursor,
             MaybeOwnedMut::Owned(cursor) => cursor,
         };
-        cursor.set_timeout_micros(timeout.map(|t| t.as_micros()).unwrap_or_default() as u64);
+        println!("Cursor setup took: {:?}", start.elapsed());
+        let micros = timeout.map(|t| t.as_micros()).unwrap_or_default() as u64;
+        println!("Setting timeout to {micros} micros");
+        cursor.set_timeout_micros(micros);
+        println!("Timeout set at elapsed: {:?}", start.elapsed());
         let matches = cursor.matches(self.query, node, text.as_bytes());
-        matches.map_deref(|q_match| {
-            for capture in q_match.captures {
+        println!("Got matches iterator at elapsed: {:?}", start.elapsed());
+        let result = matches
+            .map_deref(|q_match| {
+                println!(
+                    "Processing match at elapsed: {:?} with {} captures",
+                    start.elapsed(),
+                    q_match.captures.len()
+                );
+                for capture in q_match.captures {
+                    self.captures_scratch
+                        .entry(capture.index)
+                        .and_modify(|qc| qc.push(capture.node))
+                        .or_insert_with(|| {
+                            let name = Arc::clone(&self.capture_names[capture.index as usize]);
+                            // --- If the quantifier is either `+` or `*`, start with an array:
+                            // (comment)+ @cap              TSCaptureContent::Multi
+                            //
+                            // Otherwise, use a scalar:
+                            // (comment)  @cap              TSCaptureContent::Single
+                            let quantifiers = self.query.capture_quantifiers(q_match.pattern_index);
+                            let contents = if matches!(
+                                quantifiers[capture.index as usize],
+                                CaptureQuantifier::OneOrMore | CaptureQuantifier::ZeroOrMore
+                            ) {
+                                TSCaptureContent::Multi(vec![capture.node])
+                            } else {
+                                TSCaptureContent::Single(capture.node)
+                            };
+                            TSQueryCapture::<tree_sitter::Node> { name, contents }
+                        });
+                }
                 self.captures_scratch
-                    .entry(capture.index)
-                    .and_modify(|qc| qc.push(capture.node))
-                    .or_insert_with(|| {
-                        let name = Arc::clone(&self.capture_names[capture.index as usize]);
-                        // --- If the quantifier is either `+` or `*`, start with an array:
-                        // (comment)+ @cap              TSCaptureContent::Multi
-                        //
-                        // Otherwise, use a scalar:
-                        // (comment)  @cap              TSCaptureContent::Single
-                        let quantifiers = self.query.capture_quantifiers(q_match.pattern_index);
-                        let contents = if matches!(
-                            quantifiers[capture.index as usize],
-                            CaptureQuantifier::OneOrMore | CaptureQuantifier::ZeroOrMore
-                        ) {
-                            TSCaptureContent::Multi(vec![capture.node])
-                        } else {
-                            TSCaptureContent::Single(capture.node)
-                        };
-                        TSQueryCapture::<tree_sitter::Node> { name, contents }
-                    });
-            }
-            self.captures_scratch
-                .drain(..)
-                .map(|(_, query_capture)| query_capture)
-                .collect::<Vec<_>>()
-        })
+                    .drain(..)
+                    .map(|(_, query_capture)| query_capture)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        println!(
+            "Finished processing match at elapsed: {:?}",
+            start.elapsed()
+        );
+        result.into_iter()
     }
 }
 
