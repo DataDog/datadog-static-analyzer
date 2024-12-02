@@ -24,7 +24,7 @@ jobs:
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1.10.1
       - name: Run cargo ${{ matrix.cargo_cmd.cmd_name }} ${{ matrix.cargo_cmd.args }}
-        uses: actions-rs/cargo@v1
-        with:
-          command: ${{ matrix.cargo_cmd.cmd_name }}
-          args: ${{ matrix.cargo_cmd.args }}
+        run: |
+          for i in {1..10}; do
+            cargo ${{ matrix.cargo_cmd.cmd_name }} ${{ matrix.cargo_cmd.args }}
+          done
