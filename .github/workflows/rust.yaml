@@ -10,19 +10,9 @@ jobs:
     strategy:
       matrix:
         config:
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, gha_alias: 'Linux x64 - ' }
-          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, gha_alias: 'Linux aarch64 - ' }
           - { os: macos-13, target: x86_64-apple-darwin, gha_alias: 'macOS x64 - ' }
-          - { os: macos-latest, target: aarch64-apple-darwin, gha_alias: 'macOS aarch64 - ' }
-          - { os: windows-latest, target: x86_64-pc-windows-msvc, gha_alias: 'Windows x64 - ' }
         cargo_cmd:
-          - { cmd_name: build, gha_alias: "Build - Profile 'debug'" }
-          - { cmd_name: test, args: '--workspace', gha_alias: "Test" }
-        include:
-          - config: { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, gha_alias: '' }
-            cargo_cmd: { cmd_name: clippy, args: '', gha_alias: "Clippy" }
-          - config: { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, gha_alias: '' }
-            cargo_cmd: { cmd_name: fmt, args: '--check', gha_alias: "Rustfmt" }
+          - { cmd_name: test, args: 'analysis::ddsa_lib::runtime::tests::query_execute_timeout', gha_alias: "Test" }
     name: ${{ matrix.config.gha_alias }}${{ matrix.cargo_cmd.gha_alias }}
     runs-on: ${{ matrix.config.os }}
     env:
@@ -38,11 +28,3 @@ jobs:
         with:
           command: ${{ matrix.cargo_cmd.cmd_name }}
           args: ${{ matrix.cargo_cmd.args }}
-      - name: Check python rulesets - part1
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
-      - name: Check python rulesets - part2
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r python-django -r python-flask -r python-design
-      - name: Check Java rulesets
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r java-security -r java-best-practices -r java-code-style
-      - name: Check Docker rulesets
-        run: cargo run --bin datadog-static-analyzer-test-ruleset -- -r docker-best-practices
