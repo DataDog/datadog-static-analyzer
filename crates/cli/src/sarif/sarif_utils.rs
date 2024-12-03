@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -20,10 +20,10 @@ use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
-    self, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder, LocationBuilder,
-    MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder, Replacement,
-    ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif, SarifBuilder,
-    Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
+    self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
+    LocationBuilder, MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder,
+    Replacement, ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif,
+    SarifBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
 use crate::file_utils::get_fingerprint_for_violation;
@@ -190,6 +190,14 @@ impl SarifRuleResult {
                     )
                 })
                 .collect::<Vec<SarifViolation>>(),
+        }
+    }
+
+    /// Returns the operating-system dependent (un-normalized) version of this path.
+    fn unnormalized_path_str(&self) -> &str {
+        match self {
+            SarifRuleResult::StaticAnalysis(r) => &r.filename,
+            SarifRuleResult::Secret(r) => &r.filename,
         }
     }
 
@@ -551,19 +559,31 @@ fn percent_encode_path(file_path: &str) -> std::borrow::Cow<'_, str> {
     utf8_percent_encode(file_path, FRAGMENT).into()
 }
 
-// Generate the tool section that reports all the rules being run
+/// Generate the tool section that reports all the rules being run
+///
+/// `artifacts_kv` should contain exactly one artifact for each unnormalized string path in `rules_results`.
 fn generate_results(
     rules: &[SarifRule],
     rules_results: &[SarifRuleResult],
-    options_orig: SarifGenerationOptions,
+    options_orig: &SarifGenerationOptions,
+    artifacts_kv: &[(&str, Artifact)],
 ) -> Result<Vec<SarifResult>> {
+    // (A lookup should be, on-balance, faster)
+    let artifacts = artifacts_kv
+        .iter()
+        .map(|(k, v)| (*k, v))
+        .collect::<HashMap<_, _>>();
+
     rules_results
         .iter()
         .flat_map(|rule_result| {
-            let artifact_loc = ArtifactLocationBuilder::default()
-                .uri(percent_encode_path(&rule_result.slash_path_str()))
-                .build()
-                .expect("file path should be encodable");
+            let artifact_loc = artifacts
+                .get(rule_result.unnormalized_path_str())
+                .as_ref()
+                .expect("artifacts should be comprehensive")
+                .location
+                .as_ref()
+                .expect("artifact should always have location");
             // if we find the rule for this violation, get the id, level and category
             let mut result_builder = ResultBuilder::default();
             let mut tags = vec![];
@@ -763,6 +783,37 @@ fn generate_results(
         .collect()
 }
 
+/// Returns a map of un-normalized string paths to their corresponding [`Artifact`] in the same
+/// order as encountered in the `unnormalized_path_strs` iterator.
+fn extract_artifacts<'a>(
+    unnormalized_path_strs: impl IntoIterator<Item = &'a str>,
+) -> Vec<(&'a str, Artifact)> {
+    let path_strs_iter = unnormalized_path_strs.into_iter();
+    let iter_size_hint = path_strs_iter.size_hint().0;
+    // A tuple with the _un-normalized string_ representation of a path and its corresponding Artifact.
+    let mut artifacts = Vec::<(&str, Artifact)>::with_capacity(iter_size_hint);
+    let mut seen_artifacts = HashSet::<&str>::with_capacity(iter_size_hint);
+
+    for path_str in path_strs_iter {
+        if !seen_artifacts.contains(path_str) {
+            seen_artifacts.insert(path_str);
+
+            let mut builder = ArtifactBuilder::default();
+            let location = ArtifactLocationBuilder::default()
+                // The ArtifactLocation uses a normalized form of the path
+                .uri(percent_encode_path(as_slash_path(path_str).as_ref()))
+                .build()
+                .expect("all required fields should be present");
+            builder.location(location);
+            let artifact = builder
+                .build()
+                .expect("all required fields should be present");
+            artifacts.push((path_str, artifact));
+        }
+    }
+    artifacts
+}
+
 // generate a SARIF report for a run.
 // the rules parameter is the list of rules used for this run
 // the violations parameter is the list of violations for this run.
@@ -795,9 +846,16 @@ pub fn generate_sarif_report(
         execution_time_secs: tool_information.execution_time_secs,
     };
 
+    let artifacts_kv =
+        extract_artifacts(rules_results.iter().map(|res| res.unnormalized_path_str()));
+
+    let results = generate_results(rules, rules_results, &options, &artifacts_kv)?;
+    let artifacts = artifacts_kv.into_iter().map(|kv| kv.1).collect::<Vec<_>>();
+
     let run = RunBuilder::default()
         .tool(generate_tool_section(rules, &options)?)
-        .results(generate_results(rules, rules_results, options)?)
+        .results(results)
+        .artifacts(artifacts)
         .build()?;
 
     Ok(SarifBuilder::default()
@@ -1070,6 +1128,10 @@ mod tests {
         let expected_json = serde_json::json!(
         {
             "runs":[{
+            "artifacts": [
+                { "location": { "uri": "myfile" } },
+                { "location": { "uri": "file.java" } },
+            ],
             "results":[{
                 "fixes":[{
                     "artifactChanges":[{
@@ -1551,5 +1613,84 @@ mod tests {
             .is_none());
         // validate the schema
         assert!(validate_data(&serde_json::to_value(sarif_report).unwrap()));
+    }
+
+    /// Tests that `generate_sarif_report` only includes unique artifacts, regardless of how many
+    /// times they appear across results.
+    #[test]
+    fn generate_sarif_report_artifacts_no_dups() {
+        let violation_paths = ["src/zzzzzz.py", "src/yyyyyy.py", "src/zzzzzz.py"];
+        let rule_results = violation_paths
+            .into_iter()
+            .enumerate()
+            .map(|(idx, file_path)| {
+                let violation = Violation {
+                    start: Position::new((idx + 1) as u32, 1),
+                    end: Position::new((idx + 1) as u32, 10),
+                    message: "violation message".to_string(),
+                    severity: RuleSeverity::Error,
+                    category: RuleCategory::BestPractices,
+                    fixes: vec![],
+                    taint_flow: None,
+                };
+                let rr = RuleResult {
+                    rule_name: format!("rule-{idx}"),
+                    filename: file_path.to_string(),
+                    violations: vec![violation],
+                    errors: vec![],
+                    execution_error: None,
+                    output: None,
+                    execution_time_ms: 0,
+                    parsing_time_ms: 0,
+                    query_node_time_ms: 0,
+                };
+                SarifRuleResult::try_from(rr).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        let sarif_report = generate_sarif_report(
+            // Unnecessary for this test
+            &[],
+            &rule_results,
+            // Unnecessary for this test
+            &"src/dir".to_string(),
+            // Unnecessary for this test
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+            },
+        )
+        .unwrap();
+
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+
+        let actual_result_locs = (0..violation_paths.len())
+            .map(|idx| {
+                let pointer = format!(
+                    "/runs/0/results/{idx}/locations/0/physicalLocation/artifactLocation/uri"
+                );
+                sarif_json.pointer(&pointer).unwrap().as_str().unwrap()
+            })
+            .collect::<Vec<_>>();
+        let actual_artifact_locs = {
+            let artifact_count = sarif_json
+                .pointer("/runs/0/artifacts")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .len();
+            (0..artifact_count)
+                .map(|idx| {
+                    let pointer = format!("/runs/0/artifacts/{idx}/location/uri");
+                    sarif_json.pointer(&pointer).unwrap().as_str().unwrap()
+                })
+                .collect::<Vec<_>>()
+        };
+
+        assert_eq!(actual_result_locs, violation_paths);
+        assert_eq!(actual_artifact_locs, vec!["src/zzzzzz.py", "src/yyyyyy.py"])
     }
 }
