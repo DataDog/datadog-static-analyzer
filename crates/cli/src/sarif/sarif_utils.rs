@@ -193,17 +193,12 @@ impl SarifRuleResult {
         }
     }
 
-    fn file_path(&self) -> String {
-        match self {
-            SarifRuleResult::StaticAnalysis(r) => Path::new(r.filename.as_str())
-                .to_slash()
-                .unwrap()
-                .to_string(),
-            SarifRuleResult::Secret(r) => Path::new(r.filename.as_str())
-                .to_slash()
-                .unwrap()
-                .to_string(),
-        }
+    /// Returns the file path for this result as a slash path. See [`as_slash_path`] for documentation.
+    fn slash_path_str(&self) -> std::borrow::Cow<'_, str> {
+        as_slash_path(match self {
+            SarifRuleResult::StaticAnalysis(r) => &r.filename,
+            SarifRuleResult::Secret(r) => &r.filename,
+        })
     }
 
     fn rule_name(&self) -> &str {
@@ -539,8 +534,9 @@ fn get_sha_for_line(
     }
 }
 
-// Encode the file using percent to that filename "My Folder/file.c" is "My%20Folder/file.c"
-fn encode_filename(filename: String) -> String {
+/// Normalizes the provided file path by percent encoding it. See [`utf8_percent_encode`] for
+/// further documentation.
+fn percent_encode_path(file_path: &str) -> std::borrow::Cow<'_, str> {
     const FRAGMENT: &AsciiSet = &CONTROLS
         .add(b' ')
         .add(b'"')
@@ -552,7 +548,7 @@ fn encode_filename(filename: String) -> String {
         .add(b'#')
         .add(b'%');
 
-    return utf8_percent_encode(filename.as_str(), FRAGMENT).collect();
+    utf8_percent_encode(file_path, FRAGMENT).into()
 }
 
 // Generate the tool section that reports all the rules being run
@@ -565,7 +561,7 @@ fn generate_results(
         .iter()
         .flat_map(|rule_result| {
             let artifact_loc = ArtifactLocationBuilder::default()
-                .uri(encode_filename(rule_result.file_path()))
+                .uri(percent_encode_path(&rule_result.slash_path_str()))
                 .build()
                 .expect("file path should be encodable");
             // if we find the rule for this violation, get the id, level and category
@@ -700,7 +696,7 @@ fn generate_results(
 
                     let sha_option = if options.add_git_info {
                         get_sha_for_line(
-                            rule_result.file_path().as_str(),
+                            &rule_result.slash_path_str(),
                             violation.start.line as usize,
                             &options,
                         )
@@ -712,7 +708,7 @@ fn generate_results(
                         rule_result.rule_name().to_string(),
                         violation,
                         Path::new(options.repository_directory.as_str()),
-                        Path::new(rule_result.file_path().as_str()),
+                        Path::new(rule_result.slash_path_str().as_ref()),
                         options.debug,
                     );
 
@@ -850,6 +846,12 @@ pub fn generate_sarif_file(
         }
         Err(err) => Err(err),
     }
+}
+
+/// Returns the file path for this result as a slash path, a path whose components are.
+/// always separated by `/` and never `\`. Any non-Unicode sequences are replaced with `U+FFFD`.
+fn as_slash_path(path_str: &str) -> std::borrow::Cow<'_, str> {
+    Path::new(path_str).to_slash().expect("str should be utf-8")
 }
 
 #[cfg(test)]
