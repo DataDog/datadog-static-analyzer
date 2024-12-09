@@ -335,3 +335,25 @@ import '../..';
         }
     }
 }
+
+#[cfg(test)]
+/// mod for documenting (intentionally) "incorrect" parsing behavior.
+mod limitations {
+    use super::parse_imports;
+
+    /// Parsing a property access from a "require" is unimplemented.
+    #[test]
+    fn unimplemented_require_property_access() {
+        let actual_imports = parse_imports("const assert = require('node:assert').strict");
+        assert!(actual_imports.is_empty());
+    }
+
+    /// When a path-like import is done, we discard all information about the actual module.
+    #[test]
+    fn fidelity_loss_import_path() {
+        let actual_imports = parse_imports("import { expect } from 'jsr:@std/expect'");
+        let import = actual_imports.first().unwrap();
+        assert_eq!(import.name, "expect");
+        assert_eq!(import.imported_from.as_ref().unwrap(), "expect");
+    }
+}
