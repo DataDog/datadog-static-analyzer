@@ -65,7 +65,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "json",
 ] }
 tracing-appender = "0.2"
-thiserror = "1"
+thiserror = "2"
 pretty_yaml = "0.4"
 
 
