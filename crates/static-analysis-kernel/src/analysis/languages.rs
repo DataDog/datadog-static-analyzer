@@ -7,6 +7,7 @@ pub mod go;
 pub mod java;
 pub mod javascript;
 pub mod python;
+pub mod typescript;
 
 /// Returns the text that `node` spans.
 ///
