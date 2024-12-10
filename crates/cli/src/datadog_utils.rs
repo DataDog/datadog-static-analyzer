@@ -123,9 +123,9 @@ enum RequestMethod {
     Post,
 }
 
-/// Return `true` if the customer configured their environment in a way that
+/// Return `true` if the customer configured their environment in a way that use the datadog backend.
 pub fn should_use_datadog_backend() -> bool {
-    get_datadog_variable_value("API_KEY").is_ok()
+    get_datadog_variable_value("API_KEY").is_ok() || get_datadog_variable_value("JWT_TOKEN").is_ok()
 }
 
 // Returns a RequestBuilder for the given API path.
