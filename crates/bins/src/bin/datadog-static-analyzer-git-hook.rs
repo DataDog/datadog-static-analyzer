@@ -615,6 +615,7 @@ fn main() -> Result<()> {
                 diff_aware_parameters: None,
                 execution_time_secs: analysis_start_instant.elapsed().as_secs(),
             },
+            &Default::default(),
         )
         .expect("cannot generate SARIF results");
 

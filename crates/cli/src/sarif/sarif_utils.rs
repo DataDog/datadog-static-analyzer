@@ -8,6 +8,7 @@ use base64::Engine;
 use common::model::position::Position;
 use common::model::position::PositionBuilder;
 use git2::{BlameOptions, Repository};
+use kernel::classifiers::ArtifactClassification;
 use kernel::constants::CARGO_VERSION;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
 use kernel::model::violation::Violation;
@@ -783,10 +784,16 @@ fn generate_results(
         .collect()
 }
 
+/// A property tag to indicate an [`ArtifactClassification`] where `is_test_file` is true.
+const CLASSIFICATION_TEST_FILE: &str = "DATADOG_ARTIFACT_IS_UNIT_TEST_FILE";
+
 /// Returns a map of un-normalized string paths to their corresponding [`Artifact`] in the same
 /// order as encountered in the `unnormalized_path_strs` iterator.
+///
+/// `path_metadata` should be a map from an un-normalized string to metadata.
 fn extract_artifacts<'a>(
     unnormalized_path_strs: impl IntoIterator<Item = &'a str>,
+    path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Vec<(&'a str, Artifact)> {
     let path_strs_iter = unnormalized_path_strs.into_iter();
     let iter_size_hint = path_strs_iter.size_hint().0;
@@ -805,6 +812,21 @@ fn extract_artifacts<'a>(
                 .build()
                 .expect("all required fields should be present");
             builder.location(location);
+
+            let mut tags: Vec<String> = vec![];
+            if let Some(metadata) = path_metadata.get(path_str) {
+                if metadata.is_test_file {
+                    tags.push(CLASSIFICATION_TEST_FILE.to_string());
+                }
+            }
+            if !tags.is_empty() {
+                let properties = PropertyBagBuilder::default()
+                    .tags(tags)
+                    .build()
+                    .expect("all required fields should be present");
+                builder.properties(properties);
+            }
+
             let artifact = builder
                 .build()
                 .expect("all required fields should be present");
@@ -814,14 +836,15 @@ fn extract_artifacts<'a>(
     artifacts
 }
 
-// generate a SARIF report for a run.
-// the rules parameter is the list of rules used for this run
-// the violations parameter is the list of violations for this run.
+/// Generates a single-run SARIF report with the rules, results, and tool information used.
+///
+/// `path_metadata` should be a map from an un-normalized string to metadata.
 pub fn generate_sarif_report(
     rules: &[SarifRule],
     rules_results: &[SarifRuleResult],
     directory: &String,
     tool_information: SarifReportMetadata,
+    path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<Sarif> {
     // if we enable git info, we are then getting the repository object. We put that
     // into an `Arc` object to be able to clone the object.
@@ -846,8 +869,10 @@ pub fn generate_sarif_report(
         execution_time_secs: tool_information.execution_time_secs,
     };
 
-    let artifacts_kv =
-        extract_artifacts(rules_results.iter().map(|res| res.unnormalized_path_str()));
+    let artifacts_kv = extract_artifacts(
+        rules_results.iter().map(|res| res.unnormalized_path_str()),
+        path_metadata,
+    );
 
     let results = generate_results(rules, rules_results, &options, &artifacts_kv)?;
     let artifacts = artifacts_kv.into_iter().map(|kv| kv.1).collect::<Vec<_>>();
@@ -869,6 +894,7 @@ pub fn generate_sarif_file(
     static_analysis_rule_results: Vec<RuleResult>,
     secrets_rule_results: Vec<SecretResult>,
     sarif_report_metadata: SarifReportMetadata,
+    path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<String> {
     let static_rules_sarif: Vec<SarifRule> = configuration
         .rules
@@ -898,6 +924,7 @@ pub fn generate_sarif_file(
         &[static_analysis_results, secret_results].concat(),
         &configuration.source_directory,
         sarif_report_metadata,
+        path_metadata,
     ) {
         Ok(report) => {
             Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
@@ -1121,6 +1148,7 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
             },
+            &Default::default(),
         )
         .expect("generate sarif report");
 
@@ -1260,6 +1288,7 @@ mod tests {
                 diff_aware_parameters: Some(diff_aware_infos),
                 execution_time_secs: 42,
             },
+            &Default::default(),
         )
         .expect("generate sarif report");
 
@@ -1355,6 +1384,7 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
             },
+            &Default::default(),
         )
         .expect("generate sarif report");
 
@@ -1452,6 +1482,7 @@ mod tests {
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
                 },
+                &Default::default(),
             )
             .expect("generate sarif report");
 
@@ -1598,6 +1629,7 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
             },
+            &Default::default(),
         )
         .expect("generate sarif report");
         assert!(sarif_report
@@ -1662,6 +1694,7 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
             },
+            &Default::default(),
         )
         .unwrap();
 
@@ -1692,5 +1725,102 @@ mod tests {
 
         assert_eq!(actual_result_locs, violation_paths);
         assert_eq!(actual_artifact_locs, vec!["src/zzzzzz.py", "src/yyyyyy.py"])
+    }
+
+    /// Tests that `generate_sarif_report` adds a tag for artifacts that are classified as test files,
+    /// and no tags for those that aren't.
+    #[test]
+    fn generate_sarif_report_artifact_test_file_tag() {
+        fn has_tag(list: &[serde_json::Value], tag: &str) -> bool {
+            list.iter().any(|v| v.as_str() == Some(tag))
+        }
+        const TEST_FILE_PATH: &str = "src/file-a-test-file.py";
+        const NON_TEST_FILE_PATH: &str = "src/file-b-not-test-file.py";
+
+        let path_metadata = HashMap::from([(
+            TEST_FILE_PATH.to_string(),
+            #[allow(clippy::needless_update)]
+            ArtifactClassification {
+                is_test_file: true,
+                ..Default::default()
+            },
+        )]);
+        // Test invariant
+        assert!(!path_metadata.contains_key(NON_TEST_FILE_PATH));
+
+        let violation = Violation {
+            start: Position::new(1, 1),
+            end: Position::new(1, 10),
+            message: "violation message".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![],
+            taint_flow: None,
+        };
+        let rule_results = [TEST_FILE_PATH, NON_TEST_FILE_PATH]
+            .into_iter()
+            .map(|path| {
+                let rr: SarifRuleResult = RuleResult {
+                    rule_name: "ruleset/rule-name".to_string(),
+                    filename: path.to_string(),
+                    violations: vec![violation.clone()],
+                    errors: vec![],
+                    execution_error: None,
+                    output: None,
+                    execution_time_ms: 0,
+                    parsing_time_ms: 0,
+                    query_node_time_ms: 0,
+                }
+                .try_into()
+                .unwrap();
+                rr
+            })
+            .collect::<Vec<_>>();
+
+        let sarif_report = generate_sarif_report(
+            // Unnecessary for this test
+            &[],
+            &rule_results,
+            // Unnecessary for this test
+            &"src/dir".to_string(),
+            // Unnecessary for this test
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+            },
+            &path_metadata,
+        )
+        .unwrap();
+
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+        let artifact_tags = (0..2)
+            .map(|idx| {
+                let artifact_pointer = format!("/runs/0/artifacts/{idx}");
+                let artifact = sarif_json.pointer(&artifact_pointer).unwrap();
+                let tags = artifact
+                    .get("properties")
+                    .and_then(|obj| {
+                        obj.get("tags")
+                            .unwrap()
+                            .as_array()
+                            .map(|arr| arr.as_slice())
+                    })
+                    .unwrap_or(&[]);
+                let uri_pointer = format!("/runs/0/artifacts/{idx}/location/uri");
+                let uri = sarif_json.pointer(&uri_pointer).unwrap().as_str().unwrap();
+                (uri, tags)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            artifact_tags[0].0 == TEST_FILE_PATH
+                && has_tag(artifact_tags[0].1, CLASSIFICATION_TEST_FILE)
+        );
+        assert!(
+            artifact_tags[1].0 == NON_TEST_FILE_PATH
+                && !has_tag(artifact_tags[1].1, CLASSIFICATION_TEST_FILE)
+        );
     }
 }
