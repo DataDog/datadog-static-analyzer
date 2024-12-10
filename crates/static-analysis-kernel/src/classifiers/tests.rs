@@ -109,9 +109,20 @@ fn has_test_like_import(
     }
 }
 
+/// Returns `true` if any of the sequences in the trie are a prefix of the provided `key_iter`.
+fn trie_has_prefix<'key, K, V, I, Q>(trie: &sequence_trie::SequenceTrie<K, V>, key_iter: I) -> bool
+where
+    I: IntoIterator<Item = &'key Q> + 'key,
+    K: sequence_trie::TrieKey + std::borrow::Borrow<Q>,
+    Q: ?Sized + sequence_trie::TrieKey + 'key,
+{
+    trie.prefix_iter(key_iter)
+        .any(|node| node.value().is_some())
+}
+
 #[cfg(test)]
 mod cfg_test_tests {
-    use super::is_test_file;
+    use super::{is_test_file, trie_has_prefix};
     use crate::model::common::Language;
     use std::path::PathBuf;
 
@@ -184,5 +195,43 @@ mod cfg_test_tests {
             let path = PathBuf::from(path_str);
             assert!(!is_test_file(UNUSED_LANG, UNUSED_CODE, &path, None));
         }
+    }
+
+    /// Ensures that [`trie_has_prefix`] can be used for the use case of matching prefixes
+    /// within fully-qualified names.
+    #[test]
+    fn trie_has_prefix_works_for_imports() {
+        let imports = ["javax.servlet.jsp", "javax.security.auth.message"];
+        let mut trie = sequence_trie::SequenceTrie::<String, ()>::new();
+        for import in imports {
+            let parts = import.split(".").map(String::from).collect::<Vec<_>>();
+            trie.insert(parts.iter(), ());
+        }
+        // Test cases:
+        // 1. Exact match
+        // javax.security.auth.message      javax.servlet.jsp
+        // ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        assert!(trie_has_prefix(
+            &trie,
+            "javax.security.auth.message".split(".")
+        ));
+
+        // 2. Incomplete match
+        // javax.security.auth.message      javax.servlet.jsp
+        // ^^^^^^^^^^^^^^^^^^^
+        assert!(!trie_has_prefix(&trie, "javax.security.auth".split(".")));
+
+        // 3. Superset
+        // javax.security.auth.message      javax.servlet.jsp
+        //                                  ^^^^^^^^^^^^^^^^^.jstl.sql
+        assert!(trie_has_prefix(
+            &trie,
+            "javax.servlet.jsp.jstl.sql".split(".")
+        ));
+
+        // 4. No match
+        // javax.security.auth.message      javax.servlet.jsp
+        //                                                            no.sequence.match
+        assert!(!trie_has_prefix(&trie, "no.sequence.match".split(".")));
     }
 }
