@@ -10,7 +10,7 @@
 # * A file name not starting with that string should not have its SARIF artifact tagged as a test file.
 
 # The SARIF property bag tag that a test file artifact should have.
-TEST_FILE_TAG="DATADOG_ARTIFACT_IS_UNIT_TEST_FILE"
+TEST_FILE_TAG="DATADOG_ARTIFACT_IS_TEST_FILE"
 
 REPO_DIR=$(mktemp -d)
 git clone --depth=1 https://github.com/muh-nee/classification-tests.git "${REPO_DIR}" || {

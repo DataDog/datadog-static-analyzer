@@ -785,7 +785,7 @@ fn generate_results(
 }
 
 /// A property tag to indicate an [`ArtifactClassification`] where `is_test_file` is true.
-const CLASSIFICATION_TEST_FILE: &str = "DATADOG_ARTIFACT_IS_UNIT_TEST_FILE";
+const CLASSIFICATION_TEST_FILE: &str = "DATADOG_ARTIFACT_IS_TEST_FILE";
 
 /// Returns a map of un-normalized string paths to their corresponding [`Artifact`] in the same
 /// order as encountered in the `unnormalized_path_strs` iterator.
