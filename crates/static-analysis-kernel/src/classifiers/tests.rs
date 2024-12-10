@@ -112,6 +112,20 @@ fn has_test_like_path(language: Language, path: &Path) -> bool {
             "**/mock_*.go",
             "**/*_mock.go",
         ]]),
+        Python => globset_from!([
+            DEFAULT_PATHS,
+            DEFAULT_FILENAMES,
+            &[
+                // behave: https://behave.readthedocs.io/en/latest/gherkin/#feature-testing-layout
+                "**/features/steps/*.py",
+                "**/features/environment.py",
+                // nose2: https://docs.nose2.io/en/latest/usage.html#naming-tests
+                "**/test*.py",
+                // pytest: https://docs.pytest.org/en/stable/explanation/goodpractices.html#conventions-for-python-test-discovery
+                "**/*test_*.py",
+                "**/*_test.py",
+            ]
+        ]),
         _ => globset_from!([DEFAULT_PATHS, DEFAULT_FILENAMES]),
     };
     globset.is_match(path)
@@ -168,6 +182,43 @@ fn has_test_like_import(
             let parsed_imports = go::parse_imports_with_tree(code, tree);
             for import in parsed_imports {
                 if trie_has_prefix(imports_trie, import.path.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
+        Python => {
+            use crate::analysis::languages::python;
+            const SEPARATOR: &str = ".";
+            let imports_trie = trie_from!(
+                [
+                    // behave: https://github.com/behave/behave
+                    "behave",
+                    // Lib/doctest: https://docs.python.org/3/library/doctest.html
+                    "doctest",
+                    // Hypothesis: https://github.com/HypothesisWorks/hypothesis/tree/master/hypothesis-python
+                    "hypothesis",
+                    // nox: https://github.com/wntrblm/nox
+                    "nox",
+                    // pytest: https://github.com/pytest-dev/pytest
+                    "pytest",
+                    // pytest-bdd: https://github.com/pytest-dev/pytest-bdd
+                    "pytest_bdd",
+                    // Testify: https://github.com/Yelp/Testify
+                    "testify",
+                    // Lib/unittest: https://docs.python.org/3/library/unittest.html
+                    "unittest",
+                    // unittest2: https://pypi.org/project/unittest2/
+                    "unittest2",
+                ],
+                SEPARATOR
+            );
+            let parsed_imports = python::parse_imports_with_tree(code, tree);
+            for import in parsed_imports {
+                if import
+                    .fully_qualified_name()
+                    .is_some_and(|fqn| trie_has_prefix(imports_trie, fqn.split(SEPARATOR)))
+                {
                     return true;
                 }
             }
@@ -332,6 +383,35 @@ package pkg
         for imports in import_should_nots {
             let go_code = source_for(imports);
             assert!(!is_test_file(Language::Go, &go_code, Path::new(""), None));
+        }
+    }
+
+    #[test]
+    fn language_python() {
+        use Language::Python;
+        let path_based = per_os_paths(&[
+            "f1/features/steps/file.py",
+            "f1/features/environment.py",
+            &format!("f1/f2/{NON_TEST_FOLDER}/testfile.py"),
+            &format!("f1/f2/{NON_TEST_FOLDER}/test_router.py"),
+            &format!("f1/f2/{NON_TEST_FOLDER}/router_test.py"),
+        ]);
+        for path_str in path_based {
+            let path = PathBuf::from(path_str);
+            assert!(is_test_file(Python, UNUSED_CODE, &path, None));
+        }
+
+        let import_shoulds = &[
+            "import unittest",
+            "from pytest import feature",
+            "from pytest_bdd.parser import Feature",
+        ];
+        let import_should_nots = &["import customtestlib"];
+        for py_code in import_shoulds {
+            assert!(is_test_file(Python, py_code, Path::new(""), None));
+        }
+        for py_code in import_should_nots {
+            assert!(!is_test_file(Python, py_code, Path::new(""), None));
         }
     }
 }
