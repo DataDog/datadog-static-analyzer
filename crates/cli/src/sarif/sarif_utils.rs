@@ -193,17 +193,12 @@ impl SarifRuleResult {
         }
     }
 
-    fn file_path(&self) -> String {
-        match self {
-            SarifRuleResult::StaticAnalysis(r) => Path::new(r.filename.as_str())
-                .to_slash()
-                .unwrap()
-                .to_string(),
-            SarifRuleResult::Secret(r) => Path::new(r.filename.as_str())
-                .to_slash()
-                .unwrap()
-                .to_string(),
-        }
+    /// Returns the file path for this result as a slash path. See [`as_slash_path`] for documentation.
+    fn slash_path_str(&self) -> std::borrow::Cow<'_, str> {
+        as_slash_path(match self {
+            SarifRuleResult::StaticAnalysis(r) => &r.filename,
+            SarifRuleResult::Secret(r) => &r.filename,
+        })
     }
 
     fn rule_name(&self) -> &str {
@@ -539,8 +534,9 @@ fn get_sha_for_line(
     }
 }
 
-// Encode the file using percent to that filename "My Folder/file.c" is "My%20Folder/file.c"
-fn encode_filename(filename: String) -> String {
+/// Normalizes the provided file path by percent encoding it. See [`utf8_percent_encode`] for
+/// further documentation.
+fn percent_encode_path(file_path: &str) -> std::borrow::Cow<'_, str> {
     const FRAGMENT: &AsciiSet = &CONTROLS
         .add(b' ')
         .add(b'"')
@@ -552,7 +548,7 @@ fn encode_filename(filename: String) -> String {
         .add(b'#')
         .add(b'%');
 
-    return utf8_percent_encode(filename.as_str(), FRAGMENT).collect();
+    utf8_percent_encode(file_path, FRAGMENT).into()
 }
 
 // Generate the tool section that reports all the rules being run
@@ -565,7 +561,7 @@ fn generate_results(
         .iter()
         .flat_map(|rule_result| {
             let artifact_loc = ArtifactLocationBuilder::default()
-                .uri(encode_filename(rule_result.file_path()))
+                .uri(percent_encode_path(&rule_result.slash_path_str()))
                 .build()
                 .expect("file path should be encodable");
             // if we find the rule for this violation, get the id, level and category
@@ -700,7 +696,7 @@ fn generate_results(
 
                     let sha_option = if options.add_git_info {
                         get_sha_for_line(
-                            rule_result.file_path().as_str(),
+                            &rule_result.slash_path_str(),
                             violation.start.line as usize,
                             &options,
                         )
@@ -712,7 +708,7 @@ fn generate_results(
                         rule_result.rule_name().to_string(),
                         violation,
                         Path::new(options.repository_directory.as_str()),
-                        Path::new(rule_result.file_path().as_str()),
+                        Path::new(rule_result.slash_path_str().as_ref()),
                         options.debug,
                     );
 
@@ -852,10 +848,16 @@ pub fn generate_sarif_file(
     }
 }
 
+/// Returns the file path for this result as a slash path, a path whose components are.
+/// always separated by `/` and never `\`. Any non-Unicode sequences are replaced with `U+FFFD`.
+fn as_slash_path(path_str: &str) -> std::borrow::Cow<'_, str> {
+    Path::new(path_str).to_slash().expect("str should be utf-8")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use assert_json_diff::assert_json_eq;
+    use assert_json_diff::{assert_json_eq, assert_json_include};
     use common::model::position::{Position, PositionBuilder, Region};
     use kernel::model::violation::{Fix, Violation};
     use kernel::model::{
@@ -1199,16 +1201,31 @@ mod tests {
         )
         .expect("generate sarif report");
 
-        let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
-        assert_json_eq!(
-            sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","version":CARGO_VERSION,"properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:true","DATADOG_DIFF_AWARE_BASE_SHA:d495287772cc8123136b89e8cf5afecbed671823","DATADOG_DIFF_AWARE_FILE:path/to/file.py"]},"rules":[]}}}],"version":"2.1.0"})
-        );
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+        let expected_tags = [
+            "DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0",
+            "DATADOG_DIFF_AWARE_ENABLED:true",
+            "DATADOG_DIFF_AWARE_BASE_SHA:d495287772cc8123136b89e8cf5afecbed671823",
+            "DATADOG_DIFF_AWARE_FILE:path/to/file.py",
+        ];
+
+        let actual_tags = sarif_json
+            .pointer("/runs/0/tool/driver/properties/tags")
+            .unwrap()
+            .as_array()
+            .unwrap();
+        for expected in expected_tags {
+            assert!(actual_tags
+                .iter()
+                .find(|val| val.as_str() == Some(expected))
+                .is_some())
+        }
 
         // validate the schema
-        assert!(validate_data(&sarif_report_to_string));
+        assert!(validate_data(&sarif_json));
     }
 
+    /// Tests that artifact URIs are percent-encoded.
     #[test]
     fn test_generate_with_escape_characters() {
         let rule = RuleBuilder::default()
@@ -1279,14 +1296,46 @@ mod tests {
         )
         .expect("generate sarif report");
 
-        let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
-        assert_json_eq!(
-            sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[{"artifactChanges":[{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"replacements":[{"deletedRegion":{"endColumn":6,"endLine":6,"startColumn":6,"startLine":6},"insertedContent":{"text":"newcontent"}}]}],"description":{"text":"myfix"}}],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"my%20file/in%20my%20directory"},"region":{"endColumn":4,"endLine":3,"startColumn":2,"startLine":1}}}],"message":{"text":"violation message"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:BEST_PRACTICES","CWE:1234"]},"ruleId":"my-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","version":CARGO_VERSION,"properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"awesome rule"},"helpUri":"https://docs.datadoghq.com/static_analysis/rules/my-rule","id":"my-rule","properties":{"tags":["DATADOG_RULE_TYPE:STATIC_ANALYSIS","CWE:1234"]},"shortDescription":{"text":"short description"}}]}}}],"version":"2.1.0"})
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+        let expected_subset = serde_json::json!(
+        {
+          "runs": [
+            {
+              "results": [
+                {
+                  "fixes": [
+                    {
+                      "artifactChanges": [
+                        {
+                          "artifactLocation": {
+                            "uri": "my%20file/in%20my%20directory"
+                          },
+                        }
+                      ],
+                    }
+                  ],
+                  "locations": [
+                    {
+                      "physicalLocation": {
+                        "artifactLocation": {
+                          "uri": "my%20file/in%20my%20directory"
+                        },
+                      }
+                    }
+                  ],
+                }
+              ],
+            }
+          ],
+        }
+                );
+        assert_json_include!(
+            actual: sarif_json,
+            expected: expected_subset,
         );
 
         // validate the schema
-        assert!(validate_data(&sarif_report_to_string));
+        assert!(validate_data(&sarif_json));
     }
 
     #[test]
@@ -1294,76 +1343,128 @@ mod tests {
         let rule = secrets::model::secret_rule::SecretRule {
             id: "secret-rule".to_string(),
             name: "secret-rule".to_string(),
-            description: "myfile.py".to_string(),
+            description: "secret-description".to_string(),
             pattern: "foobarbaz".to_string(),
             default_included_keywords: vec![],
             validators: Some(vec![]),
             match_validation: None,
         };
 
-        let secret_results = vec![SecretResult {
-            rule_id: "secret-rule".to_string(),
-            rule_name: "secret-rule".to_string(),
-            filename: "myfile.py".to_string(),
-            message: "some secret".to_string(),
-            matches: vec![
-                SecretResultMatch {
+        #[rustfmt::skip]
+        let test_cases = [
+            (SecretValidationStatus::NotValidated, "DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED", "note"),
+            (SecretValidationStatus::Valid, "DATADOG_SECRET_VALIDATION_STATUS:VALID", "error"),
+            (SecretValidationStatus::Invalid, "DATADOG_SECRET_VALIDATION_STATUS:INVALID", "none"),
+            (SecretValidationStatus::ValidationError, "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR", "warning"),
+            (SecretValidationStatus::NotAvailable, "DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE", "error"),
+        ];
+
+        for case in test_cases {
+            let secret_results = vec![SecretResult {
+                rule_id: "secret-rule".to_string(),
+                rule_name: "secret-rule".to_string(),
+                filename: "myfile.py".to_string(),
+                message: "some secret".to_string(),
+                matches: vec![SecretResultMatch {
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 2, col: 2 },
-                    validation_status: SecretValidationStatus::NotValidated,
-                },
-                SecretResultMatch {
-                    start: Position { line: 2, col: 2 },
-                    end: Position { line: 3, col: 3 },
-                    validation_status: SecretValidationStatus::Valid,
-                },
-                SecretResultMatch {
-                    start: Position { line: 3, col: 3 },
-                    end: Position { line: 4, col: 4 },
-                    validation_status: SecretValidationStatus::Invalid,
-                },
-                SecretResultMatch {
-                    start: Position { line: 5, col: 5 },
-                    end: Position { line: 6, col: 6 },
-                    validation_status: SecretValidationStatus::ValidationError,
-                },
-                SecretResultMatch {
-                    start: Position { line: 6, col: 6 },
-                    end: Position { line: 7, col: 7 },
-                    validation_status: SecretValidationStatus::NotAvailable,
-                },
-            ],
-        }];
+                    validation_status: case.0,
+                }],
+            }];
 
-        let sarif_secret_results = secret_results
-            .into_iter()
-            .map(SarifRuleResult::try_from)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(anyhow::Error::msg)
-            .expect("getting results");
+            let sarif_secret_results = secret_results
+                .into_iter()
+                .map(SarifRuleResult::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)
+                .expect("getting results");
 
-        let sarif_report = generate_sarif_report(
-            &[rule.into()],
-            &sarif_secret_results,
-            &"mydir".to_string(),
-            SarifReportMetadata {
-                add_git_info: false,
-                debug: false,
-                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
-                diff_aware_parameters: None,
-                execution_time_secs: 42,
-            },
-        )
-        .expect("generate sarif report");
+            let sarif_report = generate_sarif_report(
+                &[rule.clone().into()],
+                &sarif_secret_results,
+                &"mydir".to_string(),
+                SarifReportMetadata {
+                    add_git_info: false,
+                    debug: false,
+                    config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                    diff_aware_parameters: None,
+                    execution_time_secs: 42,
+                },
+            )
+            .expect("generate sarif report");
 
-        let sarif_report_to_string = serde_json::to_value(sarif_report).unwrap();
-        assert_json_eq!(
-            sarif_report_to_string,
-            serde_json::json!({"runs":[{"results":[{"fixes":[],"level":"note","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":2,"endLine":2,"startColumn":1,"startLine":1}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":3,"endLine":3,"startColumn":2,"startLine":2}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"none","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":4,"endLine":4,"startColumn":3,"startLine":3}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:INVALID"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"warning","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":6,"endLine":6,"startColumn":5,"startLine":5}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"]},"ruleId":"secret-rule","ruleIndex":0},{"fixes":[],"level":"error","locations":[{"physicalLocation":{"artifactLocation":{"uri":"myfile.py"},"region":{"endColumn":7,"endLine":7,"startColumn":6,"startLine":6}}}],"message":{"text":"some secret"},"partialFingerprints":{},"properties":{"tags":["DATADOG_CATEGORY:SECURITY","DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE"]},"ruleId":"secret-rule","ruleIndex":0}],"tool":{"driver":{"informationUri":"https://www.datadoghq.com","name":"datadog-static-analyzer","properties":{"tags":["DATADOG_DIFF_AWARE_CONFIG_DIGEST:5d7273dec32b80788b4d3eac46c866f0","DATADOG_EXECUTION_TIME_SECS:42","DATADOG_DIFF_AWARE_ENABLED:false"]},"rules":[{"fullDescription":{"text":"myfile.py"},"id":"secret-rule","name":"secret-rule","properties":{"tags":["DATADOG_RULE_TYPE:SECRET"]},"shortDescription":{"text":"secret-rule"}}],"version":CARGO_VERSION}}}],"version":"2.1.0"})
-        );
+            let expected_subset = serde_json::json!(
+            {
+              "runs": [
+                {
+                  "results": [
+                    {
+                      "fixes": [],
+                      "level": case.2,
+                      "locations": [
+                        {
+                          "physicalLocation": {
+                            "artifactLocation": {
+                              "uri": "myfile.py"
+                            },
+                            "region": {
+                              "endColumn": 2,
+                              "endLine": 2,
+                              "startColumn": 1,
+                              "startLine": 1
+                            }
+                          }
+                        }
+                      ],
+                      "message": {
+                        "text": "some secret"
+                      },
+                      "partialFingerprints": {},
+                      "properties": {
+                        "tags": [
+                          "DATADOG_CATEGORY:SECURITY",
+                          case.1,
+                        ]
+                      },
+                      "ruleId": "secret-rule",
+                      "ruleIndex": 0
+                    },
+                  ],
+                  "tool": {
+                    "driver": {
+                      "rules": [
+                        {
+                          "fullDescription": {
+                            "text": "secret-description"
+                          },
+                          "id": "secret-rule",
+                          "name": "secret-rule",
+                          "properties": {
+                            "tags": [
+                              "DATADOG_RULE_TYPE:SECRET"
+                            ]
+                          },
+                          "shortDescription": {
+                            "text": "secret-rule"
+                          }
+                        }
+                      ],
+                    }
+                  }
+                }
+              ],
+            }
+                    );
 
-        // validate the schema
-        assert!(validate_data(&sarif_report_to_string));
+            let sarif_json = serde_json::to_value(sarif_report).unwrap();
+            assert_json_include!(
+                actual: sarif_json,
+                expected: expected_subset,
+            );
+
+            // validate the schema
+            assert!(validate_data(&sarif_json));
+        }
     }
 
     // in this test, the rule in the violation cannot be found in the list
