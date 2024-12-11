@@ -19,6 +19,9 @@
 # The SARIF property bag tag that a test file artifact should have.
 TEST_FILE_TAG="DATADOG_ARTIFACT_IS_TEST_FILE"
 
+# A string used to declaratively specify which files should trigger a test file classification.
+TEST_FILE_INDICATOR="should_be_t_file"
+
 if [ "$#" -lt 3 ]; then
     echo "Incorrect number of inputs. See documentation"
     exit 1
@@ -67,6 +70,7 @@ for i in "${!sorted_js_files[@]}"; do
 done
 
 file_count=${#sorted_js_files[@]}
+test_file_count=0
 for ((i = 0; i < file_count; i++)); do
     uri=$(jq -r ".runs[0].artifacts[${i}].location.uri" ${RESULTS_FILE})
     filename=$(basename "${uri}")
@@ -78,7 +82,8 @@ for ((i = 0; i < file_count; i++)); do
 
     # Test invariant: files starting with "should_be_t_file" are expected to have a "test file" classification.
     # Others should not.
-    if [[ "${filename}" == should_be_t_file* ]]; then
+    if [[ "${filename}" == ${TEST_FILE_INDICATOR}* ]]; then
+        test_file_count=$((test_file_count + 1))
         if [[ "${has_tag}" == false ]]; then
             echo "${uri} should have \`${TEST_FILE_TAG}\` property tag"
             exit 1
@@ -90,6 +95,12 @@ for ((i = 0; i < file_count; i++)); do
         fi
     fi
 done
+
+# Test invariant: there must be at least "should_be_t_file" file
+if [[ "${test_file_count}" -eq 0 ]]; then
+    echo "repo should have at least one file starting with \"${TEST_FILE_INDICATOR}\""
+    exit 1
+fi
 
 rm -rf "${REPO_DIR}/*"
 # Success
