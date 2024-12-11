@@ -5,7 +5,6 @@
 use crate::analysis::tree_sitter::get_tree;
 use crate::model::common::Language;
 use std::path::Path;
-use std::sync::LazyLock;
 
 /// Returns `true` if the file is considered to contain unit tests. If not (or a detection
 /// could not be verified), `false` is returned.
@@ -18,59 +17,72 @@ pub fn is_test_file(
     // This function implements a tiered classification:
     //
     // 1. File path heuristic:
-    if FILENAME_CONVENTION_GLOB.is_match(file_path) {
+    if has_test_like_path(language, file_path) {
         return true;
     }
     // 2. Language-based detection via parsing imports:
     has_test_like_import(language, code, pre_parsed_tree)
 }
 
-/// A shorthand to build a [`Globset`] when the inputs are guaranteed to be valid paths.
+/// File path globs that conventionally indicate that the contained files are associated with unit tests.
+const DEFAULT_PATHS: &[&str] = &[
+    "**/test/**/*",
+    "**/tests/**/*",
+    "**/spec/**/*",
+    "**/specs/**/*",
+    "**/testcases/**/*",
+    "**/testing/**/*",
+    "**/__test__/**/*",
+    "**/__tests__/**/*",
+];
+
+/// File name globs that conventionally indicate that the file contains unit tests.
+const DEFAULT_FILENAMES: &[&str] = &["**/*[_.]{test,tests,spec,specs}.*"];
+
+/// Returns a static `LazyLock` [`GlobSet`](globset::GlobSet) according to the provided glob lists.
 ///
-/// # Panics
-/// Panics if any path isn't valid.
-fn build_globset<T: AsRef<str>>(globs: &[T]) -> globset::GlobSet {
-    let mut builder = globset::GlobSetBuilder::new();
+/// # Usage
+/// ```rs
+/// let detected_filename = "src/folder/router.test.js";
+/// let detected_path = "src/tests/router.js";
+/// let custom_filename = "src/folder/Check_router.js";
+/// let custom_path = "src/checks/router.js";
+///
+/// let globset = globset_from!([DEFAULT_PATHS, DEFAULT_FILENAMES]);
+/// assert!(globset.is_match(detected_filename) && globset.is_match(detected_path));
+/// assert!(!globset.is_match(custom_filename) && !globset.is_match(custom_path));
+/// let globset = globset_from!([["**/checks/**/*", "**/Check_*"]]);
+/// assert!(!globset.is_match(detected_filename) && !globset.is_match(detected_path));
+/// assert!(globset.is_match(custom_filename) && globset.is_match(custom_path));
+/// ```
+macro_rules! globset_from {
+    ($patterns:expr) => {{
+        use globset::{GlobBuilder, GlobSet, GlobSetBuilder};
+        use std::sync::LazyLock;
+        static GLOBSET: LazyLock<GlobSet> = LazyLock::new(|| {
+            let mut builder = GlobSetBuilder::new();
+            for pattern in $patterns[..].iter().map(|s| *s).flatten() {
+                let glob = GlobBuilder::new(pattern)
+                    .build()
+                    .expect("pattern should be valid");
+                builder.add(glob);
+            }
+            builder.build().expect("glob patterns should be valid")
+        });
 
-    for pattern in globs {
-        let glob = globset::GlobBuilder::new(pattern.as_ref())
-            .literal_separator(true)
-            .build()
-            .expect("pattern should be valid");
-        builder.add(glob);
-    }
-
-    builder.build().expect("globset should be valid")
+        &GLOBSET
+    }};
 }
 
-/// Detects common conventions used to name test files.
-static FILENAME_CONVENTION_GLOB: LazyLock<globset::GlobSet> = LazyLock::new(|| {
-    // Detection logic:
-    // 1. Any file with a parent folder from a list of common names:
-    let folder_names = [
-        "test",
-        "tests",
-        "spec",
-        "specs",
-        "testcases",
-        "testing",
-        "__test__",
-        "__tests__",
-    ];
-    let parent_folder_globs = folder_names
-        .into_iter()
-        .map(|folder| format!("**/{folder}/**/*"))
-        .collect::<Vec<_>>();
-    // 2. Any filename containing ".test." or ".tests."
-    //    While this may have some false detections, this is used to detect a filename name
-    //    ending in something like `.test.js` while only using glob syntax.
-    let filename_globs = ["**/*[_.]{test,tests,spec,specs}.*"]
-        .into_iter()
-        .map(String::from)
-        .collect::<Vec<_>>();
-
-    build_globset(&[parent_folder_globs, filename_globs].concat())
-});
+/// Returns `true` if the provided file path is "test-like"--that is, it suggests that the
+/// file contains unit tests or is associated with those that do--or `false` if not.
+fn has_test_like_path(language: Language, path: &Path) -> bool {
+    #[allow(clippy::match_single_binding)]
+    let globset = match language {
+        _ => globset_from!([DEFAULT_PATHS, DEFAULT_FILENAMES]),
+    };
+    globset.is_match(path)
+}
 
 /// Returns `true` if any imports in the file are "test-like"--that is, that their presence
 /// suggests that the source code contains unit tests--or `false` if not.
