@@ -27,6 +27,7 @@ use itertools::Itertools;
 use kernel::analysis::analyze::analyze_with;
 use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
 use kernel::analysis::ddsa_lib::JsRuntime;
+use kernel::classifiers::{is_test_file, ArtifactClassification};
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
@@ -453,6 +454,8 @@ fn main() -> Result<()> {
     // static analysis part
     let mut fail_for_static_analysis = false;
     let mut all_rule_results: Vec<RuleResult> = vec![];
+    // (Option<T> is used to prevent checking the same file path multiple times).
+    let mut all_path_metadata = HashMap::<String, Option<ArtifactClassification>>::new();
     if static_analysis_enabled {
         let languages = get_languages_for_rules(&rules);
         for language in &languages {
@@ -466,49 +469,94 @@ fn main() -> Result<()> {
                 convert_rules_to_rules_internal(&configuration, language)?;
 
             // take the relative path for the analysis
-            let rule_results: Vec<RuleResult> = files_for_language
+            let (rule_results, path_metadata) = files_for_language
                 .into_par_iter()
-                .flat_map(|path| {
-                    thread_local! {
-                        // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
-                        static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
-                    }
+                .fold(
+                    || (Vec::new(), HashMap::new()),
+                    |(mut fold_results, mut path_metadata), path| {
+                        thread_local! {
+                            // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
+                            static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
+                        }
 
-                    let relative_path = path
-                        .strip_prefix(directory_path)
-                        .unwrap()
-                        .to_str()
-                        .expect("path contains non-Unicode characters");
-                    let relative_path: Arc<str> = Arc::from(relative_path);
-                    let rule_config = configuration
-                        .rule_config_provider
-                        .config_for_file(relative_path.as_ref());
-                    if let Ok(file_content) = fs::read_to_string(&path) {
-                        let mut opt = JS_RUNTIME.replace(None);
-                        let runtime_ref = opt.get_or_insert_with(|| {
-                            v8.try_new_runtime().expect("ddsa init should succeed")
-                        });
+                        let relative_path = path
+                            .strip_prefix(directory_path)
+                            .unwrap()
+                            .to_str()
+                            .expect("path contains non-Unicode characters");
+                        let relative_path: Arc<str> = Arc::from(relative_path);
+                        let rule_config = configuration
+                            .rule_config_provider
+                            .config_for_file(relative_path.as_ref());
+                        let res = if let Ok(file_content) = fs::read_to_string(&path) {
+                            let mut opt = JS_RUNTIME.replace(None);
+                            let runtime_ref = opt.get_or_insert_with(|| {
+                                v8.try_new_runtime().expect("ddsa init should succeed")
+                            });
 
-                        let file_content = Arc::from(file_content);
-                        let rule_result = analyze_with(
-                            runtime_ref,
-                            language,
-                            &rules_for_language,
-                            &relative_path,
-                            &file_content,
-                            &rule_config,
-                            &analysis_options,
-                        );
-                        JS_RUNTIME.replace(opt);
+                            let file_content = Arc::from(file_content);
+                            let mut rule_result = analyze_with(
+                                runtime_ref,
+                                language,
+                                &rules_for_language,
+                                &relative_path,
+                                &file_content,
+                                &rule_config,
+                                &analysis_options,
+                            );
+                            rule_result.retain(|r| !r.violations.is_empty());
+                            JS_RUNTIME.replace(opt);
 
-                        rule_result
-                    } else {
-                        vec![]
-                    }
-                })
-                .collect();
+                            if !rule_result.is_empty()
+                                && !path_metadata.contains_key(relative_path.as_ref())
+                            {
+                                let cloned_path_str = relative_path.to_string();
+                                let metadata = if is_test_file(
+                                    *language,
+                                    file_content.as_ref(),
+                                    std::path::Path::new(&cloned_path_str),
+                                    None,
+                                ) {
+                                    Some(ArtifactClassification { is_test_file: true })
+                                } else {
+                                    None
+                                };
+                                path_metadata.insert(cloned_path_str, metadata);
+                            }
+
+                            rule_result
+                        } else {
+                            vec![]
+                        };
+                        fold_results.extend(res);
+
+                        (fold_results, path_metadata)
+                    },
+                )
+                .reduce(
+                    || (Vec::new(), HashMap::new()),
+                    |mut base, other| {
+                        let (base_results, base_classifications) = &mut base;
+                        let (other_results, other_classifications) = other;
+                        base_results.extend(other_results);
+                        for (k, v) in other_classifications {
+                            let existing = base_classifications.insert(k, v);
+                            // Due to the way the file paths are parallelized, even with rayon's work-stealing,
+                            // there should never be a duplicate key (i.e., file path) between two rayon threads.
+                            debug_assert!(existing.is_none());
+                        }
+                        base
+                    },
+                );
 
             all_rule_results.extend(rule_results);
+            for (k, v) in path_metadata {
+                let existing = all_path_metadata.insert(k, v);
+                // The `path_metadata` map will only contain file paths for a single `Language`.
+                // Because a file only (currently) maps to a single `Language`, it's guaranteed that
+                // the key will be unique.
+                debug_assert!(existing.is_none());
+            }
         }
 
         all_rule_results.iter_mut().for_each(|rr| {
@@ -538,6 +586,10 @@ fn main() -> Result<()> {
             }
         }
     }
+    let all_path_metadata = all_path_metadata
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|classification| (k, classification)))
+        .collect::<HashMap<_, _>>();
 
     // Secrets detection
     let mut fail_for_secrets = false;
@@ -620,7 +672,7 @@ fn main() -> Result<()> {
                 diff_aware_parameters: None,
                 execution_time_secs: analysis_start_instant.elapsed().as_secs(),
             },
-            &Default::default(),
+            &all_path_metadata,
         )
         .expect("cannot generate SARIF results");
 
