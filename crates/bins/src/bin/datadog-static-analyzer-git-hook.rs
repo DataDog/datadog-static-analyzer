@@ -1,6 +1,11 @@
 use anyhow::{Context, Result};
 use cli::config_file::get_config;
-use cli::constants::{DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB};
+use cli::constants::{
+    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_GITHOOK_FAILED,
+    EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
+    EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS, EXIT_CODE_RULE_CHECKSUM_INVALID,
+    EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
+};
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
 use cli::file_utils::{
     filter_files_by_size, filter_files_for_language, get_files, read_files_from_gitignore,
@@ -211,7 +216,7 @@ fn main() -> Result<()> {
     if directory_to_analyze_option.is_none() {
         eprintln!("no directory passed, specify a directory with option -i");
         print_usage(&program, opts);
-        exit(1)
+        exit(EXIT_CODE_NO_DIRECTORY)
     }
 
     let directory_to_analyze = directory_to_analyze_option.unwrap();
@@ -219,13 +224,13 @@ fn main() -> Result<()> {
 
     if !directory_path.is_dir() {
         eprintln!("directory to analyze is not correct");
-        exit(1)
+        exit(EXIT_CODE_INVALID_DIRECTORY)
     }
 
     if !static_analysis_enabled && !secrets_enabled {
         eprintln!("either --static-analysis or --secrets should be specified");
         print_usage(&program, opts);
-        exit(1)
+        exit(EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS)
     }
 
     let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
@@ -241,7 +246,7 @@ fn main() -> Result<()> {
                     "Error reading configuration file from {}:\n  {}",
                     directory_to_analyze, err
                 );
-                exit(1)
+                exit(EXIT_CODE_INVALID_CONFIGURATION)
             }
         };
     let mut rules: Vec<Rule> = Vec::new();
@@ -356,7 +361,7 @@ fn main() -> Result<()> {
     if should_verify_checksum {
         if let Err(e) = check_rules_checksum(configuration.rules.as_slice()) {
             eprintln!("error when checking rules checksum: {e}");
-            exit(1)
+            exit(EXIT_CODE_RULE_CHECKSUM_INVALID)
         }
     }
 
@@ -379,7 +384,7 @@ fn main() -> Result<()> {
             eprintln!(
                 "incompatible options: cannot use --sha-start --sha-end and --default-branch"
             );
-            exit(1);
+            exit(EXIT_CODE_SHA_OR_DEFAULT_BRANCH);
         }
         // user specified the default branch
         (Some(default_branch), None, None) => {
@@ -396,7 +401,7 @@ fn main() -> Result<()> {
                 eprintln!(
                     "Cannot find the default branch, use --default-branch to force the default branch"
                 );
-                exit(1);
+                exit(EXIT_CODE_SHA_OR_DEFAULT_BRANCH);
             });
 
             if configuration.use_debug {
@@ -631,10 +636,10 @@ fn main() -> Result<()> {
             if user_override() {
                 exit(0)
             } else {
-                exit(1)
+                exit(EXIT_CODE_GITHOOK_FAILED)
             }
         } else {
-            exit(1)
+            exit(EXIT_CODE_GITHOOK_FAILED)
         }
     }
     exit(0)

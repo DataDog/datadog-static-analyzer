@@ -12,3 +12,14 @@ pub static DEFAULT_MAX_FILE_SIZE_KB: u64 = 200;
 // See https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 pub static GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH: &str = "CI_COMMIT_BRANCH";
 pub static GIT_HEAD: &str = "HEAD";
+pub static EXIT_CODE_INVALID_CONFIGURATION: i32 = 11;
+pub static EXIT_CODE_FAIL_ON_VIOLATION: i32 = 12;
+pub static EXIT_CODE_NO_OUTPUT: i32 = 13;
+pub static EXIT_CODE_NO_DIRECTORY: i32 = 14;
+pub static EXIT_CODE_INVALID_DIRECTORY: i32 = 15;
+pub static EXIT_CODE_UNSAFE_SUBDIRECTORIES: i32 = 16;
+pub static EXIT_CODE_RULE_FILE_WITH_CONFIGURATION: i32 = 17;
+pub static EXIT_CODE_RULE_CHECKSUM_INVALID: i32 = 18;
+pub static EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS: i32 = 19;
+pub static EXIT_CODE_SHA_OR_DEFAULT_BRANCH: i32 = 20;
+pub static EXIT_CODE_GITHOOK_FAILED: i32 = 42;
