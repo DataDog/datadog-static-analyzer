@@ -32,7 +32,7 @@ echo "Starting test: secrets should be found using the default branch"
 
 ./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --default-branch main --output /tmp/git-hook.sarif >/tmp/plop 2>&1
 ret=$?
-if [ $ret -ne 42 ]; then
+if [ $ret -ne 11 ]; then
   cat /tmp/plop
   echo "secrets should have been found - invalid return code (1) - got $ret"
   exit 1
@@ -62,7 +62,7 @@ echo "Starting test: secrets should be found using two sha"
 
 ./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --secrets --debug yes --sha-start $SHA1 --sha-end $SHA2 >/tmp/plop 2>&1
 ret=$?
-if [ $ret -ne 42 ]; then
+if [ $ret -ne 11 ]; then
   cat /tmp/plop
   echo "secrets should have been found - invalid return code (2) - got $ret"
   exit 1
@@ -97,7 +97,7 @@ echo "starting analyzer between $SHA2 and $SHA3"
 
 ./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --static-analysis --secrets --debug yes --sha-start $SHA2 --sha-end $SHA3 >/tmp/plop 2>&1
 
-if [ $? -ne 42 ]; then
+if [ $? -ne 11 ]; then
   echo "static analysis issues should have been found"
   cat /tmp/plop
   exit 1
@@ -144,7 +144,7 @@ echo "Starting test: error when not specifying --static-analysis or --secret"
 
 ./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --debug yes --default-branch mainwefwef >/tmp/plop 2>&1
 
-if [ $? -ne 19 ]; then
+if [ $? -ne 52 ]; then
   cat /tmp/plop
   echo "program should return an error if --static-analysis or --secrets are not passed"
   exit 1
