@@ -150,6 +150,40 @@ if [ $? -ne 1 ]; then
   exit 1
 fi
 
-echo "All tests passed"
+echo "All secrets tests passed"
 rm -rf "${REPO_DIR}"
+
+################################################
+## TEST: Artifact classification works correctly
+################################################
+REPO_DIR=$(mktemp -d)
+RESULTS_FILE="${REPO_DIR}/results.json"
+ANALYSIS_CMD='\
+(
+    cd "${REPO_DIR}"
+    git config user.email "user@example.com"
+    git config user.name "User Name"
+    find "${REPO_DIR}" -type f -name "*.js" | while read -r file; do
+      printf "\nconst violation = new Date;\n" >> "$file"
+    done
+    git checkout -b some_unused_branch_name --quiet
+    git add .
+    git commit -m "Add violations" --quiet
+) && \
+cargo run --profile release-dev --bin \
+datadog-static-analyzer-git-hook -- \
+--static-analysis --default-branch main --repository "${REPO_DIR}" --output "${RESULTS_FILE}"'
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/_test-classification.sh" "${ANALYSIS_CMD}" "${REPO_DIR}" "${RESULTS_FILE}" || {
+    rm -rf "${REPO_DIR}"
+    echo "Test failed"
+    exit 1
+}
+
+rm -rf "${REPO_DIR}"
+
+echo "All artifact classification tests passed"
+
+echo "All tests passed"
 exit 0
