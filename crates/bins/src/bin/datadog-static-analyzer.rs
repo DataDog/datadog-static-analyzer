@@ -613,9 +613,7 @@ fn main() -> Result<()> {
                         }
                         JS_RUNTIME.replace(opt);
 
-                        // Test file detection is only output for SARIF.
                         if !results.is_empty()
-                            && matches!(configuration.output_format, OutputFormat::Sarif)
                             && !path_metadata.contains_key(relative_path.as_ref())
                         {
                             let cloned_path_str = relative_path.to_string();
