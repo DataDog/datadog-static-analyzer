@@ -103,8 +103,15 @@ macro_rules! trie_from {
 /// Returns `true` if the provided file path is "test-like"--that is, it suggests that the
 /// file contains unit tests or is associated with those that do--or `false` if not.
 fn has_test_like_path(language: Language, path: &Path) -> bool {
-    #[allow(clippy::match_single_binding)]
+    use Language::*;
     let globset = match language {
+        Go => globset_from!([&[
+            // `go test` required filename
+            "**/*_test.go",
+            // Conventions:
+            "**/mock_*.go",
+            "**/*_mock.go",
+        ]]),
         _ => globset_from!([DEFAULT_PATHS, DEFAULT_FILENAMES]),
     };
     globset.is_match(path)
@@ -117,6 +124,7 @@ fn has_test_like_import(
     code: &str,
     pre_parsed_tree: Option<&tree_sitter::Tree>,
 ) -> bool {
+    use Language::*;
     let mut new_tree: Option<tree_sitter::Tree> = None;
     let tree = if pre_parsed_tree.is_none() {
         let _ = std::mem::replace(&mut new_tree, get_tree(code, &language));
@@ -124,13 +132,47 @@ fn has_test_like_import(
     } else {
         pre_parsed_tree
     };
-    let Some(_tree) = tree else {
+    let Some(tree) = tree else {
         return false;
     };
 
-    // (Not yet implemented).
-    #[allow(clippy::match_single_binding)]
     match language {
+        Go => {
+            use crate::analysis::languages::go;
+            const SEPARATOR: &str = "/";
+            let imports_trie = trie_from!(
+                [
+                    // check: https://github.com/go-check/check
+                    "github.com/go-check/check",
+                    // Ginkgo: https://github.com/onsi/ginkgo
+                    "github.com/onsi/ginkgo",
+                    // gock: https://github.com/h2non/gock
+                    "github.com/h2non/gock",
+                    // GoConvey: https://github.com/smartystreets/goconvey
+                    "github.com/smartystreets/goconvey",
+                    // Gomega: https://github.com/onsi/gomega
+                    "github.com/onsi/gomega",
+                    // GoMock: https://github.com/golang/mock
+                    "github.com/golang/mock",
+                    // GoMock: https://github.com/uber-go/mock
+                    "go.uber.org/mock",
+                    // Pegomock: https://github.com/petergtz/pegomock
+                    "github.com/petergtz/pegomock",
+                    // testing (standard lib): https://pkg.go.dev/testing
+                    "testing",
+                    // testify: https://github.com/stretchr/testify
+                    "github.com/stretchr/testify",
+                ],
+                SEPARATOR
+            );
+            let parsed_imports = go::parse_imports_with_tree(code, tree);
+            for import in parsed_imports {
+                if trie_has_prefix(imports_trie, import.path.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
         _ => false,
     }
 }
@@ -150,7 +192,7 @@ where
 mod cfg_test_tests {
     use super::{is_test_file, trie_has_prefix};
     use crate::model::common::Language;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// For tests where [`Language`] doesn't affect the behavior.
     const UNUSED_LANG: Language = Language::Json;
@@ -259,5 +301,37 @@ mod cfg_test_tests {
         // javax.security.auth.message      javax.servlet.jsp
         //                                                            no.sequence.match
         assert!(!trie_has_prefix(&trie, "no.sequence.match".split(".")));
+    }
+
+    #[test]
+    fn language_go() {
+        fn source_for(imports: &str) -> String {
+            format!(
+                "\
+package pkg
+
+{imports}
+"
+            )
+        }
+
+        let path_based = per_os_paths(&["f1/f2/router_test.go", "f1/f2/router_mock.go"]);
+        for path_str in path_based {
+            let path = PathBuf::from(path_str);
+            assert!(is_test_file(Language::Go, UNUSED_CODE, &path, None));
+        }
+        let import_shoulds = &[
+            r#"import "testing""#,
+            r#"import req "github.com/stretchr/testify/require""#,
+        ];
+        let import_should_nots = &[r#"import "custom_testing""#];
+        for imports in import_shoulds {
+            let go_code = source_for(imports);
+            assert!(is_test_file(Language::Go, &go_code, Path::new(""), None));
+        }
+        for imports in import_should_nots {
+            let go_code = source_for(imports);
+            assert!(!is_test_file(Language::Go, &go_code, Path::new(""), None));
+        }
     }
 }
