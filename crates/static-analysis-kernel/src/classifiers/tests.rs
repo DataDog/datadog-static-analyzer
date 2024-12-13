@@ -74,6 +74,32 @@ macro_rules! globset_from {
     }};
 }
 
+/// Returns a reference to a static `LazyLock` [`SequenceTrie<String, ()>`](sequence_trie::SequenceTrie)
+/// that contains the values in the provided list, split by the provided separator.
+///
+/// # Usage
+/// ```rs
+/// let imports_trie = trie_from!(["java.util.Scanner", "java.time.format.TextStyle"], ".")
+/// ```
+macro_rules! trie_from {
+    ($list:expr, $separator:expr) => {{
+        use sequence_trie::SequenceTrie;
+        use std::sync::LazyLock;
+        static TRIE: LazyLock<SequenceTrie<String, ()>> = LazyLock::new(|| {
+            let mut trie = SequenceTrie::<String, ()>::new();
+            for value in $list {
+                let parts = value
+                    .split($separator)
+                    .map(String::from)
+                    .collect::<Vec<_>>();
+                trie.insert(parts.iter(), ());
+            }
+            trie
+        });
+        &TRIE
+    }};
+}
+
 /// Returns `true` if the provided file path is "test-like"--that is, it suggests that the
 /// file contains unit tests or is associated with those that do--or `false` if not.
 fn has_test_like_path(language: Language, path: &Path) -> bool {
