@@ -12,12 +12,12 @@ ANALYSIS_CMD='cargo run --profile release-dev --bin datadog-static-analyzer -- -
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 "${SCRIPT_DIR}/helpers/test-classification.sh" "${ANALYSIS_CMD}" "${REPO_DIR}" "${RESULTS_FILE}" || {
-    rm -rf $(mktemp -d)
+    rm -rf "${REPO_DIR}"
     echo "Test failed"
     exit 1
 }
 
-rm -rf $(mktemp -d)
+rm -rf "${REPO_DIR}"
 
 echo "All tests passed"
 exit 0
