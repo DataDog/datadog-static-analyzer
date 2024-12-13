@@ -42,6 +42,7 @@ use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
 use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
 use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
+use kernel::classifiers::{is_test_file, ArtifactClassification};
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
 use kernel::model::common::{Language, OutputFormat};
@@ -376,8 +377,10 @@ fn main() -> Result<()> {
 
     print_configuration(&configuration);
 
-    let mut all_rule_results = vec![];
+    let mut all_rule_results = Vec::<RuleResult>::new();
     let mut all_stats = AnalysisStatistics::new();
+    // (Option<T> is used to prevent checking the same file path multiple times).
+    let mut all_path_metadata = HashMap::<String, Option<ArtifactClassification>>::new();
 
     if matches.opt_present("ddsa-runtime") {
         println!("[WARNING] the --ddsa-runtime flag is deprecated and will be removed in the next version");
@@ -537,11 +540,11 @@ fn main() -> Result<()> {
         }
 
         // take the relative path for the analysis
-        let (stats, rule_results) = files_for_language
+        let (stats, rule_results, path_metadata) = files_for_language
             .into_par_iter()
             .fold(
-                || (AnalysisStatistics::new(), Vec::<RuleResult>::new()),
-                |(mut stats, mut fold_results), path| {
+                || (AnalysisStatistics::new(), Vec::new(), HashMap::new()),
+                |(mut stats, mut fold_results, mut path_metadata), path| {
                     thread_local! {
                         // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
                         static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
@@ -615,6 +618,23 @@ fn main() -> Result<()> {
                         }
                         JS_RUNTIME.replace(opt);
 
+                        if !results.is_empty()
+                            && !path_metadata.contains_key(relative_path.as_ref())
+                        {
+                            let cloned_path_str = relative_path.to_string();
+                            let metadata = if is_test_file(
+                                *language,
+                                file_content.as_ref(),
+                                std::path::Path::new(&cloned_path_str),
+                                None,
+                            ) {
+                                Some(ArtifactClassification { is_test_file: true })
+                            } else {
+                                None
+                            };
+                            path_metadata.insert(cloned_path_str, metadata);
+                        }
+
                         results
                     } else {
                         eprintln!("error when getting content of path {}", &path.display());
@@ -626,25 +646,42 @@ fn main() -> Result<()> {
                     }
                     fold_results.extend(res);
 
-                    (stats, fold_results)
+                    (stats, fold_results, path_metadata)
                 },
             )
             .reduce(
-                || (AnalysisStatistics::new(), Vec::<RuleResult>::new()),
+                || (AnalysisStatistics::new(), Vec::new(), HashMap::new()),
                 |mut base, other| {
-                    let (other_stats, other_results) = other;
+                    let (other_stats, other_results, other_classifications) = other;
                     base.0 += other_stats;
                     base.1.extend(other_results);
+                    for (k, v) in other_classifications {
+                        let existing = base.2.insert(k, v);
+                        // Due to the way the file paths are parallelized, even with rayon's work-stealing,
+                        // there should never be a duplicate key (i.e., file path) between two rayon threads.
+                        debug_assert!(existing.is_none());
+                    }
                     base
                 },
             );
         all_rule_results.extend(rule_results);
         all_stats += stats;
+        for (k, v) in path_metadata {
+            let existing = all_path_metadata.insert(k, v);
+            // The `path_metadata` map will only contain file paths for a single `Language`.
+            // Because a file only (currently) maps to a single `Language`, it's guaranteed that
+            // the key will be unique.
+            debug_assert!(existing.is_none());
+        }
 
         if let Some(pb) = &progress_bar {
             pb.finish();
         }
     }
+    let all_path_metadata = all_path_metadata
+        .into_iter()
+        .filter_map(|(k, v)| v.map(|classification| (k, classification)))
+        .collect::<HashMap<_, _>>();
 
     let end_timestamp = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -841,6 +878,7 @@ fn main() -> Result<()> {
                 diff_aware_parameters,
                 execution_time_secs,
             },
+            &all_path_metadata,
         )
         .expect("cannot generate SARIF results"),
     };

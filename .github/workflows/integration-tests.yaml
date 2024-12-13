@@ -20,6 +20,7 @@ jobs:
     strategy:
       matrix:
         scripts:
+          - { file: './misc/integration-test-classification.sh', gha_alias: 'Artifact Classification' }
           - { file: './misc/integration-test-git.sh', gha_alias: 'Git' }
           - { file: './misc/integration-test-python.sh', gha_alias: 'Python' }
           - { file: './misc/integration-test-docker.sh', gha_alias: 'Docker' }
