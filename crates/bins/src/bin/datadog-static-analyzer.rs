@@ -15,13 +15,13 @@ use cli::config_file::get_config;
 use cli::constants::{
     DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_VIOLATION,
     EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
-    EXIT_CODE_NO_OUTPUT, EXIT_CODE_RULE_CHECKSUM_INVALID, EXIT_CODE_RULE_FILE_WITH_CONFIGURATION,
-    EXIT_CODE_UNSAFE_SUBDIRECTORIES,
+    EXIT_CODE_NO_OUTPUT, EXIT_CODE_RULESET_NOT_FOUND, EXIT_CODE_RULE_CHECKSUM_INVALID,
+    EXIT_CODE_RULE_FILE_WITH_CONFIGURATION, EXIT_CODE_UNSAFE_SUBDIRECTORIES,
 };
 use cli::csv;
 use cli::datadog_utils::{
     get_all_default_rulesets, get_diff_aware_information, get_rules_from_rulesets,
-    get_secrets_rules,
+    get_secrets_rules, DatadogApiError,
 };
 use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
@@ -275,6 +275,12 @@ fn main() -> Result<()> {
 
         let rulesets = conf.rulesets.keys().cloned().collect_vec();
         let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
+            .inspect_err(|e| {
+                if let DatadogApiError::RulesetNotFound(rs) = e {
+                    eprintln!("Error: ruleset {rs} not found");
+                    exit(EXIT_CODE_RULESET_NOT_FOUND);
+                }
+            })
             .context("error when reading rules from API")?;
         rules.extend(rules_from_api);
 
