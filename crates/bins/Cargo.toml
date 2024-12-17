@@ -51,6 +51,7 @@ indexmap = { workspace = true }
 num_cpus = { workspace = true }
 serde = { workspace = true }
 serde_yaml = { workspace = true }
+thiserror = { workspace = true }
 tree-sitter = { workspace = true }
 
 # other
@@ -65,7 +66,6 @@ tracing-subscriber = { version = "0.3.18", features = [
   "json",
 ] }
 tracing-appender = "0.2"
-thiserror = "2"
 pretty_yaml = "0.4"
 
 

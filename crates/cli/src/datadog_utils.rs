@@ -1,5 +1,15 @@
 use std::env;
 
+use crate::datadog_utils::DatadogApiError::{
+    CouldNotParseJson, CouldNotParseResponse, CouldNotQuery, ErrorResponse, MissingVariable,
+    RulesetNotFound,
+};
+use crate::model::datadog_api::{
+    ApiResponseDefaultRuleset, ConfigRequest, ConfigRequestData, ConfigRequestDataAttributes,
+    ConfigResponse, DiffAwareData, DiffAwareRequest, DiffAwareRequestArguments,
+    DiffAwareRequestData, DiffAwareRequestDataAttributes, DiffAwareResponse,
+    StaticAnalysisRulesAPIResponse, StaticAnalysisSecretsAPIResponse,
+};
 use crate::{
     constants::{
         DATADOG_HEADER_API_KEY, DATADOG_HEADER_APP_KEY, DATADOG_HEADER_JWT_TOKEN,
@@ -7,19 +17,12 @@ use crate::{
     },
     model::datadog_api::APIErrorResponse,
 };
-use anyhow::{anyhow, Result};
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
-use reqwest::blocking::RequestBuilder;
+use reqwest::blocking::{RequestBuilder, Response};
 use secrets::model::secret_rule::SecretRule;
+use thiserror::Error;
 use uuid::Uuid;
-
-use crate::model::datadog_api::{
-    ApiResponseDefaultRuleset, ConfigRequest, ConfigRequestData, ConfigRequestDataAttributes,
-    ConfigResponse, DiffAwareData, DiffAwareRequest, DiffAwareRequestArguments,
-    DiffAwareRequestData, DiffAwareRequestDataAttributes, DiffAwareResponse,
-    StaticAnalysisRulesAPIResponse, StaticAnalysisSecretsAPIResponse,
-};
 
 const STAGING_DATADOG_HOSTNAME: &str = "api.datad0g.com";
 const DEFAULT_DATADOG_HOSTNAME: &str = "api.datadoghq.com";
@@ -38,38 +41,35 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "YAML",
 ];
 
+#[derive(Error, Debug)]
+pub enum DatadogApiError {
+    #[error("Cannot find variable {0}")]
+    MissingVariable(String),
+    #[error("Ruleset not found: {0}")]
+    RulesetNotFound(String),
+    #[error("Could not query the DataDog API at {0}: {1}")]
+    CouldNotQuery(String, #[source] reqwest::Error),
+    #[error("API returned error {0}: {1}")]
+    ErrorResponse(u16, String),
+    #[error("HTTP response parsing error: {0}")]
+    CouldNotParseResponse(#[source] reqwest::Error),
+    #[error("JSON parsing error: {0}")]
+    CouldNotParseJson(#[source] serde_json::Error),
+}
+
+pub type Result<T> = std::result::Result<T, DatadogApiError>;
+
 // Get secrets rules from the static analysis API
 pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
     let req = make_request(RequestMethod::Get, "secrets/rules", use_staging, true);
-    let server_response = perform_request(req?, "secrets/rules", false)?;
-
-    let status_code = server_response.status();
-    let response_text = &server_response.text()?;
-
-    if !status_code.is_success() {
-        let error = serde_json::from_str::<APIErrorResponse>(response_text)?;
-        let error_msg = error.errors.into_iter().next().map_or_else(
-            || format!("Unknown error {status_code}"),
-            |e| format!("Error: {}", e.detail.unwrap_or(e.title)),
-        );
-        eprintln!("{error_msg}");
-        return Err(anyhow!(error_msg));
-    }
-
-    let api_response = serde_json::from_str::<StaticAnalysisSecretsAPIResponse>(response_text);
-
-    match api_response {
-        Ok(d) => Ok(d
-            .data
-            .into_iter()
-            .map(|v| v.try_into().expect("cannot convert rule"))
-            .collect()),
-        Err(e) => {
-            eprintln!("Error when parsing the secret rules {e:?}");
-            eprintln!("{response_text}");
-            Err(anyhow!("error {e:?}"))
-        }
-    }
+    parse_response(perform_request(req?, "secrets/rules", false)?)
+        .inspect_err(|e| eprintln!("Error when parsing the secret rules {e:?}"))
+        .map(|d: StaticAnalysisSecretsAPIResponse| {
+            d.data
+                .into_iter()
+                .map(|v| v.try_into().expect("cannot convert rule"))
+                .collect()
+        })
 }
 
 // Get all the rules from different rulesets from Datadog
@@ -100,7 +100,7 @@ pub fn get_datadog_variable_value(variable: &str) -> Result<String> {
             return Ok(var_value);
         }
     }
-    Err(anyhow!("cannot find variable DD_{}", variable))
+    Err(MissingVariable(format!("DD_{}", variable)))
 }
 
 // If a DD_HOSTNAME envvar has been specified, use it; otherwise, use the staging hostname
@@ -160,11 +160,7 @@ fn make_request(
     }
 }
 
-fn perform_request(
-    request_builder: RequestBuilder,
-    path: &str,
-    debug: bool,
-) -> Result<reqwest::blocking::Response> {
+fn perform_request(request_builder: RequestBuilder, path: &str, debug: bool) -> Result<Response> {
     let mut server_response = None;
     let mut retry_time = std::time::Duration::from_secs(1);
     for i in 0..5 {
@@ -194,7 +190,27 @@ fn perform_request(
 
     server_response
         .expect("server_response should have been set")
-        .map_err(|e| anyhow!("Error when querying the datadog server at {path}: {e}"))
+        .map_err(|e| CouldNotQuery(path.to_string(), e))
+}
+
+fn parse_response<T>(server_response: Response) -> Result<T>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let status_code = server_response.status();
+    let response_text = &server_response.text().map_err(CouldNotParseResponse)?;
+
+    if !status_code.is_success() {
+        let error =
+            serde_json::from_str::<APIErrorResponse>(response_text).map_err(CouldNotParseJson)?;
+        let error_msg = error.errors.into_iter().next().map_or_else(
+            || "Unknown error".to_string(),
+            |e| e.detail.unwrap_or(e.title),
+        );
+        return Err(ErrorResponse(status_code.as_u16(), error_msg));
+    }
+
+    serde_json::from_str::<T>(response_text).map_err(CouldNotParseJson)
 }
 
 // get rules from one ruleset at datadog
@@ -203,37 +219,21 @@ fn perform_request(
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool, debug: bool) -> Result<RuleSet> {
     let path = format!("rulesets/{ruleset_name}?include_tests=false&include_testing_rules=true");
     let req = make_request(RequestMethod::Get, &path, use_staging, false)?;
-    let server_response = perform_request(req, &path, debug)?;
-
-    let status_code = server_response.status();
-    let response_text = &server_response.text()?;
-
-    if !status_code.is_success() {
-        let error = serde_json::from_str::<APIErrorResponse>(response_text)?;
-        let error_msg = error.errors.into_iter().next().map_or_else(
-            || format!("Unknown error {status_code}"),
-            |e| format!("Error: {}", e.detail.unwrap_or(e.title)),
-        );
-        eprintln!("{error_msg}");
-        return Err(anyhow!(error_msg));
-    }
-
-    let api_response = serde_json::from_str::<StaticAnalysisRulesAPIResponse>(response_text);
-
-    match api_response {
-        Ok(d) => {
+    parse_response(perform_request(req, &path, debug)?)
+        .map_err(|e| {
+            eprintln!("{e}");
+            match e {
+                ErrorResponse(404, _) => RulesetNotFound(ruleset_name.to_string()),
+                e => e,
+            }
+        })
+        .map(|d: StaticAnalysisRulesAPIResponse| {
             let mut ruleset = d.clone().into_ruleset();
             // Let's make sure if the CWE is an empty string, we set it to none
             let fixed_rules = ruleset.rules.iter_mut().map(|r| r.fix_cwe()).collect();
             ruleset.rules = fixed_rules;
-            Ok(ruleset)
-        }
-        Err(e) => {
-            eprintln!("Error when parsing the ruleset {ruleset_name} {e:?}");
-            eprintln!("{response_text}");
-            Err(anyhow!("error {e:?}"))
-        }
-    }
+            ruleset
+        })
 }
 
 pub fn get_default_rulesets_name_for_language(
@@ -246,22 +246,14 @@ pub fn get_default_rulesets_name_for_language(
     let request_builder = make_request(RequestMethod::Get, &path, use_staging, false)?
         .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
 
-    let server_response = perform_request(request_builder, &path, debug)?;
-
-    let response_text = &server_response.text()?;
-    let api_response = serde_json::from_str::<ApiResponseDefaultRuleset>(response_text);
-
-    match api_response {
-        Ok(d) => Ok(d.data.attributes.rulesets),
-        Err(e) => {
+    parse_response(perform_request(request_builder, &path, debug)?)
+        .inspect_err(|e| {
             eprintln!(
                 "Error when getting the default rulesets for language {} {:?}",
                 language, e
-            );
-            eprintln!("{}", response_text);
-            Err(anyhow!("error {:?}", e))
-        }
-    }
+            )
+        })
+        .map(|d: ApiResponseDefaultRuleset| d.data.attributes.rulesets)
 }
 
 /// Get all the default rulesets available at DataDog. Take all the language
@@ -317,27 +309,12 @@ pub fn get_diff_aware_information(
 
     let path = "analysis/diff-aware";
     let req = make_request(RequestMethod::Post, path, false, true)?.json(&request_payload);
-    let server_response = perform_request(req, path, debug)?;
-
-    let status_code = server_response.status();
-    let response_text = &server_response.text()?;
-
-    let api_response = serde_json::from_str::<DiffAwareResponse>(response_text);
-
-    if !&status_code.is_success() {
-        return Err(anyhow!("server returned error {}", &status_code.as_u16()));
-    }
-
-    match api_response {
-        Ok(d) => Ok(DiffAwareData {
+    parse_response(perform_request(req, path, debug)?)
+        .inspect_err(|e| eprintln!("Error when issuing the diff-aware request {:?}", e))
+        .map(|d: DiffAwareResponse| DiffAwareData {
             base_sha: d.data.attributes.base_sha,
             files: d.data.attributes.files,
-        }),
-        Err(e) => {
-            eprintln!("Error when issuing the diff-aware request {:?}", e);
-            Err(anyhow!("error {:?}", e))
-        }
-    }
+        })
 }
 
 /// Get remote configuration from the Databdog backend
@@ -359,23 +336,9 @@ pub fn get_remote_configuration(
     let path = "config/client";
     let req = make_request(RequestMethod::Post, path, false, true)?.json(&request_payload);
     let server_response = perform_request(req, path, debug)?;
-
-    let status_code = server_response.status();
-    let response_text = &server_response.text()?;
-
-    let api_response = serde_json::from_str::<ConfigResponse>(response_text);
-
-    if !status_code.is_success() {
-        return Err(anyhow!("server returned error {}", status_code.as_u16()));
-    }
-
-    match api_response {
-        Ok(d) => Ok(d.data.attributes.config_base64),
-        Err(e) => {
-            eprintln!("Error when issuing the config request {:?}", e);
-            Err(anyhow!("error {:?}", e))
-        }
-    }
+    parse_response(server_response)
+        .inspect_err(|e| eprintln!("Error when issuing the config request {:?}", e))
+        .map(|d: ConfigResponse| d.data.attributes.config_base64)
 }
 
 #[cfg(test)]
