@@ -340,7 +340,12 @@ fn parse_field_child_node<'text>(
                     };
                 }
             }
-            unreachable!("tree-sitter grammar invariant: `dotted_name` child node should exist");
+            // Otherwise, this `relative_import` only contains an `import_prefix` node,
+            // so return the entire node's text (which will consist of one or more "."):
+            MaybeAliased {
+                full_text: ts_node_text(source_code, node),
+                alias: None,
+            }
         }
         "dotted_name" => {
             // (dotted_name (identifier)+)
@@ -452,6 +457,8 @@ mod tests {
                 ("from ..common_utils import parse_config", ("common_utils", None, Some(Specific(vec![ent("parse_config")])))),
                 ("from ..common_utils.local_utils import print_array as print", ("common_utils.local_utils", None, Some(Specific(vec![alias("print_array", "print")])))),
                 ("from .local_utils import *", ("local_utils", None, Some(Wildcard))),
+                ("from . import *", (".", None, Some(Wildcard))),
+                ("from .. import *", ("..", None, Some(Wildcard))),
             ]
         };
 
