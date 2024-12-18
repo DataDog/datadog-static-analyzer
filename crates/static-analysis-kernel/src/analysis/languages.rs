@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 pub mod go;
+pub mod javascript;
 
 /// Returns the text that `node` spans.
 ///
