@@ -371,11 +371,16 @@ mod cfg_test_tests {
 
     #[test]
     fn language_csharp() {
+        // An arbitrary namespace used to test the alias vs namespace distinction.
+        let should_namespace = "Xunit";
         let shoulds = &[
-            "using Xunit;",
+            &format!("using {should_namespace};"),
             "using UT = Microsoft.VisualStudio.TestTools.UnitTesting;",
         ];
-        let should_nots = &["using System.Diagnostics;"];
+        let should_nots = &[
+            "using System.Diagnostics;",
+            &format!("using {should_namespace} = System.Diagnostics;"),
+        ];
         for cs_code in shoulds {
             assert!(is_test_file(Language::Csharp, cs_code, Path::new(""), None));
         }
