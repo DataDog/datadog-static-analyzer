@@ -5,6 +5,7 @@ use server::model::analysis_request::{AnalysisRequest, ServerRule};
 use server::model::analysis_response::RuleResponse;
 use server::request::process_analysis_request;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A [`ServerRule`] with its corresponding pre-compiled [`RuleInternal`].
 #[derive(Debug)]
@@ -82,6 +83,7 @@ impl RuleCache {
 pub(crate) fn cached_analysis_request(
     runtime: &mut JsRuntime,
     request: AnalysisRequest<ServerRule>,
+    timeout: Option<Duration>,
     cache: Option<&RuleCache>,
 ) -> Result<Vec<RuleResponse>, &'static str> {
     if let Some(cache) = cache {
@@ -113,7 +115,7 @@ pub(crate) fn cached_analysis_request(
             configuration_base64: request.configuration_base64,
             options: request.options,
         };
-        process_analysis_request(req_with_compiled, runtime)
+        process_analysis_request(req_with_compiled, runtime, timeout)
     } else {
         let mut rule_internals = Vec::with_capacity(request.rules.len());
         for server_rule in request.rules {
@@ -131,7 +133,7 @@ pub(crate) fn cached_analysis_request(
             configuration_base64: request.configuration_base64,
             options: request.options,
         };
-        process_analysis_request(req_with_internal, runtime)
+        process_analysis_request(req_with_internal, runtime, timeout)
     }
 }
 
@@ -233,7 +235,7 @@ function visit(captures) {
         for test_case in [None, Some(&RuleCache::new())] {
             let mut rt = v8.new_runtime();
             let rule_responses =
-                cached_analysis_request(&mut rt, req_v1.clone(), test_case).unwrap();
+                cached_analysis_request(&mut rt, req_v1.clone(), None, test_case).unwrap();
             assert_eq!(rule_responses[0].violations[0].0.message, "rule_v1");
             if let Some(cache) = test_case {
                 assert_eq!(
@@ -243,7 +245,7 @@ function visit(captures) {
             }
 
             let rule_responses =
-                cached_analysis_request(&mut rt, req_v2.clone(), test_case).unwrap();
+                cached_analysis_request(&mut rt, req_v2.clone(), None, test_case).unwrap();
             assert_eq!(rule_responses[0].violations[0].0.message, "rule_v2");
             if let Some(cache) = test_case {
                 assert_eq!(

@@ -60,6 +60,13 @@ fn get_opts() -> Options {
         "/tmp/static-analysis-server",
     );
 
+    opts.optopt(
+        "",
+        "rule-timeout-ms",
+        "how long a rule can run before being killed, in milliseconds",
+        "1000",
+    );
+
     opts
 }
 
@@ -92,6 +99,8 @@ pub enum CliError {
     InvalidAddress(String),
     #[error("Invalid log argument: {0}. It must be 'minutely', 'hourly' or 'daily'.")]
     InvalidLogRolling(String),
+    #[error("Invalid timeout argument {0:?}. It must be a number.")]
+    InvalidTimeout(String),
 }
 
 fn try_to_file_appender(
@@ -173,7 +182,19 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
 
     // server state
     tracing::debug!("Preparing the server state and rocket configuration");
-    let mut server_state = ServerState::new(matches.opt_str("s"), matches.opt_present("e"));
+
+    let timeout = matches
+        .opt_str("rule-timeout-ms")
+        .map(|val| {
+            val.parse::<u64>()
+                .map(Duration::from_millis)
+                .map_err(|_| CliError::InvalidTimeout(val))
+        })
+        .transpose()?;
+
+    let mut server_state =
+        ServerState::new(matches.opt_str("s"), matches.opt_present("e"), timeout);
+
     // Create a cache for rules, if requested
     if matches.opt_present("use-rules-cache") {
         RULE_CACHE.set(RuleCache::new()).expect("should init once");

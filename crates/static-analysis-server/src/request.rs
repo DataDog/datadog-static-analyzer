@@ -14,11 +14,13 @@ use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
 use std::borrow::Borrow;
 use std::sync::Arc;
+use std::time::Duration;
 
 #[tracing::instrument(skip_all)]
 pub fn process_analysis_request<T: Borrow<RuleInternal>>(
     request: AnalysisRequest<T>,
     runtime: &mut JsRuntime,
+    timeout: Option<Duration>,
 ) -> Result<Vec<RuleResponse>, &'static str> {
     tracing::debug!("Processing analysis request");
 
@@ -97,7 +99,7 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
-            timeout: None,
+            timeout,
         },
     );
 
@@ -125,6 +127,8 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::{AnalysisRequest, RuleResponse};
     use crate::constants::{
         ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
@@ -146,6 +150,13 @@ mod tests {
     pub fn shorthand_process_req(
         request: AnalysisRequest<ServerRule>,
     ) -> Result<Vec<RuleResponse>, &'static str> {
+        shorthand_process_req_with_timeout(request, None)
+    }
+
+    pub fn shorthand_process_req_with_timeout(
+        request: AnalysisRequest<ServerRule>,
+        timeout: Option<Duration>,
+    ) -> Result<Vec<RuleResponse>, &'static str> {
         let v8 = ddsa_lib::test_utils::cfg_test_v8();
         let mut runtime = v8.new_runtime();
 
@@ -163,7 +174,7 @@ mod tests {
             configuration_base64: request.configuration_base64,
             options: request.options,
         };
-        super::process_analysis_request(req_with_internal, &mut runtime)
+        super::process_analysis_request(req_with_internal, &mut runtime, timeout)
     }
 
     /// A sample JavaScript rule and tree-sitter query used to assert violation behavior.
@@ -708,7 +719,7 @@ rulesets:
             filename: "myfile.js".to_string(),
             language: Language::JavaScript,
             file_encoding: "utf-8".to_string(),
-            code_base64: encode_base64_string("function foo() { const baz = 1; }=".repeat(10000)),
+            code_base64: encode_base64_string("function foo() { const baz = 1; }".repeat(10000)),
             configuration_base64: None,
             options: Some(AnalysisRequestOptions {
                 use_tree_sitter: None,

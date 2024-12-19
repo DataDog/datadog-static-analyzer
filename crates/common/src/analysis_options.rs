@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 
 // Used internally to pass options to the analysis
@@ -6,7 +8,7 @@ pub struct AnalysisOptions {
     pub log_output: bool,
     pub use_debug: bool,
     pub ignore_generated_files: bool,
-    pub timeout: Option<u64>,
+    pub timeout: Option<Duration>,
 }
 
 impl Default for AnalysisOptions {

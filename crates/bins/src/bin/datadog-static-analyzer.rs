@@ -390,6 +390,7 @@ fn main() -> Result<()> {
         .opt_str("rule-timeout-ms")
         .map(|val| {
             val.parse::<u64>()
+                .map(Duration::from_millis)
                 .context("unable to parse `rule-timeout-ms` flag as integer")
         })
         .transpose()?;
