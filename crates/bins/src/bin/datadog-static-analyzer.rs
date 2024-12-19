@@ -475,6 +475,9 @@ fn main() -> Result<()> {
 
     let num_threads = get_num_threads_to_use(&configuration);
 
+    let v8 = initialize_v8(num_threads as u32);
+
+    // This must be called _after_ `initialize_v8` (otherwise, PKU-related segfaults on Linux will occur).
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build_global()?;
@@ -504,8 +507,6 @@ fn main() -> Result<()> {
                 .join(",")
         );
     }
-
-    let v8 = initialize_v8(num_threads as u32);
 
     let mut number_of_rules_used = 0;
     // Finally run the analysis
