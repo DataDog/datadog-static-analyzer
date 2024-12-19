@@ -17,6 +17,7 @@ async fn main() {
     let v8 = initialize_v8(0);
     V8_PLATFORM.set(v8).expect("cell should have been unset");
 
+    // This must be called _after_ `initialize_v8` (otherwise, PKU-related segfaults on Linux will occur).
     let rayon_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(0)
         .build()
