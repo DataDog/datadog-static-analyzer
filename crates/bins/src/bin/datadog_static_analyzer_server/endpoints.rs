@@ -108,13 +108,18 @@ fn languages(span: TraceSpan) -> Value {
     json!(languages)
 }
 
-#[allow(unreachable_code)]
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
-async fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
+async fn analyze(
+    span: TraceSpan,
+    state: &State<ServerState>,
+    request: Json<AnalysisRequest>,
+) -> Value {
     let _entered = span.enter();
     tracing::debug!("{:?}", &request.0);
 
-    rocket::tokio::task::spawn_blocking(|| {
+    let timeout = state.rule_timeout_ms;
+
+    rocket::tokio::task::spawn_blocking(move || {
         let pool = RAYON_POOL.get().expect("pool should have been created");
         pool.scope_fifo(|_| {
             thread_local! {
@@ -127,7 +132,7 @@ async fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
                 let v8 = V8_PLATFORM.get().expect("v8 should have been initialized");
                 v8.try_new_runtime().expect("ddsa init should succeed")
             });
-            let response = process_analysis_request(request.into_inner(), runtime_ref);
+            let response = process_analysis_request(request.into_inner(), runtime_ref, timeout);
             JS_RUNTIME.replace(opt);
 
             json!(response)
