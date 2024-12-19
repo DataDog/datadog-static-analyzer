@@ -315,9 +315,9 @@ pub(crate) fn make_stub_root_context<'s>(
 // (This keeps the function signature of `shorthand_execute_rule` concise)
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ExecuteOptions<'a> {
-    file_name: Option<&'a str>,
-    rule_arguments: Option<&'a HashMap<String, String>>,
-    timeout: Option<Duration>,
+    pub(crate) file_name: Option<&'a str>,
+    pub(crate) rule_arguments: Option<&'a HashMap<String, String>>,
+    pub(crate) timeout: Option<Duration>,
 }
 
 /// Executes the provided code and tree-sitter query as a [`RuleCategory::Unknown`] and
