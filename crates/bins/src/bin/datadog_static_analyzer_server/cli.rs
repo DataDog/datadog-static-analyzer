@@ -59,6 +59,14 @@ fn get_opts() -> Options {
 
     // TODO (JF): Remove this when releasing 0.3.8
     opts.optflag("", "ddsa-runtime", "(deprecated)");
+
+    opts.optopt(
+        "",
+        "rule-timeout-ms",
+        "how long a rule can run before being killed, in milliseconds",
+        "1000",
+    );
+
     opts
 }
 
@@ -91,6 +99,8 @@ pub enum CliError {
     InvalidAddress(String),
     #[error("Invalid log argument: {0}. It must be 'minutely', 'hourly' or 'daily'.")]
     InvalidLogRolling(String),
+    #[error("Invalid timeout argument {0:?}. It must be a number.")]
+    InvalidTimeout(String),
 }
 
 fn try_to_file_appender(
@@ -172,7 +182,17 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
 
     // server state
     tracing::debug!("Preparing the server state and rocket configuration");
-    let mut server_state = ServerState::new(matches.opt_str("s"), matches.opt_present("e"));
+
+    let timeout = matches
+        .opt_str("rule-timeout-ms")
+        .map(|val| {
+            val.parse::<u64>()
+                .map_err(|_| CliError::InvalidTimeout(val))
+        })
+        .transpose()?;
+
+    let mut server_state =
+        ServerState::new(matches.opt_str("s"), matches.opt_present("e"), timeout);
     let mut rocket_configuration = rocket::config::Config {
         // disable rocket colors and emojis if we're logging to a file as we will be using json format
         cli_colors: !matches.opt_present("l"),

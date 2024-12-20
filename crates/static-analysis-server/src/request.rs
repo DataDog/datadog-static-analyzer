@@ -19,6 +19,7 @@ use std::sync::Arc;
 pub fn process_analysis_request(
     request: AnalysisRequest,
     runtime: &mut JsRuntime,
+    timeout: Option<u64>,
 ) -> AnalysisResponse {
     tracing::debug!("Processing analysis request");
 
@@ -206,7 +207,7 @@ pub fn process_analysis_request(
                 .map(|o| o.log_output.unwrap_or(false))
                 .unwrap_or(false),
             ignore_generated_files: false,
-            timeout: None,
+            timeout,
         },
     );
 
@@ -252,7 +253,7 @@ mod tests {
     pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
         let v8 = ddsa_lib::test_utils::cfg_test_v8();
         let mut runtime = v8.new_runtime();
-        super::process_analysis_request(request, &mut runtime)
+        super::process_analysis_request(request, &mut runtime, None)
     }
 
     #[test]
@@ -962,7 +963,7 @@ rulesets:
             filename: "myfile.js".to_string(),
             language: Language::JavaScript,
             file_encoding: "utf-8".to_string(),
-            code_base64: encode_base64_string("function foo() { const baz = 1; }=".repeat(10000)),
+            code_base64: encode_base64_string("function foo() { const baz = 1; }".repeat(10000)),
             configuration_base64: None,
             options: Some(AnalysisRequestOptions {
                 use_tree_sitter: None,
