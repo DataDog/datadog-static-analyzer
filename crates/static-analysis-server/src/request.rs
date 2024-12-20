@@ -3,14 +3,14 @@ use crate::constants::{
     ERROR_CONFIGURATION_NOT_BASE64, ERROR_COULD_NOT_PARSE_CONFIGURATION, ERROR_DECODING_BASE64,
     ERROR_PARSING_RULE,
 };
-use crate::model::analysis_request::{AnalysisRequest, ServerRule};
-use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
+use crate::model::analysis_request::AnalysisRequest;
+use crate::model::analysis_response::RuleResponse;
 use crate::model::violation::ServerViolation;
 use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::analyze_with;
 use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::config_file::parse_config_file;
-use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleInternalError, RuleSeverity};
+use kernel::model::rule::{Rule, RuleCategory, RuleInternalError, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
 use std::sync::Arc;
@@ -19,42 +19,27 @@ use std::sync::Arc;
 pub fn process_analysis_request(
     request: AnalysisRequest,
     runtime: &mut JsRuntime,
-) -> AnalysisResponse {
+) -> Result<Vec<RuleResponse>, String> {
     tracing::debug!("Processing analysis request");
 
     // Decode the configuration, if present.
-    let configuration = match request.configuration_base64.map(decode_base64_string) {
-        Some(Err(_)) => {
-            tracing::info!("Validation error: configuration is not a base64 string");
-            return AnalysisResponse {
-                rule_responses: vec![],
-                errors: vec![ERROR_CONFIGURATION_NOT_BASE64.to_string()],
-            };
-        }
-        Some(Ok(cfg)) => match parse_config_file(&cfg) {
-            Err(_) => {
-                tracing::info!("Validation error: could not parse configuration");
-                return AnalysisResponse {
-                    rule_responses: vec![],
-                    errors: vec![ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string()],
-                };
-            }
-            Ok(cfg_file) => Some(cfg_file),
-        },
-        None => None,
+    let configuration = if let Some(config_b64) = request.configuration_base64 {
+        let config = decode_base64_string(config_b64)
+            .map_err(|_| ERROR_CONFIGURATION_NOT_BASE64.to_string())?;
+        let cfg_file = parse_config_file(&config)
+            .map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string())?;
+        Some(cfg_file)
+    } else {
+        None
     };
 
     // If the file is excluded by the global configuration, stop early.
-    let file_is_excluded_by_cfg = configuration
+    if configuration
         .as_ref()
-        .map(|cfg_file| !cfg_file.paths.allows_file(&request.filename))
-        .unwrap_or_default();
-    if file_is_excluded_by_cfg {
+        .is_some_and(|cfg_file| !cfg_file.paths.allows_file(&request.filename))
+    {
         tracing::debug!("Skipped excluded file: {}", request.filename);
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![],
-        };
+        return Ok(vec![]);
     }
 
     // Extract the rule configuration from the configuration file.
@@ -64,25 +49,18 @@ pub fn process_analysis_request(
         .unwrap_or_default();
     let rule_config = rule_config_provider.config_for_file(&request.filename);
 
-    let rules_with_invalid_language: Vec<ServerRule> = request
+    if let Some(rule) = request
         .rules
         .iter()
-        .filter(|&v| v.language != request.language)
-        .cloned()
-        .collect();
-    if !rules_with_invalid_language.is_empty() {
-        for rule in rules_with_invalid_language {
-            tracing::info!(
-                "Validation error: request language is `{}`, but rule `{}` language is `{}`",
-                request.language,
-                &rule.name,
-                rule.language
-            );
-        }
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![ERROR_CODE_LANGUAGE_MISMATCH.to_string()],
-        };
+        .find(|&rule| rule.language != request.language)
+    {
+        tracing::info!(
+            "Validation error: request language is `{}`, but rule `{}` language is `{}`",
+            request.language,
+            &rule.name,
+            rule.language
+        );
+        return Err(ERROR_CODE_LANGUAGE_MISMATCH.to_string());
     }
 
     let server_rules_to_rules: Vec<Rule> = request
@@ -110,71 +88,44 @@ pub fn process_analysis_request(
 
     if server_rules_to_rules.is_empty() {
         tracing::info!("Successfully completed analysis for 0 rules");
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![],
-        };
+        return Ok(vec![]);
     }
 
     // Convert the rules from the server into internal rules
-    let rules: Result<Vec<RuleInternal>, RuleInternalError> = server_rules_to_rules
+    let rules = server_rules_to_rules
         .iter()
         .map(|r| {
-            let rule_internal = r.to_rule_internal();
-            if let Err(err) = &rule_internal {
+            if !r.verify_checksum() {
                 tracing::info!(
-                    "Validation error: request rule could not be parsed (reason: {})",
-                    err
-                )
+                    "Validation error: request rule `{}` has invalid checksum",
+                    r.name
+                );
+                return Err(ERROR_CHECKSUM_MISMATCH.to_string());
             }
-            rule_internal
+            r.to_rule_internal()
+                .inspect_err(|err| {
+                    tracing::info!(
+                        "Validation error: request rule could not be parsed (reason: {})",
+                        err
+                    )
+                })
+                .map_err(|err| match err {
+                    RuleInternalError::InvalidBase64(_) | RuleInternalError::InvalidUtf8(_) => {
+                        ERROR_DECODING_BASE64.to_string()
+                    }
+                    RuleInternalError::InvalidRuleType(_)
+                    | RuleInternalError::MissingTreeSitterQuery
+                    | RuleInternalError::InvalidTreeSitterQuery(_) => {
+                        ERROR_PARSING_RULE.to_string()
+                    }
+                })
         })
-        .collect();
-
-    let rules = match rules {
-        Ok(rules) => rules,
-        Err(e) => match e {
-            RuleInternalError::InvalidBase64(_) | RuleInternalError::InvalidUtf8(_) => {
-                return AnalysisResponse {
-                    rule_responses: vec![],
-                    errors: vec![ERROR_DECODING_BASE64.to_string()],
-                };
-            }
-            RuleInternalError::InvalidRuleType(_)
-            | RuleInternalError::MissingTreeSitterQuery
-            | RuleInternalError::InvalidTreeSitterQuery(_) => {
-                return AnalysisResponse {
-                    rule_responses: vec![],
-                    errors: vec![ERROR_PARSING_RULE.to_string()],
-                };
-            }
-        },
-    };
+        .collect::<Result<Vec<_>, _>>()?;
 
     // let's try to decode the code
-    let Ok(code_decoded_attempt) = decode_base64_string(request.code_base64) else {
-        tracing::info!("Validation error: code is not a base64 string");
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![ERROR_CODE_NOT_BASE64.to_string()],
-        };
-    };
-    let code_decoded_attempt: Arc<str> = Arc::from(code_decoded_attempt);
-
-    // We check each rule and if the checksum is correct or not. If one rule does not
-    // have a valid checksum, we return an error.
-    for rule in &server_rules_to_rules {
-        if !rule.verify_checksum() {
-            tracing::info!(
-                "Validation error: request rule `{}` has invalid checksum",
-                rule.name
-            );
-            return AnalysisResponse {
-                rule_responses: vec![],
-                errors: vec![ERROR_CHECKSUM_MISMATCH.to_string()],
-            };
-        }
-    }
+    let code =
+        decode_base64_string(request.code_base64).map_err(|_| ERROR_CODE_NOT_BASE64.to_string())?;
+    let code: Arc<str> = Arc::from(code);
 
     let rules_count = rules.len();
     let rules_str = if rules_count == 1 { "rule" } else { "rules" };
@@ -197,7 +148,7 @@ pub fn process_analysis_request(
         &request.language,
         &rules,
         &Arc::from(request.filename),
-        &code_decoded_attempt,
+        &code,
         &rule_config,
         &AnalysisOptions {
             use_debug: false,
@@ -220,7 +171,7 @@ pub fn process_analysis_request(
             output: rr.output.clone(),
             execution_time_ms: rr.execution_time_ms,
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     tracing::info!(
         "Successfully completed analysis for {} {} ({})",
@@ -228,10 +179,8 @@ pub fn process_analysis_request(
         rules_str,
         rules_list
     );
-    AnalysisResponse {
-        rule_responses,
-        errors: vec![],
-    }
+
+    Ok(rule_responses)
 }
 
 #[cfg(test)]
@@ -249,7 +198,7 @@ mod tests {
 
     /// A shorthand helper function to call [`super::process_analysis_request`] without requiring
     /// an explicitly-created [`JsRuntime`].
-    pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
+    pub fn process_analysis_request(request: AnalysisRequest) -> Result<Vec<RuleResponse>, String> {
         let v8 = ddsa_lib::test_utils::cfg_test_v8();
         let mut runtime = v8.new_runtime();
         super::process_analysis_request(request, &mut runtime)
@@ -282,10 +231,9 @@ mod tests {
                 }
             ]
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        let violations = &response.rule_responses[0].violations;
+        let rule_responses = process_analysis_request(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        let violations = &rule_responses[0].violations;
         assert_eq!(1, violations.len());
         assert!(violations[0].0.taint_flow.is_none());
     }
@@ -340,11 +288,8 @@ function visit(captures) {
                 arguments: vec![],
             }],
         };
-        let response = process_analysis_request(request);
-        let taint_flow_regions = response.rule_responses[0].violations[0]
-            .0
-            .taint_flow
-            .as_ref();
+        let rule_responses = process_analysis_request(request).unwrap();
+        let taint_flow_regions = rule_responses[0].violations[0].0.taint_flow.as_ref();
         assert_eq!(taint_flow_regions.unwrap().len(), 6);
     }
 
@@ -375,12 +320,8 @@ function visit(captures) {
                 }
             ]
         };
-        let response = process_analysis_request(request);
-        assert!(response.rule_responses.is_empty());
-        assert_eq!(
-            &ERROR_CHECKSUM_MISMATCH.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = process_analysis_request(request).unwrap_err();
+        assert_eq!(err_message, ERROR_CHECKSUM_MISMATCH);
     }
 
     #[test]
@@ -403,19 +344,15 @@ function visit(captures) {
                     rule_type: RuleType::TreeSitterQuery,
                     entity_checked: None,
                     code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: None,
+                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
                     arguments: vec![],
                 }
             ]
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_CODE_NOT_BASE64.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = process_analysis_request(request).unwrap_err();
+        assert_eq!(err_message, ERROR_CODE_NOT_BASE64);
     }
 
     #[test]
@@ -445,12 +382,8 @@ function visit(captures) {
                 }
             ]
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_DECODING_BASE64.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = process_analysis_request(request).unwrap_err();
+        assert_eq!(err_message, ERROR_DECODING_BASE64);
     }
 
     #[test]
@@ -473,19 +406,15 @@ function visit(captures) {
                     rule_type: RuleType::TreeSitterQuery,
                     entity_checked: None,
                     code_base64: "ZnVuY3Rpb24gdmlzaXQoKSB7fQ==".to_string(),
-                    checksum: Some("1a1dd51c47738a19b073a20ffc16c1eb816a4a6ed05ffaa53c19db0caf036c0c".to_string()),
+                    checksum: Some("67e29f4991c008a7447b1d4c4093f374310ebfaea1c62f8dd571d8de7d3cd1cb".to_string()),
                     pattern: None,
                     tree_sitter_query_base64: Some("KGJpbmFyeQogICAgXwogICAgIj1+IiBAb3AKICAgIHJpZ2h0OiAocmVnZXggCiAgICAgICAgKHN0cmluZ19jb250ZW50KSBAc3RyCiAgICApIEByZWdleAogICAgKCNub3QtbWF0Y2g/IEBzdHIgIi9bLltcXSgpe31cXF4kfCorP10vIikKKQ==".to_string()),
                     arguments: vec![],
                 }
             ],
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_PARSING_RULE.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = process_analysis_request(request).unwrap_err();
+        assert_eq!(err_message, ERROR_PARSING_RULE);
     }
 
     #[test]
@@ -515,12 +444,8 @@ function visit(captures) {
                 }
             ]
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_CODE_LANGUAGE_MISMATCH.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = process_analysis_request(request).unwrap_err();
+        assert_eq!(err_message, ERROR_CODE_LANGUAGE_MISMATCH);
     }
 
     #[test]
@@ -568,8 +493,8 @@ function visit(captures) {
         };
 
         // No includes/excludes
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // Global exclude for 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -580,15 +505,15 @@ ignore: [path/to]
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        eprintln!("{:?}", response);
-        assert_eq!(0, response.rule_responses.len());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(0, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = process_analysis_request(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(4, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // rs_one excludes 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -599,15 +524,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        eprintln!("{:?}", response);
-        assert_eq!(1, response.rule_responses.len());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(1, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = process_analysis_request(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(4, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // Globally only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -618,14 +543,15 @@ only: [path/to]
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = process_analysis_request(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(0, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(0, rule_responses.len());
 
         // rs_one only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -636,14 +562,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = process_analysis_request(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(1, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(1, rule_responses.len());
 
         // rs_one/rule_a excludes 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -656,14 +583,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(3, response.rule_responses.len());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(3, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = process_analysis_request(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(4, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // rs_one/rule_a only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -676,14 +604,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = process_analysis_request(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(3, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(3, rule_responses.len());
     }
 
     #[test]
@@ -712,19 +641,13 @@ rulesets:
                 arguments: vec![],
             }],
         };
-        let response = process_analysis_request(request.clone());
-        assert_eq!(
-            &ERROR_CONFIGURATION_NOT_BASE64.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = process_analysis_request(request.clone()).unwrap_err();
+        assert_eq!(err_message, ERROR_CONFIGURATION_NOT_BASE64);
 
         // invalid configuration
         request.configuration_base64 = Some(encode_base64_string("zzzzzap!".to_string()));
-        let response = process_analysis_request(request);
-        assert_eq!(
-            &ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = process_analysis_request(request).unwrap_err();
+        assert_eq!(err_message, ERROR_COULD_NOT_PARSE_CONFIGURATION);
     }
 
     #[test]
@@ -769,14 +692,11 @@ function visit(node, filename, code) {
                 }
             ]
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
-        assert!(response.rule_responses[0].violations[0]
-            .0
-            .message
-            .contains("argument = 101"));
+        let rule_responses = process_analysis_request(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
+        let message = &rule_responses[0].violations[0].0.message;
+        assert!(message.contains("argument = 101"));
     }
 
     #[test]
@@ -814,17 +734,16 @@ function visit(node, filename, code) {
 
         // Default severity and category.
         let request = base_request.clone();
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty(), "{:?}", response.errors);
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
+        let rule_responses = process_analysis_request(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::BestPractices,
-            response.rule_responses[0].violations[0].0.category
+            rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Warning,
-            response.rule_responses[0].violations[0].0.severity
+            rule_responses[0].violations[0].0.severity
         );
 
         // Override severity and category.
@@ -842,17 +761,16 @@ rulesets:
             )),
             ..base_request.clone()
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
+        let rule_responses = process_analysis_request(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::CodeStyle,
-            response.rule_responses[0].violations[0].0.category
+            rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Error,
-            response.rule_responses[0].violations[0].0.severity
+            rule_responses[0].violations[0].0.severity
         );
 
         // Per-path severity override.
@@ -874,17 +792,16 @@ rulesets:
             )),
             ..base_request.clone()
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
+        let rule_responses = process_analysis_request(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::CodeStyle,
-            response.rule_responses[0].violations[0].0.category
+            rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Notice,
-            response.rule_responses[0].violations[0].0.severity
+            rule_responses[0].violations[0].0.severity
         );
     }
 
@@ -921,20 +838,17 @@ rulesets:
             }),
             rules: vec![base_rule.clone()],
         };
-        let response = process_analysis_request(request.clone());
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
         // We should've logged the `id_node`
-        assert_eq!(
-            response.rule_responses[0].output,
-            Some("var_name".to_string())
-        );
+        assert_eq!(rule_responses[0].output, Some("var_name".to_string()));
         // Mutate the rule so it logs the `int_node`
         let mut duplicate_req = request.clone();
         duplicate_req.rules[0].code_base64 = "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaW50X25vZGUiXTsKCWNvbnNvbGUubG9nKGdldENvZGVGb3JOb2RlKGNhcHR1cmVkLCBjb2RlKSk7Cn0=".to_string();
         duplicate_req.rules[0].checksum =
             Some("640fed003ec8fbf094681128baecd08af1b211d8a25b6f91a3fe5d50b7120cad".to_string());
-        let response = process_analysis_request(duplicate_req);
+        let rule_responses = process_analysis_request(duplicate_req).unwrap();
         // We should've logged the `int_node`
-        assert_eq!(response.rule_responses[0].output, Some("123".to_string()));
+        assert_eq!(rule_responses[0].output, Some("123".to_string()));
     }
 
     /// Tests that a rule with an expensive tree-sitter query won't get stuck processing for a long
@@ -970,12 +884,9 @@ rulesets:
             }),
             rules: vec![base_rule.clone()],
         };
-        let response = process_analysis_request(request.clone());
-        assert_eq!(response.rule_responses.len(), 1);
-        assert_eq!(response.rule_responses[0].errors.len(), 1);
-        assert_eq!(
-            response.rule_responses[0].errors[0],
-            ERROR_RULE_TIMEOUT.to_string()
-        );
+        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        assert_eq!(rule_responses.len(), 1);
+        assert_eq!(rule_responses[0].errors.len(), 1);
+        assert_eq!(rule_responses[0].errors[0], ERROR_RULE_TIMEOUT.to_string());
     }
 }
