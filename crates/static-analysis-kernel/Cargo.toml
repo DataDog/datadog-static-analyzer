@@ -18,7 +18,7 @@ thiserror = { workspace = true }
 tree-sitter = { workspace = true }
 
 # other
-deno_core = "0.325.0"
+deno_core = "0.327.0"
 globset = "0.4.14"
 graphviz-rust = "0.9.0"
 sequence_trie = "0.3.6"
