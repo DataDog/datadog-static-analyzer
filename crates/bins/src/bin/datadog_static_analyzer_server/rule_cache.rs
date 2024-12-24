@@ -42,7 +42,6 @@ pub(crate) struct CachedValue {
 
 impl RuleCache {
     /// Returns a new `RuleCache` with a capacity of 0.
-    #[allow(dead_code)]
     pub fn new() -> Self {
         Self(DashMap::new())
     }

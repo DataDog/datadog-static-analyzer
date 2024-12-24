@@ -2,12 +2,15 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::datadog_static_analyzer_server::rule_cache::RuleCache;
 use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use std::sync::OnceLock;
+
 mod datadog_static_analyzer_server;
 
 pub(crate) static V8_PLATFORM: OnceLock<V8Platform<Initialized>> = OnceLock::new();
 pub(crate) static RAYON_POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
+pub(crate) static RULE_CACHE: OnceLock<RuleCache> = OnceLock::new();
 
 #[rocket::main]
 async fn main() {

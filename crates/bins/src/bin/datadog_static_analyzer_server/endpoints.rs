@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
 use crate::datadog_static_analyzer_server::rule_cache::cached_analysis_request;
-use crate::{RAYON_POOL, V8_PLATFORM};
+use crate::{RAYON_POOL, RULE_CACHE, V8_PLATFORM};
 use kernel::analysis::ddsa_lib::JsRuntime;
 use rocket::{
     fs::NamedFile,
@@ -127,11 +127,11 @@ async fn analyze(span: TraceSpan, request: Json<AnalysisRequest<ServerRule>>) ->
                 v8.try_new_runtime().expect("ddsa init should succeed")
             });
             let request = request.into_inner();
-            let (rule_responses, errors) = match cached_analysis_request(runtime_ref, request, None)
-            {
-                Ok(resp) => (resp, vec![]),
-                Err(err) => (vec![], vec![err.to_string()]),
-            };
+            let (rule_responses, errors) =
+                match cached_analysis_request(runtime_ref, request, RULE_CACHE.get()) {
+                    Ok(resp) => (resp, vec![]),
+                    Err(err) => (vec![], vec![err.to_string()]),
+                };
 
             JS_RUNTIME.replace(opt);
 
