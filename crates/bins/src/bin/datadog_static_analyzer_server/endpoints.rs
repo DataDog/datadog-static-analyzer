@@ -2,6 +2,7 @@ use std::cell::Cell;
 use std::path::Path;
 
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
+use crate::datadog_static_analyzer_server::rule_cache::cached_analysis_request;
 use crate::{RAYON_POOL, V8_PLATFORM};
 use kernel::analysis::ddsa_lib::JsRuntime;
 use rocket::{
@@ -11,11 +12,11 @@ use rocket::{
     serde::json::{json, Json, Value},
     Build, Rocket, Shutdown, State,
 };
+use server::model::analysis_request::ServerRule;
 use server::model::analysis_response::AnalysisResponse;
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
 };
-use server::request::process_analysis_request;
 use server::tree_sitter_tree::process_tree_sitter_tree_request;
 use thiserror::Error;
 
@@ -110,7 +111,7 @@ fn languages(span: TraceSpan) -> Value {
 }
 
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
-async fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
+async fn analyze(span: TraceSpan, request: Json<AnalysisRequest<ServerRule>>) -> Value {
     let _entered = span.enter();
 
     rocket::tokio::task::spawn_blocking(|| {
@@ -125,11 +126,13 @@ async fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
                 let v8 = V8_PLATFORM.get().expect("v8 should have been initialized");
                 v8.try_new_runtime().expect("ddsa init should succeed")
             });
-            let (rule_responses, errors) =
-                match process_analysis_request(request.into_inner(), runtime_ref) {
-                    Ok(rule_responses) => (rule_responses, vec![]),
-                    Err(err) => (vec![], vec![err]),
-                };
+            let request = request.into_inner();
+            let (rule_responses, errors) = match cached_analysis_request(runtime_ref, request, None)
+            {
+                Ok(resp) => (resp, vec![]),
+                Err(err) => (vec![], vec![err.to_string()]),
+            };
+
             JS_RUNTIME.replace(opt);
 
             json!(AnalysisResponse {

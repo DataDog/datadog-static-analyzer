@@ -27,6 +27,7 @@ codegen-units = 256
 [workspace.dependencies]
 anyhow = "1"
 base64 = "0.21.2"
+dashmap = "6.1.0"
 git2 = "0.19.0"
 indexmap = { version = "2.2", features = ["serde"] }
 itertools = "0.12.1"

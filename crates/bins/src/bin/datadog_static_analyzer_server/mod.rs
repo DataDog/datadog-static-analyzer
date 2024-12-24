@@ -12,6 +12,7 @@ mod endpoints;
 mod error_codes;
 mod fairings;
 mod ide;
+pub(crate) mod rule_cache;
 mod state;
 mod utils;
 
