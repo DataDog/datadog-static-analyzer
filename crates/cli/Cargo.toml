@@ -28,7 +28,7 @@ csv = "1.3.0"
 path-slash = "0.2.1"
 percent-encoding = "2.3.1"
 prettytable-rs = "0.10.0"
-reqwest = { version = "0.11", features = ["blocking", "json"] }
+reqwest = { version = "0.12", features = ["blocking", "json"] }
 valico = "4.0.0"
 walkdir = "2.5.0"
 itertools = "0.12.1"
