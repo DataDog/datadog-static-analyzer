@@ -36,10 +36,25 @@ impl V8Platform<Uninitialized> {
 }
 
 impl V8Platform<Initialized> {
-    /// Creates and returns a new [`JsRuntime`] that utilizes this v8 platform.
+    /// Creates and returns a new [`JsRuntime`]. The v8 isolate's heap limit is set according to
+    /// the flags used to initialize this v8 platform.
     pub fn try_new_runtime(&self) -> Result<JsRuntime, DDSAJsRuntimeError> {
-        let deno_runtime = make_base_deno_core_runtime(vec![ddsa_lib::init_ops_and_esm()]);
-        JsRuntime::try_new(deno_runtime)
+        JsRuntime::try_new(make_base_deno_core_runtime(Self::extensions(), None))
+    }
+
+    /// Creates and returns a new [`JsRuntime`] with the provided v8 isolate heap size limit.
+    pub fn try_new_runtime_with_heap_limit(
+        &self,
+        max_heap_size_bytes: usize,
+    ) -> Result<JsRuntime, DDSAJsRuntimeError> {
+        JsRuntime::try_new(make_base_deno_core_runtime(
+            Self::extensions(),
+            Some(max_heap_size_bytes),
+        ))
+    }
+
+    fn extensions() -> Vec<deno_core::Extension> {
+        vec![ddsa_lib::init_ops_and_esm()]
     }
 }
 
