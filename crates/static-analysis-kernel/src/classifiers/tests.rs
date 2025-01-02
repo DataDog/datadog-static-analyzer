@@ -112,6 +112,7 @@ fn has_test_like_path(language: Language, path: &Path) -> bool {
             "**/mock_*.go",
             "**/*_mock.go",
         ]]),
+        Java => globset_from!([DEFAULT_PATHS]),
         Python => globset_from!([
             DEFAULT_PATHS,
             DEFAULT_FILENAMES,
@@ -182,6 +183,65 @@ fn has_test_like_import(
             let parsed_imports = go::parse_imports_with_tree(code, tree);
             for import in parsed_imports {
                 if trie_has_prefix(imports_trie, import.path.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
+        Java => {
+            use crate::analysis::languages::java;
+            const SEPARATOR: &str = ".";
+            let imports_trie = trie_from!(
+                [
+                    // Apache Camel: https://github.com/apache/camel
+                    "org.apache.camel.test",
+                    // Awaitility: https://github.com/awaitility/awaitility
+                    "org.awaitility",
+                    // Arquillian: https://github.com/arquillian/arquillian-core
+                    "org.jboss.arquillian",
+                    // AssertJ: https://github.com/assertj/assertj
+                    "org.assertj",
+                    // Cucumber: https://github.com/cucumber/cucumber-jvm
+                    "io.cucumber",
+                    // DBUnit: https://sourceforge.net/projects/dbunit/
+                    "org.dbunit",
+                    // EasyMock: https://github.com/easymock/easymock
+                    "org.easymock",
+                    // JBehave: https://github.com/jbehave/jbehave-core/
+                    "org.jbehave",
+                    // JMH: https://github.com/openjdk/jmh
+                    "org.openjdk.jmh",
+                    // JUnit: https://github.com/junit-team
+                    "org.junit",
+                    // Karate: https://github.com/karatelabs/karate
+                    "com.intuit.karate",
+                    // Mockito: https://github.com/mockito/mockito
+                    "org.mockito",
+                    // Pact: https://github.com/pact-foundation/pact-jvm
+                    "au.com.dius.pact",
+                    // Powermock: https://github.com/powermock/powermock
+                    "org.powermock",
+                    // REST-assured: https://github.com/rest-assured/rest-assured
+                    "io.restassured",
+                    // Selenium: https://github.com/SeleniumHQ/selenium/tree/trunk/java
+                    "org.seleniumhq.selenium",
+                    "org.openqa.selenium",
+                    // Spock: https://github.com/spockframework/spock
+                    "org.spockframework",
+                    // Testcontainers: https://github.com/testcontainers/testcontainers-java
+                    "org.testcontainers",
+                    // TestFX: https://github.com/TestFX/TestFX
+                    "org.testfx",
+                    // TestNG: https://github.com/testng-team/testng
+                    "org.testng",
+                    // Wiremock: https://github.com/wiremock/wiremock
+                    "com.github.tomakehurst.wiremock",
+                ],
+                SEPARATOR
+            );
+            let imports = java::parse_imports_with_tree(code, tree);
+            for import in imports {
+                if trie_has_prefix(imports_trie, import.package.split(SEPARATOR)) {
                     return true;
                 }
             }
@@ -383,6 +443,22 @@ package pkg
         for imports in import_should_nots {
             let go_code = source_for(imports);
             assert!(!is_test_file(Language::Go, &go_code, Path::new(""), None));
+        }
+    }
+
+    #[test]
+    fn language_java() {
+        use Language::Java;
+        let shoulds = &[
+            "import static org.junit.Assert.assertArrayEquals;",
+            "import org.mockito.MockitoAnnotations;",
+        ];
+        let should_nots = &["import org.springframework.boot.SpringApplication;"];
+        for java_code in shoulds {
+            assert!(is_test_file(Java, java_code, Path::new(""), None));
+        }
+        for java_code in should_nots {
+            assert!(!is_test_file(Java, java_code, Path::new(""), None));
         }
     }
 
