@@ -113,6 +113,18 @@ fn has_test_like_path(language: Language, path: &Path) -> bool {
             "**/*_mock.go",
         ]]),
         Java => globset_from!([DEFAULT_PATHS]),
+        JavaScript => globset_from!([
+            DEFAULT_PATHS,
+            DEFAULT_FILENAMES,
+            &[
+                // jasmine: https://github.com/jasmine/jasmine
+                "**/*Spec.{js,mjs,jsx}",
+                // Cypress: https://github.com/cypress-io/cypress
+                "**/cypress/e2e/**/*",
+                "**/cypress/fixtures/**/*",
+                "**/cypress/support/**/*",
+            ]
+        ]),
         Python => globset_from!([
             DEFAULT_PATHS,
             DEFAULT_FILENAMES,
@@ -242,6 +254,95 @@ fn has_test_like_import(
             let imports = java::parse_imports_with_tree(code, tree);
             for import in imports {
                 if trie_has_prefix(imports_trie, import.package.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
+        JavaScript => {
+            use crate::analysis::languages::javascript;
+            use std::collections::HashSet;
+            use std::sync::LazyLock;
+            // NB: This needs to be a HashSet instead of a trie like the other implementations because
+            //     our JavaScript parser currently discards all path fidelity.
+            static IMPORTS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+                // Legend:
+                // [CNP]: Currently Not Possible to detect due to a limitation in our implementation.
+                // [Paths]: Uses filepath-based detection which is configured external to the source file.
+                HashSet::from([
+                    // ava: https://github.com/avajs/ava
+                    "ava",
+                    // better-assert: https://github.com/tj/better-assert
+                    "better-assert",
+                    // Bun: https://github.com/oven-sh/bun
+                    "bun:test",
+                    // chai: https://github.com/chaijs/chai
+                    "chai",
+                    //         [CNP] "chai/register-assert",
+                    //         [CNP] "chai/register-expect",
+                    //         [CNP] "chai/register-should",
+                    // Cucumber: https://github.com/cucumber/cucumber-js
+                    //         [CNP] "@cucumber/cucumber",
+                    "cucumber",
+                    // Cypress: https://github.com/cypress-io/cypress
+                    //         [Paths]
+                    // Deno: https://github.com/denoland/deno
+                    //         [CNP] "jsr:@std/expect"
+                    //         [CNP] "jsr:@std/assert"
+                    //         [CNP] "https://deno.land/std/testing/asserts.ts"
+                    //         [CNP] "https://deno.land/std@0.111.0/testing/asserts.ts"
+                    // expect.js: https://github.com/Automattic/expect.js
+                    "expect.js",
+                    // enzyme: https://github.com/enzymejs/enzyme
+                    "enzyme",
+                    // jasmine: https://github.com/jasmine/jasmine
+                    //         [Paths]
+                    // Jest: https://github.com/jestjs/jest
+                    //         [CNP] "@jest/globals"
+                    "jest",
+                    //         [Paths]
+                    // mocha: https://github.com/mochajs/mocha
+                    "assert",
+                    "mocha",
+                    // Nightwatch: https://github.com/nightwatchjs/nightwatch
+                    //         [CNP] "@nightwatch/react"
+                    // Node.js: https://nodejs.org/api/assert.html
+                    "node:assert",
+                    //         [CNP] "node:assert/strict",
+                    // Puppeteer: https://github.com/puppeteer/puppeteer
+                    "puppeteer",
+                    // QUnit: https://github.com/qunitjs/qunit
+                    "qunit",
+                    // Selenium: https://github.com/SeleniumHQ/selenium/tree/trunk/javascript
+                    "selenium-webdriver",
+                    //         [CNP] "selenium-webdriver/chrome",
+                    // should: https://github.com/shouldjs/should.js
+                    "should",
+                    // sinon: https://github.com/sinonjs/sinon
+                    "sinon",
+                    // tape: https://github.com/tape-testing/tape
+                    "tape",
+                    // testcafe: https://github.com/DevExpress/testcafe
+                    "testcafe",
+                    // Testcontainers: https://github.com/testcontainers/testcontainers-node
+                    "testcontainers",
+                    // Testing Library:
+                    //         [CNP] "@testing-library/react"
+                    // unexpected: https://github.com/unexpectedjs/unexpected
+                    "unexpected",
+                    // WebdriverIO: https://github.com/webdriverio/webdriverio
+                    //         [CNP] "@wdio/runner"
+                ])
+            });
+            for import in javascript::parse_imports_with_tree(code, tree) {
+                // (Because it's not intuitive, as a note: the below if/else logic is a copy of
+                // the implementation of "importsPackage" in the FileContextJavaScript in `context_file_js.js`),
+                let package_name = if import.is_module() {
+                    import.name
+                } else {
+                    import.imported_from.expect("should exist: !is_module()")
+                };
+                if IMPORTS.contains(package_name.as_ref()) {
                     return true;
                 }
             }
@@ -459,6 +560,36 @@ package pkg
         }
         for java_code in should_nots {
             assert!(!is_test_file(Java, java_code, Path::new(""), None));
+        }
+    }
+
+    #[test]
+    fn language_javascript() {
+        use Language::JavaScript;
+        let path_based = per_os_paths(&[
+            &format!("cypress/e2e/{NON_TEST_FOLDER}/file.js"),
+            &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.js"),
+            &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.jsx"),
+            &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.mjs"),
+        ]);
+        for path_str in path_based {
+            let path = PathBuf::from(path_str);
+            assert!(is_test_file(JavaScript, UNUSED_CODE, &path, None));
+        }
+
+        let import_shoulds = &[
+            "const assert = require('node:assert');",
+            "import { assert } from 'chai';",
+        ];
+        let import_should_nots = &[
+            "const assert = require('my_assertions');",
+            "import { assert } = from 'my_assertions';",
+        ];
+        for js_code in import_shoulds {
+            assert!(is_test_file(JavaScript, js_code, Path::new(""), None));
+        }
+        for js_code in import_should_nots {
+            assert!(!is_test_file(JavaScript, js_code, Path::new(""), None));
         }
     }
 
