@@ -11,6 +11,7 @@ use rocket::{
     serde::json::{json, Json, Value},
     Build, Rocket, Shutdown, State,
 };
+use server::model::analysis_response::AnalysisResponse;
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
 };
@@ -121,16 +122,22 @@ async fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
                 // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
                 static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
             }
-            tracing::warn!("performing job on {:?}", std::thread::current().id());
             let mut opt = JS_RUNTIME.replace(None);
             let runtime_ref = opt.get_or_insert_with(|| {
                 let v8 = V8_PLATFORM.get().expect("v8 should have been initialized");
                 v8.try_new_runtime().expect("ddsa init should succeed")
             });
-            let response = process_analysis_request(request.into_inner(), runtime_ref);
+            let (rule_responses, errors) =
+                match process_analysis_request(request.into_inner(), runtime_ref) {
+                    Ok(rule_responses) => (rule_responses, vec![]),
+                    Err(err) => (vec![], vec![err]),
+                };
             JS_RUNTIME.replace(opt);
 
-            json!(response)
+            json!(AnalysisResponse {
+                rule_responses,
+                errors,
+            })
         })
     })
     .await
