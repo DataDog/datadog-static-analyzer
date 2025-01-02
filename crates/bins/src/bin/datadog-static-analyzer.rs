@@ -138,8 +138,6 @@ fn main() -> Result<()> {
         "add-git-info",
         "add Git information to the SARIF report",
     );
-    // TODO (JF): Remove this when releasing 0.3.8
-    opts.optflag("", "ddsa-runtime", "(deprecated)");
     opts.optopt(
         "",
         "rule-timeout-ms",
@@ -388,9 +386,6 @@ fn main() -> Result<()> {
     // (Option<T> is used to prevent checking the same file path multiple times).
     let mut all_path_metadata = HashMap::<String, Option<ArtifactClassification>>::new();
 
-    if matches.opt_present("ddsa-runtime") {
-        println!("[WARNING] the --ddsa-runtime flag is deprecated and will be removed in the next version");
-    }
     let timeout = matches
         .opt_str("rule-timeout-ms")
         .map(|val| {
