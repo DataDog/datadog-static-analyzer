@@ -105,6 +105,7 @@ macro_rules! trie_from {
 fn has_test_like_path(language: Language, path: &Path) -> bool {
     use Language::*;
     let globset = match language {
+        Csharp => globset_from!([DEFAULT_PATHS, &["**/*Test.cs", "**/*Tests.cs"]]),
         Go => globset_from!([&[
             // `go test` required filename
             "**/*_test.go",
@@ -164,6 +165,71 @@ fn has_test_like_import(
     };
 
     match language {
+        Csharp => {
+            use crate::analysis::languages::csharp;
+            const SEPARATOR: &str = ".";
+            let imports_trie = trie_from!(
+                [
+                    // ApprovalTests: https://github.com/approvals/ApprovalTests.Net
+                    "ApprovalTests",
+                    // AutoFixture: https://github.com/AutoFixture/AutoFixture
+                    "AutoFixture",
+                    "Ploeh.AutoFixture",
+                    // BenchmarkDotNet: https://github.com/dotnet/BenchmarkDotNet
+                    "BenchmarkDotNet",
+                    // FakeItEasy: https://github.com/FakeItEasy/FakeItEasy
+                    "FakeItEasy",
+                    // FluentAssertions: https://github.com/fluentassertions/fluentassertions
+                    "FluentAssertions",
+                    // FsCheck: https://github.com/fscheck/FsCheck
+                    "FsCheck",
+                    // LightBDD: https://github.com/LightBDD/LightBDD
+                    "LightBDD",
+                    // MbUnit: https://github.com/Gallio/mbunit-v3
+                    "MbUnit.Framework",
+                    // Moq: https://github.com/devlooped/moq
+                    "Moq",
+                    // MSTest: https://github.com/microsoft/testfx
+                    "Microsoft.VisualStudio.TestPlatform",
+                    "Microsoft.VisualStudio.TestTools",
+                    // NBench: https://github.com/petabridge/NBench
+                    "NBench",
+                    // NFluent: https://github.com/tpierrain/NFluent
+                    "NFluent",
+                    // NUnit: https://github.com/nunit/nunit
+                    "NUnit.Framework",
+                    // NSubstitute: https://github.com/nsubstitute/NSubstitute
+                    "NSubstitute",
+                    // Playwright: https://github.com/microsoft/playwright-dotnet
+                    "Microsoft.Playwright",
+                    // Selenium: https://github.com/SeleniumHQ/selenium/tree/trunk/dotnet
+                    "OpenQA.Selenium",
+                    // Shoudly: https://github.com/shouldly/shouldly
+                    "Shouldly",
+                    // SpecFlow: https://github.com/SpecFlowOSS/
+                    "TechTalk.SpecFlow",
+                    // Testcontainers: https://github.com/testcontainers/testcontainers-dotnet
+                    "Testcontainers",
+                    // Verify: https://github.com/VerifyTests/Verify
+                    "VerifyMSTest",
+                    "VerifyNUnit",
+                    "VerifyTests",
+                    "VerifyXunit",
+                    // WireMock: https://github.com/WireMock-Net/WireMock.Net
+                    "WireMock",
+                    // xUnit.net: https://github.com/xunit/xunit
+                    "Xunit",
+                ],
+                SEPARATOR
+            );
+            let using_directives = csharp::parse_using_with_tree(code, tree);
+            for using in using_directives {
+                if trie_has_prefix(imports_trie, using.namespace.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
         Go => {
             use crate::analysis::languages::go;
             const SEPARATOR: &str = "/";
@@ -513,6 +579,31 @@ mod cfg_test_tests {
         // javax.security.auth.message      javax.servlet.jsp
         //                                                            no.sequence.match
         assert!(!trie_has_prefix(&trie, "no.sequence.match".split(".")));
+    }
+
+    #[test]
+    fn language_csharp() {
+        // An arbitrary namespace used to test the alias vs namespace distinction.
+        let should_namespace = "Xunit";
+        let shoulds = &[
+            &format!("using {should_namespace};"),
+            "using UT = Microsoft.VisualStudio.TestTools.UnitTesting;",
+        ];
+        let should_nots = &[
+            "using System.Diagnostics;",
+            &format!("using {should_namespace} = System.Diagnostics;"),
+        ];
+        for cs_code in shoulds {
+            assert!(is_test_file(Language::Csharp, cs_code, Path::new(""), None));
+        }
+        for cs_code in should_nots {
+            assert!(!is_test_file(
+                Language::Csharp,
+                cs_code,
+                Path::new(""),
+                None
+            ));
+        }
     }
 
     #[test]

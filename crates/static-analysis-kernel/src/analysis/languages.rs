@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+pub mod csharp;
 pub mod go;
 pub mod java;
 pub mod javascript;
