@@ -119,8 +119,7 @@ impl JsRuntime {
         let console = Rc::new(RefCell::new(JsConsole::new()));
         op_state.put(Rc::clone(&console));
 
-        let v8_isolate_handle = deno_runtime.v8_isolate().thread_safe_handle();
-        let v8_resource_watchdog = V8ResourceWatchdog::new(v8_isolate_handle);
+        let v8_resource_watchdog = V8ResourceWatchdog::new(deno_runtime.v8_isolate());
 
         Ok(Self {
             runtime: deno_runtime,
@@ -521,7 +520,7 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::{
         cfg_test_v8, shorthand_execute_rule, try_execute, ExecuteOptions,
     };
-    use crate::analysis::ddsa_lib::{js, JsRuntime};
+    use crate::analysis::ddsa_lib::{js, resource_watchdog, JsRuntime};
     use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
     use crate::model::common::Language;
     use deno_core::v8;
@@ -873,6 +872,20 @@ function visit(captures) {
             .scoped_execute(&loop_script, |_, _| (), Some(timeout))
             .unwrap_err();
         assert!(matches!(err, DDSAJsRuntimeError::JavaScriptTimeout { .. }));
+    }
+
+    /// `scoped_execute` can terminate JavaScript execution that allocates over its quota.
+    #[test]
+    fn scoped_execute_oom() {
+        use resource_watchdog::tests::{DEFAULT_HEAP_LIMIT, OOM_CODE};
+
+        let mut runtime = cfg_test_v8().new_runtime_with_heap_limit(DEFAULT_HEAP_LIMIT);
+        let loop_script = compile_script(&mut runtime.v8_handle_scope(), OOM_CODE).unwrap();
+
+        let err = runtime
+            .scoped_execute(&loop_script, |_, _| (), None)
+            .unwrap_err();
+        assert!(matches!(err, DDSAJsRuntimeError::JavaScriptMemoryExceeded));
     }
 
     /// `scoped_execute` should always execute with an empty console (despite a previous execution

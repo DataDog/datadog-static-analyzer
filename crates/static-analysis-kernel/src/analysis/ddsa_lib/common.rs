@@ -19,6 +19,8 @@ pub enum DDSAJsRuntimeError {
     TreeSitterTimeout { timeout: Duration },
     #[error("JavaScript execution timeout")]
     JavaScriptTimeout { timeout: Duration },
+    #[error("JavaScript exceeded memory constraint")]
+    JavaScriptMemoryExceeded,
     #[error("expected `{name}` to exist within the v8 context")]
     VariableNotFound { name: String },
     #[error("type should be \"{expected}\", not \"{got}\"")]
