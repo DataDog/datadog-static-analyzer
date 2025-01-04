@@ -35,7 +35,7 @@ pub struct JsRuntime {
     /// Each `JsRuntime` spawns a thread that lives for as long as the `JsRuntime`, and it is used
     /// to manually terminate JavaScript executions that go on for too long. Synchronization between
     /// the `JsRuntime` and this thread is performed through this `watchdog_pair`.
-    watchdog_pair: Arc<(Mutex<JsExecutionState>, Condvar)>,
+    watchdog_pair: Arc<(Mutex<TimeoutState>, Condvar)>,
     console: Rc<RefCell<JsConsole>>,
     bridge_context: Rc<RefCell<ContextBridge>>,
     bridge_query_match: QueryMatchBridge,
@@ -334,9 +334,7 @@ impl JsRuntime {
         if let Some(duration) = timeout {
             let (lock, cvar) = &*self.watchdog_pair;
             let mut state = lock.lock().unwrap();
-            state.timeout_duration = duration;
-            state.start_time = Instant::now();
-            state.is_currently_executing = true;
+            let _ = state.active_timer.insert((Instant::now(), duration));
             drop(state);
             cvar.notify_one();
         }
@@ -347,7 +345,7 @@ impl JsRuntime {
         // and so we don't need to set `is_currently_executing`, nor do we need to (inefficiently) re-notify
         // via the condvar. We just reset the v8 isolate's termination state and return a timeout error.
         if tc_ctx_scope.is_execution_terminating() {
-            debug_assert!(!self.watchdog_pair.0.lock().unwrap().is_currently_executing);
+            debug_assert!(self.watchdog_pair.0.lock().unwrap().active_timer.is_none());
             tc_ctx_scope.cancel_terminate_execution();
             tc_ctx_scope.reset();
             let timeout = timeout.expect("timeout should exist if we had v8 terminate execution");
@@ -357,7 +355,7 @@ impl JsRuntime {
             // the watchdog thread to stop actively tracking a timeout.
             let (lock, cvar) = &*self.watchdog_pair;
             let mut state = lock.lock().unwrap();
-            state.is_currently_executing = false;
+            state.active_timer = None;
             drop(state);
             cvar.notify_one();
         }
@@ -437,7 +435,7 @@ impl Drop for JsRuntime {
         let (lock, cvar) = &*self.watchdog_pair;
         let mut state = lock.lock().unwrap();
         // Tell the watchdog thread that it should shut down.
-        state.watchdog_should_shut_down = true;
+        state.thread_should_shut_down = true;
         drop(state);
         cvar.notify_one();
     }
@@ -505,8 +503,8 @@ pub(crate) fn inner_make_deno_core_runtime(
 ///
 /// The spawned thread may be shut down by setting `should_shut_down` on `JsExecutionState` and
 /// notifying the thread via the condvar.
-fn spawn_watchdog_thread(v8_handle: v8::IsolateHandle) -> Arc<(Mutex<JsExecutionState>, Condvar)> {
-    let state_pair = Arc::new((Mutex::new(JsExecutionState::new()), Condvar::new()));
+fn spawn_watchdog_thread(v8_handle: v8::IsolateHandle) -> Arc<(Mutex<TimeoutState>, Condvar)> {
+    let state_pair = Arc::new((Mutex::new(TimeoutState::new()), Condvar::new()));
     let pair_clone = Arc::clone(&state_pair);
 
     std::thread::spawn(move || {
@@ -514,25 +512,25 @@ fn spawn_watchdog_thread(v8_handle: v8::IsolateHandle) -> Arc<(Mutex<JsExecution
         loop {
             let mut state = cvar
                 .wait_while(lock.lock().unwrap(), |state| {
-                    !state.is_currently_executing && !state.watchdog_should_shut_down
+                    state.active_timer.is_none() && !state.thread_should_shut_down
                 })
                 .expect("mutex should not be poisoned");
 
-            if state.watchdog_should_shut_down {
+            if state.thread_should_shut_down {
                 break;
             }
 
+            let (start_instant, timeout_duration) =
+                state.active_timer.expect("should meet cvar condition");
+
             // Any instant after `timeout_threshold` will trigger the timeout
-            let timeout_threshold = state.start_time + state.timeout_duration;
+            let timeout_threshold = start_instant + timeout_duration;
             let now = Instant::now();
 
             if now >= timeout_threshold {
                 // This branch represents an edge case where the OS couldn't wake this thread up
                 // until after the watchdog should've already triggered a timeout.
-
-                // Trust that v8 will halt execution and eagerly mark the execution as complete so the
-                // main thread doesn't need to acquire the lock to do it.
-                state.is_currently_executing = false;
+                state.active_timer = None;
                 drop(state);
                 v8_handle.terminate_execution();
             } else {
@@ -540,17 +538,15 @@ fn spawn_watchdog_thread(v8_handle: v8::IsolateHandle) -> Arc<(Mutex<JsExecution
                 let additional_wait = timeout_threshold - now;
                 let result = cvar
                     .wait_timeout_while(state, additional_wait, |state| {
-                        state.is_currently_executing
+                        state.active_timer.is_some()
                     })
                     .expect("mutex should not be poisoned");
                 state = result.0;
 
-                // If the condvar triggered a timeout, `execution_complete` _must_ be false, because of
-                // our use of `wait_timeout_while`. Thus, it's always appropriate to terminate execution.
+                // If the condvar triggered a timeout, because of our use of `Condvar::wait_timeout_while`,
+                // there _must_ be an actively tracked timeout, Thus, it's always appropriate to terminate execution.
                 if result.1.timed_out() {
-                    // Trust that v8 will halt execution and eagerly mark the execution as complete so the
-                    // main thread doesn't need to acquire the lock to do it.
-                    state.is_currently_executing = false;
+                    state.active_timer = None;
                     drop(state);
                     v8_handle.terminate_execution();
                 }
@@ -579,27 +575,21 @@ pub struct ExecutionTimingCompat {
     pub execution: Duration,
 }
 
-/// A struct used to communicate state from a `JsRuntime` to a watchdog thread that calls
-/// [`v8::Isolate::terminate_execution`]. To request the watchdog to enforce a timeout,
-/// this struct should be populated with `timeout_duration`, `start_time`, and `execution_complete`
-/// should be set to `false`. After that, the watchdog thread should be notified via a condvar.
-///
-/// `should_shut_down` should only be set to `true` when the `JsRuntime` is being dropped.
+/// State for the timeout watchdog implemented by a [`V8ResourceWatchdog`]. This should be guarded
+/// with a mutex.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-struct JsExecutionState {
-    timeout_duration: Duration,
-    start_time: Instant,
-    is_currently_executing: bool,
-    watchdog_should_shut_down: bool,
+struct TimeoutState {
+    /// Data for an active timeout watchdog. If no execution is being tracked, this will be `None`.
+    /// If an execution is being tracked, this will be `Some((start_instant, timeout_duration))`.
+    active_timer: Option<(Instant, Duration)>,
+    thread_should_shut_down: bool,
 }
 
-impl JsExecutionState {
+impl TimeoutState {
     pub fn new() -> Self {
         Self {
-            timeout_duration: Duration::default(),
-            start_time: Instant::now(),
-            is_currently_executing: false,
-            watchdog_should_shut_down: false,
+            active_timer: None,
+            thread_should_shut_down: false,
         }
     }
 }
