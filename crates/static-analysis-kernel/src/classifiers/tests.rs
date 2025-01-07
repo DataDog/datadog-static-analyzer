@@ -114,12 +114,12 @@ fn has_test_like_path(language: Language, path: &Path) -> bool {
             "**/*_mock.go",
         ]]),
         Java => globset_from!([DEFAULT_PATHS]),
-        JavaScript => globset_from!([
+        JavaScript | TypeScript => globset_from!([
             DEFAULT_PATHS,
             DEFAULT_FILENAMES,
             &[
                 // jasmine: https://github.com/jasmine/jasmine
-                "**/*Spec.{js,mjs,jsx}",
+                "**/*Spec.{[jt]s,m[jt]s,[jt]sx}",
                 // Cypress: https://github.com/cypress-io/cypress
                 "**/cypress/e2e/**/*",
                 "**/cypress/fixtures/**/*",
@@ -326,7 +326,7 @@ fn has_test_like_import(
             false
         }
         JavaScript => {
-            use crate::analysis::languages::javascript;
+            use crate::analysis::languages::{javascript, typescript};
             use std::collections::HashSet;
             use std::sync::LazyLock;
             // NB: This needs to be a HashSet instead of a trie like the other implementations because
@@ -400,7 +400,12 @@ fn has_test_like_import(
                     //         [CNP] "@wdio/runner"
                 ])
             });
-            for import in javascript::parse_imports_with_tree(code, tree) {
+            let imports = match language {
+                JavaScript => javascript::parse_imports_with_tree(code, tree),
+                TypeScript => typescript::parse_imports_with_tree(code, tree),
+                _ => unreachable!(),
+            };
+            for import in imports {
                 // (Because it's not intuitive, as a note: the below if/else logic is a copy of
                 // the implementation of "importsPackage" in the FileContextJavaScript in `context_file_js.js`),
                 let package_name = if import.is_module() {
@@ -655,32 +660,34 @@ package pkg
     }
 
     #[test]
-    fn language_javascript() {
-        use Language::JavaScript;
-        let path_based = per_os_paths(&[
-            &format!("cypress/e2e/{NON_TEST_FOLDER}/file.js"),
-            &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.js"),
-            &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.jsx"),
-            &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.mjs"),
-        ]);
-        for path_str in path_based {
-            let path = PathBuf::from(path_str);
-            assert!(is_test_file(JavaScript, UNUSED_CODE, &path, None));
-        }
+    fn language_javascript_typescript() {
+        use Language::{JavaScript, TypeScript};
+        for (language, base_ext) in [(JavaScript, "js"), (TypeScript, "ts")] {
+            let path_based = per_os_paths(&[
+                &format!("cypress/e2e/{NON_TEST_FOLDER}/file.{base_ext}"),
+                &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.{base_ext}"),
+                &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.{base_ext}x"),
+                &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.m{base_ext}"),
+            ]);
+            for path_str in path_based {
+                let path = PathBuf::from(path_str);
+                assert!(is_test_file(language, UNUSED_CODE, &path, None));
+            }
 
-        let import_shoulds = &[
-            "const assert = require('node:assert');",
-            "import { assert } from 'chai';",
-        ];
-        let import_should_nots = &[
-            "const assert = require('my_assertions');",
-            "import { assert } = from 'my_assertions';",
-        ];
-        for js_code in import_shoulds {
-            assert!(is_test_file(JavaScript, js_code, Path::new(""), None));
-        }
-        for js_code in import_should_nots {
-            assert!(!is_test_file(JavaScript, js_code, Path::new(""), None));
+            let import_shoulds = &[
+                "const assert = require('node:assert');",
+                "import { assert } from 'chai';",
+            ];
+            let import_should_nots = &[
+                "const assert = require('my_assertions');",
+                "import { assert } = from 'my_assertions';",
+            ];
+            for js_code in import_shoulds {
+                assert!(is_test_file(JavaScript, js_code, Path::new(""), None));
+            }
+            for js_code in import_should_nots {
+                assert!(!is_test_file(JavaScript, js_code, Path::new(""), None));
+            }
         }
     }
 

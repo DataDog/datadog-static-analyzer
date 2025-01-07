@@ -23,7 +23,7 @@ impl<'a> PackageImport<'a> {
     }
 }
 
-pub const JS_IMPORTS_QUERY: &str = r#"
+pub(crate) const JS_IMPORTS_QUERY: &str = r#"
 ; import '<name>'
 (import_statement
   "import"
@@ -153,8 +153,23 @@ pub fn parse_imports_with_tree<'text>(
         tree_sitter::Query::new(ts_lang, JS_IMPORTS_QUERY).expect("query should have valid syntax")
     });
 
+    parse_imports_with_tree_inner(source_code, tree, &TS_QUERY)
+}
+
+/// Provides the main logic for parsing imports from the tree, given a tree-sitter query.
+///
+/// # Panics
+/// Because this logic is intended to be abstracted to be able to parse JavaScript/TypeScript
+/// trees, this function makes assumptions about the [`tree_sitter::Node::kind`] present in the
+/// `tree`, as well as [`tree_sitter::TSQuery::capture_names`] present in the `ts_query`.
+/// If there is any drift between the above and the core logic here, this function will panic.
+pub(crate) fn parse_imports_with_tree_inner<'text>(
+    source_code: &'text str,
+    tree: &tree_sitter::Tree,
+    ts_query: &tree_sitter::Query,
+) -> Vec<PackageImport<'text>> {
     let mut query_cursor = tree_sitter::QueryCursor::new();
-    let query_result = query_cursor.matches(&TS_QUERY, tree.root_node(), source_code.as_bytes());
+    let query_result = query_cursor.matches(ts_query, tree.root_node(), source_code.as_bytes());
 
     query_result
         .filter_map_deref(|query_match| {
@@ -163,7 +178,7 @@ pub fn parse_imports_with_tree<'text>(
             let mut has_default = false;
 
             for capture in query_match.captures {
-                let capture_name = TS_QUERY.capture_names()[capture.index as usize];
+                let capture_name = ts_query.capture_names()[capture.index as usize];
                 let path_text = ts_node_text(source_code, capture.node);
                 match capture_name {
                     "name" => {
@@ -213,6 +228,7 @@ pub fn parse_imports_with_tree<'text>(
 /// This will take the file stem path and remove the file extension if any
 ///
 /// e.g. './foo/bar.js' -> 'bar'
+/// e.g. './foo/bar.ts' -> 'bar'
 ///
 /// This may return None if the path is a special edge case, for example `../..` will
 /// return None because it has no file stem.
