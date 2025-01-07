@@ -294,10 +294,15 @@ impl Rule {
 
     /// Compute the checksum using the SHA256 of the base64 of the rule code.
     pub fn compute_checksum(&self) -> String {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(self.code_base64.clone().as_bytes());
-        format!("{:x}", hasher.finalize())
+        compute_sha256(&self.code_base64)
     }
+}
+
+/// Returns a hex string representation of the SHA256 of the provided input.
+pub fn compute_sha256(input: impl AsRef<[u8]>) -> String {
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(input.as_ref());
+    format!("{:x}", hasher.finalize())
 }
 
 impl fmt::Display for Rule {

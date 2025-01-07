@@ -185,8 +185,15 @@ pub fn process_analysis_request(
 
 #[cfg(test)]
 mod tests {
+    use super::{AnalysisRequest, RuleResponse};
+    use crate::constants::{
+        ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
+        ERROR_CONFIGURATION_NOT_BASE64, ERROR_COULD_NOT_PARSE_CONFIGURATION, ERROR_DECODING_BASE64,
+        ERROR_PARSING_RULE,
+    };
     use crate::model::analysis_request::{AnalysisRequestOptions, ServerRule};
     use kernel::analysis::ddsa_lib;
+    use kernel::model::rule::compute_sha256;
     use kernel::model::{
         analysis::ERROR_RULE_TIMEOUT,
         common::Language,
@@ -194,14 +201,66 @@ mod tests {
     };
     use kernel::utils::encode_base64_string;
 
-    use super::*;
-
-    /// A shorthand helper function to call [`super::process_analysis_request`] without requiring
-    /// an explicitly-created [`JsRuntime`].
-    pub fn process_analysis_request(request: AnalysisRequest) -> Result<Vec<RuleResponse>, String> {
+    /// A shorthand helper function to call [`process_analysis_request`](super::process_analysis_request)
+    /// without requiring an explicitly-created [`JsRuntime`].
+    pub fn shorthand_process_req(request: AnalysisRequest) -> Result<Vec<RuleResponse>, String> {
         let v8 = ddsa_lib::test_utils::cfg_test_v8();
         let mut runtime = v8.new_runtime();
         super::process_analysis_request(request, &mut runtime)
+    }
+
+    /// A sample JavaScript rule and tree-sitter query used to assert violation behavior.
+    const DEFAULT_RULE: (&str, &str) = (
+        // language=javascript
+        r#"
+function visit(node, filename, code) {
+    const functionName = node.captures["name"];
+    if(functionName) {
+        const error = buildError(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col,
+                                 "invalid name", "CRITICAL", "security");
+
+        const edit = buildEdit(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col, "update", "bar");
+        const fix = buildFix("use bar", [edit]);
+        addError(error.addFix(fix));
+    }
+}"#,
+        "\
+(function_definition
+    name: (identifier) @name
+    parameters: (parameters) @params
+)",
+    );
+
+    /// A shorthand to build a [`ServerRule`] for tests.
+    fn make_server_rule(rule_name: &str, language: Language, rule: (&str, &str)) -> ServerRule {
+        let code_base64 = encode_base64_string(rule.0.to_string());
+        let ts_query_b64 = encode_base64_string(rule.1.to_string());
+        let mut server_rule = ServerRule {
+            name: rule_name.to_string(),
+            short_description_base64: None,
+            description_base64: None,
+            category: Some(RuleCategory::BestPractices),
+            severity: Some(RuleSeverity::Warning),
+            language,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64,
+            checksum: None,
+            pattern: None,
+            tree_sitter_query_base64: Some(ts_query_b64),
+            arguments: vec![],
+        };
+        update_checksum(&mut server_rule, true);
+        server_rule
+    }
+
+    /// A shorthand to assign either a correct or incorrect checksum to a rule.
+    fn update_checksum(server_rule: &mut ServerRule, correct: bool) {
+        server_rule.checksum = if correct {
+            Some(compute_sha256(&server_rule.code_base64))
+        } else {
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string())
+        }
     }
 
     #[test]
@@ -213,25 +272,9 @@ mod tests {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let rule_responses = process_analysis_request(request).unwrap();
+        let rule_responses = shorthand_process_req(request).unwrap();
         assert_eq!(1, rule_responses.len());
         let violations = &rule_responses[0].violations;
         assert_eq!(1, violations.len());
@@ -270,31 +313,22 @@ function visit(captures) {
             code_base64: encode_base64_string(text.to_string()),
             configuration_base64: None,
             options: None,
-            rules: vec![ServerRule {
-                name: "java-security/flow-rule".to_string(),
-                short_description_base64: None,
-                description_base64: None,
-                category: Some(RuleCategory::BestPractices),
-                severity: Some(RuleSeverity::Warning),
-                language: Language::Java,
-                rule_type: RuleType::TreeSitterQuery,
-                entity_checked: None,
-                code_base64: encode_base64_string(rule_code.to_string()),
-                checksum: Some(
-                    "bbcd9763ae8dff95fecadc48d8cfd07767f48ca787749c979022f8d8a12c1e6d".to_string(),
-                ),
-                pattern: None,
-                tree_sitter_query_base64: Some(encode_base64_string(ts_query.to_string())),
-                arguments: vec![],
-            }],
+            rules: vec![make_server_rule(
+                "java-security/flow-rule",
+                Language::Java,
+                (rule_code, ts_query),
+            )],
         };
-        let rule_responses = process_analysis_request(request).unwrap();
+        let rule_responses = shorthand_process_req(request).unwrap();
         let taint_flow_regions = rule_responses[0].violations[0].0.taint_flow.as_ref();
         assert_eq!(taint_flow_regions.unwrap().len(), 6);
     }
 
     #[test]
     fn test_invalid_checksum() {
+        let mut server_rule = make_server_rule("myrule", Language::Python, DEFAULT_RULE);
+        update_checksum(&mut server_rule, false);
+
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
@@ -302,30 +336,14 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c36d8b59237c4ba23340057".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![server_rule],
         };
-        let err_message = process_analysis_request(request).unwrap_err();
+        let err_message = shorthand_process_req(request).unwrap_err();
         assert_eq!(err_message, ERROR_CHECKSUM_MISMATCH);
     }
 
     #[test]
-    fn test_request_invalid_base64() {
+    fn test_request_invalid_file_contents_base64() {
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
@@ -333,30 +351,18 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKI()--2#$#$Bhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let err_message = process_analysis_request(request).unwrap_err();
+        let err_message = shorthand_process_req(request).unwrap_err();
         assert_eq!(err_message, ERROR_CODE_NOT_BASE64);
     }
 
     #[test]
-    fn test_request_invalid_rule_base64_encoding() {
+    fn test_request_invalid_rule_code_base64_encoding() {
+        let mut server_rule = make_server_rule("myrule", Language::Python, DEFAULT_RULE);
+        server_rule.code_base64 = format!("!!! {}", server_rule.code_base64);
+        update_checksum(&mut server_rule, true);
+
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
@@ -364,56 +370,30 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gd23223222mlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("1a1dd51c47738a19b073a20ffc16c1eb816a4a6ed05ffaa53c19db0caf036c0c".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![server_rule],
         };
-        let err_message = process_analysis_request(request).unwrap_err();
+        let err_message = shorthand_process_req(request).unwrap_err();
         assert_eq!(err_message, ERROR_DECODING_BASE64);
     }
 
     #[test]
     fn test_request_invalid_rule_tree_sitter_query() {
+        let server_rule = make_server_rule(
+            "myrule",
+            Language::Python,
+            (DEFAULT_RULE.0, &format!("!!! {}", DEFAULT_RULE.1)),
+        );
+
         let request = AnalysisRequest {
             filename: "myfile.rb".to_string(),
-            language: Language::Ruby,
+            language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::Ruby,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQoKSB7fQ==".to_string(),
-                    checksum: Some("67e29f4991c008a7447b1d4c4093f374310ebfaea1c62f8dd571d8de7d3cd1cb".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGJpbmFyeQogICAgXwogICAgIj1+IiBAb3AKICAgIHJpZ2h0OiAocmVnZXggCiAgICAgICAgKHN0cmluZ19jb250ZW50KSBAc3RyCiAgICApIEByZWdleAogICAgKCNub3QtbWF0Y2g/IEBzdHIgIi9bLltcXSgpe31cXF4kfCorP10vIikKKQ==".to_string()),
-                    arguments: vec![],
-                }
-            ],
+            rules: vec![server_rule],
         };
-        let err_message = process_analysis_request(request).unwrap_err();
+        let err_message = shorthand_process_req(request).unwrap_err();
         assert_eq!(err_message, ERROR_PARSING_RULE);
     }
 
@@ -421,50 +401,20 @@ function visit(captures) {
     fn test_request_invalid_language() {
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
-            language: Language::Python,
+            language: Language::JavaScript,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::JavaScript,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gd23223222mlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: None,
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let err_message = process_analysis_request(request).unwrap_err();
+        let err_message = shorthand_process_req(request).unwrap_err();
         assert_eq!(err_message, ERROR_CODE_LANGUAGE_MISMATCH);
     }
 
     #[test]
     fn test_request_configuration_includes_excludes() {
-        let base_rule = ServerRule {
-            name: "myrule".to_string(),
-            short_description_base64: None,
-            description_base64: None,
-            category: Some(RuleCategory::BestPractices),
-            severity: Some(RuleSeverity::Warning),
-            language: Language::Python,
-            rule_type: RuleType::TreeSitterQuery,
-            entity_checked: None,
-            code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-            checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
-            pattern: None,
-            tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-            arguments: vec![],
-        };
+        let base_rule = make_server_rule("myrule", Language::Python, DEFAULT_RULE);
         let mut request = AnalysisRequest {
             filename: "path/to/myfile.py".to_string(),
             language: Language::Python,
@@ -493,7 +443,7 @@ function visit(captures) {
         };
 
         // No includes/excludes
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(4, rule_responses.len());
 
         // Global exclude for 'path/to'
@@ -505,10 +455,10 @@ ignore: [path/to]
         "#
             .to_string(),
         ));
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(0, rule_responses.len());
 
-        let rule_responses = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
         })
@@ -524,10 +474,10 @@ rulesets:
         "#
             .to_string(),
         ));
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(1, rule_responses.len());
 
-        let rule_responses = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
         })
@@ -543,10 +493,10 @@ only: [path/to]
         "#
             .to_string(),
         ));
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(4, rule_responses.len());
 
-        let rule_responses = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
         })
@@ -562,10 +512,10 @@ rulesets:
         "#
             .to_string(),
         ));
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(4, rule_responses.len());
 
-        let rule_responses = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
         })
@@ -583,10 +533,10 @@ rulesets:
         "#
             .to_string(),
         ));
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(3, rule_responses.len());
 
-        let rule_responses = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
         })
@@ -604,10 +554,10 @@ rulesets:
         "#
             .to_string(),
         ));
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(4, rule_responses.len());
 
-        let rule_responses = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
         })
@@ -625,28 +575,14 @@ rulesets:
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: Some(":::::::".to_string()),
             options: None,
-            rules: vec![ServerRule {
-                name: "myrule".to_string(),
-                short_description_base64: None,
-                description_base64: None,
-                category: Some(RuleCategory::BestPractices),
-                severity: Some(RuleSeverity::Warning),
-                language: Language::Python,
-                rule_type: RuleType::TreeSitterQuery,
-                entity_checked: None,
-                code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
-                pattern: None,
-                tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                arguments: vec![],
-            }],
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let err_message = process_analysis_request(request.clone()).unwrap_err();
+        let err_message = shorthand_process_req(request.clone()).unwrap_err();
         assert_eq!(err_message, ERROR_CONFIGURATION_NOT_BASE64);
 
         // invalid configuration
         request.configuration_base64 = Some(encode_base64_string("zzzzzap!".to_string()));
-        let err_message = process_analysis_request(request).unwrap_err();
+        let err_message = shorthand_process_req(request).unwrap_err();
         assert_eq!(err_message, ERROR_COULD_NOT_PARSE_CONFIGURATION);
     }
 
@@ -657,7 +593,8 @@ rulesets:
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
-            configuration_base64: Some(encode_base64_string(r#"
+            configuration_base64: Some(encode_base64_string(
+                r#"
 rulesets:
   - myrs:
     rules:
@@ -667,32 +604,25 @@ rulesets:
             /: 100
             mypath: 101
             mypath/otherpath: 102
-            "#.to_string())),
+            "#
+                .to_string(),
+            )),
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrs/myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: encode_base64_string(r#"
+            rules: vec![make_server_rule(
+                "myrs/myrule",
+                Language::Python,
+                (
+                    r#"
 function visit(node, filename, code) {
     const arg = node.context.arguments['arg1'];
     addError(buildError(1, 1, 1, 2, `argument = ${arg}`));
 }
-                    "#.to_string()),
-                    checksum: Some("984ba37fbfdfa4245ed7922efd224365ec216e540647989ac5e8559624ba9be4".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+                    "#,
+                    DEFAULT_RULE.1,
+                ),
+            )],
         };
-        let rule_responses = process_analysis_request(request).unwrap();
+        let rule_responses = shorthand_process_req(request).unwrap();
         assert_eq!(1, rule_responses.len());
         assert_eq!(1, rule_responses[0].violations.len());
         let message = &rule_responses[0].violations[0].0.message;
@@ -708,33 +638,24 @@ function visit(node, filename, code) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrs/myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: encode_base64_string(r#"
+            rules: vec![make_server_rule(
+                "myrs/myrule",
+                Language::Python,
+                (
+                    r#"
 function visit(node, filename, code) {
     const arg = node.context.arguments['arg1'];
     addError(buildError(1, 1, 1, 2, `argument = ${arg}`));
 }
-                    "#.to_string()),
-                    checksum: Some("984ba37fbfdfa4245ed7922efd224365ec216e540647989ac5e8559624ba9be4".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+                    "#,
+                    DEFAULT_RULE.1,
+                ),
+            )],
         };
 
         // Default severity and category.
         let request = base_request.clone();
-        let rule_responses = process_analysis_request(request).unwrap();
+        let rule_responses = shorthand_process_req(request).unwrap();
         assert_eq!(1, rule_responses.len());
         assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
@@ -761,7 +682,7 @@ rulesets:
             )),
             ..base_request.clone()
         };
-        let rule_responses = process_analysis_request(request).unwrap();
+        let rule_responses = shorthand_process_req(request).unwrap();
         assert_eq!(1, rule_responses.len());
         assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
@@ -792,7 +713,7 @@ rulesets:
             )),
             ..base_request.clone()
         };
-        let rule_responses = process_analysis_request(request).unwrap();
+        let rule_responses = shorthand_process_req(request).unwrap();
         assert_eq!(1, rule_responses.len());
         assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
@@ -809,22 +730,23 @@ rulesets:
     /// (i.e. the cache is properly cleared).
     #[test]
     fn test_subsequent_rule_execution() {
-        let base_rule =
-            ServerRule{
-                    name: "ruleset/rule-name".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaWRfbm9kZSJdOwoJY29uc29sZS5sb2coZ2V0Q29kZUZvck5vZGUoY2FwdHVyZWQsIGNvZGUpKTsKfQ==".to_string(),
-                    checksum: Some("f7e512c599b80f91b3e483f40c63192156cc3ad8cf53efae87315d0db22755c4".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGFzc2lnbm1lbnQKCWxlZnQ6IChpZGVudGlmaWVyKSBAaWRfbm9kZQoJcmlnaHQ6IChpbnRlZ2VyKSBAaW50X25vZGUp".to_string()),
-                    arguments: vec![],
-                };
+        let base_rule = make_server_rule(
+            "ruleset/rule-name",
+            Language::Python,
+            (
+                r#"
+function visit(node, filename, code) {
+    const captured = node.captures["id_node"];
+	console.log(getCodeForNode(captured, code));
+}
+"#,
+                r#"
+(assignment
+	left: (identifier) @id_node
+	right: (integer) @int_node)
+"#,
+            ),
+        );
 
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
@@ -838,15 +760,20 @@ rulesets:
             }),
             rules: vec![base_rule.clone()],
         };
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         // We should've logged the `id_node`
         assert_eq!(rule_responses[0].output, Some("var_name".to_string()));
         // Mutate the rule so it logs the `int_node`
         let mut duplicate_req = request.clone();
-        duplicate_req.rules[0].code_base64 = "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaW50X25vZGUiXTsKCWNvbnNvbGUubG9nKGdldENvZGVGb3JOb2RlKGNhcHR1cmVkLCBjb2RlKSk7Cn0=".to_string();
-        duplicate_req.rules[0].checksum =
-            Some("640fed003ec8fbf094681128baecd08af1b211d8a25b6f91a3fe5d50b7120cad".to_string());
-        let rule_responses = process_analysis_request(duplicate_req).unwrap();
+        let new_code = r#"
+function visit(node, filename, code) {
+    const captured = node.captures["int_node"];
+	console.log(getCodeForNode(captured, code));
+}
+"#;
+        duplicate_req.rules[0].code_base64 = encode_base64_string(new_code.to_string());
+        update_checksum(&mut duplicate_req.rules[0], true);
+        let rule_responses = shorthand_process_req(duplicate_req).unwrap();
         // We should've logged the `int_node`
         assert_eq!(rule_responses[0].output, Some("123".to_string()));
     }
@@ -884,7 +811,7 @@ rulesets:
             }),
             rules: vec![base_rule.clone()],
         };
-        let rule_responses = process_analysis_request(request.clone()).unwrap();
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
         assert_eq!(rule_responses.len(), 1);
         assert_eq!(rule_responses[0].errors.len(), 1);
         assert_eq!(rule_responses[0].errors[0], ERROR_RULE_TIMEOUT.to_string());

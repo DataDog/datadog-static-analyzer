@@ -109,11 +109,9 @@ fn languages(span: TraceSpan) -> Value {
     json!(languages)
 }
 
-#[allow(unreachable_code)]
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
 async fn analyze(span: TraceSpan, request: Json<AnalysisRequest>) -> Value {
     let _entered = span.enter();
-    tracing::debug!("{:?}", &request.0);
 
     rocket::tokio::task::spawn_blocking(|| {
         let pool = RAYON_POOL.get().expect("pool should have been created");
