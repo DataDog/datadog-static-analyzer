@@ -12,6 +12,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
         fn tree_sitter_c_sharp() -> tree_sitter::Language;
         fn tree_sitter_dockerfile() -> tree_sitter::Language;
+        fn tree_sitter_elixir() -> tree_sitter::Language;
         fn tree_sitter_go() -> tree_sitter::Language;
         fn tree_sitter_java() -> tree_sitter::Language;
         fn tree_sitter_javascript() -> tree_sitter::Language;
@@ -37,6 +38,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
         Language::Csharp => unsafe { tree_sitter_c_sharp() },
         Language::Dockerfile => unsafe { tree_sitter_dockerfile() },
         Language::Go => unsafe { tree_sitter_go() },
+        Language::Elixir => unsafe { tree_sitter_elixir() },
         Language::Java => unsafe { tree_sitter_java() },
         Language::JavaScript => unsafe { tree_sitter_javascript() },
         Language::Kotlin => unsafe { tree_sitter_kotlin() },
@@ -644,6 +646,22 @@ print("Hello, World!")
         let t = t.unwrap();
         assert!(!t.root_node().has_error());
         assert_eq!("program", t.root_node().kind());
+    }
+
+    #[test]
+    fn test_elixir_get_tree() {
+        let source_code = r#"
+defmodule Sum do
+  def add(a, b) do
+    a + b
+  end
+end
+"#;
+        let t = get_tree(source_code, &Language::Elixir);
+        assert!(t.is_some());
+        let t = t.unwrap();
+        assert!(!t.root_node().has_error());
+        assert_eq!("source", t.root_node().kind());
     }
 
     #[test]

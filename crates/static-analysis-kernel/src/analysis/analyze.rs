@@ -33,6 +33,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         Language::Python
         | Language::Starlark
         | Language::Dockerfile
+        | Language::Elixir
         | Language::Ruby
         | Language::Terraform
         | Language::Yaml

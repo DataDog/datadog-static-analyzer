@@ -25,6 +25,8 @@ pub enum Language {
     Csharp,
     #[serde(rename = "DOCKERFILE")]
     Dockerfile,
+    #[serde(rename = "ELIXIR")]
+    Elixir,
     #[serde(rename = "GO")]
     Go,
     #[serde(rename = "JAVA")]
@@ -93,6 +95,7 @@ impl fmt::Display for Language {
             Self::Csharp => "c#",
             Self::Dockerfile => "dockerfile",
             Self::Go => "go",
+            Self::Elixir => "elixir",
             Self::Java => "java",
             Self::JavaScript => "javascript",
             Self::Json => "json",

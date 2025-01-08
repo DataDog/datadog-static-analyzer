@@ -70,6 +70,15 @@ fn main() {
             cpp: false,
         },
         TreeSitterProject {
+            name: "tree-sitter-elixir".to_string(),
+            compilation_unit: "tree-sitter-elixir".to_string(),
+            repository: "https://github.com/elixir-lang/tree-sitter-elixir.git".to_string(),
+            commit_hash: "02a6f7fd4be28dd94ee4dd2ca19cb777053ea74e".to_string(),
+            build_dir: "src".into(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
+        },
+        TreeSitterProject {
             name: "tree-sitter-go".to_string(),
             compilation_unit: "tree-sitter-go".to_string(),
             repository: "https://github.com/tree-sitter/tree-sitter-go.git".to_string(),
