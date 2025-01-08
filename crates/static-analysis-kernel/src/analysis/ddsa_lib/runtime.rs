@@ -634,7 +634,9 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{
         compile_script, v8_interned, v8_uint, DDSAJsRuntimeError, Instance,
     };
-    use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
+    use crate::analysis::ddsa_lib::test_utils::{
+        cfg_test_v8, shorthand_execute_rule, try_execute, ExecuteOptions,
+    };
     use crate::analysis::ddsa_lib::{js, JsRuntime};
     use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
     use crate::model::common::Language;
@@ -955,13 +957,20 @@ function visit(captures) {
     addError(error);
 }
 "#;
-        let err = shorthand_execute_rule_internal(
+
+        let options = ExecuteOptions {
+            file_name: Some(filename),
+            rule_arguments: None,
+            timeout: Some(timeout),
+        };
+
+        let err = shorthand_execute_rule(
             &mut runtime,
-            &code,
-            filename,
+            Language::JavaScript,
             ts_query,
             rule_code,
-            Some(timeout),
+            &code,
+            Some(options),
         )
         .expect_err("Expected a timeout error");
 
