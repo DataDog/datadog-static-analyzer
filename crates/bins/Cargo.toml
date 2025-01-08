@@ -55,6 +55,7 @@ thiserror = { workspace = true }
 tree-sitter = { workspace = true }
 
 # other
+dashmap = "6.1.0"
 terminal-emoji = "0.4.1"
 getopts = "0.2.21"
 indicatif = "0.17.6"

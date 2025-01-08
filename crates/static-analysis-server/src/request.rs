@@ -1,60 +1,45 @@
 use crate::constants::{
-    ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
-    ERROR_CONFIGURATION_NOT_BASE64, ERROR_COULD_NOT_PARSE_CONFIGURATION, ERROR_DECODING_BASE64,
-    ERROR_PARSING_RULE,
+    ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64, ERROR_CONFIGURATION_NOT_BASE64,
+    ERROR_COULD_NOT_PARSE_CONFIGURATION,
 };
-use crate::model::analysis_request::{AnalysisRequest, ServerRule};
-use crate::model::analysis_response::{AnalysisResponse, RuleResponse};
+use crate::model::analysis_request::AnalysisRequest;
+use crate::model::analysis_response::RuleResponse;
 use crate::model::violation::ServerViolation;
 use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::analyze_with;
 use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::config_file::parse_config_file;
-use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleInternalError, RuleSeverity};
+use kernel::model::rule::RuleInternal;
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
+use std::borrow::Borrow;
 use std::sync::Arc;
 
 #[tracing::instrument(skip_all)]
-pub fn process_analysis_request(
-    request: AnalysisRequest,
+pub fn process_analysis_request<T: Borrow<RuleInternal>>(
+    request: AnalysisRequest<T>,
     runtime: &mut JsRuntime,
-) -> AnalysisResponse {
+) -> Result<Vec<RuleResponse>, &'static str> {
     tracing::debug!("Processing analysis request");
 
     // Decode the configuration, if present.
-    let configuration = match request.configuration_base64.map(decode_base64_string) {
-        Some(Err(_)) => {
-            tracing::info!("Validation error: configuration is not a base64 string");
-            return AnalysisResponse {
-                rule_responses: vec![],
-                errors: vec![ERROR_CONFIGURATION_NOT_BASE64.to_string()],
-            };
-        }
-        Some(Ok(cfg)) => match parse_config_file(&cfg) {
-            Err(_) => {
-                tracing::info!("Validation error: could not parse configuration");
-                return AnalysisResponse {
-                    rule_responses: vec![],
-                    errors: vec![ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string()],
-                };
-            }
-            Ok(cfg_file) => Some(cfg_file),
-        },
-        None => None,
+    let configuration = if let Some(config_b64) = request.configuration_base64 {
+        let config =
+            decode_base64_string(config_b64).map_err(|_| ERROR_CONFIGURATION_NOT_BASE64)?;
+        let cfg_file =
+            parse_config_file(&config).map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION)?;
+        Some(cfg_file)
+    } else {
+        None
     };
 
     // If the file is excluded by the global configuration, stop early.
-    let file_is_excluded_by_cfg = configuration
+    if configuration
         .as_ref()
-        .map(|cfg_file| !cfg_file.paths.allows_file(&request.filename))
-        .unwrap_or_default();
-    if file_is_excluded_by_cfg {
+        .is_some_and(|cfg_file| !cfg_file.paths.allows_file(&request.filename))
+    {
         tracing::debug!("Skipped excluded file: {}", request.filename);
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![],
-        };
+        return Ok(vec![]);
     }
 
     // Extract the rule configuration from the configuration file.
@@ -64,140 +49,46 @@ pub fn process_analysis_request(
         .unwrap_or_default();
     let rule_config = rule_config_provider.config_for_file(&request.filename);
 
-    let rules_with_invalid_language: Vec<ServerRule> = request
+    if let Some(rule) = request
         .rules
         .iter()
-        .filter(|&v| v.language != request.language)
-        .cloned()
-        .collect();
-    if !rules_with_invalid_language.is_empty() {
-        for rule in rules_with_invalid_language {
-            tracing::info!(
-                "Validation error: request language is `{}`, but rule `{}` language is `{}`",
-                request.language,
-                &rule.name,
-                rule.language
-            );
-        }
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![ERROR_CODE_LANGUAGE_MISMATCH.to_string()],
-        };
+        .find(|&rule| rule.borrow().language != request.language)
+    {
+        let rule = rule.borrow();
+        tracing::info!(
+            "Validation error: request language is `{}`, but rule `{}` language is `{}`",
+            request.language,
+            rule.name,
+            rule.language
+        );
+        return Err(ERROR_CODE_LANGUAGE_MISMATCH);
     }
 
-    let server_rules_to_rules: Vec<Rule> = request
-        .rules
-        .iter()
-        .map(|r| Rule {
-            name: r.name.clone(),
-            short_description_base64: r.short_description_base64.clone(),
-            description_base64: r.description_base64.clone(),
-            category: r.category.unwrap_or(RuleCategory::BestPractices),
-            severity: r.severity.unwrap_or(RuleSeverity::Warning),
-            language: r.language,
-            rule_type: r.rule_type,
-            cwe: None,
-            entity_checked: r.entity_checked,
-            code_base64: r.code_base64.clone(),
-            checksum: r.checksum.clone().unwrap_or("".to_string()),
-            pattern: r.pattern.clone(),
-            tree_sitter_query_base64: r.tree_sitter_query_base64.clone(),
-            arguments: r.arguments.clone(),
-            tests: vec![],
-            is_testing: false,
-        })
-        .collect();
-
-    if server_rules_to_rules.is_empty() {
+    if request.rules.is_empty() {
         tracing::info!("Successfully completed analysis for 0 rules");
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![],
-        };
+        return Ok(vec![]);
     }
-
-    // Convert the rules from the server into internal rules
-    let rules: Result<Vec<RuleInternal>, RuleInternalError> = server_rules_to_rules
-        .iter()
-        .map(|r| {
-            let rule_internal = r.to_rule_internal();
-            if let Err(err) = &rule_internal {
-                tracing::info!(
-                    "Validation error: request rule could not be parsed (reason: {})",
-                    err
-                )
-            }
-            rule_internal
-        })
-        .collect();
-
-    let rules = match rules {
-        Ok(rules) => rules,
-        Err(e) => match e {
-            RuleInternalError::InvalidBase64(_) | RuleInternalError::InvalidUtf8(_) => {
-                return AnalysisResponse {
-                    rule_responses: vec![],
-                    errors: vec![ERROR_DECODING_BASE64.to_string()],
-                };
-            }
-            RuleInternalError::InvalidRuleType(_)
-            | RuleInternalError::MissingTreeSitterQuery
-            | RuleInternalError::InvalidTreeSitterQuery(_) => {
-                return AnalysisResponse {
-                    rule_responses: vec![],
-                    errors: vec![ERROR_PARSING_RULE.to_string()],
-                };
-            }
-        },
-    };
 
     // let's try to decode the code
-    let Ok(code_decoded_attempt) = decode_base64_string(request.code_base64) else {
-        tracing::info!("Validation error: code is not a base64 string");
-        return AnalysisResponse {
-            rule_responses: vec![],
-            errors: vec![ERROR_CODE_NOT_BASE64.to_string()],
-        };
-    };
-    let code_decoded_attempt: Arc<str> = Arc::from(code_decoded_attempt);
+    let code = decode_base64_string(request.code_base64).map_err(|_| ERROR_CODE_NOT_BASE64)?;
+    let code: Arc<str> = Arc::from(code);
 
-    // We check each rule and if the checksum is correct or not. If one rule does not
-    // have a valid checksum, we return an error.
-    for rule in &server_rules_to_rules {
-        if !rule.verify_checksum() {
-            tracing::info!(
-                "Validation error: request rule `{}` has invalid checksum",
-                rule.name
-            );
-            return AnalysisResponse {
-                rule_responses: vec![],
-                errors: vec![ERROR_CHECKSUM_MISMATCH.to_string()],
-            };
-        }
-    }
-
-    let rules_count = rules.len();
+    let rules_count = request.rules.len();
     let rules_str = if rules_count == 1 { "rule" } else { "rules" };
-    let rules_list = rules
+    let rules_list = request
+        .rules
         .iter()
-        .map(|r| r.name.as_str())
+        .map(|r| r.borrow().name.as_str())
         .collect::<Vec<&str>>()
         .join(", ");
-
-    // NOTE: We would ideally handle this more elegantly, but for now, always clear the cache
-    // for the incoming rules before making a request. This is needed because during rule authoring,
-    // the rule will change, despite its name being the same (and the cache is keyed only by the rule name).
-    for rule in &rules {
-        runtime.clear_rule_cache(&rule.name);
-    }
 
     // execute the rule. If we fail to convert, return an error.
     let rule_results = analyze_with(
         runtime,
         &request.language,
-        &rules,
+        request.rules,
         &Arc::from(request.filename),
-        &code_decoded_attempt,
+        &code,
         &rule_config,
         &AnalysisOptions {
             use_debug: false,
@@ -220,7 +111,7 @@ pub fn process_analysis_request(
             output: rr.output.clone(),
             execution_time_ms: rr.execution_time_ms,
         })
-        .collect();
+        .collect::<Vec<_>>();
 
     tracing::info!(
         "Successfully completed analysis for {} {} ({})",
@@ -228,16 +119,21 @@ pub fn process_analysis_request(
         rules_str,
         rules_list
     );
-    AnalysisResponse {
-        rule_responses,
-        errors: vec![],
-    }
+
+    Ok(rule_responses)
 }
 
 #[cfg(test)]
 mod tests {
+    use super::{AnalysisRequest, RuleResponse};
+    use crate::constants::{
+        ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
+        ERROR_CONFIGURATION_NOT_BASE64, ERROR_COULD_NOT_PARSE_CONFIGURATION, ERROR_DECODING_BASE64,
+        ERROR_PARSING_RULE,
+    };
     use crate::model::analysis_request::{AnalysisRequestOptions, ServerRule};
     use kernel::analysis::ddsa_lib;
+    use kernel::model::rule::{compute_sha256, RuleInternal};
     use kernel::model::{
         analysis::ERROR_RULE_TIMEOUT,
         common::Language,
@@ -245,14 +141,83 @@ mod tests {
     };
     use kernel::utils::encode_base64_string;
 
-    use super::*;
-
-    /// A shorthand helper function to call [`super::process_analysis_request`] without requiring
-    /// an explicitly-created [`JsRuntime`].
-    pub fn process_analysis_request(request: AnalysisRequest) -> AnalysisResponse {
+    /// A shorthand helper function to call [`process_analysis_request`](super::process_analysis_request)
+    /// without requiring a `ServerRule` -> `RuleInternal` conversion or an explicitly-created [`JsRuntime`].
+    pub fn shorthand_process_req(
+        request: AnalysisRequest<ServerRule>,
+    ) -> Result<Vec<RuleResponse>, &'static str> {
         let v8 = ddsa_lib::test_utils::cfg_test_v8();
         let mut runtime = v8.new_runtime();
-        super::process_analysis_request(request, &mut runtime)
+
+        let rules = request
+            .rules
+            .into_iter()
+            .map(RuleInternal::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let req_with_internal = AnalysisRequest::<RuleInternal> {
+            filename: request.filename,
+            language: request.language,
+            file_encoding: request.file_encoding,
+            code_base64: request.code_base64,
+            rules,
+            configuration_base64: request.configuration_base64,
+            options: request.options,
+        };
+        super::process_analysis_request(req_with_internal, &mut runtime)
+    }
+
+    /// A sample JavaScript rule and tree-sitter query used to assert violation behavior.
+    const DEFAULT_RULE: (&str, &str) = (
+        // language=javascript
+        r#"
+function visit(node, filename, code) {
+    const functionName = node.captures["name"];
+    if(functionName) {
+        const error = buildError(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col,
+                                 "invalid name", "CRITICAL", "security");
+
+        const edit = buildEdit(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col, "update", "bar");
+        const fix = buildFix("use bar", [edit]);
+        addError(error.addFix(fix));
+    }
+}"#,
+        "\
+(function_definition
+    name: (identifier) @name
+    parameters: (parameters) @params
+)",
+    );
+
+    /// A shorthand to build a [`ServerRule`] for tests.
+    fn make_server_rule(rule_name: &str, language: Language, rule: (&str, &str)) -> ServerRule {
+        let code_base64 = encode_base64_string(rule.0.to_string());
+        let ts_query_b64 = encode_base64_string(rule.1.to_string());
+        let mut server_rule = ServerRule {
+            name: rule_name.to_string(),
+            short_description_base64: None,
+            description_base64: None,
+            category: Some(RuleCategory::BestPractices),
+            severity: Some(RuleSeverity::Warning),
+            language,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64,
+            checksum: None,
+            pattern: None,
+            tree_sitter_query_base64: Some(ts_query_b64),
+            arguments: vec![],
+        };
+        update_checksum(&mut server_rule, true);
+        server_rule
+    }
+
+    /// A shorthand to assign either a correct or incorrect checksum to a rule.
+    fn update_checksum(server_rule: &mut ServerRule, correct: bool) {
+        server_rule.checksum = if correct {
+            Some(compute_sha256(&server_rule.code_base64))
+        } else {
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string())
+        }
     }
 
     #[test]
@@ -264,28 +229,11 @@ mod tests {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        let violations = &response.rule_responses[0].violations;
+        let rule_responses = shorthand_process_req(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        let violations = &rule_responses[0].violations;
         assert_eq!(1, violations.len());
         assert!(violations[0].0.taint_flow.is_none());
     }
@@ -322,34 +270,22 @@ function visit(captures) {
             code_base64: encode_base64_string(text.to_string()),
             configuration_base64: None,
             options: None,
-            rules: vec![ServerRule {
-                name: "java-security/flow-rule".to_string(),
-                short_description_base64: None,
-                description_base64: None,
-                category: Some(RuleCategory::BestPractices),
-                severity: Some(RuleSeverity::Warning),
-                language: Language::Java,
-                rule_type: RuleType::TreeSitterQuery,
-                entity_checked: None,
-                code_base64: encode_base64_string(rule_code.to_string()),
-                checksum: Some(
-                    "bbcd9763ae8dff95fecadc48d8cfd07767f48ca787749c979022f8d8a12c1e6d".to_string(),
-                ),
-                pattern: None,
-                tree_sitter_query_base64: Some(encode_base64_string(ts_query.to_string())),
-                arguments: vec![],
-            }],
+            rules: vec![make_server_rule(
+                "java-security/flow-rule",
+                Language::Java,
+                (rule_code, ts_query),
+            )],
         };
-        let response = process_analysis_request(request);
-        let taint_flow_regions = response.rule_responses[0].violations[0]
-            .0
-            .taint_flow
-            .as_ref();
+        let rule_responses = shorthand_process_req(request).unwrap();
+        let taint_flow_regions = rule_responses[0].violations[0].0.taint_flow.as_ref();
         assert_eq!(taint_flow_regions.unwrap().len(), 6);
     }
 
     #[test]
     fn test_invalid_checksum() {
+        let mut server_rule = make_server_rule("myrule", Language::Python, DEFAULT_RULE);
+        update_checksum(&mut server_rule, false);
+
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
@@ -357,34 +293,14 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c36d8b59237c4ba23340057".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![server_rule],
         };
-        let response = process_analysis_request(request);
-        assert!(response.rule_responses.is_empty());
-        assert_eq!(
-            &ERROR_CHECKSUM_MISMATCH.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = shorthand_process_req(request).unwrap_err();
+        assert_eq!(err_message, ERROR_CHECKSUM_MISMATCH);
     }
 
     #[test]
-    fn test_request_invalid_base64() {
+    fn test_request_invalid_file_contents_base64() {
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
@@ -392,34 +308,18 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKI()--2#$#$Bhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: None,
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_CODE_NOT_BASE64.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = shorthand_process_req(request).unwrap_err();
+        assert_eq!(err_message, ERROR_CODE_NOT_BASE64);
     }
 
     #[test]
-    fn test_request_invalid_rule_base64_encoding() {
+    fn test_request_invalid_rule_code_base64_encoding() {
+        let mut server_rule = make_server_rule("myrule", Language::Python, DEFAULT_RULE);
+        server_rule.code_base64 = format!("!!! {}", server_rule.code_base64);
+        update_checksum(&mut server_rule, true);
+
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
             language: Language::Python,
@@ -427,119 +327,51 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gd23223222mlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: Some("1a1dd51c47738a19b073a20ffc16c1eb816a4a6ed05ffaa53c19db0caf036c0c".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![server_rule],
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_DECODING_BASE64.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = shorthand_process_req(request).unwrap_err();
+        assert_eq!(err_message, ERROR_DECODING_BASE64);
     }
 
     #[test]
     fn test_request_invalid_rule_tree_sitter_query() {
+        let server_rule = make_server_rule(
+            "myrule",
+            Language::Python,
+            (DEFAULT_RULE.0, &format!("!!! {}", DEFAULT_RULE.1)),
+        );
+
         let request = AnalysisRequest {
             filename: "myfile.rb".to_string(),
-            language: Language::Ruby,
+            language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::Ruby,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQoKSB7fQ==".to_string(),
-                    checksum: Some("1a1dd51c47738a19b073a20ffc16c1eb816a4a6ed05ffaa53c19db0caf036c0c".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGJpbmFyeQogICAgXwogICAgIj1+IiBAb3AKICAgIHJpZ2h0OiAocmVnZXggCiAgICAgICAgKHN0cmluZ19jb250ZW50KSBAc3RyCiAgICApIEByZWdleAogICAgKCNub3QtbWF0Y2g/IEBzdHIgIi9bLltcXSgpe31cXF4kfCorP10vIikKKQ==".to_string()),
-                    arguments: vec![],
-                }
-            ],
+            rules: vec![server_rule],
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_PARSING_RULE.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = shorthand_process_req(request).unwrap_err();
+        assert_eq!(err_message, ERROR_PARSING_RULE);
     }
 
     #[test]
     fn test_request_invalid_language() {
         let request = AnalysisRequest {
             filename: "myfile.py".to_string(),
-            language: Language::Python,
+            language: Language::JavaScript,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: None,
-                    severity: None,
-                    language: Language::JavaScript,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gd23223222mlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                    checksum: None,
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let response = process_analysis_request(request);
-        assert_eq!(0, response.rule_responses.len());
-        assert_eq!(
-            &ERROR_CODE_LANGUAGE_MISMATCH.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = shorthand_process_req(request).unwrap_err();
+        assert_eq!(err_message, ERROR_CODE_LANGUAGE_MISMATCH);
     }
 
     #[test]
     fn test_request_configuration_includes_excludes() {
-        let base_rule = ServerRule {
-            name: "myrule".to_string(),
-            short_description_base64: None,
-            description_base64: None,
-            category: Some(RuleCategory::BestPractices),
-            severity: Some(RuleSeverity::Warning),
-            language: Language::Python,
-            rule_type: RuleType::TreeSitterQuery,
-            entity_checked: None,
-            code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-            checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
-            pattern: None,
-            tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-            arguments: vec![],
-        };
+        let base_rule = make_server_rule("myrule", Language::Python, DEFAULT_RULE);
         let mut request = AnalysisRequest {
             filename: "path/to/myfile.py".to_string(),
             language: Language::Python,
@@ -568,8 +400,8 @@ function visit(captures) {
         };
 
         // No includes/excludes
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // Global exclude for 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -580,15 +412,15 @@ ignore: [path/to]
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        eprintln!("{:?}", response);
-        assert_eq!(0, response.rule_responses.len());
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(0, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(4, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // rs_one excludes 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -599,15 +431,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        eprintln!("{:?}", response);
-        assert_eq!(1, response.rule_responses.len());
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(1, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(4, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // Globally only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -618,14 +450,15 @@ only: [path/to]
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(0, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(0, rule_responses.len());
 
         // rs_one only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -636,14 +469,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(1, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(1, rule_responses.len());
 
         // rs_one/rule_a excludes 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -656,14 +490,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(3, response.rule_responses.len());
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(3, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(4, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(4, rule_responses.len());
 
         // rs_one/rule_a only allows 'path/to'
         request.configuration_base64 = Some(encode_base64_string(
@@ -676,14 +511,15 @@ rulesets:
         "#
             .to_string(),
         ));
-        let response = process_analysis_request(request.clone());
-        assert_eq!(4, response.rule_responses.len());
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(4, rule_responses.len());
 
-        let response = process_analysis_request(AnalysisRequest {
+        let rule_responses = shorthand_process_req(AnalysisRequest {
             filename: "other/path/myfile.py".to_string(),
             ..request.clone()
-        });
-        assert_eq!(3, response.rule_responses.len());
+        })
+        .unwrap();
+        assert_eq!(3, rule_responses.len());
     }
 
     #[test]
@@ -696,35 +532,15 @@ rulesets:
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: Some(":::::::".to_string()),
             options: None,
-            rules: vec![ServerRule {
-                name: "myrule".to_string(),
-                short_description_base64: None,
-                description_base64: None,
-                category: Some(RuleCategory::BestPractices),
-                severity: Some(RuleSeverity::Warning),
-                language: Language::Python,
-                rule_type: RuleType::TreeSitterQuery,
-                entity_checked: None,
-                code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGZ1bmN0aW9uTmFtZSA9IG5vZGUuY2FwdHVyZXNbIm5hbWUiXTsKICAgIGlmKGZ1bmN0aW9uTmFtZSkgewogICAgICAgIGNvbnN0IGVycm9yID0gYnVpbGRFcnJvcihmdW5jdGlvbk5hbWUuc3RhcnQubGluZSwgZnVuY3Rpb25OYW1lLnN0YXJ0LmNvbCwgZnVuY3Rpb25OYW1lLmVuZC5saW5lLCBmdW5jdGlvbk5hbWUuZW5kLmNvbCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgImludmFsaWQgbmFtZSIsICJDUklUSUNBTCIsICJzZWN1cml0eSIpOwoKICAgICAgICBjb25zdCBlZGl0ID0gYnVpbGRFZGl0KGZ1bmN0aW9uTmFtZS5zdGFydC5saW5lLCBmdW5jdGlvbk5hbWUuc3RhcnQuY29sLCBmdW5jdGlvbk5hbWUuZW5kLmxpbmUsIGZ1bmN0aW9uTmFtZS5lbmQuY29sLCAidXBkYXRlIiwgImJhciIpOwogICAgICAgIGNvbnN0IGZpeCA9IGJ1aWxkRml4KCJ1c2UgYmFyIiwgW2VkaXRdKTsKICAgICAgICBhZGRFcnJvcihlcnJvci5hZGRGaXgoZml4KSk7CiAgICB9Cn0=".to_string(),
-                checksum: Some("f546e49732dc071fd5da82e1a2d9bcf5cf9a824c3679d8b59237c4ba23340057".to_string()),
-                pattern: None,
-                tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                arguments: vec![],
-            }],
+            rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
-        let response = process_analysis_request(request.clone());
-        assert_eq!(
-            &ERROR_CONFIGURATION_NOT_BASE64.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = shorthand_process_req(request.clone()).unwrap_err();
+        assert_eq!(err_message, ERROR_CONFIGURATION_NOT_BASE64);
 
         // invalid configuration
         request.configuration_base64 = Some(encode_base64_string("zzzzzap!".to_string()));
-        let response = process_analysis_request(request);
-        assert_eq!(
-            &ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string(),
-            response.errors.get(0).unwrap()
-        );
+        let err_message = shorthand_process_req(request).unwrap_err();
+        assert_eq!(err_message, ERROR_COULD_NOT_PARSE_CONFIGURATION);
     }
 
     #[test]
@@ -734,7 +550,8 @@ rulesets:
             language: Language::Python,
             file_encoding: "utf-8".to_string(),
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
-            configuration_base64: Some(encode_base64_string(r#"
+            configuration_base64: Some(encode_base64_string(
+                r#"
 rulesets:
   - myrs:
     rules:
@@ -744,39 +561,29 @@ rulesets:
             /: 100
             mypath: 101
             mypath/otherpath: 102
-            "#.to_string())),
+            "#
+                .to_string(),
+            )),
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrs/myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: encode_base64_string(r#"
+            rules: vec![make_server_rule(
+                "myrs/myrule",
+                Language::Python,
+                (
+                    r#"
 function visit(node, filename, code) {
     const arg = node.context.arguments['arg1'];
     addError(buildError(1, 1, 1, 2, `argument = ${arg}`));
 }
-                    "#.to_string()),
-                    checksum: Some("984ba37fbfdfa4245ed7922efd224365ec216e540647989ac5e8559624ba9be4".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+                    "#,
+                    DEFAULT_RULE.1,
+                ),
+            )],
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
-        assert!(response.rule_responses[0].violations[0]
-            .0
-            .message
-            .contains("argument = 101"));
+        let rule_responses = shorthand_process_req(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
+        let message = &rule_responses[0].violations[0].0.message;
+        assert!(message.contains("argument = 101"));
     }
 
     #[test]
@@ -788,43 +595,33 @@ function visit(node, filename, code) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
-            rules: vec![
-                ServerRule{
-                    name: "myrs/myrule".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: encode_base64_string(r#"
+            rules: vec![make_server_rule(
+                "myrs/myrule",
+                Language::Python,
+                (
+                    r#"
 function visit(node, filename, code) {
     const arg = node.context.arguments['arg1'];
     addError(buildError(1, 1, 1, 2, `argument = ${arg}`));
 }
-                    "#.to_string()),
-                    checksum: Some("984ba37fbfdfa4245ed7922efd224365ec216e540647989ac5e8559624ba9be4".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGZ1bmN0aW9uX2RlZmluaXRpb24KICAgIG5hbWU6IChpZGVudGlmaWVyKSBAbmFtZQogIHBhcmFtZXRlcnM6IChwYXJhbWV0ZXJzKSBAcGFyYW1zCik=".to_string()),
-                    arguments: vec![],
-                }
-            ]
+                    "#,
+                    DEFAULT_RULE.1,
+                ),
+            )],
         };
 
         // Default severity and category.
         let request = base_request.clone();
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty(), "{:?}", response.errors);
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
+        let rule_responses = shorthand_process_req(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::BestPractices,
-            response.rule_responses[0].violations[0].0.category
+            rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Warning,
-            response.rule_responses[0].violations[0].0.severity
+            rule_responses[0].violations[0].0.severity
         );
 
         // Override severity and category.
@@ -842,17 +639,16 @@ rulesets:
             )),
             ..base_request.clone()
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
+        let rule_responses = shorthand_process_req(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::CodeStyle,
-            response.rule_responses[0].violations[0].0.category
+            rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Error,
-            response.rule_responses[0].violations[0].0.severity
+            rule_responses[0].violations[0].0.severity
         );
 
         // Per-path severity override.
@@ -874,67 +670,17 @@ rulesets:
             )),
             ..base_request.clone()
         };
-        let response = process_analysis_request(request);
-        assert!(response.errors.is_empty());
-        assert_eq!(1, response.rule_responses.len());
-        assert_eq!(1, response.rule_responses[0].violations.len());
+        let rule_responses = shorthand_process_req(request).unwrap();
+        assert_eq!(1, rule_responses.len());
+        assert_eq!(1, rule_responses[0].violations.len());
         assert_eq!(
             RuleCategory::CodeStyle,
-            response.rule_responses[0].violations[0].0.category
+            rule_responses[0].violations[0].0.category
         );
         assert_eq!(
             RuleSeverity::Notice,
-            response.rule_responses[0].violations[0].0.severity
+            rule_responses[0].violations[0].0.severity
         );
-    }
-
-    /// Tests that subsequent requests to analyze a rule with the same name can have different code.
-    /// (i.e. the cache is properly cleared).
-    #[test]
-    fn test_subsequent_rule_execution() {
-        let base_rule =
-            ServerRule{
-                    name: "ruleset/rule-name".to_string(),
-                    short_description_base64: None,
-                    description_base64: None,
-                    category: Some(RuleCategory::BestPractices),
-                    severity: Some(RuleSeverity::Warning),
-                    language: Language::Python,
-                    rule_type: RuleType::TreeSitterQuery,
-                    entity_checked: None,
-                    code_base64: "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaWRfbm9kZSJdOwoJY29uc29sZS5sb2coZ2V0Q29kZUZvck5vZGUoY2FwdHVyZWQsIGNvZGUpKTsKfQ==".to_string(),
-                    checksum: Some("f7e512c599b80f91b3e483f40c63192156cc3ad8cf53efae87315d0db22755c4".to_string()),
-                    pattern: None,
-                    tree_sitter_query_base64: Some("KGFzc2lnbm1lbnQKCWxlZnQ6IChpZGVudGlmaWVyKSBAaWRfbm9kZQoJcmlnaHQ6IChpbnRlZ2VyKSBAaW50X25vZGUp".to_string()),
-                    arguments: vec![],
-                };
-
-        let request = AnalysisRequest {
-            filename: "myfile.py".to_string(),
-            language: Language::Python,
-            file_encoding: "utf-8".to_string(),
-            code_base64: "dmFyX25hbWUgPSAxMjM=".to_string(),
-            configuration_base64: None,
-            options: Some(AnalysisRequestOptions {
-                use_tree_sitter: None,
-                log_output: Some(true),
-            }),
-            rules: vec![base_rule.clone()],
-        };
-        let response = process_analysis_request(request.clone());
-        // We should've logged the `id_node`
-        assert_eq!(
-            response.rule_responses[0].output,
-            Some("var_name".to_string())
-        );
-        // Mutate the rule so it logs the `int_node`
-        let mut duplicate_req = request.clone();
-        duplicate_req.rules[0].code_base64 = "ZnVuY3Rpb24gdmlzaXQobm9kZSwgZmlsZW5hbWUsIGNvZGUpIHsKICAgIGNvbnN0IGNhcHR1cmVkID0gbm9kZS5jYXB0dXJlc1siaW50X25vZGUiXTsKCWNvbnNvbGUubG9nKGdldENvZGVGb3JOb2RlKGNhcHR1cmVkLCBjb2RlKSk7Cn0=".to_string();
-        duplicate_req.rules[0].checksum =
-            Some("640fed003ec8fbf094681128baecd08af1b211d8a25b6f91a3fe5d50b7120cad".to_string());
-        let response = process_analysis_request(duplicate_req);
-        // We should've logged the `int_node`
-        assert_eq!(response.rule_responses[0].output, Some("123".to_string()));
     }
 
     /// Tests that a rule with an expensive tree-sitter query won't get stuck processing for a long
@@ -970,12 +716,9 @@ rulesets:
             }),
             rules: vec![base_rule.clone()],
         };
-        let response = process_analysis_request(request.clone());
-        assert_eq!(response.rule_responses.len(), 1);
-        assert_eq!(response.rule_responses[0].errors.len(), 1);
-        assert_eq!(
-            response.rule_responses[0].errors[0],
-            ERROR_RULE_TIMEOUT.to_string()
-        );
+        let rule_responses = shorthand_process_req(request.clone()).unwrap();
+        assert_eq!(rule_responses.len(), 1);
+        assert_eq!(rule_responses[0].errors.len(), 1);
+        assert_eq!(rule_responses[0].errors[0], ERROR_RULE_TIMEOUT.to_string());
     }
 }

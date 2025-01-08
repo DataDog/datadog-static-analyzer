@@ -105,6 +105,7 @@ macro_rules! trie_from {
 fn has_test_like_path(language: Language, path: &Path) -> bool {
     use Language::*;
     let globset = match language {
+        Csharp => globset_from!([DEFAULT_PATHS, &["**/*Test.cs", "**/*Tests.cs"]]),
         Go => globset_from!([&[
             // `go test` required filename
             "**/*_test.go",
@@ -112,6 +113,19 @@ fn has_test_like_path(language: Language, path: &Path) -> bool {
             "**/mock_*.go",
             "**/*_mock.go",
         ]]),
+        Java => globset_from!([DEFAULT_PATHS]),
+        JavaScript | TypeScript => globset_from!([
+            DEFAULT_PATHS,
+            DEFAULT_FILENAMES,
+            &[
+                // jasmine: https://github.com/jasmine/jasmine
+                "**/*Spec.{[jt]s,m[jt]s,[jt]sx}",
+                // Cypress: https://github.com/cypress-io/cypress
+                "**/cypress/e2e/**/*",
+                "**/cypress/fixtures/**/*",
+                "**/cypress/support/**/*",
+            ]
+        ]),
         Python => globset_from!([
             DEFAULT_PATHS,
             DEFAULT_FILENAMES,
@@ -151,6 +165,71 @@ fn has_test_like_import(
     };
 
     match language {
+        Csharp => {
+            use crate::analysis::languages::csharp;
+            const SEPARATOR: &str = ".";
+            let imports_trie = trie_from!(
+                [
+                    // ApprovalTests: https://github.com/approvals/ApprovalTests.Net
+                    "ApprovalTests",
+                    // AutoFixture: https://github.com/AutoFixture/AutoFixture
+                    "AutoFixture",
+                    "Ploeh.AutoFixture",
+                    // BenchmarkDotNet: https://github.com/dotnet/BenchmarkDotNet
+                    "BenchmarkDotNet",
+                    // FakeItEasy: https://github.com/FakeItEasy/FakeItEasy
+                    "FakeItEasy",
+                    // FluentAssertions: https://github.com/fluentassertions/fluentassertions
+                    "FluentAssertions",
+                    // FsCheck: https://github.com/fscheck/FsCheck
+                    "FsCheck",
+                    // LightBDD: https://github.com/LightBDD/LightBDD
+                    "LightBDD",
+                    // MbUnit: https://github.com/Gallio/mbunit-v3
+                    "MbUnit.Framework",
+                    // Moq: https://github.com/devlooped/moq
+                    "Moq",
+                    // MSTest: https://github.com/microsoft/testfx
+                    "Microsoft.VisualStudio.TestPlatform",
+                    "Microsoft.VisualStudio.TestTools",
+                    // NBench: https://github.com/petabridge/NBench
+                    "NBench",
+                    // NFluent: https://github.com/tpierrain/NFluent
+                    "NFluent",
+                    // NUnit: https://github.com/nunit/nunit
+                    "NUnit.Framework",
+                    // NSubstitute: https://github.com/nsubstitute/NSubstitute
+                    "NSubstitute",
+                    // Playwright: https://github.com/microsoft/playwright-dotnet
+                    "Microsoft.Playwright",
+                    // Selenium: https://github.com/SeleniumHQ/selenium/tree/trunk/dotnet
+                    "OpenQA.Selenium",
+                    // Shoudly: https://github.com/shouldly/shouldly
+                    "Shouldly",
+                    // SpecFlow: https://github.com/SpecFlowOSS/
+                    "TechTalk.SpecFlow",
+                    // Testcontainers: https://github.com/testcontainers/testcontainers-dotnet
+                    "Testcontainers",
+                    // Verify: https://github.com/VerifyTests/Verify
+                    "VerifyMSTest",
+                    "VerifyNUnit",
+                    "VerifyTests",
+                    "VerifyXunit",
+                    // WireMock: https://github.com/WireMock-Net/WireMock.Net
+                    "WireMock",
+                    // xUnit.net: https://github.com/xunit/xunit
+                    "Xunit",
+                ],
+                SEPARATOR
+            );
+            let using_directives = csharp::parse_using_with_tree(code, tree);
+            for using in using_directives {
+                if trie_has_prefix(imports_trie, using.namespace.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
         Go => {
             use crate::analysis::languages::go;
             const SEPARATOR: &str = "/";
@@ -182,6 +261,159 @@ fn has_test_like_import(
             let parsed_imports = go::parse_imports_with_tree(code, tree);
             for import in parsed_imports {
                 if trie_has_prefix(imports_trie, import.path.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
+        Java => {
+            use crate::analysis::languages::java;
+            const SEPARATOR: &str = ".";
+            let imports_trie = trie_from!(
+                [
+                    // Apache Camel: https://github.com/apache/camel
+                    "org.apache.camel.test",
+                    // Awaitility: https://github.com/awaitility/awaitility
+                    "org.awaitility",
+                    // Arquillian: https://github.com/arquillian/arquillian-core
+                    "org.jboss.arquillian",
+                    // AssertJ: https://github.com/assertj/assertj
+                    "org.assertj",
+                    // Cucumber: https://github.com/cucumber/cucumber-jvm
+                    "io.cucumber",
+                    // DBUnit: https://sourceforge.net/projects/dbunit/
+                    "org.dbunit",
+                    // EasyMock: https://github.com/easymock/easymock
+                    "org.easymock",
+                    // JBehave: https://github.com/jbehave/jbehave-core/
+                    "org.jbehave",
+                    // JMH: https://github.com/openjdk/jmh
+                    "org.openjdk.jmh",
+                    // JUnit: https://github.com/junit-team
+                    "org.junit",
+                    // Karate: https://github.com/karatelabs/karate
+                    "com.intuit.karate",
+                    // Mockito: https://github.com/mockito/mockito
+                    "org.mockito",
+                    // Pact: https://github.com/pact-foundation/pact-jvm
+                    "au.com.dius.pact",
+                    // Powermock: https://github.com/powermock/powermock
+                    "org.powermock",
+                    // REST-assured: https://github.com/rest-assured/rest-assured
+                    "io.restassured",
+                    // Selenium: https://github.com/SeleniumHQ/selenium/tree/trunk/java
+                    "org.seleniumhq.selenium",
+                    "org.openqa.selenium",
+                    // Spock: https://github.com/spockframework/spock
+                    "org.spockframework",
+                    // Testcontainers: https://github.com/testcontainers/testcontainers-java
+                    "org.testcontainers",
+                    // TestFX: https://github.com/TestFX/TestFX
+                    "org.testfx",
+                    // TestNG: https://github.com/testng-team/testng
+                    "org.testng",
+                    // Wiremock: https://github.com/wiremock/wiremock
+                    "com.github.tomakehurst.wiremock",
+                ],
+                SEPARATOR
+            );
+            let imports = java::parse_imports_with_tree(code, tree);
+            for import in imports {
+                if trie_has_prefix(imports_trie, import.package.split(SEPARATOR)) {
+                    return true;
+                }
+            }
+            false
+        }
+        JavaScript => {
+            use crate::analysis::languages::{javascript, typescript};
+            use std::collections::HashSet;
+            use std::sync::LazyLock;
+            // NB: This needs to be a HashSet instead of a trie like the other implementations because
+            //     our JavaScript parser currently discards all path fidelity.
+            static IMPORTS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+                // Legend:
+                // [CNP]: Currently Not Possible to detect due to a limitation in our implementation.
+                // [Paths]: Uses filepath-based detection which is configured external to the source file.
+                HashSet::from([
+                    // ava: https://github.com/avajs/ava
+                    "ava",
+                    // better-assert: https://github.com/tj/better-assert
+                    "better-assert",
+                    // Bun: https://github.com/oven-sh/bun
+                    "bun:test",
+                    // chai: https://github.com/chaijs/chai
+                    "chai",
+                    //         [CNP] "chai/register-assert",
+                    //         [CNP] "chai/register-expect",
+                    //         [CNP] "chai/register-should",
+                    // Cucumber: https://github.com/cucumber/cucumber-js
+                    //         [CNP] "@cucumber/cucumber",
+                    "cucumber",
+                    // Cypress: https://github.com/cypress-io/cypress
+                    //         [Paths]
+                    // Deno: https://github.com/denoland/deno
+                    //         [CNP] "jsr:@std/expect"
+                    //         [CNP] "jsr:@std/assert"
+                    //         [CNP] "https://deno.land/std/testing/asserts.ts"
+                    //         [CNP] "https://deno.land/std@0.111.0/testing/asserts.ts"
+                    // expect.js: https://github.com/Automattic/expect.js
+                    "expect.js",
+                    // enzyme: https://github.com/enzymejs/enzyme
+                    "enzyme",
+                    // jasmine: https://github.com/jasmine/jasmine
+                    //         [Paths]
+                    // Jest: https://github.com/jestjs/jest
+                    //         [CNP] "@jest/globals"
+                    "jest",
+                    //         [Paths]
+                    // mocha: https://github.com/mochajs/mocha
+                    "assert",
+                    "mocha",
+                    // Nightwatch: https://github.com/nightwatchjs/nightwatch
+                    //         [CNP] "@nightwatch/react"
+                    // Node.js: https://nodejs.org/api/assert.html
+                    "node:assert",
+                    //         [CNP] "node:assert/strict",
+                    // Puppeteer: https://github.com/puppeteer/puppeteer
+                    "puppeteer",
+                    // QUnit: https://github.com/qunitjs/qunit
+                    "qunit",
+                    // Selenium: https://github.com/SeleniumHQ/selenium/tree/trunk/javascript
+                    "selenium-webdriver",
+                    //         [CNP] "selenium-webdriver/chrome",
+                    // should: https://github.com/shouldjs/should.js
+                    "should",
+                    // sinon: https://github.com/sinonjs/sinon
+                    "sinon",
+                    // tape: https://github.com/tape-testing/tape
+                    "tape",
+                    // testcafe: https://github.com/DevExpress/testcafe
+                    "testcafe",
+                    // Testcontainers: https://github.com/testcontainers/testcontainers-node
+                    "testcontainers",
+                    // Testing Library:
+                    //         [CNP] "@testing-library/react"
+                    // unexpected: https://github.com/unexpectedjs/unexpected
+                    "unexpected",
+                    // WebdriverIO: https://github.com/webdriverio/webdriverio
+                    //         [CNP] "@wdio/runner"
+                ])
+            });
+            let imports = match language {
+                JavaScript => javascript::parse_imports_with_tree(code, tree),
+                TypeScript => typescript::parse_imports_with_tree(code, tree),
+                _ => unreachable!(),
+            };
+            for import in imports {
+                // (Because it's not intuitive, as a note: the below if/else logic is a copy of
+                // the implementation of "importsPackage" in the FileContextJavaScript in `context_file_js.js`),
+                let package_name = if import.is_module() {
+                    import.name
+                } else {
+                    import.imported_from.expect("should exist: !is_module()")
+                };
+                if IMPORTS.contains(package_name.as_ref()) {
                     return true;
                 }
             }
@@ -355,6 +587,31 @@ mod cfg_test_tests {
     }
 
     #[test]
+    fn language_csharp() {
+        // An arbitrary namespace used to test the alias vs namespace distinction.
+        let should_namespace = "Xunit";
+        let shoulds = &[
+            &format!("using {should_namespace};"),
+            "using UT = Microsoft.VisualStudio.TestTools.UnitTesting;",
+        ];
+        let should_nots = &[
+            "using System.Diagnostics;",
+            &format!("using {should_namespace} = System.Diagnostics;"),
+        ];
+        for cs_code in shoulds {
+            assert!(is_test_file(Language::Csharp, cs_code, Path::new(""), None));
+        }
+        for cs_code in should_nots {
+            assert!(!is_test_file(
+                Language::Csharp,
+                cs_code,
+                Path::new(""),
+                None
+            ));
+        }
+    }
+
+    #[test]
     fn language_go() {
         fn source_for(imports: &str) -> String {
             format!(
@@ -383,6 +640,54 @@ package pkg
         for imports in import_should_nots {
             let go_code = source_for(imports);
             assert!(!is_test_file(Language::Go, &go_code, Path::new(""), None));
+        }
+    }
+
+    #[test]
+    fn language_java() {
+        use Language::Java;
+        let shoulds = &[
+            "import static org.junit.Assert.assertArrayEquals;",
+            "import org.mockito.MockitoAnnotations;",
+        ];
+        let should_nots = &["import org.springframework.boot.SpringApplication;"];
+        for java_code in shoulds {
+            assert!(is_test_file(Java, java_code, Path::new(""), None));
+        }
+        for java_code in should_nots {
+            assert!(!is_test_file(Java, java_code, Path::new(""), None));
+        }
+    }
+
+    #[test]
+    fn language_javascript_typescript() {
+        use Language::{JavaScript, TypeScript};
+        for (language, base_ext) in [(JavaScript, "js"), (TypeScript, "ts")] {
+            let path_based = per_os_paths(&[
+                &format!("cypress/e2e/{NON_TEST_FOLDER}/file.{base_ext}"),
+                &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.{base_ext}"),
+                &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.{base_ext}x"),
+                &format!("f1/f2/{NON_TEST_FOLDER}/RouterSpec.m{base_ext}"),
+            ]);
+            for path_str in path_based {
+                let path = PathBuf::from(path_str);
+                assert!(is_test_file(language, UNUSED_CODE, &path, None));
+            }
+
+            let import_shoulds = &[
+                "const assert = require('node:assert');",
+                "import { assert } from 'chai';",
+            ];
+            let import_should_nots = &[
+                "const assert = require('my_assertions');",
+                "import { assert } = from 'my_assertions';",
+            ];
+            for js_code in import_shoulds {
+                assert!(is_test_file(JavaScript, js_code, Path::new(""), None));
+            }
+            for js_code in import_should_nots {
+                assert!(!is_test_file(JavaScript, js_code, Path::new(""), None));
+            }
         }
     }
 

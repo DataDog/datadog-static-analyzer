@@ -14,6 +14,8 @@ use tracing_subscriber::EnvFilter;
 use crate::datadog_static_analyzer_server::error_codes::{
     ERROR_CHANNEL_DISCONNECTED, ERROR_SHUTDOWN_FAILURE,
 };
+use crate::datadog_static_analyzer_server::rule_cache::RuleCache;
+use crate::RULE_CACHE;
 
 use super::state::ServerState;
 use super::utils::get_current_timestamp_ms;
@@ -42,6 +44,7 @@ fn get_opts() -> Options {
     opts.optflag("e", "enable-shutdown", "Enables the shutdown endpoint");
     opts.optflag("h", "help", "Print this help");
     opts.optflag("v", "version", "Shows the tool version");
+    opts.optflag("c", "use-rules-cache", "Pre-compile and cache rules");
 
     opts.optopt(
         "l",
@@ -57,8 +60,6 @@ fn get_opts() -> Options {
         "/tmp/static-analysis-server",
     );
 
-    // TODO (JF): Remove this when releasing 0.3.8
-    opts.optflag("", "ddsa-runtime", "(deprecated)");
     opts
 }
 
@@ -173,6 +174,11 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
     // server state
     tracing::debug!("Preparing the server state and rocket configuration");
     let mut server_state = ServerState::new(matches.opt_str("s"), matches.opt_present("e"));
+    // Create a cache for rules, if requested
+    if matches.opt_present("use-rules-cache") {
+        RULE_CACHE.set(RuleCache::new()).expect("should init once");
+    }
+
     let mut rocket_configuration = rocket::config::Config {
         // disable rocket colors and emojis if we're logging to a file as we will be using json format
         cli_colors: !matches.opt_present("l"),
@@ -201,11 +207,6 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
             }
         };
         tracing::debug!("Address set to {addr}");
-    }
-
-    // TODO: should this be removed already?
-    if matches.opt_present("ddsa-runtime") {
-        println!("[WARNING] the --ddsa-runtime flag is deprecated and will be removed in the next version");
     }
 
     // channel used to send the shutdown handler so that we can exit the server gracefully
