@@ -1,7 +1,6 @@
 use crate::constants::{
-    ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
-    ERROR_CONFIGURATION_NOT_BASE64, ERROR_COULD_NOT_PARSE_CONFIGURATION, ERROR_DECODING_BASE64,
-    ERROR_PARSING_RULE,
+    ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64, ERROR_CONFIGURATION_NOT_BASE64,
+    ERROR_COULD_NOT_PARSE_CONFIGURATION,
 };
 use crate::model::analysis_request::AnalysisRequest;
 use crate::model::analysis_response::RuleResponse;
@@ -10,24 +9,25 @@ use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::analyze_with;
 use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::config_file::parse_config_file;
-use kernel::model::rule::{Rule, RuleCategory, RuleInternalError, RuleSeverity};
+use kernel::model::rule::RuleInternal;
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
+use std::borrow::Borrow;
 use std::sync::Arc;
 
 #[tracing::instrument(skip_all)]
-pub fn process_analysis_request(
-    request: AnalysisRequest,
+pub fn process_analysis_request<T: Borrow<RuleInternal>>(
+    request: AnalysisRequest<T>,
     runtime: &mut JsRuntime,
-) -> Result<Vec<RuleResponse>, String> {
+) -> Result<Vec<RuleResponse>, &'static str> {
     tracing::debug!("Processing analysis request");
 
     // Decode the configuration, if present.
     let configuration = if let Some(config_b64) = request.configuration_base64 {
-        let config = decode_base64_string(config_b64)
-            .map_err(|_| ERROR_CONFIGURATION_NOT_BASE64.to_string())?;
-        let cfg_file = parse_config_file(&config)
-            .map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION.to_string())?;
+        let config =
+            decode_base64_string(config_b64).map_err(|_| ERROR_CONFIGURATION_NOT_BASE64)?;
+        let cfg_file =
+            parse_config_file(&config).map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION)?;
         Some(cfg_file)
     } else {
         None
@@ -52,101 +52,41 @@ pub fn process_analysis_request(
     if let Some(rule) = request
         .rules
         .iter()
-        .find(|&rule| rule.language != request.language)
+        .find(|&rule| rule.borrow().language != request.language)
     {
+        let rule = rule.borrow();
         tracing::info!(
             "Validation error: request language is `{}`, but rule `{}` language is `{}`",
             request.language,
-            &rule.name,
+            rule.name,
             rule.language
         );
-        return Err(ERROR_CODE_LANGUAGE_MISMATCH.to_string());
+        return Err(ERROR_CODE_LANGUAGE_MISMATCH);
     }
 
-    let server_rules_to_rules: Vec<Rule> = request
-        .rules
-        .iter()
-        .map(|r| Rule {
-            name: r.name.clone(),
-            short_description_base64: r.short_description_base64.clone(),
-            description_base64: r.description_base64.clone(),
-            category: r.category.unwrap_or(RuleCategory::BestPractices),
-            severity: r.severity.unwrap_or(RuleSeverity::Warning),
-            language: r.language,
-            rule_type: r.rule_type,
-            cwe: None,
-            entity_checked: r.entity_checked,
-            code_base64: r.code_base64.clone(),
-            checksum: r.checksum.clone().unwrap_or("".to_string()),
-            pattern: r.pattern.clone(),
-            tree_sitter_query_base64: r.tree_sitter_query_base64.clone(),
-            arguments: r.arguments.clone(),
-            tests: vec![],
-            is_testing: false,
-        })
-        .collect();
-
-    if server_rules_to_rules.is_empty() {
+    if request.rules.is_empty() {
         tracing::info!("Successfully completed analysis for 0 rules");
         return Ok(vec![]);
     }
 
-    // Convert the rules from the server into internal rules
-    let rules = server_rules_to_rules
-        .iter()
-        .map(|r| {
-            if !r.verify_checksum() {
-                tracing::info!(
-                    "Validation error: request rule `{}` has invalid checksum",
-                    r.name
-                );
-                return Err(ERROR_CHECKSUM_MISMATCH.to_string());
-            }
-            r.to_rule_internal()
-                .inspect_err(|err| {
-                    tracing::info!(
-                        "Validation error: request rule could not be parsed (reason: {})",
-                        err
-                    )
-                })
-                .map_err(|err| match err {
-                    RuleInternalError::InvalidBase64(_) | RuleInternalError::InvalidUtf8(_) => {
-                        ERROR_DECODING_BASE64.to_string()
-                    }
-                    RuleInternalError::InvalidRuleType(_)
-                    | RuleInternalError::MissingTreeSitterQuery
-                    | RuleInternalError::InvalidTreeSitterQuery(_) => {
-                        ERROR_PARSING_RULE.to_string()
-                    }
-                })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-
     // let's try to decode the code
-    let code =
-        decode_base64_string(request.code_base64).map_err(|_| ERROR_CODE_NOT_BASE64.to_string())?;
+    let code = decode_base64_string(request.code_base64).map_err(|_| ERROR_CODE_NOT_BASE64)?;
     let code: Arc<str> = Arc::from(code);
 
-    let rules_count = rules.len();
+    let rules_count = request.rules.len();
     let rules_str = if rules_count == 1 { "rule" } else { "rules" };
-    let rules_list = rules
+    let rules_list = request
+        .rules
         .iter()
-        .map(|r| r.name.as_str())
+        .map(|r| r.borrow().name.as_str())
         .collect::<Vec<&str>>()
         .join(", ");
-
-    // NOTE: We would ideally handle this more elegantly, but for now, always clear the cache
-    // for the incoming rules before making a request. This is needed because during rule authoring,
-    // the rule will change, despite its name being the same (and the cache is keyed only by the rule name).
-    for rule in &rules {
-        runtime.clear_rule_cache(&rule.name);
-    }
 
     // execute the rule. If we fail to convert, return an error.
     let rule_results = analyze_with(
         runtime,
         &request.language,
-        &rules,
+        request.rules,
         &Arc::from(request.filename),
         &code,
         &rule_config,
@@ -193,7 +133,7 @@ mod tests {
     };
     use crate::model::analysis_request::{AnalysisRequestOptions, ServerRule};
     use kernel::analysis::ddsa_lib;
-    use kernel::model::rule::compute_sha256;
+    use kernel::model::rule::{compute_sha256, RuleInternal};
     use kernel::model::{
         analysis::ERROR_RULE_TIMEOUT,
         common::Language,
@@ -202,11 +142,28 @@ mod tests {
     use kernel::utils::encode_base64_string;
 
     /// A shorthand helper function to call [`process_analysis_request`](super::process_analysis_request)
-    /// without requiring an explicitly-created [`JsRuntime`].
-    pub fn shorthand_process_req(request: AnalysisRequest) -> Result<Vec<RuleResponse>, String> {
+    /// without requiring a `ServerRule` -> `RuleInternal` conversion or an explicitly-created [`JsRuntime`].
+    pub fn shorthand_process_req(
+        request: AnalysisRequest<ServerRule>,
+    ) -> Result<Vec<RuleResponse>, &'static str> {
         let v8 = ddsa_lib::test_utils::cfg_test_v8();
         let mut runtime = v8.new_runtime();
-        super::process_analysis_request(request, &mut runtime)
+
+        let rules = request
+            .rules
+            .into_iter()
+            .map(RuleInternal::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let req_with_internal = AnalysisRequest::<RuleInternal> {
+            filename: request.filename,
+            language: request.language,
+            file_encoding: request.file_encoding,
+            code_base64: request.code_base64,
+            rules,
+            configuration_base64: request.configuration_base64,
+            options: request.options,
+        };
+        super::process_analysis_request(req_with_internal, &mut runtime)
     }
 
     /// A sample JavaScript rule and tree-sitter query used to assert violation behavior.
@@ -724,58 +681,6 @@ rulesets:
             RuleSeverity::Notice,
             rule_responses[0].violations[0].0.severity
         );
-    }
-
-    /// Tests that subsequent requests to analyze a rule with the same name can have different code.
-    /// (i.e. the cache is properly cleared).
-    #[test]
-    fn test_subsequent_rule_execution() {
-        let base_rule = make_server_rule(
-            "ruleset/rule-name",
-            Language::Python,
-            (
-                r#"
-function visit(node, filename, code) {
-    const captured = node.captures["id_node"];
-	console.log(getCodeForNode(captured, code));
-}
-"#,
-                r#"
-(assignment
-	left: (identifier) @id_node
-	right: (integer) @int_node)
-"#,
-            ),
-        );
-
-        let request = AnalysisRequest {
-            filename: "myfile.py".to_string(),
-            language: Language::Python,
-            file_encoding: "utf-8".to_string(),
-            code_base64: "dmFyX25hbWUgPSAxMjM=".to_string(),
-            configuration_base64: None,
-            options: Some(AnalysisRequestOptions {
-                use_tree_sitter: None,
-                log_output: Some(true),
-            }),
-            rules: vec![base_rule.clone()],
-        };
-        let rule_responses = shorthand_process_req(request.clone()).unwrap();
-        // We should've logged the `id_node`
-        assert_eq!(rule_responses[0].output, Some("var_name".to_string()));
-        // Mutate the rule so it logs the `int_node`
-        let mut duplicate_req = request.clone();
-        let new_code = r#"
-function visit(node, filename, code) {
-    const captured = node.captures["int_node"];
-	console.log(getCodeForNode(captured, code));
-}
-"#;
-        duplicate_req.rules[0].code_base64 = encode_base64_string(new_code.to_string());
-        update_checksum(&mut duplicate_req.rules[0], true);
-        let rule_responses = shorthand_process_req(duplicate_req).unwrap();
-        // We should've logged the `int_node`
-        assert_eq!(rule_responses[0].output, Some("123".to_string()));
     }
 
     /// Tests that a rule with an expensive tree-sitter query won't get stuck processing for a long

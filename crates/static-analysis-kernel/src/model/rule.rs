@@ -96,7 +96,7 @@ pub enum RuleType {
     TreeSitterQuery,
 }
 
-#[derive(Copy, Clone, Deserialize, Debug, Serialize)]
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum EntityChecked {
     #[serde(rename = "ANY")]
     Any,
@@ -157,7 +157,7 @@ pub struct Rule {
     pub is_testing: bool,
 }
 
-#[derive(Clone, Deserialize, Debug, Serialize, Builder)]
+#[derive(Clone, Deserialize, Debug, Serialize, Builder, Eq, PartialEq)]
 pub struct Argument {
     #[serde(rename = "name")]
     pub name_base64: String,
