@@ -165,11 +165,7 @@ where
     let tree = Arc::new(tree);
     let cst_parsing_time = now.elapsed();
 
-    let timeout = if let Some(timeout) = analysis_option.timeout {
-        Some(Duration::from_millis(timeout))
-    } else {
-        Some(RULE_EXECUTION_TIMEOUT)
-    };
+    let timeout = analysis_option.timeout.or(Some(RULE_EXECUTION_TIMEOUT));
 
     rules
         .into_iter()

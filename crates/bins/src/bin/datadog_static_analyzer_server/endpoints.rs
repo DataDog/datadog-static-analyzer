@@ -111,10 +111,16 @@ fn languages(span: TraceSpan) -> Value {
 }
 
 #[rocket::post("/analyze", format = "application/json", data = "<request>")]
-async fn analyze(span: TraceSpan, request: Json<AnalysisRequest<ServerRule>>) -> Value {
+async fn analyze(
+    span: TraceSpan,
+    state: &State<ServerState>,
+    request: Json<AnalysisRequest<ServerRule>>,
+) -> Value {
     let _entered = span.enter();
 
-    rocket::tokio::task::spawn_blocking(|| {
+    let timeout = state.rule_timeout_ms;
+
+    rocket::tokio::task::spawn_blocking(move || {
         let pool = RAYON_POOL.get().expect("pool should have been created");
         pool.scope_fifo(|_| {
             thread_local! {
@@ -128,7 +134,7 @@ async fn analyze(span: TraceSpan, request: Json<AnalysisRequest<ServerRule>>) ->
             });
             let request = request.into_inner();
             let (rule_responses, errors) =
-                match cached_analysis_request(runtime_ref, request, RULE_CACHE.get()) {
+                match cached_analysis_request(runtime_ref, request, timeout, RULE_CACHE.get()) {
                     Ok(resp) => (resp, vec![]),
                     Err(err) => (vec![], vec![err.to_string()]),
                 };

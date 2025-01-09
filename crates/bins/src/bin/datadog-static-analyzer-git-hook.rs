@@ -43,7 +43,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use std::{env, fs, io};
 use terminal_emoji::Emoji;
 
@@ -348,6 +348,7 @@ fn main() -> Result<()> {
         .opt_str("rule-timeout-ms")
         .map(|val| {
             val.parse::<u64>()
+                .map(Duration::from_millis)
                 .context("unable to parse `rule-timeout-ms` flag as integer")
         })
         .transpose()?;
