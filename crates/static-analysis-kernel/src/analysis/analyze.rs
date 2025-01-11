@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 /// This includes the time it takes for the tree-sitter query to collect its matches, as well as
 /// the time it takes for the JavaScript rule to execute.
 const RULE_EXECUTION_TIMEOUT: Duration = Duration::from_millis(2000);
+const DISABLE_KEYWORDS: [&str; 2] = ["no-dd-sa", "datadog-disable"];
 
 /// Split the code and extract all the logic that reports to lines to ignore.
 /// If a no-dd-sa statement occurs on the first line, it applies to the whole file.
@@ -29,7 +30,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut lines_to_ignore_per_rules: HashMap<u32, Vec<String>> = HashMap::new();
 
     let mut line_number = 1u32;
-    let comment_starters = match language {
+    let comment_prefixes = match language {
         Language::Python
         | Language::Starlark
         | Language::Dockerfile
@@ -66,62 +67,25 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let comment_lines = code
         .lines()
         .enumerate()
-        .filter(|(_idx, line)| {
-            comment_starters
+        .filter(|(_, line)| {
+            comment_prefixes
                 .iter()
                 .any(|m| line.replace(" ", "").starts_with(m))
         })
-        .map(|(idx, _line)| (idx + 1) as u32)
+        .map(|(idx, _)| (idx + 1) as u32)
         .collect::<Vec<_>>();
 
-    let disabling_patterns = match language {
-        Language::Python
-        | Language::Starlark
-        | Language::Dockerfile
-        | Language::Elixir
-        | Language::Ruby
-        | Language::Terraform
-        | Language::Yaml
-        | Language::Bash
-        | Language::R => {
-            vec!["#no-dd-sa", "#datadog-disable"]
-        }
-        Language::JavaScript | Language::TypeScript | Language::Kotlin | Language::Apex => {
-            vec![
-                "//no-dd-sa",
-                "/*no-dd-sa",
-                "//datadog-disable",
-                "/*datadog-disable",
-            ]
-        }
-        Language::Go | Language::Rust | Language::Csharp | Language::Java | Language::Swift => {
-            vec!["//no-dd-sa", "//datadog-disable"]
-        }
-        Language::Json => {
-            vec!["impossiblestringtoreach"]
-        }
-        Language::PHP => {
-            vec![
-                "//no-dd-sa",
-                "/*no-dd-sa",
-                "//datadog-disable",
-                "/*datadog-disable",
-                "#no-dd-sa",
-                "#datadog-disable",
-            ]
-        }
-        Language::Markdown => {
-            vec!["<!--no-dd-sa", "<!--datadog-disable"]
-        }
-        Language::SQL => {
-            vec![
-                "--no-dd-sa",
-                "--datadog-disable",
-                "/*no-dd-sa",
-                "/*datadog-disable",
-            ]
-        }
-    };
+    // get the //no-dd-sa //datadog-disable
+    let disabling_patterns = DISABLE_KEYWORDS
+        .iter()
+        .map(|pattern| {
+            comment_prefixes // e.g. ["//", "/*"]
+                .iter()
+                .map(|prefix| format!("{}{}", *prefix, *pattern))
+        })
+        .flatten()
+        .collect::<Vec<_>>();
+
     let mut ignore_file_all_rules: bool = false;
     let mut rules_to_ignore: Vec<String> = vec![];
     for line in code.lines() {
