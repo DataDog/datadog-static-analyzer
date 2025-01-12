@@ -78,12 +78,11 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     // get the //no-dd-sa //datadog-disable
     let disabling_patterns = DISABLE_KEYWORDS
         .iter()
-        .map(|pattern| {
+        .flat_map(|pattern| {
             comment_prefixes // e.g. ["//", "/*"]
                 .iter()
                 .map(|prefix| format!("{}{}", *prefix, *pattern))
         })
-        .flatten()
         .collect::<Vec<_>>();
 
     let mut ignore_file_all_rules: bool = false;
