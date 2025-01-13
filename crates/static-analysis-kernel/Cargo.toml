@@ -18,15 +18,12 @@ thiserror = { workspace = true }
 tree-sitter = { workspace = true }
 
 # other
-deno_core = "0.328.0"
+deno_core = "0.329.0"
 globset = "0.4.14"
 graphviz-rust = "0.9.0"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
 streaming-iterator = "0.1.9"
-
-# Workaround once https://github.com/denoland/deno_core/issues/1034 is fixed
-v8 = "=130.0.5"
 
 [build-dependencies]
 cc = "1.0.97"
