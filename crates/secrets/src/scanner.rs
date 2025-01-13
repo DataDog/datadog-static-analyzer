@@ -67,7 +67,7 @@ pub fn find_secrets(
                 validation_status: SecretValidationStatus::from(&sds_match.match_status),
             })
         })
-        .group_by(|v| v.rule_index)
+        .chunk_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
             rule_id: sds_rules[k].clone().id,
