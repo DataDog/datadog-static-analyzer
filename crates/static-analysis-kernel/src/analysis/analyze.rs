@@ -20,6 +20,7 @@ use std::time::{Duration, Instant};
 /// This includes the time it takes for the tree-sitter query to collect its matches, as well as
 /// the time it takes for the JavaScript rule to execute.
 const RULE_EXECUTION_TIMEOUT: Duration = Duration::from_millis(2000);
+const DISABLE_KEYWORDS: [&str; 2] = ["no-dd-sa", "datadog-disable"];
 
 /// Split the code and extract all the logic that reports to lines to ignore.
 /// If a no-dd-sa statement occurs on the first line, it applies to the whole file.
@@ -29,7 +30,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     let mut lines_to_ignore_per_rules: HashMap<u32, Vec<String>> = HashMap::new();
 
     let mut line_number = 1u32;
-    let disabling_patterns = match language {
+    let comment_prefixes = match language {
         Language::Python
         | Language::Starlark
         | Language::Dockerfile
@@ -39,44 +40,51 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         | Language::Yaml
         | Language::Bash
         | Language::R => {
-            vec!["#no-dd-sa", "#datadog-disable"]
+            vec!["#"]
         }
         Language::JavaScript | Language::TypeScript | Language::Kotlin | Language::Apex => {
-            vec![
-                "//no-dd-sa",
-                "/*no-dd-sa",
-                "//datadog-disable",
-                "/*datadog-disable",
-            ]
+            vec!["//", "/*"]
         }
         Language::Go | Language::Rust | Language::Csharp | Language::Java | Language::Swift => {
-            vec!["//no-dd-sa", "//datadog-disable"]
+            vec!["//"]
         }
         Language::Json => {
             vec!["impossiblestringtoreach"]
         }
         Language::PHP => {
-            vec![
-                "//no-dd-sa",
-                "/*no-dd-sa",
-                "//datadog-disable",
-                "/*datadog-disable",
-                "#no-dd-sa",
-                "#datadog-disable",
-            ]
+            vec!["//", "/*", "#"]
         }
         Language::Markdown => {
-            vec!["<!--no-dd-sa", "<!--datadog-disable"]
+            vec!["<!-"]
         }
         Language::SQL => {
-            vec![
-                "--no-dd-sa",
-                "--datadog-disable",
-                "/*no-dd-sa",
-                "/*datadog-disable",
-            ]
+            vec!["--", "/*"]
         }
     };
+
+    // collect the total number of lines that are comments. This way, we can ignore
+    // comment blocks that contains no-dd-sa.
+    let comment_lines = code
+        .lines()
+        .enumerate()
+        .filter(|(_, line)| {
+            comment_prefixes
+                .iter()
+                .any(|m| line.replace(" ", "").starts_with(m))
+        })
+        .map(|(idx, _)| (idx + 1) as u32)
+        .collect::<Vec<_>>();
+
+    // get the //no-dd-sa //datadog-disable
+    let disabling_patterns = DISABLE_KEYWORDS
+        .iter()
+        .flat_map(|pattern| {
+            comment_prefixes // e.g. ["//", "/*"]
+                .iter()
+                .map(|prefix| format!("{}{}", *prefix, *pattern))
+        })
+        .collect::<Vec<_>>();
+
     let mut ignore_file_all_rules: bool = false;
     let mut rules_to_ignore: Vec<String> = vec![];
     for line in code.lines() {
@@ -105,12 +113,25 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
                     if line_number == 1 {
                         ignore_file_all_rules = true;
                     } else {
-                        lines_to_ignore_for_all_rules.push(line_number + 1);
+                        let mut line_to_ignore = line_number + 1;
+                        lines_to_ignore_for_all_rules.push(line_to_ignore);
+
+                        while comment_lines.contains(&line_to_ignore) {
+                            line_to_ignore += 1;
+                            lines_to_ignore_for_all_rules.push(line_to_ignore);
+                        }
                     }
                 } else if line_number == 1 {
                     rules_to_ignore.extend(parts.clone());
                 } else {
-                    lines_to_ignore_per_rules.insert(line_number + 1, parts.clone());
+                    let mut line_to_ignore = line_number + 1;
+                    let rule_to_ignore = parts.clone();
+                    lines_to_ignore_per_rules.insert(line_to_ignore, rule_to_ignore.clone());
+
+                    while comment_lines.contains(&line_to_ignore) {
+                        line_to_ignore += 1;
+                        lines_to_ignore_per_rules.insert(line_to_ignore, rule_to_ignore.clone());
+                    }
                 }
             }
         }
@@ -370,7 +391,6 @@ function visit(captures) {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::tree_sitter::get_query;
@@ -714,6 +734,64 @@ def foo(arg1):
         assert_eq!(1, results.len());
         let result = results.get(0).unwrap();
         assert!(result.violations.is_empty());
+    }
+
+    #[test]
+    fn test_violation_ignore_multiple_comment_lines() {
+        let rule_code = r#"
+function visit(node, filename, code) {
+    const functionName = node.captures["name"];
+    if(functionName) {
+        const error = buildError(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col,
+                                 "invalid name", "CRITICAL", "security");
+
+        const edit = buildEdit(functionName.start.line, functionName.start.col, functionName.end.line, functionName.end.col, "update", "bar");
+        const fix = buildFix("use bar", [edit]);
+        addError(error.addFix(fix));
+    }
+}
+        "#;
+
+        let c = r#"
+# no-dd-sa
+# pylint wants to also ignore something
+def foo(arg1):
+    pass
+
+# no-dd-sa:myruleset/myrule
+# pylint wants to also ignore something
+def foo2(arg1):
+    pass
+
+# no-dd-sa:myruleset/myrule2
+# pylint wants to also ignore something
+def foo2(arg1):
+    pass
+        "#;
+        let rule = RuleInternal {
+            name: "myruleset/myrule".to_string(),
+            short_description: Some("short desc".to_string()),
+            description: Some("description".to_string()),
+            category: RuleCategory::CodeStyle,
+            severity: RuleSeverity::Notice,
+            language: Language::Python,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+        };
+
+        let analysis_options = AnalysisOptions::default();
+        let results = analyze(
+            &Language::Python,
+            &vec![rule],
+            &Arc::from("myfile.py"),
+            &Arc::from(c),
+            &RuleConfig::default(),
+            &analysis_options,
+        );
+        assert_eq!(1, results.len());
+        let result = results.get(0).unwrap();
+        assert_eq!(1, result.violations.iter().len());
+        assert_eq!(14, result.violations[0].start.line);
     }
 
     #[test]
