@@ -11,7 +11,45 @@ on:
   workflow_call:
 
 jobs:
+  extract-languages:
+    runs-on: ubuntu-latest
+    outputs:
+      languages: ${{ steps.extract.outputs.languages }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: extract
+        name: Extract languages from file
+        run: |
+          relative_path="crates/cli/src/datadog_utils.rs"
+          
+          if [ ! -f "$relative_path" ]; then
+            echo "Error: could not find target file"
+            exit 1
+          fi
+          
+          concat_languages=$(
+            # Find the definition of the slice
+            grep -Poz 'const DEFAULT_RULESETS_LANGUAGES: &\[&str\] = &\[\s*?(?:.*?\s*)+?\s*?\];' "$relative_path" |
+            # Strip the null byte added by -z
+            tr '\0' '\n' |
+            # Get any strings present
+            grep -Po '".*?"' |
+            # Delete quotation marks
+            tr -d '"' |
+            # Convert each newline to a space
+            tr '\n' ' ' |
+            # Strip a trailing space
+            sed 's/ $//'
+          )
+          
+          if [ -z "$concat_languages" ]; then
+          echo "Error: could not parse default ruleset languages"
+            exit 1
+          fi
+            
+          echo "languages=$concat_languages" >> $GITHUB_OUTPUT
   production_rules:
+    needs: extract-languages
     runs-on: ubuntu-latest
     env:
       DD_SITE: datadoghq.com
@@ -26,10 +64,11 @@ jobs:
           cargo build --profile release-dev --bin datadog-static-analyzer && \
           cargo build --profile release-dev --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
-          for language in go python typescript javascript csharp java ruby; do \
+          for language in ${{ needs.extract-languages.outputs.languages }}; do \
             python misc/test-rules.py -c $PWD/target/release-dev/datadog-static-analyzer -s $PWD/target/release-dev/datadog-static-analyzer-server -l $language ; \
           done
   staging_rules:
+    needs: extract-languages
     runs-on: ubuntu-latest
     env:
       DD_SITE: datad0g.com
@@ -44,6 +83,6 @@ jobs:
           cargo build --profile release-dev --bin datadog-static-analyzer && \
           cargo build --profile release-dev --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
-          for language in go python typescript javascript csharp java ruby; do \
+          for language in ${{ needs.extract-languages.outputs.languages }}; do \
             python misc/test-rules.py -c $PWD/target/release-dev/datadog-static-analyzer -s $PWD/target/release-dev/datadog-static-analyzer-server -l $language ; \
           done
