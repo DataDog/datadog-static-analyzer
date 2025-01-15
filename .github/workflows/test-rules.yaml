@@ -33,7 +33,7 @@ jobs:
             # Strip the null byte added by -z
             tr '\0' '\n' |
             # Get any strings present
-            grep -Po '".*?"' |
+            grep -Po '"[^"]*"' |
             # Delete quotation marks
             tr -d '"' |
             # Convert each newline to a space
