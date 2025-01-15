@@ -23,7 +23,7 @@ jobs:
           relative_path="crates/cli/src/datadog_utils.rs"
           
           if [ ! -f "$relative_path" ]; then
-            echo "Error: could not find target file"
+            echo "::error::Could not find file `$relative_path`"
             exit 1
           fi
           
@@ -43,7 +43,7 @@ jobs:
           )
           
           if [ -z "$concat_languages" ]; then
-          echo "Error: could not parse default ruleset languages"
+            echo "::error::Could not parse default ruleset languages from file `$relative_path`"
             exit 1
           fi
             
