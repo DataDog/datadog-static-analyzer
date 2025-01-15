@@ -1,0 +1,26 @@
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+  workflow_call:
+
+name: Test Docker Container
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build -t test-image .
+
+      - name: Verify binary exists and runs
+        run: |
+          # Run container and execute the binaries to verify they exist and run
+          docker run --rm test-image datadog-static-analyzer --help
+          docker run --rm test-image datadog-static-analyzer-server --help
+          docker run --rm test-image datadog-static-analyzer-git-hook --help
