@@ -1,2 +1,2 @@
-**/*                                                              @DataDog/static-analysis-core
+**/*                                                              @DataDog/k9-vm-ast
 /crates/bins/src/bin/datadog_static_analyzer_server/ide/**/*      @DataDog/ide-integration-static-analysis-server
