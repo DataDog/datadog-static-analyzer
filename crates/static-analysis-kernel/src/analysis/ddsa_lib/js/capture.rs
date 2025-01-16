@@ -106,14 +106,12 @@ impl MultiCaptureTemplate {
         capture.set(scope, key.into(), name.into());
 
         let key = v8::Local::new(scope, &self.s_node_ids);
-        let ids_buf = v8::ArrayBuffer::new(scope, 4 * node_ids.len());
-        if let Some(ids_array) = v8::Uint32Array::new(scope, ids_buf, 0, node_ids.len()) {
-            for (i, node_id) in node_ids.iter().enumerate() {
-                let id = v8_uint(scope, *node_id);
-                ids_array.set_index(scope, i as u32, id.into());
-            }
-            capture.set(scope, key.into(), ids_array.into());
+        let ids_array = v8::Array::new(scope, node_ids.len() as i32);
+        for (i, node_id) in node_ids.iter().enumerate() {
+            let id = v8_uint(scope, *node_id);
+            ids_array.set_index(scope, i as u32, id.into());
         }
+        capture.set(scope, key.into(), ids_array.into());
         capture
     }
 }
@@ -156,7 +154,7 @@ assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
         let code = r#"
 assert(Object.keys(CAPTURE).length === 2, "must be exactly 2 properties");
 assert(CAPTURE.name === "bravo", "name was incorrect");
-assert(CAPTURE.nodeIds instanceof Uint32Array, "nodeIds had wrong type");
+assert(Array.isArray(CAPTURE.nodeIds), "nodeIds had wrong type");
 assert(CAPTURE.nodeIds.join(",") === "16,32,48", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
@@ -166,7 +164,7 @@ assert(CAPTURE.nodeIds.join(",") === "16,32,48", "nodeIds were incorrect");
         let capture = template.new_instance(scope, "bravo", &[16]);
         attach_as_global(scope, capture, "CAPTURE");
         let code = r#"
-assert(CAPTURE.nodeIds instanceof Uint32Array, "nodeIds had wrong type");
+assert(Array.isArray(CAPTURE.nodeIds), "nodeIds had wrong type");
 assert(CAPTURE.nodeIds.join(",") === "16", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
