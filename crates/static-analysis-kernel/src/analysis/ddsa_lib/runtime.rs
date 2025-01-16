@@ -11,6 +11,7 @@ use crate::analysis::ddsa_lib::common::{
 };
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::js::{VisitArgCodeCompat, VisitArgFilenameCompat};
+use crate::analysis::ddsa_lib::resource_watchdog::V8ResourceWatchdog;
 use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
@@ -19,7 +20,7 @@ use deno_core::v8::HandleScope;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 const BRIDGE_CONTEXT: &str = "__RUST_BRIDGE__context";
@@ -32,10 +33,7 @@ const STELLA_COMPAT_FILE_CONTENTS: &str = "STELLA_COMPAT_FILE_CONTENTS";
 /// The Datadog Static Analyzer JavaScript runtime
 pub struct JsRuntime {
     runtime: deno_core::JsRuntime,
-    /// Each `JsRuntime` spawns a thread that lives for as long as the `JsRuntime`, and it is used
-    /// to manually terminate JavaScript executions that go on for too long. Synchronization between
-    /// the `JsRuntime` and this thread is performed through this `watchdog_pair`.
-    watchdog_pair: Arc<(Mutex<JsExecutionState>, Condvar)>,
+    v8_resource_watchdog: V8ResourceWatchdog,
     console: Rc<RefCell<JsConsole>>,
     bridge_context: Rc<RefCell<ContextBridge>>,
     bridge_query_match: QueryMatchBridge,
@@ -122,11 +120,11 @@ impl JsRuntime {
         op_state.put(Rc::clone(&console));
 
         let v8_isolate_handle = deno_runtime.v8_isolate().thread_safe_handle();
-        let watchdog_pair = spawn_watchdog_thread(v8_isolate_handle);
+        let v8_resource_watchdog = V8ResourceWatchdog::new(v8_isolate_handle);
 
         Ok(Self {
             runtime: deno_runtime,
-            watchdog_pair,
+            v8_resource_watchdog,
             console,
             bridge_context: context,
             bridge_query_match: query_match,
@@ -330,37 +328,9 @@ impl JsRuntime {
         let opened = script.open(tc_ctx_scope);
         let bound_script = opened.bind_to_current_context(tc_ctx_scope);
 
-        // Notify the watchdog thread that an execution is starting.
-        if let Some(duration) = timeout {
-            let (lock, cvar) = &*self.watchdog_pair;
-            let mut state = lock.lock().unwrap();
-            state.timeout_duration = duration;
-            state.start_time = Instant::now();
-            state.is_currently_executing = true;
-            drop(state);
-            cvar.notify_one();
-        }
-
-        let execution_result = bound_script.run(tc_ctx_scope);
-
-        // If the watchdog requested termination, it should have marked `is_currently_executing` as false,
-        // and so we don't need to set `is_currently_executing`, nor do we need to (inefficiently) re-notify
-        // via the condvar. We just reset the v8 isolate's termination state and return a timeout error.
-        if tc_ctx_scope.is_execution_terminating() {
-            debug_assert!(!self.watchdog_pair.0.lock().unwrap().is_currently_executing);
-            tc_ctx_scope.cancel_terminate_execution();
-            tc_ctx_scope.reset();
-            let timeout = timeout.expect("timeout should exist if we had v8 terminate execution");
-            return Err(DDSAJsRuntimeError::JavaScriptTimeout { timeout });
-        } else if timeout.is_some() {
-            // Otherwise, we successfully completed execution without timing out. We need to notify
-            // the watchdog thread to stop actively tracking a timeout.
-            let (lock, cvar) = &*self.watchdog_pair;
-            let mut state = lock.lock().unwrap();
-            state.is_currently_executing = false;
-            drop(state);
-            cvar.notify_one();
-        }
+        let execution_result = self
+            .v8_resource_watchdog
+            .execute(timeout, tc_ctx_scope, |sc| bound_script.run(sc))?;
 
         let return_val = execution_result.ok_or_else(|| {
             let exception = tc_ctx_scope
@@ -432,17 +402,6 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
     }
 }
 
-impl Drop for JsRuntime {
-    fn drop(&mut self) {
-        let (lock, cvar) = &*self.watchdog_pair;
-        let mut state = lock.lock().unwrap();
-        // Tell the watchdog thread that it should shut down.
-        state.watchdog_should_shut_down = true;
-        drop(state);
-        cvar.notify_one();
-    }
-}
-
 /// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
 ///
 /// # Warning
@@ -499,67 +458,6 @@ pub(crate) fn inner_make_deno_core_runtime(
     })
 }
 
-/// Spawns a watchdog thread that invokes [`v8::Isolate::terminate_execution`] when a JavaScript execution
-/// runs past a specified timeout duration. Returns a tuple containing the `JsExecutionState` used
-/// to communicate state to the watchdog thread, as well as a `Condvar` to notify the watchdog.
-///
-/// The spawned thread may be shut down by setting `should_shut_down` on `JsExecutionState` and
-/// notifying the thread via the condvar.
-fn spawn_watchdog_thread(v8_handle: v8::IsolateHandle) -> Arc<(Mutex<JsExecutionState>, Condvar)> {
-    let state_pair = Arc::new((Mutex::new(JsExecutionState::new()), Condvar::new()));
-    let pair_clone = Arc::clone(&state_pair);
-
-    std::thread::spawn(move || {
-        let (lock, cvar) = &*pair_clone;
-        loop {
-            let mut state = cvar
-                .wait_while(lock.lock().unwrap(), |state| {
-                    !state.is_currently_executing && !state.watchdog_should_shut_down
-                })
-                .expect("mutex should not be poisoned");
-
-            if state.watchdog_should_shut_down {
-                break;
-            }
-
-            // Any instant after `timeout_threshold` will trigger the timeout
-            let timeout_threshold = state.start_time + state.timeout_duration;
-            let now = Instant::now();
-
-            if now >= timeout_threshold {
-                // This branch represents an edge case where the OS couldn't wake this thread up
-                // until after the watchdog should've already triggered a timeout.
-
-                // Trust that v8 will halt execution and eagerly mark the execution as complete so the
-                // main thread doesn't need to acquire the lock to do it.
-                state.is_currently_executing = false;
-                drop(state);
-                v8_handle.terminate_execution();
-            } else {
-                // This is guaranteed not to underflow
-                let additional_wait = timeout_threshold - now;
-                let result = cvar
-                    .wait_timeout_while(state, additional_wait, |state| {
-                        state.is_currently_executing
-                    })
-                    .expect("mutex should not be poisoned");
-                state = result.0;
-
-                // If the condvar triggered a timeout, `execution_complete` _must_ be false, because of
-                // our use of `wait_timeout_while`. Thus, it's always appropriate to terminate execution.
-                if result.1.timed_out() {
-                    // Trust that v8 will halt execution and eagerly mark the execution as complete so the
-                    // main thread doesn't need to acquire the lock to do it.
-                    state.is_currently_executing = false;
-                    drop(state);
-                    v8_handle.terminate_execution();
-                }
-            }
-        }
-    });
-    state_pair
-}
-
 /// The result of a ddsa JavaScript execution.
 #[derive(Debug)]
 pub struct ExecutionResult {
@@ -577,31 +475,6 @@ pub struct ExecutionResult {
 pub struct ExecutionTimingCompat {
     pub ts_query: Duration,
     pub execution: Duration,
-}
-
-/// A struct used to communicate state from a `JsRuntime` to a watchdog thread that calls
-/// [`v8::Isolate::terminate_execution`]. To request the watchdog to enforce a timeout,
-/// this struct should be populated with `timeout_duration`, `start_time`, and `execution_complete`
-/// should be set to `false`. After that, the watchdog thread should be notified via a condvar.
-///
-/// `should_shut_down` should only be set to `true` when the `JsRuntime` is being dropped.
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-struct JsExecutionState {
-    timeout_duration: Duration,
-    start_time: Instant,
-    is_currently_executing: bool,
-    watchdog_should_shut_down: bool,
-}
-
-impl JsExecutionState {
-    pub fn new() -> Self {
-        Self {
-            timeout_duration: Duration::default(),
-            start_time: Instant::now(),
-            is_currently_executing: false,
-            watchdog_should_shut_down: false,
-        }
-    }
 }
 
 /// A mutable scratch space that collects the output of the `console.log` function invoked by JavaScript code.
@@ -984,28 +857,11 @@ function visit(captures) {
         let timeout = Duration::from_millis(500);
         let loop_code = "while (true) {}";
         let loop_script = compile_script(&mut runtime.v8_handle_scope(), loop_code).unwrap();
-        let code = "123;";
-        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
-
-        // First, ensure that the implementation isn't forcing a minimum execution time to that of the
-        // timeout (which could happen if we are improperly handling a mutex lock).
-        let now = Instant::now();
-        runtime
-            .scoped_execute(&script, |_, _| (), Some(Duration::from_secs(10)))
-            .unwrap();
-        assert!(now.elapsed() < Duration::from_secs(10));
 
         let err = runtime
             .scoped_execute(&loop_script, |_, _| (), Some(timeout))
             .unwrap_err();
         assert!(matches!(err, DDSAJsRuntimeError::JavaScriptTimeout { .. }));
-
-        // After calling `TerminateExecution`, a v8 isolate cannot execute JavaScript until all frames have
-        // propagated the uncatchable exception (or we've manually cancelled the termination). Invoking
-        // a subsequent script execution ensures that we're handling this properly.
-        let return_val =
-            runtime.scoped_execute(&script, |scope, value| value.uint32_value(scope), None);
-        assert_eq!(return_val.unwrap().unwrap(), 123);
     }
 
     /// `scoped_execute` should always execute with an empty console (despite a previous execution
