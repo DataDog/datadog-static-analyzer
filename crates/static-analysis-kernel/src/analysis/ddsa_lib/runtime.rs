@@ -1404,6 +1404,10 @@ function visit(captures) {
             "TypedArray",
             "Atomics",
             "queueMicrotask",
+            "setTimeout",
+            "setInterval",
+            "Worker",
+            "SharedWorker",
         ];
         for name in identifiers {
             let code = &format!("{name};");
