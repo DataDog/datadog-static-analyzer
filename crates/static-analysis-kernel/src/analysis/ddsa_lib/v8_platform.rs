@@ -31,6 +31,8 @@ const BASE_FLAGS: &str = concat!(
     // Performance: compile JavaScript eagerly
     " --no-lazy",
     " --no-lazy-streaming",
+    // Don't allow "eval"-like functionality.
+    " --disallow-code-generation-from-strings",
 );
 
 /// An instance of the v8 platform.
@@ -137,6 +139,7 @@ pub fn initialize_v8(thread_pool_size: u32) -> V8Platform<Initialized> {
 #[cfg(test)]
 mod tests {
     use super::{initialize_v8, BASE_FLAGS};
+    use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
 
     /// `initialize_v8` can effectively only be called once.
     #[test]
@@ -154,5 +157,24 @@ mod tests {
     #[test]
     fn v8_contradictory_flags_abort() {
         assert!(BASE_FLAGS.contains("--abort-on-contradictory-flags"));
+    }
+
+    /// v8 is initialized without the ability to run `eval`-like functions.
+    #[test]
+    fn v8_eval_like_disabled() {
+        let v8 = cfg_test_v8();
+        let mut rt = v8.new_runtime();
+        let scope = &mut rt.v8_handle_scope();
+        let samples = [
+            "eval('1 + 2');",
+            "new Function('a', 'b', 'return a + b;')(1, 2);",
+        ];
+        for code in samples {
+            let res = try_execute(scope, code);
+            assert_eq!(
+                res.unwrap_err(),
+                "EvalError: Code generation from strings disallowed for this context"
+            );
+        }
     }
 }
