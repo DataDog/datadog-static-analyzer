@@ -413,6 +413,22 @@ pub(crate) fn make_base_deno_core_runtime(
     const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
         // `deno_core`, by default, injects its own `console` implementation.
         "console",
+        "Promise",
+        "FinalizationRegistry",
+        "ArrayBuffer",
+        "Int8Array",
+        "Uint8Array",
+        "Uint8ClampedArray",
+        "Int16Array",
+        "Uint16Array",
+        "Int32Array",
+        "Uint32Array",
+        "Float32Array",
+        "Float64Array",
+        "BigInt64Array",
+        "BigUint64Array",
+        "DataView",
+        "TypedArray",
     ];
     inner_make_deno_core_runtime(
         extensions,
@@ -1346,6 +1362,45 @@ function visit(captures) {
             let mut rt = make_base_deno_core_runtime(vec![], Some(size));
             rt.v8_isolate().get_heap_statistics(&mut heap_stats);
             assert_eq!(heap_stats.heap_size_limit(), size);
+        }
+    }
+
+    /// Unused objects or functions are not exposed.
+    #[test]
+    fn runtime_unused_features() {
+        let mut runtime = cfg_test_v8().new_runtime();
+        let identifiers = [
+            "Promise",
+            "FinalizationRegistry",
+            "ArrayBuffer",
+            "Int8Array",
+            "Uint8Array",
+            "Uint8ClampedArray",
+            "Int16Array",
+            "Uint16Array",
+            "Int32Array",
+            "Uint32Array",
+            "Float32Array",
+            "Float64Array",
+            "BigInt64Array",
+            "BigUint64Array",
+            "DataView",
+            "TypedArray",
+        ];
+        for name in identifiers {
+            let code = &format!("{name};");
+            let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+            let exe_result = runtime.scoped_execute(&script, |_, value| value.is_undefined(), None);
+
+            let expected_err = format!("Uncaught ReferenceError: {name} is not defined");
+            let is_undefined = match exe_result {
+                Err(DDSAJsRuntimeError::Execution { error }) if error.message == expected_err => {
+                    true
+                }
+                Ok(is_undef) => is_undef,
+                _ => false,
+            };
+            assert!(is_undefined, "expected `{name}` to be `undefined`");
         }
     }
 }
