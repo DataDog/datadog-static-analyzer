@@ -1,5 +1,7 @@
 FROM ubuntu:22.04 AS base
 
+# Comment
+
 FROM base AS build
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
