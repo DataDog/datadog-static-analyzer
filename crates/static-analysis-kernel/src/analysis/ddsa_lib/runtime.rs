@@ -1373,6 +1373,7 @@ function visit(captures) {
             "Promise",
             "FinalizationRegistry",
             "ArrayBuffer",
+            "SharedArrayBuffer",
             "Int8Array",
             "Uint8Array",
             "Uint8ClampedArray",
