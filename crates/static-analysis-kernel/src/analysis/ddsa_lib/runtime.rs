@@ -431,6 +431,7 @@ pub(crate) fn make_base_deno_core_runtime(
         "DataView",
         "TypedArray",
         "Atomics",
+        "queueMicrotask",
     ];
     /// Global properties that are overridden (`e.g `globalThis.x = undefined;`).
     /// Overriding is necessary for objects created/enabled by v8 flags.
@@ -1402,6 +1403,7 @@ function visit(captures) {
             "DataView",
             "TypedArray",
             "Atomics",
+            "queueMicrotask",
         ];
         for name in identifiers {
             let code = &format!("{name};");
