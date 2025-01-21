@@ -11,7 +11,7 @@ use crate::analysis::ddsa_lib::common::{
 };
 use crate::analysis::ddsa_lib::extension::ddsa_lib;
 use crate::analysis::ddsa_lib::runtime::{make_base_deno_core_runtime, ExecutionResult};
-use crate::analysis::ddsa_lib::v8_platform::V8Platform;
+use crate::analysis::ddsa_lib::v8_platform::{Uninitialized, Unprotected, V8Platform};
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
@@ -453,22 +453,26 @@ impl TsTree {
 pub struct CfgTest;
 
 pub fn cfg_test_v8() -> V8Platform<CfgTest> {
-    static V8_PLATFORM_INIT: std::sync::Once = std::sync::Once::new();
+    static V8_PLATFORM: std::sync::OnceLock<V8Platform<CfgTest>> = std::sync::OnceLock::new();
 
-    V8_PLATFORM_INIT.call_once(|| {
+    *V8_PLATFORM.get_or_init(|| {
         // When running with PKU support, only the thread that initialized the v8 platform (or that thread's
         // spawned children) can access the v8 isolates. This is problematic in `cargo` unit tests because there is
         // currently no way that we can guarantee that the main thread will be the first to initialize v8.
         // In order to get around this, we can use the "unprotected" v8 platform.
-        let platform = v8::new_unprotected_default_platform(0, false);
-        let shared_platform = platform.make_shared();
-        deno_core::JsRuntime::init_platform(Some(shared_platform), false);
-    });
+        let uninit = V8Platform::<Uninitialized>::new();
 
-    V8Platform::<CfgTest>(std::marker::PhantomData)
+        let platform = uninit.set_flags().initialize_unprotected(0);
+        V8Platform::<CfgTest>::from_unprotected(platform)
+    })
 }
 
 impl V8Platform<CfgTest> {
+    /// Constructs a `CfgTest` v8 platform from an `Unprotected` platform.
+    fn from_unprotected(_platform: V8Platform<Unprotected>) -> V8Platform<CfgTest> {
+        V8Platform::<CfgTest>(std::marker::PhantomData)
+    }
+
     pub fn new_runtime(&self) -> JsRuntime {
         let test_deno_core_runtime = self.deno_core_rt();
         JsRuntime::try_new(test_deno_core_runtime).unwrap()
