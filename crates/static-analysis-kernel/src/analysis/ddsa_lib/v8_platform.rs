@@ -35,6 +35,8 @@ const BASE_FLAGS: &str = concat!(
     " --disallow-code-generation-from-strings",
     // Require each context to explicitly provide a SharedArrayBuffer implementation.
     " --enable-sharedarraybuffer-per-context",
+    // Don't expose wasm
+    " --no-expose-wasm",
 );
 
 /// An instance of the v8 platform.

@@ -1408,6 +1408,7 @@ function visit(captures) {
             "setInterval",
             "Worker",
             "SharedWorker",
+            "WebAssembly",
         ];
         for name in identifiers {
             let code = &format!("{name};");
