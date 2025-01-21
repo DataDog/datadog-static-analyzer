@@ -1,5 +1,7 @@
 on:
   push:
+    paths:
+      - "Dockerfile"
     branches:
       - "**"
   pull_request:
