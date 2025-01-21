@@ -429,6 +429,7 @@ pub(crate) fn make_base_deno_core_runtime(
         "BigUint64Array",
         "DataView",
         "TypedArray",
+        "Atomics",
     ];
     inner_make_deno_core_runtime(
         extensions,
@@ -1387,6 +1388,7 @@ function visit(captures) {
             "BigUint64Array",
             "DataView",
             "TypedArray",
+            "Atomics",
         ];
         for name in identifiers {
             let code = &format!("{name};");
