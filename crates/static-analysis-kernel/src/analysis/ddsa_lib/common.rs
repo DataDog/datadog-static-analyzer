@@ -19,6 +19,8 @@ pub enum DDSAJsRuntimeError {
     TreeSitterTimeout { timeout: Duration },
     #[error("JavaScript execution timeout")]
     JavaScriptTimeout { timeout: Duration },
+    #[error("JavaScript exceeded memory constraint")]
+    JavaScriptMemoryExceeded,
     #[error("expected `{name}` to exist within the v8 context")]
     VariableNotFound { name: String },
     #[error("type should be \"{expected}\", not \"{got}\"")]
@@ -376,7 +378,7 @@ const validSyntax = 123;
     /// the runtime's v8 isolate.
     #[test]
     fn create_base_runtime_mutate_ctx() {
-        let mut runtime = inner_make_deno_core_runtime(vec![], None);
+        let mut runtime = inner_make_deno_core_runtime(vec![], None, None);
         // We use the ES6 `Map` constructor because it will always be present
         let code = "Map;";
 
@@ -390,6 +392,7 @@ const validSyntax = 123;
                 let global_proxy = default_ctx.global(scope);
                 global_proxy.delete(scope, key.into());
             })),
+            None,
         );
         let value = try_execute(&mut runtime.handle_scope(), code).unwrap_err();
         assert_eq!(value, "ReferenceError: Map is not defined".to_string());

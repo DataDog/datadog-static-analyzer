@@ -474,7 +474,22 @@ impl V8Platform<CfgTest> {
         JsRuntime::try_new(test_deno_core_runtime).unwrap()
     }
 
+    pub fn new_runtime_with_heap_limit(&self, max_heap_size_bytes: usize) -> JsRuntime {
+        let test_deno_core_runtime = self.deno_core_rt_with_heap_limit(max_heap_size_bytes);
+        JsRuntime::try_new(test_deno_core_runtime).unwrap()
+    }
+
+    /// Constructs a `deno_core::JsRuntime` with no v8 isolate heap limit.
     pub fn deno_core_rt(&self) -> deno_core::JsRuntime {
-        make_base_deno_core_runtime(vec![cfg_test_deno_ext()])
+        make_base_deno_core_runtime(Self::extensions(), None)
+    }
+
+    /// Constructs a `deno_core::JsRuntime` with no v8 isolate heap limit.
+    pub fn deno_core_rt_with_heap_limit(&self, max_heap_size_bytes: usize) -> deno_core::JsRuntime {
+        make_base_deno_core_runtime(Self::extensions(), Some(max_heap_size_bytes))
+    }
+
+    fn extensions() -> Vec<deno_core::Extension> {
+        vec![cfg_test_deno_ext()]
     }
 }

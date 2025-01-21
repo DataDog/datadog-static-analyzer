@@ -119,8 +119,7 @@ impl JsRuntime {
         let console = Rc::new(RefCell::new(JsConsole::new()));
         op_state.put(Rc::clone(&console));
 
-        let v8_isolate_handle = deno_runtime.v8_isolate().thread_safe_handle();
-        let v8_resource_watchdog = V8ResourceWatchdog::new(v8_isolate_handle);
+        let v8_resource_watchdog = V8ResourceWatchdog::new(deno_runtime.v8_isolate());
 
         Ok(Self {
             runtime: deno_runtime,
@@ -402,12 +401,13 @@ for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
     }
 }
 
-/// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
+/// Creates a [`deno_core::JsRuntime`] with the provided `extensions` and heap size limit.
 ///
 /// # Warning
 /// This will leak memory for each `deno_core::JsRuntime` created. Thus, this runtime should be reused where possible.
 pub(crate) fn make_base_deno_core_runtime(
     extensions: Vec<deno_core::Extension>,
+    max_heap_size_bytes: Option<usize>,
 ) -> deno_core::JsRuntime {
     /// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
     const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
@@ -423,6 +423,7 @@ pub(crate) fn make_base_deno_core_runtime(
                 global_proxy.delete(scope, key.into());
             }
         })),
+        max_heap_size_bytes,
     )
 }
 
@@ -434,12 +435,19 @@ pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Conte
 /// that will be used as the base for all newly-created `v8::Context`s within the
 /// runtime's `v8::Isolate`.
 ///
+/// If provided, `max_heap_size_bytes` will configure a hard limit for the heap.
+///
 /// # Warning
 /// This will leak memory for each `deno_core::JsRuntime` created. Thus, this runtime should be reused where possible.
 pub(crate) fn inner_make_deno_core_runtime(
     extensions: Vec<deno_core::Extension>,
     config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
+    max_heap_size_bytes: Option<usize>,
 ) -> deno_core::JsRuntime {
+    let mut create_params = v8::CreateParams::default();
+    if let Some(max) = max_heap_size_bytes {
+        create_params = create_params.heap_limits(0, max);
+    }
     // [11-22-24]: There _may_ be an issue on Linux systems with PKU support where multiple
     // deno_core::JsRuntime will attempt to use the same memory map, leading to segfaults.
     // If this is the case, creating and using snapshots for each JsRuntime should fix this.
@@ -452,6 +460,7 @@ pub(crate) fn inner_make_deno_core_runtime(
     let snapshot = snapshot_runtime.snapshot();
     let leaked = Box::leak(snapshot);
     deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+        create_params: Some(create_params),
         extensions,
         startup_snapshot: Some(leaked),
         ..Default::default()
@@ -507,10 +516,11 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{
         compile_script, v8_interned, v8_uint, DDSAJsRuntimeError, Instance,
     };
+    use crate::analysis::ddsa_lib::runtime::make_base_deno_core_runtime;
     use crate::analysis::ddsa_lib::test_utils::{
         cfg_test_v8, shorthand_execute_rule, try_execute, ExecuteOptions,
     };
-    use crate::analysis::ddsa_lib::{js, JsRuntime};
+    use crate::analysis::ddsa_lib::{js, resource_watchdog, JsRuntime};
     use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
     use crate::model::common::Language;
     use deno_core::v8;
@@ -862,6 +872,20 @@ function visit(captures) {
             .scoped_execute(&loop_script, |_, _| (), Some(timeout))
             .unwrap_err();
         assert!(matches!(err, DDSAJsRuntimeError::JavaScriptTimeout { .. }));
+    }
+
+    /// `scoped_execute` can terminate JavaScript execution that allocates over its quota.
+    #[test]
+    fn scoped_execute_oom() {
+        use resource_watchdog::tests::{DEFAULT_HEAP_LIMIT, OOM_CODE};
+
+        let mut runtime = cfg_test_v8().new_runtime_with_heap_limit(DEFAULT_HEAP_LIMIT);
+        let loop_script = compile_script(&mut runtime.v8_handle_scope(), OOM_CODE).unwrap();
+
+        let err = runtime
+            .scoped_execute(&loop_script, |_, _| (), None)
+            .unwrap_err();
+        assert!(matches!(err, DDSAJsRuntimeError::JavaScriptMemoryExceeded));
     }
 
     /// `scoped_execute` should always execute with an empty console (despite a previous execution
@@ -1310,5 +1334,18 @@ function visit(captures) {
         let console_lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         let expected = r#"{"cstType":"identifier","start":{"line":1,"col":15},"end":{"line":1,"col":16},"text":"a"}"#;
         assert_eq!(console_lines[0], expected);
+    }
+
+    /// [`make_base_deno_core_runtime`] can create a v8 isolate with a max heap size.
+    #[test]
+    fn make_base_deno_core_runtime_set_heap_limit() {
+        const MAX_BYTES: usize = 16 * 1024 * 1024;
+        let mut heap_stats = v8::HeapStatistics::default();
+        let _v8 = cfg_test_v8();
+        for size in [MAX_BYTES, MAX_BYTES * 2] {
+            let mut rt = make_base_deno_core_runtime(vec![], Some(size));
+            rt.v8_isolate().get_heap_statistics(&mut heap_stats);
+            assert_eq!(heap_stats.heap_size_limit(), size);
+        }
     }
 }
