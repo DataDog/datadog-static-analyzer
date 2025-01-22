@@ -409,8 +409,9 @@ pub(crate) fn make_base_deno_core_runtime(
     extensions: Vec<deno_core::Extension>,
     max_heap_size_bytes: Option<usize>,
 ) -> deno_core::JsRuntime {
-    /// Global properties that are removed from the global proxy object of the default `v8::Context` for the `JsRuntime`.
-    const DEFAULT_REMOVED_GLOBAL_PROPS: &[&str] = &[
+    /// Global properties that are deleted (e.g. `delete globalThis.x;`) from the global proxy object
+    /// of the default `v8::Context` for the `JsRuntime`.
+    const DEFAULT_DELETED_GLOBAL_PROPS: &[&str] = &[
         // `deno_core`, by default, injects its own `console` implementation.
         "console",
         "Promise",
@@ -431,13 +432,24 @@ pub(crate) fn make_base_deno_core_runtime(
         "TypedArray",
         "Atomics",
     ];
+    /// Global properties that are overridden (`e.g `globalThis.x = undefined;`).
+    /// Overriding is necessary for objects created/enabled by v8 flags.
+    const DEFAULT_OVERRIDDEN_GLOBAL_PROPS: &[&str] = &[
+        // `deno_core` (as of "0.330.0") manually sets v8 flag: `--js-float16array`.
+        "Float16Array",
+    ];
     inner_make_deno_core_runtime(
         extensions,
         Some(Box::new(|scope, default_ctx| {
             let global_proxy = default_ctx.global(scope);
-            for &prop in DEFAULT_REMOVED_GLOBAL_PROPS {
+            for &prop in DEFAULT_DELETED_GLOBAL_PROPS {
                 let key = v8_string(scope, prop);
                 global_proxy.delete(scope, key.into());
+            }
+            for &prop in DEFAULT_OVERRIDDEN_GLOBAL_PROPS {
+                let key = v8_string(scope, prop);
+                let undefined = v8::undefined(scope);
+                global_proxy.set(scope, key.into(), undefined.into());
             }
         })),
         max_heap_size_bytes,
@@ -1382,6 +1394,7 @@ function visit(captures) {
             "Uint16Array",
             "Int32Array",
             "Uint32Array",
+            "Float16Array",
             "Float32Array",
             "Float64Array",
             "BigInt64Array",
