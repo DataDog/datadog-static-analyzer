@@ -12,6 +12,9 @@ args = [
   "--",
   "-p",
   "49159",
+  "-c",
+  "--rule-timeout-ms",
+  "500",
 ]
 
 [tasks.ide-test]
