@@ -198,6 +198,7 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
     // Create a cache for rules, if requested
     if matches.opt_present("use-rules-cache") {
         RULE_CACHE.set(RuleCache::new()).expect("should init once");
+        server_state.is_rule_cache_enabled = true;
     }
 
     let mut rocket_configuration = rocket::config::Config {

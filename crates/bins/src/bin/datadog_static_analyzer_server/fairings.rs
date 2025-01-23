@@ -5,8 +5,8 @@ use rocket::{
     Data, Request, Response, State,
 };
 use server::constants::{
-    SERVER_HEADER_KEEPALIVE_ENABLED, SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION,
-    SERVER_HEADER_SHUTDOWN_ENABLED,
+    SERVER_HEADER_KEEPALIVE_ENABLED, SERVER_HEADER_RULE_CACHE_ENABLED, SERVER_HEADER_RULE_TIMEOUT,
+    SERVER_HEADER_SERVER_REVISION, SERVER_HEADER_SERVER_VERSION, SERVER_HEADER_SHUTDOWN_ENABLED,
 };
 use tracing::Span;
 use uuid::Uuid;
@@ -63,6 +63,17 @@ impl Fairing for CustomHeaders {
                 SERVER_HEADER_KEEPALIVE_ENABLED,
                 state.is_keepalive_enabled.to_string(),
             ));
+            response.set_header(Header::new(
+                SERVER_HEADER_RULE_CACHE_ENABLED,
+                state.is_rule_cache_enabled.to_string(),
+            ));
+
+            if let Some(rule_timeout) = state.rule_timeout_ms {
+                response.set_header(Header::new(
+                    SERVER_HEADER_RULE_TIMEOUT,
+                    rule_timeout.as_millis().to_string(),
+                ));
+            }
         }
 
         response.set_header(Header::new(SERVER_HEADER_SERVER_VERSION, get_version()));
