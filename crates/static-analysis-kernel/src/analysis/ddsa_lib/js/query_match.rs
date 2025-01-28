@@ -153,7 +153,7 @@ mod tests {
 
         let code = r#"
 const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
-assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
+assert(Array.isArray(cap_node_ids), "cap_node_ids had wrong type");
 assert(cap_node_ids.length === 1, "array must have exactly one elements");
 assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 "#;
@@ -180,7 +180,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 
         let code = r#"
 const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
-assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
+assert(Array.isArray(cap_node_ids), "cap_node_ids had wrong type");
 assert(cap_node_ids.length === 3, "array must have exactly three elements");
 assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
 "#;
@@ -202,7 +202,7 @@ assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
 
         let code = r#"
 const cap_node_ids = QUERY_MATCH._getManyIds("cap_name");
-assert(cap_node_ids instanceof Uint32Array, "cap_node_ids had wrong type");
+assert(Array.isArray(cap_node_ids), "cap_node_ids had wrong type");
 assert(cap_node_ids.length === 1, "array must have exactly one elements");
 assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 "#;

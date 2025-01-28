@@ -75,14 +75,14 @@ pub fn op_ts_node_text(state: &OpState, #[smi] node_id: u32) -> Option<String> {
 /// Given a tree-sitter node (via its `node_id`), this function traverses the tree to find the
 /// named children of the node, inserting them into the `TsNodeBridge`.
 ///
-/// Nodes are returned as a `v8::Uint32Array` of tuples: (NodeId, FieldId):
+/// Nodes are returned as a `v8::Array` of tuples: (NodeId, FieldId):
 /// ```text
 /// |             Node A              |             Node B              |
 /// |    NodeId A    |    FieldId A   |    NodeId B    |    FieldId B   |
 ///  ________________ ________________ ________________ ________________
 /// |                |                |                |                |
 /// 0                1                2                3
-///      32 bits          32 bits          32 bits          32 bits
+///       number          number            number           number
 /// ```
 /// A NodeId is always at an even index. Its corresponding FieldId is always at the (n + 1) index.
 /// If there is no FieldId, the uint32 will be 0.
@@ -93,7 +93,7 @@ pub fn op_ts_node_named_children<'s>(
     state: &OpState,
     scope: &mut v8::HandleScope<'s>,
     #[smi] node_id: u32,
-) -> Option<v8::Local<'s, v8::Uint32Array>> {
+) -> Option<v8::Local<'s, v8::Array>> {
     let ts_node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>();
 
     let safe_raw_ts_node = OpSafeRawTSNode::from_tsn_bridge(&ts_node_bridge.borrow(), node_id)?;
@@ -103,8 +103,7 @@ pub fn op_ts_node_named_children<'s>(
     if count == 0 {
         None
     } else {
-        let ids_buf = v8::ArrayBuffer::new(scope, 4 * count * 2);
-        let uint_array = v8::Uint32Array::new(scope, ids_buf, 0, count * 2)?;
+        let array = v8::Array::new(scope, count as i32);
         let mut bridge_ref = ts_node_bridge.borrow_mut();
 
         let mut cursor = ts_node.walk();
@@ -123,17 +122,17 @@ pub fn op_ts_node_named_children<'s>(
             let nid = bridge_ref.insert(scope, child_node);
             let nid = v8_uint(scope, nid);
             let nid_index = i * 2;
-            uint_array.set_index(scope, nid_index as u32, nid.into());
+            array.set_index(scope, nid_index as u32, nid.into());
             // The array buffer is zero-initialized, so we only have to write the field_id if it exists.
             if let Some(fid) = cursor.field_id() {
                 let fid = v8_uint(scope, fid.get() as u32);
-                uint_array.set_index(scope, (nid_index + 1) as u32, fid.into());
+                array.set_index(scope, (nid_index + 1) as u32, fid.into());
             }
 
             cursor.goto_next_sibling();
         }
 
-        Some(uint_array)
+        Some(array)
     }
 }
 

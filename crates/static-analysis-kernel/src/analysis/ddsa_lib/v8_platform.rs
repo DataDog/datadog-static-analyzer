@@ -33,6 +33,10 @@ const BASE_FLAGS: &str = concat!(
     " --no-lazy-streaming",
     // Don't allow "eval"-like functionality.
     " --disallow-code-generation-from-strings",
+    // Require each context to explicitly provide a SharedArrayBuffer implementation.
+    " --enable-sharedarraybuffer-per-context",
+    // Don't expose wasm
+    " --no-expose-wasm",
 );
 
 /// An instance of the v8 platform.

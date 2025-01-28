@@ -85,7 +85,7 @@ export class QueryMatch {
      * If this is called on a capture that is a `SingleCapture` instead of a `MultiCapture`, the capture
      * will be turned in an array as the sole element.
      * @param {string} name
-     * @returns {Uint32Array | undefined}
+     * @returns {Array<NodeId> | undefined}
      *
      * @remarks
      * This is implemented as `O(N)` iteration instead of `O(1)` lookup because the expected number of
@@ -99,7 +99,7 @@ export class QueryMatch {
                 if (item.nodeIds !== undefined) {
                     return item.nodeIds;
                 } else {
-                    return new Uint32Array([item.nodeId]);
+                    return [item.nodeId];
                 }
             }
         }

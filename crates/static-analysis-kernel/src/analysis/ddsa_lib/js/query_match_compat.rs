@@ -245,7 +245,7 @@ QUERY_MATCH.context.filename;
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
 
         let code = r#"
-assert(QUERY_MATCH._getManyIds("cap_name") instanceof Uint32Array, "invalid _getManyIds");
+assert(Array.isArray(QUERY_MATCH._getManyIds("cap_name")), "invalid _getManyIds");
 assert(Array.isArray(QUERY_MATCH.getMany("cap_name")), "invalid getMany");
 assert(QUERY_MATCH._getId("cap_name") === 30, "invalid _getId");
 assert(typeof QUERY_MATCH.get("cap_name") === "object", "invalid get");

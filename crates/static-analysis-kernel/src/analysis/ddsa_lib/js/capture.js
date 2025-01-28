@@ -22,7 +22,7 @@
 /**
  * @typedef {Object} MultiCapture
  * @property {string} name The name of the capture.
- * @property {Uint32Array} nodeIds The nodes that were captured.
+ * @property {Array<NodeId>} nodeIds The nodes that were captured.
  *
  * Example tree-sitter query:
  * ```
