@@ -47,7 +47,7 @@ pub async fn start() {
             mut rocket,
             state,
             tx_rocket_shutdown,
-            guard,
+            guards,
         }) => {
             // set fairings
             *rocket = rocket
@@ -71,7 +71,9 @@ pub async fn start() {
                     "Something went wrong while trying to ignite the rocket: {error_str}"
                 );
                 // flushing the pending logs by dropping the guard before panic
-                drop(guard);
+                for guard in guards {
+                    drop(guard);
+                }
 
                 match e {
                     EndpointError::ExitCode(code) => process::exit(code),
