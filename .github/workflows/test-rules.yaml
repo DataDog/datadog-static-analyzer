@@ -54,34 +54,47 @@ jobs:
     env:
       DD_SITE: datadoghq.com
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1.10.1
         with:
           components: clippy
+
+      - name: Fetch dependencies
+        run: cargo fetch
+
       - name: Test all production rules
         run: |
-          cargo build --profile release-dev --bin datadog-static-analyzer && \
-          cargo build --profile release-dev --bin datadog-static-analyzer-server && \
+          cargo build --locked --profile release-dev --bin datadog-static-analyzer && \
+          cargo build --locked --profile release-dev --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
           for language in ${{ needs.extract-languages.outputs.languages }}; do \
             python misc/test-rules.py -c $PWD/target/release-dev/datadog-static-analyzer -s $PWD/target/release-dev/datadog-static-analyzer-server -l $language ; \
           done
+
   staging_rules:
     needs: extract-languages
     runs-on: ubuntu-latest
     env:
       DD_SITE: datad0g.com
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Set up Rust
         uses: actions-rust-lang/setup-rust-toolchain@v1.10.1
         with:
           components: clippy
+
+      - name: Fetch dependencies
+        run: cargo fetch
+
       - name: Test all staging rules
         run: |
-          cargo build --profile release-dev --bin datadog-static-analyzer && \
-          cargo build --profile release-dev --bin datadog-static-analyzer-server && \
+          cargo build --locked --profile release-dev --bin datadog-static-analyzer && \
+          cargo build --locked --profile release-dev --bin datadog-static-analyzer-server && \
           sudo apt-get install python3-requests && \
           for language in ${{ needs.extract-languages.outputs.languages }}; do \
             python misc/test-rules.py -c $PWD/target/release-dev/datadog-static-analyzer -s $PWD/target/release-dev/datadog-static-analyzer-server -l $language ; \

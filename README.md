@@ -311,7 +311,7 @@ diff aware not enabled (error when receiving diff-aware data from Datadog with c
 Export rulesets from the API into a file
 
 ```shell
-cargo run --bin datadog-export-rulesets -- -r <ruleset> -o <file-to-export>
+cargo run --locked --bin datadog-export-rulesets -- -r <ruleset> -o <file-to-export>
 ```
 
 ## More

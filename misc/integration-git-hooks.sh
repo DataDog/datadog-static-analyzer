@@ -1,6 +1,7 @@
 #!/bin/bash
 
-cargo build --profile release-dev --bin datadog-static-analyzer-git-hook
+cargo fetch
+cargo build --locked --profile release-dev --bin datadog-static-analyzer-git-hook
 
 ## A Python repository
 REPO_DIR=$(mktemp -d)
@@ -170,7 +171,7 @@ ANALYSIS_CMD='\
     git add .
     git commit -m "Add violations" --quiet
 ) && \
-cargo run --profile release-dev --bin \
+cargo run --locked --profile release-dev --bin \
 datadog-static-analyzer-git-hook -- \
 --static-analysis --default-branch main --repository "${REPO_DIR}" --output "${RESULTS_FILE}"'
 
