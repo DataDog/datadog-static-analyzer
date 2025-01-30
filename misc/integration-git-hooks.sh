@@ -172,7 +172,7 @@ ANALYSIS_CMD='\
 ) && \
 cargo run --profile release-dev --bin \
 datadog-static-analyzer-git-hook -- \
---enable-static-analysis --default-branch main --repository "${REPO_DIR}" --output "${RESULTS_FILE}"'
+--enable-static-analysis true --default-branch main --repository "${REPO_DIR}" --output "${RESULTS_FILE}"'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 "${SCRIPT_DIR}/helpers/test-classification.sh" "${ANALYSIS_CMD}" "${REPO_DIR}" "${RESULTS_FILE}" || {
