@@ -211,7 +211,7 @@ fn main() -> Result<()> {
     let static_analysis_enabled = matches
         .opt_str("enable-static-analysis")
         .map(|value| value == "true" || value == "yes")
-        .unwrap_or(true);
+        .unwrap_or(false);
     let secrets_enabled_new_option = matches
         .opt_str("enable-secrets")
         .map(|value| value == "true" || value == "yes")
@@ -248,7 +248,10 @@ fn main() -> Result<()> {
     }
 
     if !static_analysis_enabled && !secrets_enabled {
-        eprintln!("either --static-analysis or --secrets should be specified");
+        eprintln!("no features (static analysis or secrets) activated");
+        eprintln!(
+            "either --enable-static-analysis true or --enable-secrets true should be specified"
+        );
         print_usage(&program, opts);
         exit(EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS)
     }
