@@ -167,7 +167,18 @@ fn main() -> Result<()> {
     );
     opts.optflag("t", "include-testing-rules", "include testing rules");
     opts.optflag("", "secrets", "enable secrets detection (BETA)");
-    opts.optflag("", "static-analysis", "enable static-analysis");
+    opts.optopt(
+        "",
+        "enable-static-analysis",
+        "enable/disable static analysis.",
+        "yes,no,true,false (default 'true')",
+    );
+    opts.optopt(
+        "",
+        "enable-secrets",
+        "enable/disable secrets scanning. Requires using Datadog API keys.",
+        "yes,no,true,false (default 'false')",
+    );
     opts.optopt(
         "",
         "rule-timeout-ms",
@@ -196,8 +207,16 @@ fn main() -> Result<()> {
     let use_staging = matches.opt_present("s");
     let use_confirmation = matches.opt_present("confirmation");
 
-    let secrets_enabled = matches.opt_present("secrets");
-    let static_analysis_enabled = matches.opt_present("static-analysis");
+    let secrets_enabled_old_option = matches.opt_present("secrets");
+    let static_analysis_enabled = matches
+        .opt_str("enable-static-analysis")
+        .map(|value| value == "true" || value == "yes")
+        .unwrap_or(true);
+    let secrets_enabled_new_option = matches
+        .opt_str("enable-secrets")
+        .map(|value| value == "true" || value == "yes")
+        .unwrap_or(false);
+    let secrets_enabled = secrets_enabled_old_option || secrets_enabled_new_option;
     let default_branch_opt = matches.opt_str("default-branch");
     let sha_start_opt = matches.opt_str("sha-start");
     let sha_end_opt = matches.opt_str("sha-end");
@@ -337,6 +356,7 @@ fn main() -> Result<()> {
         show_performance_statistics: false,
         ignore_generated_files,
         secrets_enabled,
+        static_analysis_enabled,
         secrets_rules: secrets_rules.clone(),
     };
 
