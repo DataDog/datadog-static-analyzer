@@ -66,11 +66,14 @@ jobs:
         shell: bash
         run: sed "s/development/$GITHUB_SHA/g" crates/static-analysis-kernel/src/constants.rs > bla && rm crates/static-analysis-kernel/src/constants.rs && mv bla crates/static-analysis-kernel/src/constants.rs
 
+      - name: Fetch dependencies
+        run: cargo fetch
+
       - name: Build Rust binaries
         run: |
-          cargo build --release --target ${{ matrix.target }} --bin datadog-static-analyzer
-          cargo build --release --target ${{ matrix.target }} --bin datadog-static-analyzer-git-hook
-          cargo build --release --target ${{ matrix.target }} --bin datadog-static-analyzer-server
+          cargo build --locked --release --target ${{ matrix.target }} --bin datadog-static-analyzer
+          cargo build --locked --release --target ${{ matrix.target }} --bin datadog-static-analyzer-git-hook
+          cargo build --locked --release --target ${{ matrix.target }} --bin datadog-static-analyzer-server
 
       - name: Zip Rust binaries (Unix)
         if: ${{ !startsWith(matrix.os, 'windows') }}

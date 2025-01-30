@@ -5,7 +5,8 @@
 # 2. Run the latest version of the analyzer on it
 # 3. Check that we get the SHA of the commit and the category in the output SARIF file.
 
-cargo build --profile release-dev --bin datadog-static-analyzer
+cargo fetch
+cargo build --locked --profile release-dev --bin datadog-static-analyzer
 
 ## First, test a repository to check that the commit that indicates the repo information for a violation
 echo "Checking rosie tests"

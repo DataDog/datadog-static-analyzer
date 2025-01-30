@@ -59,7 +59,7 @@ git clone https://github.com/DataDog/datadog-static-analyzer.git
 Then, run it. At the top directory of the static analyzer, use
 
 ```
-cargo run --release --bin datadog-static-analyzer -- --format sarif --output /path/to/BenchmarkJava/results/Benchmark_1.2-DatadogSast.sarif --directory /path/to/BenchmarkJava
+cargo run --locked --release --bin datadog-static-analyzer -- --format sarif --output /path/to/BenchmarkJava/results/Benchmark_1.2-DatadogSast.sarif --directory /path/to/BenchmarkJava
 ```
 
 
