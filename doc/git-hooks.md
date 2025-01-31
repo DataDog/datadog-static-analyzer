@@ -22,7 +22,7 @@ You have two modes to invoke the program:
 To compare the current commit with the default branch main, invoke the following command.
 
 ```shell
-datadog-static-analyzer-git-hook -r <path/to/repo> --secrets  --default-branch main
+datadog-static-analyzer-git-hook -r <path/to/repo> --enable-secrets true  --default-branch main
 ```
 
 ### Compare two commit shas
@@ -30,7 +30,7 @@ datadog-static-analyzer-git-hook -r <path/to/repo> --secrets  --default-branch m
 To compare the commit `<sha1>` and `<sha2>` (`<sha1>` has been committed before `<sha2>`), enter the following command.
 
 ```shell
-datadog-static-analyzer-git-hook -r <path/to/repo> --static-analysis --secrets  --sha-start <sha1> --sha-end <sha2>
+datadog-static-analyzer-git-hook -r <path/to/repo> --enable-static-analysis true --enable-secrets true  --sha-start <sha1> --sha-end <sha2>
 ```
 
 ### Options
