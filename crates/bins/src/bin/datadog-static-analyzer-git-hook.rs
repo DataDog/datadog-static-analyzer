@@ -166,8 +166,23 @@ fn main() -> Result<()> {
         "user must validate if they want to continue",
     );
     opts.optflag("t", "include-testing-rules", "include testing rules");
-    opts.optflag("", "secrets", "enable secrets detection (BETA)");
-    opts.optflag("", "static-analysis", "enable static-analysis");
+    opts.optflag(
+        "",
+        "secrets",
+        "enable secrets detection (DEPRECATED, use enable-secrets)",
+    );
+    opts.optopt(
+        "",
+        "enable-static-analysis",
+        "enable/disable static analysis.",
+        "yes,no,true,false (default 'true')",
+    );
+    opts.optopt(
+        "",
+        "enable-secrets",
+        "enable/disable secrets scanning. Limited Availability feature. Requires using Datadog API keys.",
+        "yes,no,true,false (default 'false')",
+    );
     opts.optopt(
         "",
         "rule-timeout-ms",
@@ -196,8 +211,16 @@ fn main() -> Result<()> {
     let use_staging = matches.opt_present("s");
     let use_confirmation = matches.opt_present("confirmation");
 
-    let secrets_enabled = matches.opt_present("secrets");
-    let static_analysis_enabled = matches.opt_present("static-analysis");
+    let secrets_enabled_old_option = matches.opt_present("secrets");
+    let static_analysis_enabled = matches
+        .opt_str("enable-static-analysis")
+        .map(|value| value == "true" || value == "yes")
+        .unwrap_or(false);
+    let secrets_enabled_new_option = matches
+        .opt_str("enable-secrets")
+        .map(|value| value == "true" || value == "yes")
+        .unwrap_or(false);
+    let secrets_enabled = secrets_enabled_old_option || secrets_enabled_new_option;
     let default_branch_opt = matches.opt_str("default-branch");
     let sha_start_opt = matches.opt_str("sha-start");
     let sha_end_opt = matches.opt_str("sha-end");
@@ -229,7 +252,10 @@ fn main() -> Result<()> {
     }
 
     if !static_analysis_enabled && !secrets_enabled {
-        eprintln!("either --static-analysis or --secrets should be specified");
+        eprintln!("no features (static analysis or secrets) activated");
+        eprintln!(
+            "either --enable-static-analysis true or --enable-secrets true should be specified"
+        );
         print_usage(&program, opts);
         exit(EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS)
     }
@@ -261,10 +287,12 @@ fn main() -> Result<()> {
     if let Some(conf) = configuration_file {
         ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
 
-        let rulesets = conf.rulesets.keys().cloned().collect_vec();
-        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
-            .context("error when reading rules from API")?;
-        rules.extend(rules_from_api);
+        if static_analysis_enabled {
+            let rulesets = conf.rulesets.keys().cloned().collect_vec();
+            let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
+                .context("error when reading rules from API")?;
+            rules.extend(rules_from_api);
+        }
 
         // copy the only and ignore paths from the configuration file
         path_config.ignore.extend(conf.paths.ignore);
@@ -284,10 +312,13 @@ fn main() -> Result<()> {
                 );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
         }
-        let rulesets_from_api =
-            get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
 
-        rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
+        if static_analysis_enabled {
+            let rulesets_from_api =
+                get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
+
+            rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
+        }
     }
 
     let secrets_rules = if secrets_enabled {
@@ -337,6 +368,7 @@ fn main() -> Result<()> {
         show_performance_statistics: false,
         ignore_generated_files,
         secrets_enabled,
+        static_analysis_enabled,
         secrets_rules: secrets_rules.clone(),
     };
 

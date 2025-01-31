@@ -97,6 +97,18 @@ fn main() -> Result<()> {
     );
     opts.optopt(
         "",
+        "enable-static-analysis",
+        "enable/disable static analysis.",
+        "yes,no,true,false (default 'true')",
+    );
+    opts.optopt(
+        "",
+        "enable-secrets",
+        "enable/disable secrets scanning. Limited Availability feature. Requires using Datadog API keys.",
+        "yes,no,true,false (default 'false')",
+    );
+    opts.optopt(
+        "",
         "fail-on-any-violation",
         "exit a non-zero return code if there is one violation",
         "error,warning,notice,none",
@@ -112,7 +124,11 @@ fn main() -> Result<()> {
         "diff-aware",
         "enable diff-aware scanning (only for Datadog users)",
     );
-    opts.optflag("", "secrets", "enable secrets detection (BETA)");
+    opts.optflag(
+        "",
+        "secrets",
+        "enable secrets detection (DEPRECATED, use enable-secrets)",
+    );
     opts.optmulti(
         "p",
         "ignore-path",
@@ -175,7 +191,8 @@ fn main() -> Result<()> {
     let add_git_info = matches.opt_present("g");
     let enable_performance_statistics = matches.opt_present("x");
     let print_violations = matches.opt_present("print-violations");
-    let secrets_enabled = matches.opt_present("secrets");
+    let secrets_enabled_old_option = matches.opt_present("secrets");
+
     // if --fail-on-any-violation is specified, get the list of severities to exit with a non-zero code
     let fail_any_violation_severities = match matches.opt_str("fail-on-any-violation") {
         Some(f) => f
@@ -200,7 +217,22 @@ fn main() -> Result<()> {
         .opt_str("d")
         .map(|value| value == "yes" || value == "true")
         .get_or_insert(env::var_os("DD_SA_DEBUG").is_some());
+
+    // To remove once workload are migrated.
+    if matches.opt_present("secrets") && use_debug {
+        eprintln!("--secrets is deprecated, use --enabled-secrets true instead");
+    }
+
     let debug_java_dfa = matches.opt_present("debug-export-java-dfa");
+    let static_analysis_enabled = matches
+        .opt_str("enable-static-analysis")
+        .map(|value| value == "true" || value == "yes")
+        .unwrap_or(true);
+    let secrets_enabled_new_option = matches
+        .opt_str("enable-secrets")
+        .map(|value| value == "true" || value == "yes")
+        .unwrap_or(false);
+    let secrets_enabled = secrets_enabled_old_option || secrets_enabled_new_option;
 
     let output_file = matches
         .opt_str("o")
@@ -271,17 +303,18 @@ fn main() -> Result<()> {
             exit(EXIT_CODE_RULE_FILE_WITH_CONFIGURATION);
         }
 
-        let rulesets = conf.rulesets.keys().cloned().collect_vec();
-        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
-            .inspect_err(|e| {
-                if let DatadogApiError::RulesetNotFound(rs) = e {
-                    eprintln!("Error: ruleset {rs} not found");
-                    exit(EXIT_CODE_RULESET_NOT_FOUND);
-                }
-            })
-            .context("error when reading rules from API")?;
-        rules.extend(rules_from_api);
-
+        if static_analysis_enabled {
+            let rulesets = conf.rulesets.keys().cloned().collect_vec();
+            let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
+                .inspect_err(|e| {
+                    if let DatadogApiError::RulesetNotFound(rs) = e {
+                        eprintln!("Error: ruleset {rs} not found");
+                        exit(EXIT_CODE_RULESET_NOT_FOUND);
+                    }
+                })
+                .context("error when reading rules from API")?;
+            rules.extend(rules_from_api);
+        }
         // copy the only and ignore paths from the configuration file
         path_config.ignore.extend(conf.paths.ignore);
         path_config.only = conf.paths.only;
@@ -289,14 +322,14 @@ fn main() -> Result<()> {
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
         ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
-    } else {
+    } else if static_analysis_enabled {
         // if there is no config file, we take the default rules from our APIs.
         if rules_file.is_none() {
             println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
             println!("Check the following resources to configure your rules:");
             println!(
-                " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
-            );
+                    " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
+                );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             let rulesets_from_api =
                 get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
@@ -375,6 +408,7 @@ fn main() -> Result<()> {
         use_staging,
         show_performance_statistics: enable_performance_statistics,
         ignore_generated_files,
+        static_analysis_enabled,
         secrets_enabled,
         secrets_rules: secrets_rules.clone(),
     };
@@ -384,7 +418,6 @@ fn main() -> Result<()> {
     let mut all_rule_results = Vec::<RuleResult>::new();
     let mut all_stats = AnalysisStatistics::new();
     // (Option<T> is used to prevent checking the same file path multiple times).
-    let mut all_path_metadata = HashMap::<String, Option<ArtifactClassification>>::new();
 
     let timeout = matches
         .opt_str("rule-timeout-ms")
@@ -401,13 +434,6 @@ fn main() -> Result<()> {
         ignore_generated_files,
         timeout,
     };
-
-    if should_verify_checksum {
-        if let Err(e) = check_rules_checksum(configuration.rules.as_slice()) {
-            eprintln!("error when checking rules checksum: {e}");
-            exit(EXIT_CODE_RULE_CHECKSUM_INVALID)
-        }
-    }
 
     // check if we do a diff-aware scan
     let diff_aware_parameters: Option<DiffAwareData> = if diff_aware_requested {
@@ -504,204 +530,222 @@ fn main() -> Result<()> {
         );
     }
 
-    let mut number_of_rules_used = 0;
-    // Finally run the analysis
-    for language in &languages {
-        let files_for_language = filter_files_for_language(&files_to_analyze, language);
-
-        if files_for_language.is_empty() {
-            continue;
+    // static analysis related variables used in other places
+    let mut nb_violations: u32 = 0;
+    let mut execution_time_secs: u64 = 0;
+    let mut all_path_metadata = HashMap::<String, ArtifactClassification>::new();
+    if static_analysis_enabled {
+        let mut all_path_metadata_static_analysis =
+            HashMap::<String, Option<ArtifactClassification>>::new();
+        if should_verify_checksum {
+            if let Err(e) = check_rules_checksum(configuration.rules.as_slice()) {
+                eprintln!("error when checking rules checksum: {e}");
+                exit(EXIT_CODE_RULE_CHECKSUM_INVALID)
+            }
         }
 
-        // we only use the progress bar when the debug mode is not active, otherwise, it puts
-        // too much information on the screen.
-        let progress_bar = if !configuration.use_debug {
-            Some(ProgressBar::new(files_for_language.len() as u64))
-        } else {
-            None
-        };
-        total_files_analyzed += files_for_language.len();
+        let mut number_of_rules_used = 0;
+        // Finally run the analysis
+        for language in &languages {
+            let files_for_language = filter_files_for_language(&files_to_analyze, language);
 
-        let rules_for_language: Vec<RuleInternal> =
-            convert_rules_to_rules_internal(&configuration, language)?;
+            if files_for_language.is_empty() {
+                continue;
+            }
 
-        number_of_rules_used += rules_for_language.len();
+            // we only use the progress bar when the debug mode is not active, otherwise, it puts
+            // too much information on the screen.
+            let progress_bar = if !configuration.use_debug {
+                Some(ProgressBar::new(files_for_language.len() as u64))
+            } else {
+                None
+            };
+            total_files_analyzed += files_for_language.len();
 
-        println!(
-            "Analyzing {} {:?} files using {} rules",
-            files_for_language.len(),
-            language,
-            rules_for_language.len()
-        );
+            let rules_for_language: Vec<RuleInternal> =
+                convert_rules_to_rules_internal(&configuration, language)?;
 
-        if use_debug {
+            number_of_rules_used += rules_for_language.len();
+
             println!(
-                "Analyzing {}, {} files detected",
+                "Analyzing {} {:?} files using {} rules",
+                files_for_language.len(),
                 language,
-                files_for_language.len()
+                rules_for_language.len()
             );
-        }
 
-        // take the relative path for the analysis
-        let (stats, rule_results, path_metadata) = files_for_language
-            .into_par_iter()
-            .fold(
-                || (AnalysisStatistics::new(), Vec::new(), HashMap::new()),
-                |(mut stats, mut fold_results, mut path_metadata), path| {
-                    thread_local! {
-                        // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
-                        static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
-                    }
+            if use_debug {
+                println!(
+                    "Analyzing {}, {} files detected",
+                    language,
+                    files_for_language.len()
+                );
+            }
 
-                    let relative_path = path
-                        .strip_prefix(directory_path)
-                        .unwrap()
-                        .to_str()
-                        .expect("path contains non-Unicode characters");
-                    let relative_path: Arc<str> = Arc::from(relative_path);
-                    let rule_config = configuration
-                        .rule_config_provider
-                        .config_for_file(relative_path.as_ref());
-                    let res = if let Ok(file_content) = fs::read_to_string(&path) {
-                        let mut opt = JS_RUNTIME.replace(None);
-                        let runtime_ref = opt.get_or_insert_with(|| {
-                            v8.try_new_runtime().expect("ddsa init should succeed")
-                        });
+            // take the relative path for the analysis
+            let (stats, rule_results, path_metadata) = files_for_language
+                .into_par_iter()
+                .fold(
+                    || (AnalysisStatistics::new(), Vec::new(), HashMap::new()),
+                    |(mut stats, mut fold_results, mut path_metadata), path| {
+                        thread_local! {
+                            // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
+                            static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
+                        }
 
-                        let file_content = Arc::from(file_content);
-                        let mut results = analyze_with(
-                            runtime_ref,
-                            language,
-                            &rules_for_language,
-                            &relative_path,
-                            &file_content,
-                            &rule_config,
-                            &analysis_options,
-                        );
-                        results.retain_mut(|r| {
-                            // We'll drop all `RuleResult` that don't contain violations
-                            let should_retain = !r.violations.is_empty();
+                        let relative_path = path
+                            .strip_prefix(directory_path)
+                            .unwrap()
+                            .to_str()
+                            .expect("path contains non-Unicode characters");
+                        let relative_path: Arc<str> = Arc::from(relative_path);
+                        let rule_config = configuration
+                            .rule_config_provider
+                            .config_for_file(relative_path.as_ref());
+                        let res = if let Ok(file_content) = fs::read_to_string(&path) {
+                            let mut opt = JS_RUNTIME.replace(None);
+                            let runtime_ref = opt.get_or_insert_with(|| {
+                                v8.try_new_runtime().expect("ddsa init should succeed")
+                            });
 
-                            // Register the timings:
-                            // (The `RuleResult` vector for `errors` contains exactly 0 or 1 elements)
-                            if let Some(err) = r.errors.first() {
-                                if err == ERROR_RULE_TIMEOUT {
-                                    stats.mark_timeout(&r.filename, &r.rule_name);
-                                } else {
-                                    stats.mark_error(&r.filename, &r.rule_name);
-                                }
-                            }
-                            let exe_time = Duration::from_millis(r.execution_time_ms as u64);
-                            stats.execution(&r.rule_name, exe_time);
-                            let query_time = Duration::from_millis(r.query_node_time_ms as u64);
-                            stats.query(&r.rule_name, query_time);
-                            // For stats: re-use the RuleResult's allocation if it's going to be dropped anyway.
-                            let filename = if should_retain {
-                                r.filename.clone()
-                            } else {
-                                std::mem::take(&mut r.filename)
-                            };
-                            stats.parse(filename, Duration::from_millis(r.parsing_time_ms as u64));
-
-                            should_retain
-                        });
-
-                        if debug_java_dfa && *language == Language::Java {
-                            if let Some(graph) = generate_flow_graph_dot(
+                            let file_content = Arc::from(file_content);
+                            let mut results = analyze_with(
                                 runtime_ref,
-                                *language,
+                                language,
+                                &rules_for_language,
                                 &relative_path,
                                 &file_content,
                                 &rule_config,
                                 &analysis_options,
-                            ) {
-                                let dot_path = path.with_extension("dot");
-                                let _ = fs::write(dot_path, graph);
+                            );
+                            results.retain_mut(|r| {
+                                // We'll drop all `RuleResult` that don't contain violations
+                                let should_retain = !r.violations.is_empty();
+
+                                // Register the timings:
+                                // (The `RuleResult` vector for `errors` contains exactly 0 or 1 elements)
+                                if let Some(err) = r.errors.first() {
+                                    if err == ERROR_RULE_TIMEOUT {
+                                        stats.mark_timeout(&r.filename, &r.rule_name);
+                                    } else {
+                                        stats.mark_error(&r.filename, &r.rule_name);
+                                    }
+                                }
+                                let exe_time = Duration::from_millis(r.execution_time_ms as u64);
+                                stats.execution(&r.rule_name, exe_time);
+                                let query_time = Duration::from_millis(r.query_node_time_ms as u64);
+                                stats.query(&r.rule_name, query_time);
+                                // For stats: re-use the RuleResult's allocation if it's going to be dropped anyway.
+                                let filename = if should_retain {
+                                    r.filename.clone()
+                                } else {
+                                    std::mem::take(&mut r.filename)
+                                };
+                                stats.parse(
+                                    filename,
+                                    Duration::from_millis(r.parsing_time_ms as u64),
+                                );
+
+                                should_retain
+                            });
+
+                            if debug_java_dfa && *language == Language::Java {
+                                if let Some(graph) = generate_flow_graph_dot(
+                                    runtime_ref,
+                                    *language,
+                                    &relative_path,
+                                    &file_content,
+                                    &rule_config,
+                                    &analysis_options,
+                                ) {
+                                    let dot_path = path.with_extension("dot");
+                                    let _ = fs::write(dot_path, graph);
+                                }
                             }
+                            JS_RUNTIME.replace(opt);
+
+                            if !results.is_empty()
+                                && !path_metadata.contains_key(relative_path.as_ref())
+                            {
+                                let cloned_path_str = relative_path.to_string();
+                                let metadata = if is_test_file(
+                                    *language,
+                                    file_content.as_ref(),
+                                    std::path::Path::new(&cloned_path_str),
+                                    None,
+                                ) {
+                                    Some(ArtifactClassification { is_test_file: true })
+                                } else {
+                                    None
+                                };
+                                path_metadata.insert(cloned_path_str, metadata);
+                            }
+
+                            results
+                        } else {
+                            eprintln!("error when getting content of path {}", &path.display());
+                            vec![]
+                        };
+
+                        if let Some(pb) = &progress_bar {
+                            pb.inc(1);
                         }
-                        JS_RUNTIME.replace(opt);
+                        fold_results.extend(res);
 
-                        if !results.is_empty()
-                            && !path_metadata.contains_key(relative_path.as_ref())
-                        {
-                            let cloned_path_str = relative_path.to_string();
-                            let metadata = if is_test_file(
-                                *language,
-                                file_content.as_ref(),
-                                std::path::Path::new(&cloned_path_str),
-                                None,
-                            ) {
-                                Some(ArtifactClassification { is_test_file: true })
-                            } else {
-                                None
-                            };
-                            path_metadata.insert(cloned_path_str, metadata);
+                        (stats, fold_results, path_metadata)
+                    },
+                )
+                .reduce(
+                    || (AnalysisStatistics::new(), Vec::new(), HashMap::new()),
+                    |mut base, other| {
+                        let (other_stats, other_results, other_classifications) = other;
+                        base.0 += other_stats;
+                        base.1.extend(other_results);
+                        for (k, v) in other_classifications {
+                            let existing = base.2.insert(k, v);
+                            // Due to the way the file paths are parallelized, even with rayon's work-stealing,
+                            // there should never be a duplicate key (i.e., file path) between two rayon threads.
+                            debug_assert!(existing.is_none());
                         }
+                        base
+                    },
+                );
+            all_rule_results.extend(rule_results);
+            all_stats += stats;
+            for (k, v) in path_metadata {
+                let existing = all_path_metadata_static_analysis.insert(k, v);
+                // The `path_metadata` map will only contain file paths for a single `Language`.
+                // Because a file only (currently) maps to a single `Language`, it's guaranteed that
+                // the key will be unique.
+                debug_assert!(existing.is_none());
+            }
 
-                        results
-                    } else {
-                        eprintln!("error when getting content of path {}", &path.display());
-                        vec![]
-                    };
-
-                    if let Some(pb) = &progress_bar {
-                        pb.inc(1);
-                    }
-                    fold_results.extend(res);
-
-                    (stats, fold_results, path_metadata)
-                },
-            )
-            .reduce(
-                || (AnalysisStatistics::new(), Vec::new(), HashMap::new()),
-                |mut base, other| {
-                    let (other_stats, other_results, other_classifications) = other;
-                    base.0 += other_stats;
-                    base.1.extend(other_results);
-                    for (k, v) in other_classifications {
-                        let existing = base.2.insert(k, v);
-                        // Due to the way the file paths are parallelized, even with rayon's work-stealing,
-                        // there should never be a duplicate key (i.e., file path) between two rayon threads.
-                        debug_assert!(existing.is_none());
-                    }
-                    base
-                },
-            );
-        all_rule_results.extend(rule_results);
-        all_stats += stats;
-        for (k, v) in path_metadata {
-            let existing = all_path_metadata.insert(k, v);
-            // The `path_metadata` map will only contain file paths for a single `Language`.
-            // Because a file only (currently) maps to a single `Language`, it's guaranteed that
-            // the key will be unique.
-            debug_assert!(existing.is_none());
+            if let Some(pb) = &progress_bar {
+                pb.finish();
+            }
         }
+        all_path_metadata = all_path_metadata_static_analysis
+            .into_iter()
+            .filter_map(|(k, v)| v.map(|classification| (k, classification)))
+            .collect::<HashMap<_, _>>();
 
-        if let Some(pb) = &progress_bar {
-            pb.finish();
-        }
+        let end_timestamp = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        nb_violations = all_rule_results
+            .iter()
+            .map(|x| x.violations.len() as u32)
+            .sum();
+
+        execution_time_secs = end_timestamp - start_timestamp;
+
+        println!(
+            "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
+            nb_violations, total_files_analyzed, number_of_rules_used, execution_time_secs
+        );
     }
-    let all_path_metadata = all_path_metadata
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|classification| (k, classification)))
-        .collect::<HashMap<_, _>>();
-
-    let end_timestamp = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    let nb_violations: u32 = all_rule_results
-        .iter()
-        .map(|x| x.violations.len() as u32)
-        .sum();
-
-    let execution_time_secs = end_timestamp - start_timestamp;
-
-    println!(
-        "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
-        nb_violations, total_files_analyzed, number_of_rules_used, execution_time_secs
-    );
 
     // Secrets detection
     let mut secrets_results: Vec<SecretResult> = vec![];

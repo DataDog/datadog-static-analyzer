@@ -30,6 +30,7 @@ pub struct CliConfiguration {
     pub use_staging: bool,
     pub show_performance_statistics: bool,
     pub ignore_generated_files: bool,
+    pub static_analysis_enabled: bool,
     pub secrets_enabled: bool,
     pub secrets_rules: Vec<SecretRule>,
 }
@@ -175,6 +176,7 @@ mod tests {
             show_performance_statistics: false,
             ignore_generated_files: false,
             secrets_enabled: false,
+            static_analysis_enabled: true,
             secrets_rules: vec![],
         };
         assert_eq!(
@@ -223,6 +225,7 @@ mod tests {
             show_performance_statistics: false,
             ignore_generated_files: false,
             secrets_enabled: false,
+            static_analysis_enabled: true,
             secrets_rules: vec![],
         };
 
