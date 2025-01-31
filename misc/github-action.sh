@@ -51,7 +51,7 @@ else
 fi
 
 if [ "$SECRETS_ENABLED" = "true" ]; then
-	SECRETS_ENABLED_VALUE="--secrets"
+	SECRETS_ENABLED_VALUE="--enable-secrets true"
 else
 	SECRETS_ENABLED_VALUE=""
 fi

@@ -138,7 +138,7 @@ if [ "${NB_OCCURRENCES}" -ne "1" ]; then
 fi
 
 ###############################################################
-# TEST: Do not pass --static-analysis or --secrets and it fails
+# TEST: Do not pass --enable-static-analysis or --enable-secrets and it fails
 ###############################################################
 
 echo "Starting test: error when not specifying --enable-static-analysis or --enable-secrets"

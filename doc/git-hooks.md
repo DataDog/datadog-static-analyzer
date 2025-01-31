@@ -4,7 +4,6 @@ Git hooks are supported for Datadog Static Analyzer. Using
 Git hooks prevent you from pushing or committing any code that contains
 a violation or a secret.
 
-
 ### How to use
 
 The `datadog-static-analyzer-git-hook` program ([source](../crates/bins/src/bin/datadog-static-analyzer-git-hook))
@@ -15,8 +14,8 @@ The program needs to be in the `$PATH` environment variable of the current user.
 
 You have two modes to invoke the program:
 
- - compare the current branch with a default branch
- - compare two shas
+- compare the current branch with a default branch
+- compare two shas
 
 ### Compare the current branch with a default branch
 
@@ -36,13 +35,12 @@ datadog-static-analyzer-git-hook -r <path/to/repo> --static-analysis --secrets  
 
 ### Options
 
- - `--static-analysis`: check for any static analysis error
- - `--secrets`: also validate secrets with [Datadog Sensitive Data Scanner](https://docs.datadoghq.com/sensitive_data_scanner/)
- - `--confirmation`: prompts the user if they want to bypass the warning
-
+- `--enable-static-analysis`: check for any static analysis error (value: true/false)
+- `--enable-secrets`: also validate secrets (value: true/false)
+  with [Datadog Sensitive Data Scanner](https://docs.datadoghq.com/sensitive_data_scanner/)
+- `--confirmation`: prompts the user if they want to bypass the warning
 
 ### Example of Integration
-
 
 #### Step 1: ensure that `datadog-static-analyzer-git-hook` is in your PATH
 
@@ -65,7 +63,7 @@ repo_path=$(git rev-parse --show-toplevel)
 # Make sure the user can provide some input
 exec < /dev/tty
 
-datadog-static-analyzer-git-hook -r $repo_path --secrets --static-analysis --confirmation --default-branch main
+datadog-static-analyzer-git-hook -r $repo_path --enable-secrets true --enable-static-analysis true --confirmation --default-branch main
 
 if [ $? -eq 0 ]; then
     echo "datadog-static-analyzer check passed"
