@@ -104,7 +104,7 @@ fn main() -> Result<()> {
     opts.optopt(
         "",
         "enable-secrets",
-        "enable/disable secrets scanning. Requires using Datadog API keys.",
+        "enable/disable secrets scanning. Limited Availability feature. Requires using Datadog API keys.",
         "yes,no,true,false (default 'false')",
     );
     opts.optopt(
@@ -124,7 +124,11 @@ fn main() -> Result<()> {
         "diff-aware",
         "enable diff-aware scanning (only for Datadog users)",
     );
-    opts.optflag("", "secrets", "enable secrets detection (BETA)");
+    opts.optflag(
+        "",
+        "secrets",
+        "enable secrets detection (DEPRECATED, use enable-secrets)",
+    );
     opts.optmulti(
         "p",
         "ignore-path",
@@ -299,17 +303,18 @@ fn main() -> Result<()> {
             exit(EXIT_CODE_RULE_FILE_WITH_CONFIGURATION);
         }
 
-        let rulesets = conf.rulesets.keys().cloned().collect_vec();
-        let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
-            .inspect_err(|e| {
-                if let DatadogApiError::RulesetNotFound(rs) = e {
-                    eprintln!("Error: ruleset {rs} not found");
-                    exit(EXIT_CODE_RULESET_NOT_FOUND);
-                }
-            })
-            .context("error when reading rules from API")?;
-        rules.extend(rules_from_api);
-
+        if static_analysis_enabled {
+            let rulesets = conf.rulesets.keys().cloned().collect_vec();
+            let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
+                .inspect_err(|e| {
+                    if let DatadogApiError::RulesetNotFound(rs) = e {
+                        eprintln!("Error: ruleset {rs} not found");
+                        exit(EXIT_CODE_RULESET_NOT_FOUND);
+                    }
+                })
+                .context("error when reading rules from API")?;
+            rules.extend(rules_from_api);
+        }
         // copy the only and ignore paths from the configuration file
         path_config.ignore.extend(conf.paths.ignore);
         path_config.only = conf.paths.only;
@@ -318,26 +323,29 @@ fn main() -> Result<()> {
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
         ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
     } else {
-        // if there is no config file, we take the default rules from our APIs.
-        if rules_file.is_none() {
-            println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
-            println!("Check the following resources to configure your rules:");
-            println!(
-                " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
-            );
-            println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
-            let rulesets_from_api =
-                get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
+        if static_analysis_enabled {
+            // if there is no config file, we take the default rules from our APIs.
+            if rules_file.is_none() {
+                println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
+                println!("Check the following resources to configure your rules:");
+                println!(
+                    " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
+                );
+                println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
+                let rulesets_from_api = get_all_default_rulesets(use_staging, use_debug)
+                    .expect("cannot get default rules");
 
-            rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
-        } else {
-            let rulesets_from_file = get_rulesets_from_file(rules_file.clone().unwrap().as_str());
-            rules.extend(
-                rulesets_from_file
-                    .context("cannot read ruleset from file")?
-                    .into_iter()
-                    .flat_map(|v| v.rules),
-            );
+                rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
+            } else {
+                let rulesets_from_file =
+                    get_rulesets_from_file(rules_file.clone().unwrap().as_str());
+                rules.extend(
+                    rulesets_from_file
+                        .context("cannot read ruleset from file")?
+                        .into_iter()
+                        .flat_map(|v| v.rules),
+                );
+            }
         }
     }
 
