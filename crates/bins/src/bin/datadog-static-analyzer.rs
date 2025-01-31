@@ -322,30 +322,27 @@ fn main() -> Result<()> {
         // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
         ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
-    } else {
-        if static_analysis_enabled {
-            // if there is no config file, we take the default rules from our APIs.
-            if rules_file.is_none() {
-                println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
-                println!("Check the following resources to configure your rules:");
-                println!(
+    } else if static_analysis_enabled {
+        // if there is no config file, we take the default rules from our APIs.
+        if rules_file.is_none() {
+            println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
+            println!("Check the following resources to configure your rules:");
+            println!(
                     " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
                 );
-                println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
-                let rulesets_from_api = get_all_default_rulesets(use_staging, use_debug)
-                    .expect("cannot get default rules");
+            println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
+            let rulesets_from_api =
+                get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
 
-                rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
-            } else {
-                let rulesets_from_file =
-                    get_rulesets_from_file(rules_file.clone().unwrap().as_str());
-                rules.extend(
-                    rulesets_from_file
-                        .context("cannot read ruleset from file")?
-                        .into_iter()
-                        .flat_map(|v| v.rules),
-                );
-            }
+            rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
+        } else {
+            let rulesets_from_file = get_rulesets_from_file(rules_file.clone().unwrap().as_str());
+            rules.extend(
+                rulesets_from_file
+                    .context("cannot read ruleset from file")?
+                    .into_iter()
+                    .flat_map(|v| v.rules),
+            );
         }
     }
 
