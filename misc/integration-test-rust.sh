@@ -1,6 +1,7 @@
 #!/bin/bash
 
-cargo build --profile release-dev --bin datadog-static-analyzer
+cargo fetch
+cargo build --locked --profile release-dev --bin datadog-static-analyzer
 
 ## An R repository
 echo "Checking tokio-rs/tokio"
