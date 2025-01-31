@@ -57,7 +57,6 @@ jobs:
 
       - name: Fetch all branches and checkout PR
         run: |
-          git checkout Cargo.lock
           git fetch --all
           git checkout ${{ github.sha }}
           echo 'checked out ${{ github.sha }}'
