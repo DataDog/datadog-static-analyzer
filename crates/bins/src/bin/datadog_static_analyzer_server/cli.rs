@@ -164,6 +164,10 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
     let stdouterr_layer = tracing_subscriber::fmt::layer().with_writer(stdouterr);
 
     // initialize the tracing subscriber here as we're only interested in the server logs not the other CLI instructions
+    let builder = tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env())
+        .with(stdouterr_layer);
+
     let guards = if let Some(log_rolling) = matches.opt_str("l") {
         // tracing with logs
         let log_dir = matches
@@ -180,19 +184,10 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
             .with_writer(non_blocking_file)
             .json();
 
-        tracing_subscriber::registry()
-            .with(EnvFilter::from_default_env())
-            .with(stdouterr_layer)
-            .with(file_layer)
-            .try_init()
-            .expect("Unable to install global subscriber");
+        builder.with(file_layer).init();
         vec![file_guard, stdout_guard, stderr_guard]
     } else {
-        tracing_subscriber::registry()
-            .with(EnvFilter::from_default_env())
-            .with(stdouterr_layer)
-            .try_init()
-            .expect("Unable to install global subscriber");
+        builder.init();
         vec![stdout_guard, stderr_guard]
     };
 
