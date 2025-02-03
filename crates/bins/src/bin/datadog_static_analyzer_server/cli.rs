@@ -9,6 +9,9 @@ use std::{env, process, thread};
 use thiserror::Error;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::RollingFileAppender;
+use tracing_subscriber::fmt::writer::MakeWriterExt;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 
 use crate::datadog_static_analyzer_server::error_codes::{
@@ -124,7 +127,7 @@ pub enum RocketPreparation {
         rocket: Box<Rocket<Build>>,
         state: ServerState,
         tx_rocket_shutdown: Sender<Shutdown>,
-        guard: Option<WorkerGuard>,
+        guards: Vec<WorkerGuard>,
     },
     NoServerInteraction,
 }
@@ -153,8 +156,19 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
         return Ok(RocketPreparation::NoServerInteraction);
     }
 
+    let (non_blocking_stdout, stdout_guard) = tracing_appender::non_blocking(std::io::stdout());
+    let (non_blocking_stderr, stderr_guard) = tracing_appender::non_blocking(std::io::stderr());
+    let stdouterr = non_blocking_stderr
+        .with_max_level(tracing::Level::WARN)
+        .or_else(non_blocking_stdout);
+    let stdouterr_layer = tracing_subscriber::fmt::layer().with_writer(stdouterr);
+
     // initialize the tracing subscriber here as we're only interested in the server logs not the other CLI instructions
-    let guard = if let Some(log_rolling) = matches.opt_str("l") {
+    let builder = tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env())
+        .with(stdouterr_layer);
+
+    let guards = if let Some(log_rolling) = matches.opt_str("l") {
         // tracing with logs
         let log_dir = matches
             .opt_str("d")
@@ -164,20 +178,17 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
             log_dir,
             format!("server.{}.log", std::process::id()),
         )?;
-        let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+        let (non_blocking_file, file_guard) = tracing_appender::non_blocking(file_appender);
 
-        tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::from_default_env())
-            .json()
-            .with_writer(non_blocking)
-            .init();
-        Some(guard)
+        let file_layer = tracing_subscriber::fmt::layer()
+            .with_writer(non_blocking_file)
+            .json();
+
+        builder.with(file_layer).init();
+        vec![file_guard, stdout_guard, stderr_guard]
     } else {
-        // regular tracing subscriber
-        tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::from_default_env())
-            .init();
-        None
+        builder.init();
+        vec![stdout_guard, stderr_guard]
     };
 
     // server state
@@ -299,6 +310,6 @@ pub fn prepare_rocket(tx_keep_alive_error: Sender<i32>) -> Result<RocketPreparat
         rocket: Box::new(rocket),
         state: server_state,
         tx_rocket_shutdown,
-        guard,
+        guards,
     })
 }
