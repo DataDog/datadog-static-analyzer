@@ -72,7 +72,7 @@ pretty_yaml = "0.4"
 
 # For linux and macos, we need the vendored ssl
 [target.'cfg(target_os = "linux")'.dependencies]
-openssl = { version = "0.10.57", features = ["vendored"] }
+openssl = { version = "0.10.70", features = ["vendored"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-openssl = { version = "0.10.57", features = ["vendored"] }
+openssl = { version = "0.10.70", features = ["vendored"] }
