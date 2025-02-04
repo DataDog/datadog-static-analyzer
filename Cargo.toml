@@ -24,6 +24,8 @@ overflow-checks = true
 incremental = true
 codegen-units = 256
 
+# Run CI
+
 [workspace.dependencies]
 anyhow = "1"
 base64 = "0.21.2"
