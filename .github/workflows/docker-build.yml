@@ -1,8 +1,12 @@
 on:
   push:
+    paths:
+      - "Dockerfile"
     branches:
       - "**"
   pull_request:
+    paths:
+      - "Dockerfile"
   workflow_call:
 
 name: Test Docker Container
