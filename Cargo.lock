@@ -805,7 +805,7 @@ dependencies = [
  "thiserror 2.0.10",
  "tokio",
  "url",
- "v8",
+ "v8 130.0.7",
  "wasm_dep_analyzer",
 ]
 
@@ -3370,7 +3370,7 @@ dependencies = [
  "serde",
  "smallvec",
  "thiserror 2.0.10",
- "v8",
+ "v8 130.0.7",
 ]
 
 [[package]]
@@ -3590,7 +3590,7 @@ dependencies = [
  "streaming-iterator",
  "thiserror 2.0.10",
  "tree-sitter",
- "v8",
+ "v8 134.2.0",
 ]
 
 [[package]]
@@ -4285,6 +4285,23 @@ name = "v8"
 version = "130.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a511192602f7b435b0a241c1947aa743eb7717f20a9195f4b5e8ed1952e01db1"
+dependencies = [
+ "bindgen",
+ "bitflags",
+ "fslock",
+ "gzip-header",
+ "home",
+ "miniz_oxide 0.7.4",
+ "once_cell",
+ "paste",
+ "which",
+]
+
+[[package]]
+name = "v8"
+version = "134.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "542d388db9f9e5d3881bced2b4dc33815435fc5aa2258554ca75645904f83b14"
 dependencies = [
  "bindgen",
  "bitflags",
