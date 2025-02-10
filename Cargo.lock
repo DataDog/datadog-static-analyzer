@@ -446,7 +446,7 @@ dependencies = [
  "sha2",
  "static-analysis-kernel",
  "tempfile",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "uuid",
  "valico",
  "walkdir",
@@ -723,7 +723,7 @@ dependencies = [
  "static-analysis-kernel",
  "static-analysis-server",
  "terminal-emoji",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
@@ -802,7 +802,7 @@ dependencies = [
  "smallvec",
  "sourcemap",
  "static_assertions",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "tokio",
  "url",
  "v8",
@@ -854,7 +854,7 @@ dependencies = [
  "strum",
  "strum_macros 0.25.3",
  "syn 2.0.95",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
@@ -2420,7 +2420,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b7cafe60d6cf8e62e1b9b2ea516a089c008945bb5a275416789e7db0bc199dc"
 dependencies = [
  "memchr",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "ucd-trie",
 ]
 
@@ -2678,7 +2678,7 @@ dependencies = [
  "rustc-hash 2.1.0",
  "rustls",
  "socket2",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "tokio",
  "tracing",
 ]
@@ -2697,7 +2697,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "slab",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "tinyvec",
  "tracing",
  "web-time",
@@ -3369,7 +3369,7 @@ dependencies = [
  "num-bigint",
  "serde",
  "smallvec",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "v8",
 ]
 
@@ -3588,7 +3588,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "streaming-iterator",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
  "tree-sitter",
  "v8",
 ]
@@ -3809,11 +3809,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.10"
+version = "2.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3ac7f54ca534db81081ef1c1e7f6ea8a3ef428d2fc069097c079443d24124d3"
+checksum = "d452f284b73e6d76dd36758a0c8684b1d5be31f92b89d07fd5822175732206fc"
 dependencies = [
- "thiserror-impl 2.0.10",
+ "thiserror-impl 2.0.11",
 ]
 
 [[package]]
@@ -3829,9 +3829,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.10"
+version = "2.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9e9465d30713b56a37ede7185763c3492a91be2f5fa68d958c44e41ab9248beb"
+checksum = "26afc1baea8a989337eeb52b6e72a039780ce45c3edfcc9c5b9d112feeb173c2"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4438,7 +4438,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2eeee3bdea6257cc36d756fa745a70f9d393571e47d69e0ed97581676a5369ca"
 dependencies = [
  "deno_error",
- "thiserror 2.0.10",
+ "thiserror 2.0.11",
 ]
 
 [[package]]
