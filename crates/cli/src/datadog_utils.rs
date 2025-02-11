@@ -80,7 +80,7 @@ pub fn get_rules_from_rulesets(
 ) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = Vec::new();
     for ruleset_name in rulesets_name {
-        rules.extend(get_ruleset(ruleset_name, use_staging, debug)?.rules);
+        rules.extend(get_ruleset(ruleset_name, use_staging, debug)?.into_rules());
     }
     Ok(rules)
 }
@@ -219,7 +219,7 @@ where
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool, debug: bool) -> Result<RuleSet> {
     let path = format!("rulesets/{ruleset_name}?include_tests=false&include_testing_rules=true");
     let req = make_request(RequestMethod::Get, &path, use_staging, false)?;
-    parse_response(perform_request(req, &path, debug)?)
+    parse_response::<StaticAnalysisRulesAPIResponse>(perform_request(req, &path, debug)?)
         .map_err(|e| {
             eprintln!("{e}");
             match e {
@@ -227,13 +227,7 @@ pub fn get_ruleset(ruleset_name: &str, use_staging: bool, debug: bool) -> Result
                 e => e,
             }
         })
-        .map(|d: StaticAnalysisRulesAPIResponse| {
-            let mut ruleset = d.clone().into_ruleset();
-            // Let's make sure if the CWE is an empty string, we set it to none
-            let fixed_rules = ruleset.rules.iter_mut().map(|r| r.fix_cwe()).collect();
-            ruleset.rules = fixed_rules;
-            ruleset
-        })
+        .map(|api_resp| api_resp.into_ruleset())
 }
 
 pub fn get_default_rulesets_name_for_language(

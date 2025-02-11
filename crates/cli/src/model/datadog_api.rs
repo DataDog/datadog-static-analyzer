@@ -198,7 +198,7 @@ impl APIResponseRuleset {
             Some(r) => r
                 .into_iter()
                 .map(|rule_from_api| Rule {
-                    name: format!("{}/{}", ruleset_name, rule_from_api.name),
+                    name: rule_from_api.name,
                     description_base64: rule_from_api.description,
                     short_description_base64: rule_from_api.short_description,
                     language: rule_from_api.language,
@@ -234,11 +234,7 @@ impl APIResponseRuleset {
                 .collect(),
             None => Vec::new(),
         };
-        RuleSet {
-            rules,
-            description: Some(description),
-            name: ruleset_name,
-        }
+        RuleSet::new(ruleset_name, Some(description), rules)
     }
 }
 
@@ -484,8 +480,8 @@ mod tests {
         });
         let res = serde_json::from_value::<StaticAnalysisRulesAPIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
-        assert_eq!(1, ruleset.rules.len());
-        let rule = ruleset.rules.get(0).unwrap();
+        assert_eq!(1, ruleset.rules().len());
+        let rule = &ruleset.rules()[0];
         assert_eq!(rule.name, "python-inclusive/function-definition");
         assert_eq!(
             rule.checksum,
@@ -520,7 +516,7 @@ mod tests {
         });
         let res = serde_json::from_value::<StaticAnalysisRulesAPIResponse>(data);
         let ruleset = res.unwrap().into_ruleset();
-        assert_eq!(0, ruleset.rules.len());
+        assert_eq!(0, ruleset.rules().len());
     }
 
     #[test]

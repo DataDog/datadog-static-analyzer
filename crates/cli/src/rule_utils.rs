@@ -223,8 +223,8 @@ mod tests {
         let rulesets = res.expect("ruleset");
         assert_eq!(1, (&rulesets).len());
         let ruleset = rulesets.get(0).unwrap();
-        assert_eq!(1, ruleset.rules.len());
-        let rule = ruleset.rules.get(0).unwrap();
+        assert_eq!(1, ruleset.rules().len());
+        let rule = &ruleset.rules()[0];
         assert_eq!(rule.name, "python-inclusive/function-definition");
         assert_eq!(
             rule.checksum,

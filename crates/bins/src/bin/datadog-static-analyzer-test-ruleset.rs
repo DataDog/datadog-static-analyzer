@@ -97,11 +97,10 @@ fn main() {
         match get_ruleset(ruleset.as_str(), use_staging, true) {
             Ok(r) => {
                 println!("Testing ruleset {}", r.name);
-                for rule in r.rules.clone() {
+                for rule in r.rules() {
                     println!("   rule {} ... ", rule.name);
-                    let c = rule.clone();
-                    for t in rule.tests {
-                        match test_rule(&mut runtime, &c, &t) {
+                    for t in &rule.tests {
+                        match test_rule(&mut runtime, rule, t) {
                             Ok(_) => {
                                 println!("      test {} passed", t.filename);
                             }
