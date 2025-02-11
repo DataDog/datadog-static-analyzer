@@ -137,8 +137,17 @@ pub fn parse_using_with_tree<'text>(
             }
         }
 
-        let namespace = qualified_namespace
-            .expect("grammar structure invariant: this should have been populated");
+        // Hotfix:
+        // The above parser does not handle cases like
+        // using (var resource = new ResourceType())
+        // {
+        //     // ...
+        // }
+        //
+        // In this case, we just set the qualified namespace to "".
+        //
+        // This should be revisited.
+        let namespace = qualified_namespace.unwrap_or_default();
         usings.push(Using { namespace, alias })
     }
     usings
