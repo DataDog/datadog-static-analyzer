@@ -38,7 +38,7 @@ serde-sarif = "0.4"
 serde_yaml = "0.9.21"
 sha2 = "0.10.7"
 num_cpus = "1.15.0"
-thiserror = "2.0.6"
+thiserror = "2.0.11"
 tracing = "0.1.40"
 uuid = { version = "1.6.1", features = ["v4"] }
 tree-sitter = "0.24.7"
