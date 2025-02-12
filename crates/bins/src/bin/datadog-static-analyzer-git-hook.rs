@@ -317,7 +317,7 @@ fn main() -> Result<()> {
             let rulesets_from_api =
                 get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
 
-            rules.extend(rulesets_from_api.into_iter().flat_map(|v| v.rules.clone()));
+            rules.extend(rulesets_from_api.into_iter().flat_map(|rs| rs.into_rules()));
         }
     }
 
