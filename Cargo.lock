@@ -322,7 +322,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "531a9155a481e2ee699d4f98f43c0ca4ff8ee1bfd55c31e9e98fb29d2b176fe0"
 dependencies = [
  "memchr",
- "regex-automata 0.4.9",
+ "regex-automata 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
  "serde",
 ]
 
@@ -425,7 +425,7 @@ dependencies = [
 
 [[package]]
 name = "cli"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -454,7 +454,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "bstr",
@@ -699,7 +699,7 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "datadog-static-analyzer"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "cargo-husky",
@@ -734,9 +734,10 @@ dependencies = [
 [[package]]
 name = "dd-sds"
 version = "0.1.2"
-source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=b0d7eb7d5eed4a445f692a550d2cb88848665ccd#b0d7eb7d5eed4a445f692a550d2cb88848665ccd"
+source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=1d03f4d0ce9f0d089fec4c6b94e6f855836f52ec#1d03f4d0ce9f0d089fec4c6b94e6f855836f52ec"
 dependencies = [
  "ahash",
+ "async-trait",
  "aws-sign-v4",
  "base62",
  "base64 0.22.1",
@@ -748,9 +749,11 @@ dependencies = [
  "metrics",
  "metrics-util",
  "nom",
+ "num_cpus",
  "rayon",
  "regex",
- "regex-automata 0.4.9",
+ "regex-automata 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex-automata 0.4.9 (git+https://github.com/fbryden/regex?rev=6952250af962ca3e364da47382b16dba9c703431)",
  "regex-syntax 0.7.5",
  "reqwest",
  "serde",
@@ -1326,8 +1329,8 @@ dependencies = [
  "aho-corasick",
  "bstr",
  "log",
- "regex-automata 0.4.9",
- "regex-syntax 0.8.5",
+ "regex-automata 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex-syntax 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2861,8 +2864,8 @@ checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.9",
- "regex-syntax 0.8.5",
+ "regex-automata 0.4.9 (registry+https://github.com/rust-lang/crates.io-index)",
+ "regex-syntax 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
 [[package]]
@@ -2882,7 +2885,17 @@ checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.8.5",
+ "regex-syntax 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "regex-automata"
+version = "0.4.9"
+source = "git+https://github.com/fbryden/regex?rev=6952250af962ca3e364da47382b16dba9c703431#6952250af962ca3e364da47382b16dba9c703431"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax 0.8.5 (git+https://github.com/fbryden/regex?rev=6952250af962ca3e364da47382b16dba9c703431)",
 ]
 
 [[package]]
@@ -2902,6 +2915,11 @@ name = "regex-syntax"
 version = "0.8.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
+
+[[package]]
+name = "regex-syntax"
+version = "0.8.5"
+source = "git+https://github.com/fbryden/regex?rev=6952250af962ca3e364da47382b16dba9c703431#6952250af962ca3e364da47382b16dba9c703431"
 
 [[package]]
 name = "reqwest"
@@ -3228,7 +3246,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "secrets"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "common",
@@ -3582,7 +3600,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-kernel"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -3607,7 +3625,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-server"
-version = "0.6.0"
+version = "0.6.1"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -4150,7 +4168,7 @@ checksum = "a5387dffa7ffc7d2dae12b50c6f7aab8ff79d6210147c6613561fc3d474c6f75"
 dependencies = [
  "cc",
  "regex",
- "regex-syntax 0.8.5",
+ "regex-syntax 0.8.5 (registry+https://github.com/rust-lang/crates.io-index)",
  "streaming-iterator",
  "tree-sitter-language",
 ]
