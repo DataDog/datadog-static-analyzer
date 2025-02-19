@@ -73,7 +73,7 @@ pub fn find_secrets(
             rule_id: sds_rules[k].clone().id,
             rule_name: sds_rules[k].clone().name,
             filename: filename.to_string(),
-            message: sds_rules[k].clone().description,
+            message: sds_rules[k].clone().name,
             matches: vals
                 .map(|v| SecretResultMatch {
                     start: v.start,
@@ -87,7 +87,6 @@ pub fn find_secrets(
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
 
     #[test]
