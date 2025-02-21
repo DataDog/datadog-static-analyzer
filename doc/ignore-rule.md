@@ -2,7 +2,7 @@
 
 
 > [!NOTE]
-> TL;DR: use the command `dd-no-sa` to ignore a rule
+> TL;DR: use the command `no-dd-sa` to ignore a rule
 
 
 ### Ignoring all results in a file
