@@ -776,9 +776,9 @@ dependencies = [
 
 [[package]]
 name = "deno_core"
-version = "0.330.0"
+version = "0.339.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd38bbbd68ed873165ccb630322704b44140d3a8c8d50f898beac4d1a8a3358c"
+checksum = "e849c86341672e56f1a01473be43b04a14404a146f8a6976ee501768fd153df9"
 dependencies = [
  "anyhow",
  "az",
@@ -791,6 +791,7 @@ dependencies = [
  "deno_core_icudata",
  "deno_error",
  "deno_ops",
+ "deno_path_util",
  "deno_unsync",
  "futures",
  "indexmap 2.7.1",
@@ -808,7 +809,7 @@ dependencies = [
  "thiserror 2.0.11",
  "tokio",
  "url",
- "v8",
+ "v8 134.5.0",
  "wasm_dep_analyzer",
 ]
 
@@ -845,9 +846,9 @@ dependencies = [
 
 [[package]]
 name = "deno_ops"
-version = "0.206.0"
+version = "0.215.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c25ffa9d088ea00748dbef870bba110ac22ebf8cf7b2e9eb288409c5d852af3"
+checksum = "2dea0097045022cd7be7f613fb9ac3abe75716764644d434c7525acd1b5c6af1"
 dependencies = [
  "indexmap 2.7.1",
  "proc-macro-rules",
@@ -858,6 +859,19 @@ dependencies = [
  "strum_macros 0.25.3",
  "syn 2.0.95",
  "thiserror 2.0.11",
+]
+
+[[package]]
+name = "deno_path_util"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c238a664a0a6f1ce0ff2b73c6854811526d00f442a12f878cb8555b23fe13aa3"
+dependencies = [
+ "deno_error",
+ "percent-encoding",
+ "sys_traits",
+ "thiserror 2.0.11",
+ "url",
 ]
 
 [[package]]
@@ -3391,16 +3405,16 @@ dependencies = [
 
 [[package]]
 name = "serde_v8"
-version = "0.239.0"
+version = "0.248.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3caa6d882827148e5d9052d9d8d6d1c9d6ad426ed00cab46cafb8c07a0e7126a"
+checksum = "3e7959e4bf14c432206728dd0e1cbb035d3a61abdd8cebb73157d8c88a5479d3"
 dependencies = [
  "deno_error",
  "num-bigint",
  "serde",
  "smallvec",
  "thiserror 2.0.11",
- "v8",
+ "v8 134.5.0",
 ]
 
 [[package]]
@@ -3620,7 +3634,7 @@ dependencies = [
  "streaming-iterator",
  "thiserror 2.0.11",
  "tree-sitter",
- "v8",
+ "v8 130.0.7",
 ]
 
 [[package]]
@@ -3750,6 +3764,12 @@ dependencies = [
  "quote",
  "syn 2.0.95",
 ]
+
+[[package]]
+name = "sys_traits"
+version = "0.1.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "638f0e61b5134e56b2abdf4c704fd44672603f15ca09013f314649056f3fee4d"
 
 [[package]]
 name = "system-configuration"
@@ -4315,6 +4335,23 @@ name = "v8"
 version = "130.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a511192602f7b435b0a241c1947aa743eb7717f20a9195f4b5e8ed1952e01db1"
+dependencies = [
+ "bindgen",
+ "bitflags",
+ "fslock",
+ "gzip-header",
+ "home",
+ "miniz_oxide 0.7.4",
+ "once_cell",
+ "paste",
+ "which",
+]
+
+[[package]]
+name = "v8"
+version = "134.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21c7a224a7eaf3f98c1bad772fbaee56394dce185ef7b19a2e0ca5e3d274165d"
 dependencies = [
  "bindgen",
  "bitflags",
