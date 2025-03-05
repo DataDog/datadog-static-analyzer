@@ -12,7 +12,7 @@
     "rulesets": {
       "type": "array",
       "items": {
-        "anyOf": [
+        "oneOf": [
           {
             "$ref": "#/definitions/ruleset"
           },
