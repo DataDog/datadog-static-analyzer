@@ -17,6 +17,9 @@
             "$ref": "#/definitions/ruleset"
           },
           {
+            "$ref": "#/definitions/emptyRuleset"
+          },
+          {
             "type": "string",
             "minLength": 1
           }
@@ -107,14 +110,6 @@
           "$ref": "#/definitions/pathList"
         }
       },
-      "patternProperties": {
-        "^[a-zA-Z0-9-_]+$": {
-          "type": "null"
-        }
-      },
-      "required": [
-        "rules"
-      ],
       "minProperties": 2
     },
     "pathList": {
