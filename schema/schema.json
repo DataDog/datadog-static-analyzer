@@ -85,23 +85,28 @@
     },
     "ruleset": {
       "type": "object",
-      "properties": {
-        "rules": {
-          "type": "object",
-          "additionalProperties": {
-            "$ref": "#/definitions/rule"
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/definitions/rule"
+            }
+          },
+          "ignore": {
+            "$ref": "#/definitions/pathList"
+          },
+          "only": {
+            "$ref": "#/definitions/pathList"
           }
         },
-        "ignore": {
-          "$ref": "#/definitions/pathList"
-        },
-        "only": {
-          "$ref": "#/definitions/pathList"
-        }
-      },
-      "required": [
-        "rules"
-      ]
+        "required": [
+          "rules"
+        ]
+      }
     },
     "pathList": {
       "type": "array",
