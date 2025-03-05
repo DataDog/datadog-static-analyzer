@@ -5,7 +5,9 @@
     "schema-version": {
       "type": "string",
       "default": "v1",
-      "enum": ["v1"]
+      "enum": [
+        "v1"
+      ]
     },
     "rulesets": {
       "type": "array",
@@ -13,9 +15,6 @@
         "anyOf": [
           {
             "$ref": "#/definitions/ruleset"
-          },
-          {
-            "$ref": "#/definitions/emptyRuleset"
           },
           {
             "type": "string",
@@ -84,14 +83,6 @@
         }
       }
     },
-    "emptyRuleset": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "null"
-      },
-      "minProperties": 1,
-      "maxProperties": 1
-    },
     "ruleset": {
       "type": "object",
       "properties": {
@@ -108,7 +99,9 @@
           "$ref": "#/definitions/pathList"
         }
       },
-      "minProperties": 2
+      "required": [
+        "rules"
+      ]
     },
     "pathList": {
       "type": "array",
@@ -155,5 +148,3 @@
     }
   }
 }
-
-
