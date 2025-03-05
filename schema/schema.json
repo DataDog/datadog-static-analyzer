@@ -66,7 +66,8 @@
         "arguments": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/argumentValue"
+            "$ref": "#/definitions/argumentValue",
+            "description": "A rule definition containing category, arguments, severity, and the include / ignore patterns."
           },
           "description": "Key-value pairs of rule-specific arguments that modify its behavior. See rule definition for detailed list of arguments & their usage."
         },
@@ -102,7 +103,8 @@
         "rules": {
           "type": "object",
           "additionalProperties": {
-            "$ref": "#/definitions/rule"
+            "$ref": "#/definitions/rule",
+            "description": "A rule definition containing category, arguments, severity, and the include / ignore patterns."
           },
           "description": "A collection of rules defined for this ruleset, if this field is included, only these rules will be applied."
         },
@@ -114,6 +116,10 @@
           "$ref": "#/definitions/pathList",
           "description": "Glob pattern specifying files or directories where the ruleset should be enforced."
         }
+      },
+      "additionalProperties": {
+        "type": "null",
+        "description": "Name for the ruleset, defined as a key in the ruleset object."
       },
       "minProperties": 2,
       "description": "Defines a ruleset configuration containing specific rules, ignore paths, or included paths."
