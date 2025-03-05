@@ -83,30 +83,39 @@
         }
       }
     },
+    "emptyRuleset": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "null"
+      },
+      "minProperties": 1,
+      "maxProperties": 1
+    },
     "ruleset": {
       "type": "object",
-      "minProperties": 1,
-      "maxProperties": 1,
-      "additionalProperties": {
-        "type": "object",
-        "properties": {
-          "rules": {
-            "type": "object",
-            "additionalProperties": {
-              "$ref": "#/definitions/rule"
-            }
-          },
-          "ignore": {
-            "$ref": "#/definitions/pathList"
-          },
-          "only": {
-            "$ref": "#/definitions/pathList"
+      "properties": {
+        "rules": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/rule"
           }
         },
-        "required": [
-          "rules"
-        ]
-      }
+        "ignore": {
+          "$ref": "#/definitions/pathList"
+        },
+        "only": {
+          "$ref": "#/definitions/pathList"
+        }
+      },
+      "patternProperties": {
+        "^[a-zA-Z0-9-_]+$": {
+          "type": "null"
+        }
+      },
+      "required": [
+        "rules"
+      ],
+      "minProperties": 2
     },
     "pathList": {
       "type": "array",
