@@ -7,7 +7,8 @@
       "default": "v1",
       "enum": [
         "v1"
-      ]
+      ],
+      "description": "Defines the version of the schema used in the configuration file. Only 'v1' is currently supported."
     },
     "rulesets": {
       "type": "array",
@@ -18,26 +19,33 @@
           },
           {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "A reference to a predefined ruleset name."
           }
         ]
       },
-      "minItems": 1
+      "minItems": 1,
+      "description": "List of rulesets to be applied. A ruleset can either be a predefined ruleset name or an object containing rules."
     },
     "ignore": {
-      "$ref": "#/definitions/pathList"
+      "$ref": "#/definitions/pathList",
+      "description": "Glob pattern for files or directories to exclude from analysis for all rulesets."
     },
     "only": {
-      "$ref": "#/definitions/pathList"
+      "$ref": "#/definitions/pathList",
+      "description": "Glob pattern for files or directories to be exclusively analyzed for all rulesets."
     },
     "ignore-gitignore": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', the rules engine will automatically ignore files specified in the .gitignore file."
     },
     "ignore-generated-files": {
-      "type": "boolean"
+      "type": "boolean",
+      "description": "If set to 'true', auto-detects and excludes generated files from analysis."
     },
     "max-file-size-kb": {
-      "type": "number"
+      "type": "number",
+      "description": "Specifies the maximum file size (in kilobytes) to analyze. Files exceeding this size will be ignored."
     }
   },
   "required": [
@@ -48,16 +56,19 @@
       "type": "object",
       "properties": {
         "ignore": {
-          "$ref": "#/definitions/pathList"
+          "$ref": "#/definitions/pathList",
+          "description": "Glob pattern specifying files or directories where this rule should not be applied for this rule."
         },
         "only": {
-          "$ref": "#/definitions/pathList"
+          "$ref": "#/definitions/pathList",
+          "description": "Glob pattern specifying files or directories where this rule should be enforced for this rule."
         },
         "arguments": {
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/argumentValue"
-          }
+          },
+          "description": "Key-value pairs of rule-specific arguments that modify its behavior. See rule definition for detailed list of arguments & their usage."
         },
         "severity": {
           "anyOf": [
@@ -70,7 +81,8 @@
                 "$ref": "#/definitions/singularSeverityValue"
               }
             }
-          ]
+          ],
+          "description": "Defines the severity level of the rule. Can be 'ERROR', 'WARNING', 'NOTICE', or 'NONE'."
         },
         "category": {
           "enum": [
@@ -79,17 +91,10 @@
             "ERROR_PRONE",
             "PERFORMANCE",
             "SECURITY"
-          ]
+          ],
+          "description": "Classifies the rule into one of the predefined categories such as Security, Best Practices, etc."
         }
       }
-    },
-    "emptyRuleset": {
-      "type": "object",
-      "additionalProperties": {
-        "type": "null"
-      },
-      "minProperties": 1,
-      "maxProperties": 1
     },
     "ruleset": {
       "type": "object",
@@ -98,23 +103,28 @@
           "type": "object",
           "additionalProperties": {
             "$ref": "#/definitions/rule"
-          }
+          },
+          "description": "A collection of rules defined for this ruleset, if this field is included, only these rules will be applied."
         },
         "ignore": {
-          "$ref": "#/definitions/pathList"
+          "$ref": "#/definitions/pathList",
+          "description": "Glob pattern specifying files or directories where the ruleset should not be applied."
         },
         "only": {
-          "$ref": "#/definitions/pathList"
+          "$ref": "#/definitions/pathList",
+          "description": "Glob pattern specifying files or directories where the ruleset should be enforced."
         }
       },
-      "minProperties": 2
+      "minProperties": 2,
+      "description": "Defines a ruleset configuration containing specific rules, ignore paths, or included paths."
     },
     "pathList": {
       "type": "array",
       "items": {
         "type": "string",
         "minLength": 1
-      }
+      },
+      "description": "An array of glob patterns specifying file paths."
     },
     "argumentValue": {
       "anyOf": [
@@ -127,7 +137,8 @@
             "$ref": "#/definitions/singularArgumentValue"
           }
         }
-      ]
+      ],
+      "description": "Specifies argument values for a rule, either as a direct value or a mapping of file paths to values."
     },
     "singularArgumentValue": {
       "anyOf": [
@@ -142,7 +153,8 @@
           "type": "boolean",
           "$comment": "will be internally coerced to string"
         }
-      ]
+      ],
+      "description": "A singular value that can be a string, number, or boolean, used as an argument for a rule."
     },
     "singularSeverityValue": {
       "enum": [
@@ -150,7 +162,8 @@
         "WARNING",
         "NOTICE",
         "NONE"
-      ]
+      ],
+      "description": "Defines the severity level of a rule, indicating its impact."
     }
   }
 }
