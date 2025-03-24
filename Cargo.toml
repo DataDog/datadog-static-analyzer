@@ -42,3 +42,5 @@ thiserror = "2.0.12"
 tracing = "0.1.40"
 uuid = { version = "1.15.1", features = ["v4"] }
 tree-sitter = "0.24.7"
+
+# Run CI
