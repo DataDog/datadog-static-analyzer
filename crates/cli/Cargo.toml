@@ -36,3 +36,5 @@ walkdir = "2.5.0"
 [dev-dependencies]
 assert-json-diff = "2.0.2"
 tempfile = "3.19.0"
+
+# Run CI
