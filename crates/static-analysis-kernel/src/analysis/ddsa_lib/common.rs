@@ -158,10 +158,8 @@ pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, 
 }
 
 /// Creates a [`Normal`](v8::string::NewStringType::Normal) v8 string, which always allocates memory
-/// to create the string, even if it has been seen by the runtime before.
-///
-/// # Panics
-/// Panics if `str` is longer than the v8 string length limit.
+/// to create the string, even if it has been seen by the runtime before. An empty string is
+/// returned if the string is larger than the v8 string length limit.
 #[inline(always)]
 pub fn v8_string<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
     v8::String::new_from_utf8(scope, str.as_bytes(), v8::NewStringType::Normal)
