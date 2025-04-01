@@ -8,6 +8,7 @@ use std::collections::HashSet;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
+use encoding_rs::WINDOWS_1252;
 
 use crate::model::config_file::{
     join_path, split_path, BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig,
@@ -567,7 +568,14 @@ mod tests {
             .map(|e| e.expect("could not find an example entry").path())
             .filter(|path| path.is_file())
             .map(|path| {
-                let cfg = fs::read_to_string(&path).expect("could not open example");
+                let bytes = fs::read(&path).expect("could not open example");
+                let cfg = match String::from_utf8(bytes.clone()) {
+                    Ok(s) => s,
+                    Err(_) => {
+                        let (fallback, _, _) = WINDOWS_1252.decode(&bytes);
+                        fallback.to_string()
+                    }
+                };
                 (path, cfg)
             })
     }

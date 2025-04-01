@@ -8,6 +8,11 @@ use kernel::utils::{decode_base64_string, encode_base64_string};
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
+use encoding_rs::WINDOWS_1252;
+
+
 
 fn get_config_file(path: &str) -> Result<Option<File>> {
     let yml_file_path = Path::new(path).join(format!(
@@ -40,14 +45,22 @@ fn get_config_file(path: &str) -> Result<Option<File>> {
 // If there is an error reading the file, we return a failure
 pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
     if let Some(mut file) = get_config_file(path)? {
-        let mut contents = String::new();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .context("error when reading the configuration file")?;
 
-        let size_read = file
-            .read_to_string(&mut contents)
-            .context("error when reading the configration file")?;
-        if size_read == 0 {
+        if bytes.is_empty() {
             return Err(anyhow!("the config file is empty"));
         }
+
+        let contents = match String::from_utf8(bytes.clone()) {
+            Ok(s) => s,
+            Err(_) => {
+                let (fallback, _, _) = WINDOWS_1252.decode(&bytes);
+                fallback.to_string()
+            }
+        };
+
         parse_config_file(&contents).map(Some)
     } else {
         Ok(None)
@@ -57,15 +70,23 @@ pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
 // Read the config file in base64
 pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
     if let Some(mut file) = get_config_file(path)? {
-        let mut contents = String::new();
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .context("error when reading the configuration file")?;
 
-        let size_read = file
-            .read_to_string(&mut contents)
-            .context("error when reading the configration file")?;
-        if size_read == 0 {
+        if bytes.is_empty() {
             return Err(anyhow!("the config file is empty"));
         }
-        Ok(Some(encode_base64_string(contents)))
+
+        let contents = match String::from_utf8(bytes.clone()) {
+            Ok(s) => s,
+            Err(_) => {
+                let (fallback, _, _) = WINDOWS_1252.decode(&bytes);
+                fallback.to_string()
+            }
+        };
+
+        Ok(Some(BASE64.encode(contents)))
     } else {
         Ok(None)
     }

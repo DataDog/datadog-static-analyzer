@@ -10,6 +10,7 @@ use std::process::exit;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
+use encoding_rs::WINDOWS_1252;
 
 use cli::config_file::get_config;
 use cli::constants::{
@@ -602,11 +603,21 @@ fn main() -> Result<()> {
                         let rule_config = configuration
                             .rule_config_provider
                             .config_for_file(relative_path.as_ref());
-                        let res = if let Ok(file_content) = fs::read_to_string(&path) {
-                            let mut opt = JS_RUNTIME.replace(None);
-                            let runtime_ref = opt.get_or_insert_with(|| {
-                                v8.try_new_runtime().expect("ddsa init should succeed")
-                            });
+                            let res = if let Ok(bytes) = fs::read(&path) {
+                                let file_content = match String::from_utf8(bytes.clone()) {
+                                    Ok(s) => s,
+                                    Err(_) => {
+                                        let (fallback, _, _) = WINDOWS_1252.decode(&bytes);
+                                        fallback.to_string()
+                                    }
+                                };
+                            
+                                let mut opt = JS_RUNTIME.replace(None);
+                                let runtime_ref = opt.get_or_insert_with(|| {
+                                    v8.try_new_runtime().expect("ddsa init should succeed")
+                                });
+                            
+                            };
 
                             let file_content = Arc::from(file_content);
                             let mut results = analyze_with(
@@ -775,16 +786,25 @@ fn main() -> Result<()> {
                     .unwrap()
                     .to_str()
                     .expect("path contains non-Unicode characters");
-                let res = if let Ok(file_content) = fs::read_to_string(path) {
-                    let file_content = Arc::from(file_content);
-                    find_secrets(
-                        &sds_scanner,
-                        &secrets_rules,
-                        relative_path,
-                        &file_content,
-                        &analysis_options,
-                    )
-                } else {
+                    let res = if let Ok(bytes) = fs::read(path) {
+                        let file_content = match String::from_utf8(bytes.clone()) {
+                            Ok(s) => s,
+                            Err(_) => {
+                                let (fallback, _, _) = WINDOWS_1252.decode(&bytes);
+                                fallback.to_string()
+                            }
+                        };
+                    
+                        let file_content = Arc::from(file_content);
+                    
+                        find_secrets(
+                            &sds_scanner,
+                            &secrets_rules,
+                            relative_path,
+                            &file_content,
+                            &analysis_options,
+                        )
+                    } else {
                     // this is generally because the file is binary.
                     if use_debug {
                         eprintln!("error when getting content of path {}", &path.display());

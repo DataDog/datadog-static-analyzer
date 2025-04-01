@@ -32,6 +32,7 @@ prettytable-rs = "0.10.0"
 reqwest = { version = "0.12.15", default-features = false, features = ["default-tls", "macos-system-configuration", "blocking", "json"] }
 valico = "4.0.0"
 walkdir = "2.5.0"
+encoding_rs = "0.8"
 
 [dev-dependencies]
 assert-json-diff = "2.0.2"

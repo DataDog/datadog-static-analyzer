@@ -55,6 +55,7 @@ thiserror = { workspace = true }
 tree-sitter = { workspace = true }
 
 # other
+encoding_rs = "0.8"
 dashmap = "6.1.0"
 terminal-emoji = "0.4.1"
 getopts = "0.2.21"

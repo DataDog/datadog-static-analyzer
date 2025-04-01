@@ -24,6 +24,7 @@ graphviz-rust = "0.9.0"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
 streaming-iterator = "0.1.9"
+encoding_rs = "0.8"
 
 # We're experiencing issues with v8 130.0.8. Until we can resolve this, pin to the last-known-working.
 v8 = "=130.0.7"

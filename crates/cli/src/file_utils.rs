@@ -12,6 +12,11 @@ use crate::model::datadog_api::DiffAwareData;
 use kernel::model::common::Language;
 use kernel::model::config_file::PathConfig;
 use kernel::model::violation::Violation;
+use anyhow::{Context, Result};
+use encoding_rs::WINDOWS_1252;
+use std::path::PathBuf;
+
+
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Csharp, &["cs"]),
@@ -82,17 +87,34 @@ fn get_prefix_for_language(language: &Language) -> Option<Vec<String>> {
 // or empty.
 // We ignore pattern that start with # (comments) or contains ! (cause repositories
 // not being included and totally skipped).
+
 pub fn read_files_from_gitignore_internal(path: &PathBuf) -> Result<Vec<String>> {
     if path.exists() {
-        let lines: Vec<String> = read_to_string(path)?
+        let bytes = fs::read(path).context("failed to read .gitignore file")?;
+
+        if bytes.is_empty() {
+            return Ok(vec![]);
+        }
+
+        let contents = match String::from_utf8(bytes.clone()) {
+            Ok(s) => s,
+            Err(_) => {
+                let (fallback, _, _) = WINDOWS_1252.decode(&bytes);
+                fallback.to_string()
+            }
+        };
+
+        let lines: Vec<String> = contents
             .lines()
             .map(String::from)
             .filter(|v| !v.starts_with('#'))
             .filter(|v| !v.contains('!'))
-            .filter(|v| !v.is_empty())
+            .filter(|v| !v.trim().is_empty())
             .collect();
+
         return Ok(lines);
     }
+
     Ok(vec![])
 }
 
@@ -311,17 +333,28 @@ pub fn get_fingerprint_for_violation(
 ) -> Option<String> {
     let path = repository_root.join(file);
     let filename = file.to_str().unwrap_or("");
+    
     if !path.exists() || !path.is_file() {
         return None;
     }
-    let Ok(file_contents) = read_to_string(&path) else {
-        if use_debug {
-            eprintln!(
-                "Error when trying to read file {}",
-                path.into_os_string().to_str().unwrap_or("")
-            );
+
+    let file_contents = match fs::read(&path) {
+        Ok(bytes) => match String::from_utf8(bytes.clone()) {
+            Ok(s) => s,
+            Err(_) => {
+                let (fallback, _, _) = WINDOWS_1252.decode(&bytes);
+                fallback.to_string()
+            }
+        },
+        Err(_) => {
+            if use_debug {
+                eprintln!(
+                    "Error when trying to read file {}",
+                    path.to_string_lossy()
+                );
+            }
+            return None;
         }
-        return None;
     };
 
     let violations_lines = violation
@@ -330,6 +363,7 @@ pub fn get_fingerprint_for_violation(
         .map_or(vec![violation.start.line as usize], |regions| {
             regions.iter().map(|r| r.start.line as usize).collect()
         });
+
     let hash_content = violations_lines
         .iter()
         .flat_map(|line_num| {
@@ -345,14 +379,17 @@ pub fn get_fingerprint_for_violation(
             ))
         })
         .collect::<Vec<_>>();
+
     if hash_content.is_empty() {
         return None;
     }
+
     Some(format!(
         "{:x}",
         Sha256::digest(hash_content.join(",").as_bytes())
     ))
 }
+
 
 #[cfg(test)]
 mod tests {
