@@ -748,10 +748,9 @@ fn main() -> Result<()> {
     // Secrets detection
     let mut secrets_results: Vec<SecretResult> = vec![];
     if secrets_enabled {
-        let mut path_metadata = HashMap::new();
+        let path_metadata;
         let secrets_start = Instant::now();
-        let mut all_path_metadata_secrets =
-            HashMap::<String, Option<ArtifactClassification>>::new();
+        let all_path_metadata_secrets = HashMap::<String, Option<ArtifactClassification>>::new();
 
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
@@ -772,7 +771,7 @@ fn main() -> Result<()> {
             .into_par_iter()
             .fold(
                 || (Vec::new(), HashMap::new()),
-                |(mut fold_results, mut path_metadata), path| {
+                |(_fold_results, mut path_metadata), path| {
                     let relative_path = path
                         .strip_prefix(directory_path)
                         .unwrap()
@@ -849,8 +848,10 @@ fn main() -> Result<()> {
 
         // adding metadata from secrets
         for (k, v) in path_metadata {
-            if !all_path_metadata.contains_key(&k) && v.is_some() {
-                all_path_metadata.insert(k, v.unwrap());
+            if !all_path_metadata.contains_key(&k) {
+                if let Some(artifact_classification) = v {
+                    all_path_metadata.insert(k, artifact_classification);
+                }
             }
         }
 

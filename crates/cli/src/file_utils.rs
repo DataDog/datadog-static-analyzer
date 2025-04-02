@@ -79,7 +79,7 @@ fn get_prefix_for_language(language: &Language) -> Option<Vec<String>> {
 }
 
 /// File the language for a given file.
-pub fn get_language_for_file(path: &PathBuf) -> Option<Language> {
+pub fn get_language_for_file(path: &Path) -> Option<Language> {
     // match for extensions (myfile.c, myfile.php, etc).
     for (language, extensions) in FILE_EXTENSIONS_PER_LANGUAGE_LIST {
         let extensions_string = extensions
