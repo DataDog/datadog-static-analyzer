@@ -848,9 +848,9 @@ fn main() -> Result<()> {
 
         // adding metadata from secrets
         for (k, v) in path_metadata {
-            if !all_path_metadata.contains_key(&k) {
+            if let std::collections::hash_map::Entry::Vacant(e) = all_path_metadata.entry(k) {
                 if let Some(artifact_classification) = v {
-                    all_path_metadata.insert(k, artifact_classification);
+                    e.insert(artifact_classification);
                 }
             }
         }
