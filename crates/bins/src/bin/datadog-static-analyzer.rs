@@ -45,9 +45,10 @@ use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::cell::Cell;
+use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::io::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
@@ -771,10 +772,10 @@ fn main() -> Result<()> {
             .into_par_iter()
             .fold(
                 || (Vec::new(), HashMap::new()),
-                |(_fold_results, mut path_metadata), path| {
+                |(_, mut path_metadata), path| {
                     let relative_path = path
                         .strip_prefix(directory_path)
-                        .unwrap()
+                        .expect("cannot strip prefix from path")
                         .to_str()
                         .expect("path contains non-Unicode characters");
                     let res = if let Ok(file_content) = fs::read_to_string(&path) {
@@ -797,7 +798,7 @@ fn main() -> Result<()> {
                                 let metadata = if is_test_file(
                                     language,
                                     file_content.as_ref(),
-                                    std::path::Path::new(&cloned_path_str),
+                                    Path::new(&cloned_path_str),
                                     None,
                                 ) {
                                     Some(ArtifactClassification { is_test_file: true })
@@ -812,7 +813,7 @@ fn main() -> Result<()> {
                     } else {
                         // this is generally because the file is binary.
                         if use_debug {
-                            eprintln!("error when getting content of path {}", &path.display());
+                            eprintln!("error when getting content of path {}", path.display());
                         }
                         vec![]
                     };
@@ -848,7 +849,7 @@ fn main() -> Result<()> {
 
         // adding metadata from secrets
         for (k, v) in path_metadata {
-            if let std::collections::hash_map::Entry::Vacant(e) = all_path_metadata.entry(k) {
+            if let Entry::Vacant(e) = all_path_metadata.entry(k) {
                 if let Some(artifact_classification) = v {
                     e.insert(artifact_classification);
                 }

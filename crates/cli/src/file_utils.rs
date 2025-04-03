@@ -78,7 +78,7 @@ fn get_prefix_for_language(language: &Language) -> Option<Vec<String>> {
     None
 }
 
-/// File the language for a given file.
+/// Find the language for a given file.
 pub fn get_language_for_file(path: &Path) -> Option<Language> {
     // match for extensions (myfile.c, myfile.php, etc).
     for (language, extensions) in FILE_EXTENSIONS_PER_LANGUAGE_LIST {

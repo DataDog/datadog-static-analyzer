@@ -25,7 +25,7 @@ echo "Found $RES errors on first run"
 EXPECTING=5
 
 if [ "$RES" -ne "$EXPECTING" ]; then
-  echo "incorrect number of errors found, found $RES, expecting $EXPECTING"
+  echo "incorrect number of errors found, found $RES, expected $EXPECTING"
   exit 1
 fi
 
