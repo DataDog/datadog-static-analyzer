@@ -30,6 +30,7 @@ jobs:
           - { file: './misc/integration-test-r.sh', gha_alias: 'R' }
           - { file: './misc/integration-test-rust.sh', gha_alias: 'Rust' }
           - { file: './misc/integration-test-sql.sh', gha_alias: 'SQL' }
+          - { file: './misc/integration-test-encoding.sh', gha_alias: 'File Encoding' }
     name: Run integration test - ${{ matrix.scripts.gha_alias }}
     steps:
       - uses: actions/checkout@v4
