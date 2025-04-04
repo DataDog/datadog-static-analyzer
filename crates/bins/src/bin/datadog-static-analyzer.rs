@@ -38,6 +38,7 @@ use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
+use datadog_static_analyzer::read_file;
 use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
 use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
 use kernel::analysis::ddsa_lib::JsRuntime;
@@ -328,8 +329,8 @@ fn main() -> Result<()> {
             println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
             println!("Check the following resources to configure your rules:");
             println!(
-                    " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
-                );
+                " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
+            );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             let rulesets_from_api =
                 get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
@@ -602,7 +603,7 @@ fn main() -> Result<()> {
                         let rule_config = configuration
                             .rule_config_provider
                             .config_for_file(relative_path.as_ref());
-                        let res = if let Ok(file_content) = fs::read_to_string(&path) {
+                        let res = if let Ok(file_content) = read_file(&path) {
                             let mut opt = JS_RUNTIME.replace(None);
                             let runtime_ref = opt.get_or_insert_with(|| {
                                 v8.try_new_runtime().expect("ddsa init should succeed")
@@ -775,7 +776,7 @@ fn main() -> Result<()> {
                     .unwrap()
                     .to_str()
                     .expect("path contains non-Unicode characters");
-                let res = if let Ok(file_content) = fs::read_to_string(path) {
+                let res = if let Ok(file_content) = read_file(path) {
                     let file_content = Arc::from(file_content);
                     find_secrets(
                         &sds_scanner,
