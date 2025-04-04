@@ -1,4 +1,16 @@
 use anyhow::{Context, Result};
+use getopts::Options;
+use indicatif::ProgressBar;
+use itertools::Itertools;
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::io::prelude::*;
+use std::path::PathBuf;
+use std::process::exit;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+use std::{env, fs};
+
 use cli::config_file::get_config;
 use cli::constants::{
     DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_VIOLATION,
@@ -13,7 +25,7 @@ use cli::datadog_utils::{
 };
 use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
-    filter_files_for_language, get_files, get_language_for_file, read_files_from_gitignore,
+    filter_files_for_language, get_files, read_files_from_gitignore,
 };
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
@@ -27,9 +39,6 @@ use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
 use datadog_static_analyzer::read_file;
-use getopts::Options;
-use indicatif::ProgressBar;
-use itertools::Itertools;
 use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
 use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
 use kernel::analysis::ddsa_lib::JsRuntime;
@@ -41,18 +50,10 @@ use kernel::model::common::{Language, OutputFormat};
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
-use rayon::prelude::*;
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::cell::Cell;
-use std::collections::HashMap;
-use std::io::prelude::*;
-use std::path::PathBuf;
-use std::process::exit;
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
-use std::{env, fs};
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -328,8 +329,8 @@ fn main() -> Result<()> {
             println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
             println!("Check the following resources to configure your rules:");
             println!(
-                    " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
-                );
+                " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
+            );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             let rulesets_from_api =
                 get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
@@ -543,6 +544,7 @@ fn main() -> Result<()> {
                 exit(EXIT_CODE_RULE_CHECKSUM_INVALID)
             }
         }
+
         let mut number_of_rules_used = 0;
         // Finally run the analysis
         for language in &languages {
@@ -749,9 +751,7 @@ fn main() -> Result<()> {
     // Secrets detection
     let mut secrets_results: Vec<SecretResult> = vec![];
     if secrets_enabled {
-        let path_metadata;
         let secrets_start = Instant::now();
-        let all_path_metadata_secrets = HashMap::<String, Option<ArtifactClassification>>::new();
 
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
@@ -768,72 +768,36 @@ fn main() -> Result<()> {
         let nb_secrets_rules: usize = secrets_rules.len();
         let nb_secrets_files = secrets_files.len();
 
-        (secrets_results, path_metadata) = secrets_files
-            .into_par_iter()
-            .fold(
-                || (Vec::new(), HashMap::new()),
-                |(_fold_results, mut path_metadata), path| {
-                    let relative_path = path
-                        .strip_prefix(directory_path)
-                        .unwrap()
-                        .to_str()
-                        .expect("path contains non-Unicode characters");
-                    let res = if let Ok(file_content) = read_file(&path) {
-                        let file_content = Arc::from(file_content);
-                        let secrets = find_secrets(
-                            &sds_scanner,
-                            &secrets_rules,
-                            relative_path,
-                            &file_content,
-                            &analysis_options,
-                        );
-
-                        if !secrets.is_empty()
-                            && !all_path_metadata_secrets.contains_key(relative_path)
-                        {
-                            let cloned_path_str = relative_path.to_string();
-                            let language_opt = get_language_for_file(&path);
-
-                            if let Some(language) = language_opt {
-                                let metadata = if is_test_file(
-                                    language,
-                                    file_content.as_ref(),
-                                    std::path::Path::new(&cloned_path_str),
-                                    None,
-                                ) {
-                                    Some(ArtifactClassification { is_test_file: true })
-                                } else {
-                                    None
-                                };
-                                path_metadata.insert(cloned_path_str.clone(), metadata);
-                            }
-                        }
-
-                        secrets
-                    } else {
-                        // this is generally because the file is binary.
-                        if use_debug {
-                            eprintln!("error when getting content of path {}", &path.display());
-                        }
-                        vec![]
-                    };
-                    if let Some(pb) = &progress_bar {
-                        pb.inc(1);
+        secrets_results = secrets_files
+            .par_iter()
+            .flat_map(|path| {
+                let relative_path = path
+                    .strip_prefix(directory_path)
+                    .unwrap()
+                    .to_str()
+                    .expect("path contains non-Unicode characters");
+                let res = if let Ok(file_content) = read_file(path) {
+                    let file_content = Arc::from(file_content);
+                    find_secrets(
+                        &sds_scanner,
+                        &secrets_rules,
+                        relative_path,
+                        &file_content,
+                        &analysis_options,
+                    )
+                } else {
+                    // this is generally because the file is binary.
+                    if use_debug {
+                        eprintln!("error when getting content of path {}", &path.display());
                     }
-                    (res, path_metadata)
-                },
-            )
-            .reduce(
-                || (Vec::new(), HashMap::new()),
-                |mut base, other| {
-                    let (other_results, other_classifications) = other;
-                    base.0.extend(other_results);
-                    for (k, v) in other_classifications {
-                        base.1.insert(k, v);
-                    }
-                    base
-                },
-            );
+                    vec![]
+                };
+                if let Some(pb) = &progress_bar {
+                    pb.inc(1);
+                }
+                res
+            })
+            .collect();
 
         let nb_secrets_found: u32 = secrets_results.iter().map(|x| x.matches.len() as u32).sum();
         let nb_secrets_validated: u32 = secrets_results
@@ -846,15 +810,6 @@ fn main() -> Result<()> {
                     .len() as u32
             })
             .sum();
-
-        // adding metadata from secrets
-        for (k, v) in path_metadata {
-            if let std::collections::hash_map::Entry::Vacant(e) = all_path_metadata.entry(k) {
-                if let Some(artifact_classification) = v {
-                    e.insert(artifact_classification);
-                }
-            }
-        }
 
         if let Some(pb) = &progress_bar {
             pb.finish();
