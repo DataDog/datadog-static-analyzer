@@ -11,7 +11,7 @@ git clone --depth=1 https://github.com/muh-nee/secrets-tests.git "${REPO_DIR}"
 
 # Test without the static-analysis.datadog.yml file
 rm -f "${REPO_DIR}/static-analysis.datadog.yml"
-./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x --enable-secrets true --enable-static-analysis false
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif -x --enable-secrets true
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze secrets-tests repository"
@@ -47,13 +47,6 @@ status3=`jq '.runs[0].results[2].properties.tags[1]' "${REPO_DIR}/results1.json"
 
 if [ "$status3" != "\"DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED\"" ]; then
   echo "status3: did not find DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED in properties, found $status3"
-  exit 1
-fi
-
-test_file_property=`jq '.runs[0].artifacts[1].properties.tags[0]' "${REPO_DIR}/results1.json"`
-
-if [ "$test_file_property" != "\"DATADOG_ARTIFACT_IS_TEST_FILE\"" ]; then
-  echo "do not tag secret in test files"
   exit 1
 fi
 

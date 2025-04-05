@@ -1,4 +1,16 @@
 use anyhow::{Context, Result};
+use getopts::Options;
+use indicatif::ProgressBar;
+use itertools::Itertools;
+use rayon::prelude::*;
+use std::collections::HashMap;
+use std::io::prelude::*;
+use std::path::PathBuf;
+use std::process::exit;
+use std::sync::Arc;
+use std::time::{Duration, Instant, SystemTime};
+use std::{env, fs};
+
 use cli::config_file::get_config;
 use cli::constants::{
     DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_VIOLATION,
@@ -13,7 +25,7 @@ use cli::datadog_utils::{
 };
 use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
-    filter_files_for_language, get_files, get_language_for_file, read_files_from_gitignore,
+    filter_files_for_language, get_files, read_files_from_gitignore,
 };
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
@@ -26,9 +38,7 @@ use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
-use getopts::Options;
-use indicatif::ProgressBar;
-use itertools::Itertools;
+use datadog_static_analyzer::read_file;
 use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
 use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
 use kernel::analysis::ddsa_lib::JsRuntime;
@@ -40,7 +50,6 @@ use kernel::model::common::{Language, OutputFormat};
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
 use kernel::model::rule::{Rule, RuleInternal, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
-use rayon::prelude::*;
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
@@ -53,6 +62,7 @@ use std::process::exit;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
+
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -328,8 +338,8 @@ fn main() -> Result<()> {
             println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
             println!("Check the following resources to configure your rules:");
             println!(
-                    " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
-                );
+                " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
+            );
             println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             let rulesets_from_api =
                 get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
@@ -543,6 +553,7 @@ fn main() -> Result<()> {
                 exit(EXIT_CODE_RULE_CHECKSUM_INVALID)
             }
         }
+
         let mut number_of_rules_used = 0;
         // Finally run the analysis
         for language in &languages {
@@ -601,7 +612,7 @@ fn main() -> Result<()> {
                         let rule_config = configuration
                             .rule_config_provider
                             .config_for_file(relative_path.as_ref());
-                        let res = if let Ok(file_content) = fs::read_to_string(&path) {
+                        let res = if let Ok(file_content) = read_file(&path) {
                             let mut opt = JS_RUNTIME.replace(None);
                             let runtime_ref = opt.get_or_insert_with(|| {
                                 v8.try_new_runtime().expect("ddsa init should succeed")
@@ -749,9 +760,7 @@ fn main() -> Result<()> {
     // Secrets detection
     let mut secrets_results: Vec<SecretResult> = vec![];
     if secrets_enabled {
-        let path_metadata;
         let secrets_start = Instant::now();
-        let all_path_metadata_secrets = HashMap::<String, Option<ArtifactClassification>>::new();
 
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
@@ -778,7 +787,7 @@ fn main() -> Result<()> {
                         .expect("cannot strip prefix from path")
                         .to_str()
                         .expect("path contains non-Unicode characters");
-                    let res = if let Ok(file_content) = fs::read_to_string(&path) {
+                    let res = if let Ok(file_content) = read_file(&path) {
                         let file_content = Arc::from(file_content);
                         let secrets = find_secrets(
                             &sds_scanner,
