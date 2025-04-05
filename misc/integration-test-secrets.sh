@@ -22,8 +22,10 @@ RES=`jq '.runs[0].results | length ' "${REPO_DIR}/results1.json"`
 
 echo "Found $RES errors on first run"
 
-if [ "$RES" -ne "3" ]; then
-  echo "incorrect number of errors found"
+EXPECTING=5
+
+if [ "$RES" -ne "$EXPECTING" ]; then
+  echo "incorrect number of errors found, found $RES, expected $EXPECTING"
   exit 1
 fi
 
