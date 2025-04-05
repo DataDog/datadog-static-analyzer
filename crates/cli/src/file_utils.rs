@@ -903,7 +903,7 @@ mod tests {
             .len()
         );
     }
-  
+
     #[test]
     fn test_get_language_for_file() {
         // extension

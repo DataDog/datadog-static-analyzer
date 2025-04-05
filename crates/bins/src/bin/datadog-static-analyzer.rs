@@ -3,13 +3,7 @@ use getopts::Options;
 use indicatif::ProgressBar;
 use itertools::Itertools;
 use rayon::prelude::*;
-use std::collections::HashMap;
-use std::io::prelude::*;
 use std::path::PathBuf;
-use std::process::exit;
-use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime};
-use std::{env, fs};
 
 use cli::config_file::get_config;
 use cli::constants::{
@@ -25,7 +19,7 @@ use cli::datadog_utils::{
 };
 use cli::file_utils::{
     are_subdirectories_safe, filter_files_by_diff_aware_info, filter_files_by_size,
-    filter_files_for_language, get_files, read_files_from_gitignore,
+    filter_files_for_language, get_files, get_language_for_file, read_files_from_gitignore,
 };
 use cli::model::cli_configuration::CliConfiguration;
 use cli::model::datadog_api::DiffAwareData;
@@ -57,12 +51,11 @@ use std::cell::Cell;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::io::prelude::*;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::exit;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 use std::{env, fs};
-
 
 fn print_usage(program: &str, opts: Options) {
     let brief = format!("Usage: {} FILE [options]", program);
@@ -760,7 +753,9 @@ fn main() -> Result<()> {
     // Secrets detection
     let mut secrets_results: Vec<SecretResult> = vec![];
     if secrets_enabled {
+        let path_metadata;
         let secrets_start = Instant::now();
+        let all_path_metadata_secrets = HashMap::<String, Option<ArtifactClassification>>::new();
 
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
