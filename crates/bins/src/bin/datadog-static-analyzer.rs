@@ -48,7 +48,6 @@ use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::cell::Cell;
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::path::Path;
@@ -381,7 +380,7 @@ fn main() -> Result<()> {
         subdirectories_to_analyze.clone(),
         &path_config,
     )
-    .expect("unable to get the list of files to analyze");
+        .expect("unable to get the list of files to analyze");
 
     let num_cores_requested = matches
         .opt_str("c")
@@ -755,7 +754,6 @@ fn main() -> Result<()> {
     if secrets_enabled {
         let path_metadata;
         let secrets_start = Instant::now();
-        let all_path_metadata_secrets = HashMap::<String, Option<ArtifactClassification>>::new();
 
         let secrets_files: Vec<PathBuf> = files_to_analyze
             .into_iter()
@@ -792,9 +790,7 @@ fn main() -> Result<()> {
                             &analysis_options,
                         );
 
-                        if !secrets.is_empty()
-                            && !all_path_metadata_secrets.contains_key(relative_path)
-                        {
+                        if !secrets.is_empty() {
                             let cloned_path_str = relative_path.to_string();
                             let language_opt = get_language_for_file(&path);
 
@@ -853,10 +849,10 @@ fn main() -> Result<()> {
 
         // adding metadata from secrets
         for (k, v) in path_metadata {
-            if let Entry::Vacant(e) = all_path_metadata.entry(k) {
-                if let Some(artifact_classification) = v {
-                    e.insert(artifact_classification);
-                }
+            if let Some(artifact_classification) = v {
+                all_path_metadata
+                    .entry(k)
+                    .or_insert(artifact_classification);
             }
         }
 
@@ -961,7 +957,7 @@ fn main() -> Result<()> {
                     .collect(),
                 all_rule_results.clone(),
             ]
-            .concat();
+                .concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => generate_sarif_file(
@@ -977,7 +973,7 @@ fn main() -> Result<()> {
             },
             &all_path_metadata,
         )
-        .expect("cannot generate SARIF results"),
+            .expect("cannot generate SARIF results"),
     };
 
     // write the reports
