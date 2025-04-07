@@ -380,7 +380,7 @@ fn main() -> Result<()> {
         subdirectories_to_analyze.clone(),
         &path_config,
     )
-        .expect("unable to get the list of files to analyze");
+    .expect("unable to get the list of files to analyze");
 
     let num_cores_requested = matches
         .opt_str("c")
@@ -957,7 +957,7 @@ fn main() -> Result<()> {
                     .collect(),
                 all_rule_results.clone(),
             ]
-                .concat();
+            .concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => generate_sarif_file(
@@ -973,7 +973,7 @@ fn main() -> Result<()> {
             },
             &all_path_metadata,
         )
-            .expect("cannot generate SARIF results"),
+        .expect("cannot generate SARIF results"),
     };
 
     // write the reports
