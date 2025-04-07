@@ -78,6 +78,47 @@ fn get_prefix_for_language(language: &Language) -> Option<Vec<String>> {
     None
 }
 
+/// Find the language for a given file.
+pub fn get_language_for_file(path: &Path) -> Option<Language> {
+    // match for extensions (myfile.c, myfile.php, etc).
+    for (language, extensions) in FILE_EXTENSIONS_PER_LANGUAGE_LIST {
+        let extensions_string = extensions
+            .to_vec()
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>();
+        if match_extension(path, extensions_string.as_slice()) {
+            return Some(*language);
+        }
+    }
+
+    // match for exact match (e.g. BUILD.bazel, Dockerfile, etc)
+    for (language, filenames) in FILE_EXACT_MATCH_PER_LANGUAGE_LIST {
+        let filename_strings = filenames
+            .to_vec()
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>();
+        if match_exact_filename(path, filename_strings.as_slice()) {
+            return Some(*language);
+        }
+    }
+
+    // match for prefix (e.g. Dockerfile.something)
+    for (language, prefixes) in FILE_PREFIX_PER_LANGUAGE_LIST {
+        let prefix_string = prefixes
+            .to_vec()
+            .iter()
+            .map(|x| x.to_string())
+            .collect::<Vec<String>>();
+        if match_prefix_filename(path, prefix_string.as_slice()) {
+            return Some(*language);
+        }
+    }
+
+    None
+}
+
 // Read the .gitignore file in a directory and return the lines that are not commented
 // or empty.
 // We ignore pattern that start with # (comments) or contains ! (cause repositories
@@ -861,5 +902,29 @@ mod tests {
             )
             .len()
         );
+    }
+
+    #[test]
+    fn test_get_language_for_file() {
+        // extension
+        assert_eq!(
+            get_language_for_file(&PathBuf::from("path/to/foo.java")),
+            Some(Language::Java)
+        );
+
+        // exact filename
+        assert_eq!(
+            get_language_for_file(&PathBuf::from("BUILD.bazel")),
+            Some(Language::Starlark)
+        );
+
+        // prefix
+        assert_eq!(
+            get_language_for_file(&PathBuf::from("Dockerfile.foobar")),
+            Some(Language::Dockerfile)
+        );
+
+        // none
+        assert_eq!(get_language_for_file(&PathBuf::from("wefwefwef")), None);
     }
 }
