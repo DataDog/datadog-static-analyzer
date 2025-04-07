@@ -29,4 +29,4 @@ streaming-iterator = "0.1.9"
 v8 = "=130.0.7"
 
 [build-dependencies]
-cc = "1.2.17"
+cc = "1.2.18"
