@@ -100,6 +100,7 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
                 .unwrap_or(false),
             ignore_generated_files: false,
             timeout,
+            debug_java_dfa: false,
         },
     );
 

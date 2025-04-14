@@ -8,6 +8,7 @@ use kernel::rule_config::RuleConfigProvider;
 use sha2::{Digest, Sha256};
 
 use crate::model::datadog_api::DiffAwareRequestArguments;
+use crate::utils::get_num_threads_to_use;
 use kernel::model::rule::Rule;
 use secrets::model::secret_rule::SecretRule;
 
@@ -33,6 +34,7 @@ pub struct CliConfiguration {
     pub static_analysis_enabled: bool,
     pub secrets_enabled: bool,
     pub secrets_rules: Vec<SecretRule>,
+    pub should_verify_checksum: bool,
 }
 
 impl DiffAware for CliConfiguration {
@@ -81,6 +83,10 @@ impl DiffAware for CliConfiguration {
 }
 
 impl CliConfiguration {
+    pub fn get_num_threads(&self) -> usize {
+        get_num_threads_to_use(self.num_cpus)
+    }
+
     /// Generate the diff-aware data from the configuration. It attempts to read
     /// the repository from the directory, get the repository information to get
     /// diff-aware data. If we are not in a repository or cannot get the data
@@ -178,6 +184,7 @@ mod tests {
             secrets_enabled: false,
             static_analysis_enabled: true,
             secrets_rules: vec![],
+            should_verify_checksum: true,
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
@@ -227,6 +234,7 @@ mod tests {
             secrets_enabled: false,
             static_analysis_enabled: true,
             secrets_rules: vec![],
+            should_verify_checksum: true,
         };
 
         let mut cli_configuration1 = cli_configuration_base.clone();

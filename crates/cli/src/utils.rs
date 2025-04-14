@@ -15,10 +15,10 @@ pub fn choose_cpu_count(user_input: Option<usize>) -> usize {
 
 /// return the number of threads we should be using. The [ideal_threads] is that we can ideally
 /// use but the [num_threads] is the value to use.
-pub fn get_num_threads_to_use(configuration: &CliConfiguration) -> usize {
+pub fn get_num_threads_to_use(num_cpus: usize) -> usize {
     // we always keep one thread free and some room for the management threads that monitor
     // the rule execution.
-    let ideal_threads = ((configuration.num_cpus as f32 - 1.0) * 0.90) as usize;
+    let ideal_threads = ((num_cpus as f32 - 1.0) * 0.90) as usize;
     if ideal_threads == 0 {
         1
     } else {

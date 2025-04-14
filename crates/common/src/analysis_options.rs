@@ -9,6 +9,7 @@ pub struct AnalysisOptions {
     pub use_debug: bool,
     pub ignore_generated_files: bool,
     pub timeout: Option<Duration>,
+    pub debug_java_dfa: bool,
 }
 
 impl Default for AnalysisOptions {
@@ -18,6 +19,7 @@ impl Default for AnalysisOptions {
             use_debug: false,
             ignore_generated_files: true,
             timeout: None,
+            debug_java_dfa: false,
         }
     }
 }

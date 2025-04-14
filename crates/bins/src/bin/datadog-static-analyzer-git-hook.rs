@@ -18,7 +18,7 @@ use cli::rule_utils::{
     check_rules_checksum, convert_rules_to_rules_internal, get_languages_for_rules,
 };
 use cli::sarif::sarif_utils::{generate_sarif_file, SarifReportMetadata};
-use cli::utils::{choose_cpu_count, get_num_threads_to_use, print_configuration};
+use cli::utils::{choose_cpu_count, print_configuration};
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
 use getopts::Options;
@@ -370,6 +370,7 @@ fn main() -> Result<()> {
         secrets_enabled,
         static_analysis_enabled,
         secrets_rules: secrets_rules.clone(),
+        should_verify_checksum: true,
     };
 
     if configuration.use_debug {
@@ -390,6 +391,7 @@ fn main() -> Result<()> {
         use_debug,
         ignore_generated_files,
         timeout,
+        debug_java_dfa: false,
     };
 
     if should_verify_checksum {
@@ -399,13 +401,11 @@ fn main() -> Result<()> {
         }
     }
 
-    let num_threads = get_num_threads_to_use(&configuration);
-
-    let v8 = initialize_v8(num_threads as u32);
+    let v8 = initialize_v8(configuration.get_num_threads() as u32);
 
     // This must be called _after_ `initialize_v8` (otherwise, PKU-related segfaults on Linux will occur).
     rayon::ThreadPoolBuilder::new()
-        .num_threads(num_threads)
+        .num_threads(configuration.get_num_threads())
         .build_global()?;
 
     let files_filtered_by_size = filter_files_by_size(&files_in_repository, &configuration);
