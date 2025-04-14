@@ -1,48 +1,38 @@
 use anyhow::{Context, Result};
 use cli::config_file::get_config;
 use cli::constants::{
-    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_GITHOOK_FAILED,
-    EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
-    EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS, EXIT_CODE_RULE_CHECKSUM_INVALID,
-    EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
+    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_SECRET_ANALYSIS,
+    EXIT_CODE_FAIL_ON_STATIC_ANALYSIS, EXIT_CODE_GITHOOK_FAILED, EXIT_CODE_INVALID_CONFIGURATION,
+    EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY, EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS,
+    EXIT_CODE_RULE_CHECKSUM_INVALID, EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
 };
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
-use cli::file_utils::{
-    filter_files_by_size, filter_files_for_language, get_files, read_files_from_gitignore,
-};
+use cli::file_utils::{filter_files_by_size, get_files, read_files_from_gitignore};
 use cli::git_utils::{
     get_changed_files_between_shas, get_changed_files_with_branch, get_default_branch,
 };
 use cli::model::cli_configuration::CliConfiguration;
-use cli::rule_utils::{
-    check_rules_checksum, convert_rules_to_rules_internal, get_languages_for_rules,
-};
+use cli::rule_utils::{check_rules_checksum, get_languages_for_rules};
 use cli::sarif::sarif_utils::{generate_sarif_file, SarifReportMetadata};
 use cli::utils::{choose_cpu_count, print_configuration};
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
+use datadog_static_analyzer::{secret_analysis, static_analysis};
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
-use kernel::analysis::analyze::analyze_with;
-use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
-use kernel::analysis::ddsa_lib::JsRuntime;
-use kernel::classifiers::{is_test_file, ArtifactClassification};
+use kernel::classifiers::ArtifactClassification;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::config_file::{ConfigFile, ConfigMethod, PathConfig};
-use kernel::model::rule::{Rule, RuleInternal, RuleResult};
+use kernel::model::rule::{Rule, RuleResult};
 use kernel::rule_config::RuleConfigProvider;
-use rayon::prelude::*;
 use rocket::yansi::Paint;
-use secrets::scanner::{build_sds_scanner, find_secrets};
 use secrets::secret_files::should_ignore_file_for_secret;
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::exit;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fs, io};
 use terminal_emoji::Emoji;
@@ -401,8 +391,6 @@ fn main() -> Result<()> {
         }
     }
 
-    let v8 = initialize_v8(configuration.get_num_threads() as u32);
-
     // This must be called _after_ `initialize_v8` (otherwise, PKU-related segfaults on Linux will occur).
     rayon::ThreadPoolBuilder::new()
         .num_threads(configuration.get_num_threads())
@@ -488,110 +476,31 @@ fn main() -> Result<()> {
     // static analysis part
     let mut fail_for_static_analysis = false;
     let mut all_rule_results: Vec<RuleResult> = vec![];
-    // (Option<T> is used to prevent checking the same file path multiple times).
-    let mut all_path_metadata = HashMap::<String, Option<ArtifactClassification>>::new();
+
+    let mut all_path_metadata = HashMap::<String, ArtifactClassification>::new();
+
     if static_analysis_enabled {
-        let languages = get_languages_for_rules(&rules);
-        for language in &languages {
-            let files_for_language = filter_files_for_language(&files_to_analyze, language);
+        let languages = get_languages_for_rules(&configuration.rules);
+        let execution_results_tentative = static_analysis(
+            &configuration,
+            &analysis_options,
+            &files_to_analyze,
+            &languages,
+        );
 
-            if files_for_language.is_empty() {
-                continue;
-            }
-
-            let rules_for_language: Vec<RuleInternal> =
-                convert_rules_to_rules_internal(&configuration, language)?;
-
-            // take the relative path for the analysis
-            let (rule_results, path_metadata) = files_for_language
-                .into_par_iter()
-                .fold(
-                    || (Vec::new(), HashMap::new()),
-                    |(mut fold_results, mut path_metadata), path| {
-                        thread_local! {
-                            // (`Cell` is used to allow lazy instantiation of a thread local with zero runtime cost).
-                            static JS_RUNTIME: Cell<Option<JsRuntime>> = const { Cell::new(None) };
-                        }
-
-                        let relative_path = path
-                            .strip_prefix(directory_path)
-                            .unwrap()
-                            .to_str()
-                            .expect("path contains non-Unicode characters");
-                        let relative_path: Arc<str> = Arc::from(relative_path);
-                        let rule_config = configuration
-                            .rule_config_provider
-                            .config_for_file(relative_path.as_ref());
-                        let res = if let Ok(file_content) = fs::read_to_string(&path) {
-                            let mut opt = JS_RUNTIME.replace(None);
-                            let runtime_ref = opt.get_or_insert_with(|| {
-                                v8.try_new_runtime().expect("ddsa init should succeed")
-                            });
-
-                            let file_content = Arc::from(file_content);
-                            let mut rule_result = analyze_with(
-                                runtime_ref,
-                                language,
-                                &rules_for_language,
-                                &relative_path,
-                                &file_content,
-                                &rule_config,
-                                &analysis_options,
-                            );
-                            rule_result.retain(|r| !r.violations.is_empty());
-                            JS_RUNTIME.replace(opt);
-
-                            if !rule_result.is_empty()
-                                && !path_metadata.contains_key(relative_path.as_ref())
-                            {
-                                let cloned_path_str = relative_path.to_string();
-                                let metadata = if is_test_file(
-                                    *language,
-                                    file_content.as_ref(),
-                                    std::path::Path::new(&cloned_path_str),
-                                    None,
-                                ) {
-                                    Some(ArtifactClassification { is_test_file: true })
-                                } else {
-                                    None
-                                };
-                                path_metadata.insert(cloned_path_str, metadata);
-                            }
-
-                            rule_result
-                        } else {
-                            vec![]
-                        };
-                        fold_results.extend(res);
-
-                        (fold_results, path_metadata)
-                    },
-                )
-                .reduce(
-                    || (Vec::new(), HashMap::new()),
-                    |mut base, other| {
-                        let (base_results, base_classifications) = &mut base;
-                        let (other_results, other_classifications) = other;
-                        base_results.extend(other_results);
-                        for (k, v) in other_classifications {
-                            let existing = base_classifications.insert(k, v);
-                            // Due to the way the file paths are parallelized, even with rayon's work-stealing,
-                            // there should never be a duplicate key (i.e., file path) between two rayon threads.
-                            debug_assert!(existing.is_none());
-                        }
-                        base
-                    },
-                );
-
-            all_rule_results.extend(rule_results);
-            for (k, v) in path_metadata {
-                let existing = all_path_metadata.insert(k, v);
-                // The `path_metadata` map will only contain file paths for a single `Language`.
-                // Because a file only (currently) maps to a single `Language`, it's guaranteed that
-                // the key will be unique.
-                debug_assert!(existing.is_none());
-            }
+        if let Err(err) = execution_results_tentative {
+            eprintln!("static_analysis error: {}", err);
+            exit(EXIT_CODE_FAIL_ON_STATIC_ANALYSIS);
         }
+
+        let execution_result =
+            execution_results_tentative.expect("execution should have succeeded");
+
+        let static_analysis_metadata = &execution_result.metadata;
+        all_rule_results = execution_result
+            .rule_results
+            .get_static_analysis_results()
+            .clone();
 
         all_rule_results.iter_mut().for_each(|rr| {
             let path = PathBuf::from(&rr.filename);
@@ -603,6 +512,8 @@ fn main() -> Result<()> {
                 }
             });
         });
+
+        all_path_metadata.extend(static_analysis_metadata.clone());
 
         for rule_result in &all_rule_results {
             let path = PathBuf::from(&rule_result.filename);
@@ -620,10 +531,6 @@ fn main() -> Result<()> {
             }
         }
     }
-    let all_path_metadata = all_path_metadata
-        .into_iter()
-        .filter_map(|(k, v)| v.map(|classification| (k, classification)))
-        .collect::<HashMap<_, _>>();
 
     // Secrets detection
     let mut fail_for_secrets = false;
@@ -634,34 +541,23 @@ fn main() -> Result<()> {
             .filter(|f| !should_ignore_file_for_secret(f))
             .collect();
 
-        let sds_scanner = build_sds_scanner(&secrets_rules, use_debug);
+        let execution_results_tentative =
+            secret_analysis(&configuration, &analysis_options, &secrets_files);
 
-        secrets_results = secrets_files
-            .par_iter()
-            .flat_map(|path| {
-                let relative_path = path
-                    .strip_prefix(directory_path)
-                    .unwrap()
-                    .to_str()
-                    .expect("path contains non-Unicode characters");
-                if let Ok(file_content) = fs::read_to_string(path) {
-                    let file_content = Arc::from(file_content);
-                    find_secrets(
-                        &sds_scanner,
-                        &secrets_rules,
-                        relative_path,
-                        &file_content,
-                        &analysis_options,
-                    )
-                } else {
-                    // this is generally because the file is binary.
-                    if use_debug {
-                        eprintln!("error when getting content of path {}", &path.display());
-                    }
-                    vec![]
-                }
-            })
-            .collect();
+        if let Err(err) = execution_results_tentative {
+            eprintln!("secrets analysis error: {}", err);
+            exit(EXIT_CODE_FAIL_ON_SECRET_ANALYSIS);
+        }
+
+        let res = execution_results_tentative.expect("secrets should execute with success");
+
+        for (k, v) in &res.metadata {
+            if !all_path_metadata.contains_key(k) {
+                all_path_metadata.insert(k.clone(), v.clone());
+            }
+        }
+
+        secrets_results = res.rule_results.get_secrets_results().clone();
 
         secrets_results.iter_mut().for_each(|rr| {
             let path = PathBuf::from(&rr.filename);
