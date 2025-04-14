@@ -28,7 +28,6 @@ fn test_rule(runtime: &mut JsRuntime, rule: &Rule, test: &RuleTest) -> Result<St
         use_debug: true,
         ignore_generated_files: false,
         timeout: None,
-        debug_java_dfa: false,
     };
     let rules = vec![rule_internal];
     let analyze_result = analyze_with(

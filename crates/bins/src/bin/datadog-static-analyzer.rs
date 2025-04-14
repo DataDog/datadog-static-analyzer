@@ -405,6 +405,7 @@ fn main() -> Result<()> {
         secrets_enabled,
         secrets_rules: secrets_rules.clone(),
         should_verify_checksum,
+        debug_java_dfa,
     };
 
     print_configuration(&configuration);
@@ -423,7 +424,6 @@ fn main() -> Result<()> {
         use_debug,
         ignore_generated_files,
         timeout,
-        debug_java_dfa,
     };
 
     // check if we do a diff-aware scan

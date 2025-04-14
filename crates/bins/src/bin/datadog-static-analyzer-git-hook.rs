@@ -361,6 +361,7 @@ fn main() -> Result<()> {
         static_analysis_enabled,
         secrets_rules: secrets_rules.clone(),
         should_verify_checksum: true,
+        debug_java_dfa: false,
     };
 
     if configuration.use_debug {
@@ -381,7 +382,6 @@ fn main() -> Result<()> {
         use_debug,
         ignore_generated_files,
         timeout,
-        debug_java_dfa: false,
     };
 
     if should_verify_checksum {

@@ -35,6 +35,7 @@ pub struct CliConfiguration {
     pub secrets_enabled: bool,
     pub secrets_rules: Vec<SecretRule>,
     pub should_verify_checksum: bool,
+    pub debug_java_dfa: bool,
 }
 
 impl DiffAware for CliConfiguration {
@@ -185,6 +186,7 @@ mod tests {
             static_analysis_enabled: true,
             secrets_rules: vec![],
             should_verify_checksum: true,
+            debug_java_dfa: false,
         };
         assert_eq!(
             cli_configuration.generate_diff_aware_digest(),
@@ -235,6 +237,7 @@ mod tests {
             static_analysis_enabled: true,
             secrets_rules: vec![],
             should_verify_checksum: true,
+            debug_java_dfa: false,
         };
 
         let mut cli_configuration1 = cli_configuration_base.clone();

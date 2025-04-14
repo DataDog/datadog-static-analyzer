@@ -1288,7 +1288,6 @@ function visit(node, filename, code) {
             use_debug: false,
             ignore_generated_files: false,
             timeout: None,
-            debug_java_dfa: false,
         };
         let rule_config_provider = RuleConfigProvider::from_config(
             &parse_config_file(

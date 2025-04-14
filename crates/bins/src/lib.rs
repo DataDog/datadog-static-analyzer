@@ -36,12 +36,14 @@ pub fn read_file(path: &Path) -> anyhow::Result<String> {
     }
 }
 
+/// Structure to store all results from a CLI run.
 pub struct CliResults {
     pub static_analysis: Option<AnalysisResult>,
     pub secrets: Option<AnalysisResult>,
 }
 
-/// Represent the analysis rules results for either static analysis or secret
+/// Represent the analysis rules results for either static analysis or secret. This is more
+/// of a helper object to store static analysis and secret rules.
 pub enum AnalysisRulesResult {
     StaticAnalysisRulesResults(Vec<RuleResult>),
     SecretsRulesResults(Vec<SecretResult>),
@@ -52,7 +54,7 @@ impl AnalysisRulesResult {
         match self {
             StaticAnalysisRulesResults(results) => results,
             SecretsRulesResults(_) => {
-                panic!("wrong call")
+                panic!("trying to get secrets when only static analysis are stored")
             }
         }
     }
@@ -60,7 +62,7 @@ impl AnalysisRulesResult {
     pub fn get_secrets_results(&self) -> &Vec<SecretResult> {
         match self {
             StaticAnalysisRulesResults(_) => {
-                panic!("wrong call")
+                panic!("trying to get static analysis results when only secrets are stored")
             }
             SecretsRulesResults(results) => results,
         }
@@ -73,6 +75,7 @@ pub struct AnalysisResult {
     pub metadata: HashMap<String, ArtifactClassification>,
 }
 
+/// Run the static analysis pipeline. This is called for both the main binary and git hooks.
 pub fn static_analysis(
     config: &CliConfiguration,
     options: &AnalysisOptions,
@@ -192,7 +195,7 @@ pub fn static_analysis(
                             should_retain
                         });
 
-                        if options.debug_java_dfa && *language == Language::Java {
+                        if config.debug_java_dfa && *language == Language::Java {
                             if let Some(graph) = generate_flow_graph_dot(
                                 runtime_ref,
                                 *language,
@@ -284,6 +287,8 @@ pub fn static_analysis(
     Ok(analyzer_result)
 }
 
+/// Run secrets detection. This is run only for secrets in both the main binary
+/// and git hooks.
 pub fn secret_analysis(
     config: &CliConfiguration,
     options: &AnalysisOptions,
