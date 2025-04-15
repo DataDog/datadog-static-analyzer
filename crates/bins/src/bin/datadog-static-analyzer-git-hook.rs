@@ -21,6 +21,7 @@ use datadog_static_analyzer::{secret_analysis, static_analysis};
 use getopts::Options;
 use git2::Repository;
 use itertools::Itertools;
+use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
 use kernel::classifiers::ArtifactClassification;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
@@ -481,7 +482,9 @@ fn main() -> Result<()> {
 
     if static_analysis_enabled {
         let languages = get_languages_for_rules(&configuration.rules);
+        let v8 = initialize_v8(configuration.get_num_threads() as u32);
         let execution_results_tentative = static_analysis(
+            v8,
             &configuration,
             &analysis_options,
             &files_to_analyze,
@@ -497,10 +500,7 @@ fn main() -> Result<()> {
             execution_results_tentative.expect("execution should have succeeded");
 
         let static_analysis_metadata = &execution_result.metadata;
-        all_rule_results = execution_result
-            .rule_results
-            .get_static_analysis_results()
-            .clone();
+        all_rule_results = execution_result.rule_results.clone();
 
         all_rule_results.iter_mut().for_each(|rr| {
             let path = PathBuf::from(&rr.filename);
@@ -557,7 +557,7 @@ fn main() -> Result<()> {
             }
         }
 
-        secrets_results = res.rule_results.get_secrets_results().clone();
+        secrets_results = res.rule_results;
 
         secrets_results.iter_mut().for_each(|rr| {
             let path = PathBuf::from(&rr.filename);

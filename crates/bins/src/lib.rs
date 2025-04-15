@@ -1,4 +1,3 @@
-use crate::AnalysisRulesResult::{SecretsRulesResults, StaticAnalysisRulesResults};
 use cli::constants::EXIT_CODE_RULE_CHECKSUM_INVALID;
 use cli::file_utils::{filter_files_for_language, get_language_for_file};
 use cli::model::cli_configuration::CliConfiguration;
@@ -6,7 +5,7 @@ use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal};
 use common::analysis_options::AnalysisOptions;
 use indicatif::ProgressBar;
 use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
-use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
+use kernel::analysis::ddsa_lib::v8_platform::{Initialized, V8Platform};
 use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::classifiers::{is_test_file, ArtifactClassification};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
@@ -38,53 +37,26 @@ pub fn read_file(path: &Path) -> anyhow::Result<String> {
 
 /// Structure to store all results from a CLI run.
 pub struct CliResults {
-    pub static_analysis: Option<AnalysisResult>,
-    pub secrets: Option<AnalysisResult>,
-}
-
-/// Represent the analysis rules results for either static analysis or secret. This is more
-/// of a helper object to store static analysis and secret rules.
-pub enum AnalysisRulesResult {
-    StaticAnalysisRulesResults(Vec<RuleResult>),
-    SecretsRulesResults(Vec<SecretResult>),
-}
-
-impl AnalysisRulesResult {
-    pub fn get_static_analysis_results(&self) -> &Vec<RuleResult> {
-        match self {
-            StaticAnalysisRulesResults(results) => results,
-            SecretsRulesResults(_) => {
-                panic!("trying to get secrets when only static analysis are stored")
-            }
-        }
-    }
-
-    pub fn get_secrets_results(&self) -> &Vec<SecretResult> {
-        match self {
-            StaticAnalysisRulesResults(_) => {
-                panic!("trying to get static analysis results when only secrets are stored")
-            }
-            SecretsRulesResults(results) => results,
-        }
-    }
+    pub static_analysis: Option<AnalysisResult<RuleResult>>,
+    pub secrets: Option<AnalysisResult<SecretResult>>,
 }
 
 /// Whatever is returned by static analysis or secrets, including debugging information
-pub struct AnalysisResult {
-    pub rule_results: AnalysisRulesResult,
+pub struct AnalysisResult<T> {
+    pub rule_results: Vec<T>,
     pub metadata: HashMap<String, ArtifactClassification>,
 }
 
 /// Run the static analysis pipeline. This is called for both the main binary and git hooks.
 pub fn static_analysis(
+    v8: V8Platform<Initialized>,
     config: &CliConfiguration,
     options: &AnalysisOptions,
     files_to_analyze: &[PathBuf],
     languages: &[Language],
-) -> anyhow::Result<AnalysisResult> {
+) -> anyhow::Result<AnalysisResult<RuleResult>> {
     let mut all_rule_results = Vec::<RuleResult>::new();
     let mut all_stats = AnalysisStatistics::new();
-    let v8 = initialize_v8(config.get_num_threads() as u32);
 
     let mut all_path_metadata_static_analysis =
         HashMap::<String, Option<ArtifactClassification>>::new();
@@ -281,7 +253,7 @@ pub fn static_analysis(
         .collect::<HashMap<_, _>>();
 
     let analyzer_result = AnalysisResult {
-        rule_results: StaticAnalysisRulesResults(all_rule_results),
+        rule_results: all_rule_results,
         metadata: all_path_metadata,
     };
     Ok(analyzer_result)
@@ -293,7 +265,7 @@ pub fn secret_analysis(
     config: &CliConfiguration,
     options: &AnalysisOptions,
     files_to_analyze: &[PathBuf],
-) -> anyhow::Result<AnalysisResult> {
+) -> anyhow::Result<AnalysisResult<SecretResult>> {
     let secrets_rules = &config.secrets_rules;
     let sds_scanner = build_sds_scanner(secrets_rules, config.use_debug);
 
@@ -375,7 +347,7 @@ pub fn secret_analysis(
     }
 
     let analyzer_result = AnalysisResult {
-        rule_results: SecretsRulesResults(secrets_results),
+        rule_results: secrets_results,
         metadata: path_metadata
             .into_iter()
             .filter_map(|(k, v)| v.map(|classification| (k, classification)))

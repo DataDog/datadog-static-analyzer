@@ -32,6 +32,7 @@ use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
 use datadog_static_analyzer::{secret_analysis, static_analysis, CliResults};
+use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::classifiers::ArtifactClassification;
 use kernel::constants::{CARGO_VERSION, VERSION};
@@ -44,7 +45,7 @@ use secrets::secret_files::should_ignore_file_for_secret;
 use std::collections::HashMap;
 use std::io::prelude::*;
 use std::process::exit;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use std::{env, fs};
 
 fn print_usage(program: &str, opts: Options) {
@@ -511,10 +512,7 @@ fn main() -> Result<()> {
         );
     }
 
-    let global_start_timestamp = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let global_start_time = Instant::now();
 
     let mut all_path_metadata = HashMap::<String, ArtifactClassification>::new();
     let mut result: CliResults = CliResults {
@@ -522,12 +520,11 @@ fn main() -> Result<()> {
         secrets: None,
     };
     if static_analysis_enabled {
-        let start_timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let static_analysis_start = Instant::now();
+        let v8 = initialize_v8(configuration.get_num_threads() as u32);
 
         let execution_results_tentative = static_analysis(
+            v8,
             &configuration,
             &analysis_options,
             &files_to_analyze,
@@ -542,12 +539,7 @@ fn main() -> Result<()> {
         let execution_result =
             execution_results_tentative.expect("execution should have succeeded");
 
-        let end_timestamp = SystemTime::now()
-            .duration_since(SystemTime::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
-        let rules_results = execution_result.rule_results.get_static_analysis_results();
+        let rules_results = &execution_result.rule_results;
 
         let nb_violations: u32 = rules_results
             .iter()
@@ -566,13 +558,14 @@ fn main() -> Result<()> {
             .unique_by(|v| v.filename.as_str())
             .count();
 
-        let execution_time_secs = end_timestamp - start_timestamp;
-
         all_path_metadata.extend(static_analysis_metadata.clone());
 
         println!(
             "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
-            nb_violations, total_files_analyzed, number_of_rules_used, execution_time_secs
+            nb_violations,
+            total_files_analyzed,
+            number_of_rules_used,
+            static_analysis_start.elapsed().as_secs()
         );
 
         result.static_analysis = Some(execution_result);
@@ -598,7 +591,7 @@ fn main() -> Result<()> {
 
         let res = execution_results_tentative.expect("secrets should execute with success");
 
-        let secrets_rules_results = res.rule_results.get_secrets_results();
+        let secrets_rules_results = &res.rule_results;
 
         let nb_secrets_found: u32 = secrets_rules_results
             .iter()
@@ -622,8 +615,6 @@ fn main() -> Result<()> {
             }
         }
 
-        let secrets_execution_time_secs = secrets_start.elapsed().as_secs();
-
         let number_of_rules_used = secrets_rules_results
             .iter()
             .unique_by(|v| v.rule_name.as_str())
@@ -640,34 +631,28 @@ fn main() -> Result<()> {
             nb_secrets_validated,
             total_files_analyzed,
             number_of_rules_used,
-            secrets_execution_time_secs
+            secrets_start.elapsed().as_secs()
         );
 
         result.secrets = Some(res);
     }
 
-    let global_end_timestamp = SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-
-    let global_execution_time = global_end_timestamp - global_start_timestamp;
+    let global_execution_time_secs = global_start_time.elapsed().as_secs();
 
     // if we have more than one static analysis violation and printing is enabled, show all
     // violations
     let static_analysis_rule_results = if let Some(sa) = &result.static_analysis {
-        sa.rule_results.get_static_analysis_results().clone()
+        sa.rule_results.clone()
     } else {
         vec![]
     };
     let secrets_violations = if let Some(secrets) = &result.secrets {
-        secrets.rule_results.get_secrets_results().clone()
+        secrets.rule_results.clone()
     } else {
         vec![]
     };
     let nb_total_static_analysis_violations: u32 = if let Some(sa) = &result.static_analysis {
         sa.rule_results
-            .get_static_analysis_results()
             .iter()
             .map(|x| x.violations.len() as u32)
             .sum()
@@ -710,7 +695,7 @@ fn main() -> Result<()> {
                 debug: configuration.use_debug,
                 config_digest: configuration.generate_diff_aware_digest(),
                 diff_aware_parameters,
-                execution_time_secs: global_execution_time,
+                execution_time_secs: global_execution_time_secs,
             },
             &all_path_metadata,
         )
