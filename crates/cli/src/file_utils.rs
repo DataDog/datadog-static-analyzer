@@ -31,7 +31,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Starlark, &["bzl"]),
     (Language::Bash, &["sh", "bash"]),
     (Language::PHP, &["php"]),
-    (Language::Markdown, &["md"]),
+    (Language::Markdown, &["md", "mdc"]),
     (Language::Apex, &["cls"]),
     (Language::R, &["r"]),
     (Language::SQL, &["sql"]),
@@ -791,7 +791,7 @@ mod tests {
         extensions_per_languages.insert(Language::Starlark, 1);
         extensions_per_languages.insert(Language::Bash, 2);
         extensions_per_languages.insert(Language::PHP, 1);
-        extensions_per_languages.insert(Language::Markdown, 1);
+        extensions_per_languages.insert(Language::Markdown, 2);
         extensions_per_languages.insert(Language::Apex, 1);
         extensions_per_languages.insert(Language::R, 1);
         extensions_per_languages.insert(Language::SQL, 1);
@@ -906,10 +906,20 @@ mod tests {
 
     #[test]
     fn test_get_language_for_file() {
-        // extension
+        // extension Java
         assert_eq!(
             get_language_for_file(&PathBuf::from("path/to/foo.java")),
             Some(Language::Java)
+        );
+
+        // extension Markdown
+        assert_eq!(
+            get_language_for_file(&PathBuf::from("path/to/foo.md")),
+            Some(Language::Markdown)
+        );
+        assert_eq!(
+            get_language_for_file(&PathBuf::from("path/to/foo.mdc")),
+            Some(Language::Markdown)
         );
 
         // exact filename
