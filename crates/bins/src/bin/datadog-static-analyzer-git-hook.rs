@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use cli::config_file::get_config;
 use cli::constants::{
-    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_SECRET_ANALYSIS,
-    EXIT_CODE_FAIL_ON_STATIC_ANALYSIS, EXIT_CODE_GITHOOK_FAILED, EXIT_CODE_INVALID_CONFIGURATION,
-    EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY, EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS,
-    EXIT_CODE_RULE_CHECKSUM_INVALID, EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
+    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_GITHOOK_FAILED,
+    EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
+    EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS, EXIT_CODE_RULE_CHECKSUM_INVALID,
+    EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
 };
 use cli::datadog_utils::{get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules};
 use cli::file_utils::{filter_files_by_size, get_files, read_files_from_gitignore};
@@ -483,21 +483,14 @@ fn main() -> Result<()> {
     if static_analysis_enabled {
         let languages = get_languages_for_rules(&configuration.rules);
         let v8 = initialize_v8(configuration.get_num_threads() as u32);
-        let execution_results_tentative = static_analysis(
+        let execution_result = static_analysis(
             v8,
             &configuration,
             &analysis_options,
             &files_to_analyze,
             &languages,
-        );
-
-        if let Err(err) = execution_results_tentative {
-            eprintln!("static_analysis error: {}", err);
-            exit(EXIT_CODE_FAIL_ON_STATIC_ANALYSIS);
-        }
-
-        let execution_result =
-            execution_results_tentative.expect("execution should have succeeded");
+        )
+        .context("static analysis should have succeeded")?;
 
         let static_analysis_metadata = &execution_result.metadata;
         all_rule_results = execution_result.rule_results.clone();
@@ -541,23 +534,16 @@ fn main() -> Result<()> {
             .filter(|f| !should_ignore_file_for_secret(f))
             .collect();
 
-        let execution_results_tentative =
-            secret_analysis(&configuration, &analysis_options, &secrets_files);
+        let execution_result = secret_analysis(&configuration, &analysis_options, &secrets_files)
+            .context("secrets should execute with success")?;
 
-        if let Err(err) = execution_results_tentative {
-            eprintln!("secrets analysis error: {}", err);
-            exit(EXIT_CODE_FAIL_ON_SECRET_ANALYSIS);
-        }
-
-        let res = execution_results_tentative.expect("secrets should execute with success");
-
-        for (k, v) in &res.metadata {
+        for (k, v) in &execution_result.metadata {
             if !all_path_metadata.contains_key(k) {
                 all_path_metadata.insert(k.clone(), v.clone());
             }
         }
 
-        secrets_results = res.rule_results;
+        secrets_results = execution_result.rule_results;
 
         secrets_results.iter_mut().for_each(|rr| {
             let path = PathBuf::from(&rr.filename);

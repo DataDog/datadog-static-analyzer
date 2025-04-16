@@ -17,8 +17,6 @@ pub static GIT_HEAD: &str = "HEAD";
 pub static EXIT_CODE_FAIL_ON_VIOLATION: i32 = 10;
 pub static EXIT_CODE_GITHOOK_FAILED: i32 = 11;
 pub static EXIT_CODE_RULE_CHECKSUM_INVALID: i32 = 12;
-pub static EXIT_CODE_FAIL_ON_STATIC_ANALYSIS: i32 = 13;
-pub static EXIT_CODE_FAIL_ON_SECRET_ANALYSIS: i32 = 14;
 
 // user errors, all more than 50
 pub static EXIT_CODE_INVALID_CONFIGURATION: i32 = 50;

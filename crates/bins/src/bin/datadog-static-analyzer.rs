@@ -5,8 +5,7 @@ use std::path::PathBuf;
 
 use cli::config_file::get_config;
 use cli::constants::{
-    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_SECRET_ANALYSIS,
-    EXIT_CODE_FAIL_ON_STATIC_ANALYSIS, EXIT_CODE_FAIL_ON_VIOLATION,
+    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_VIOLATION,
     EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
     EXIT_CODE_NO_OUTPUT, EXIT_CODE_RULESET_NOT_FOUND, EXIT_CODE_RULE_FILE_WITH_CONFIGURATION,
     EXIT_CODE_UNSAFE_SUBDIRECTORIES,
@@ -523,21 +522,14 @@ fn main() -> Result<()> {
         let static_analysis_start = Instant::now();
         let v8 = initialize_v8(configuration.get_num_threads() as u32);
 
-        let execution_results_tentative = static_analysis(
+        let execution_result = static_analysis(
             v8,
             &configuration,
             &analysis_options,
             &files_to_analyze,
             &languages,
-        );
-
-        if let Err(err) = execution_results_tentative {
-            eprintln!("static_analysis error: {}", err);
-            exit(EXIT_CODE_FAIL_ON_STATIC_ANALYSIS);
-        }
-
-        let execution_result =
-            execution_results_tentative.expect("execution should have succeeded");
+        )
+        .context("static_analysis should have succeeded")?;
 
         let rules_results = &execution_result.rule_results;
 
@@ -581,17 +573,10 @@ fn main() -> Result<()> {
             .filter(|f| !should_ignore_file_for_secret(f))
             .collect();
 
-        let execution_results_tentative =
-            secret_analysis(&configuration, &analysis_options, &secrets_files);
+        let execution_results = secret_analysis(&configuration, &analysis_options, &secrets_files)
+            .context("secrets should execute with success")?;
 
-        if let Err(err) = execution_results_tentative {
-            eprintln!("secrets analysis error: {}", err);
-            exit(EXIT_CODE_FAIL_ON_SECRET_ANALYSIS);
-        }
-
-        let res = execution_results_tentative.expect("secrets should execute with success");
-
-        let secrets_rules_results = &res.rule_results;
+        let secrets_rules_results = &execution_results.rule_results;
 
         let nb_secrets_found: u32 = secrets_rules_results
             .iter()
@@ -609,7 +594,7 @@ fn main() -> Result<()> {
             .sum();
 
         // adding metadata from secrets
-        for (k, v) in &res.metadata {
+        for (k, v) in &execution_results.metadata {
             if !all_path_metadata.contains_key(k) {
                 all_path_metadata.insert(k.clone(), v.clone());
             }
@@ -634,7 +619,7 @@ fn main() -> Result<()> {
             secrets_start.elapsed().as_secs()
         );
 
-        result.secrets = Some(res);
+        result.secrets = Some(execution_results);
     }
 
     let global_execution_time_secs = global_start_time.elapsed().as_secs();
