@@ -626,24 +626,21 @@ fn main() -> Result<()> {
 
     // if we have more than one static analysis violation and printing is enabled, show all
     // violations
-    let static_analysis_rule_results = if let Some(sa) = &result.static_analysis {
-        sa.rule_results.clone()
-    } else {
-        vec![]
-    };
-    let secrets_violations = if let Some(secrets) = &result.secrets {
-        secrets.rule_results.clone()
-    } else {
-        vec![]
-    };
-    let nb_total_static_analysis_violations: u32 = if let Some(sa) = &result.static_analysis {
-        sa.rule_results
-            .iter()
-            .map(|x| x.violations.len() as u32)
-            .sum()
-    } else {
-        0
-    };
+
+    let static_analysis_rule_results = result.static_analysis.take();
+    let static_analysis_rule_results = static_analysis_rule_results
+        .map(|r| r.rule_results)
+        .unwrap_or_default();
+
+    let secrets_violations = result.secrets.take();
+    let secrets_violations = secrets_violations
+        .map(|r| r.rule_results)
+        .unwrap_or_default();
+
+    let nb_total_static_analysis_violations: usize = static_analysis_rule_results
+        .iter()
+        .map(|x| x.violations.len())
+        .sum();
 
     if print_violations && nb_total_static_analysis_violations > 0 {
         violations_table::print_violations_table(&static_analysis_rule_results);
@@ -666,7 +663,7 @@ fn main() -> Result<()> {
                     .iter()
                     .map(convert_secret_result_to_rule_result)
                     .collect(),
-                static_analysis_rule_results.clone(),
+                static_analysis_rule_results,
             ]
             .concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
