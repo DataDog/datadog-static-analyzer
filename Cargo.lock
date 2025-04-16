@@ -734,7 +734,7 @@ dependencies = [
 [[package]]
 name = "dd-sds"
 version = "0.1.2"
-source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=1d03f4d0ce9f0d089fec4c6b94e6f855836f52ec#1d03f4d0ce9f0d089fec4c6b94e6f855836f52ec"
+source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=6f933121394d7d0fe62f58065623cba657f7bb5d#6f933121394d7d0fe62f58065623cba657f7bb5d"
 dependencies = [
  "ahash",
  "async-trait",

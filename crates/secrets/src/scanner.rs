@@ -8,7 +8,7 @@ use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
-use dd_sds::{RuleConfig, Scanner};
+use dd_sds::{RootRuleConfig, RuleConfig, Scanner};
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -19,8 +19,8 @@ use std::sync::Arc;
 pub fn build_sds_scanner(rules: &[SecretRule], use_debug: bool) -> Scanner {
     let sds_rules = rules
         .iter()
-        .map(|r| r.convert_to_sds_ruleconfig(use_debug).build())
-        .collect::<Vec<Arc<dyn RuleConfig>>>();
+        .map(|r| r.convert_to_sds_ruleconfig(use_debug).into_dyn())
+        .collect::<Vec<RootRuleConfig<Arc<dyn RuleConfig>>>>();
     Scanner::builder(&sds_rules)
         .build()
         .expect("error when instantiating the scanner")
@@ -42,7 +42,7 @@ pub fn find_secrets(
     }
 
     let mut codemut = code.to_owned();
-    let mut matches = scanner.scan(&mut codemut, vec![]);
+    let mut matches = scanner.scan(&mut codemut);
 
     if matches.is_empty() {
         return vec![];
