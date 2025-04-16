@@ -594,6 +594,8 @@ mod tests {
             secrets_enabled: false,
             static_analysis_enabled: true,
             secrets_rules: vec![],
+            should_verify_checksum: true,
+            debug_java_dfa: false,
         };
         assert_eq!(0, filter_files_by_size(&files1, &cli_configuration).len());
 
