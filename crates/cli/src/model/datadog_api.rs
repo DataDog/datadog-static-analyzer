@@ -7,7 +7,7 @@ use secrets::model::secret_rule::{
     SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // Data for diff-aware scanning
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -292,7 +292,7 @@ pub struct SecretRuleApiMatchValidation {
     pub r#type: String,
     pub endpoint: Option<String>,
     pub hosts: Option<Vec<String>>,
-    pub request_headers: Option<HashMap<String, String>>,
+    pub request_headers: Option<BTreeMap<String, String>>,
     pub http_method: Option<SecretRuleApiMatchValidationHttpMethod>,
     pub timeout_seconds: Option<u64>,
     pub valid_http_status_code: Option<Vec<SecretRuleApiMatchValidationHttpCode>>,

@@ -6,14 +6,11 @@ use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
 use common::model::diff_aware::DiffAware;
 use dd_sds::SecondaryValidator::JwtExpirationChecker;
 use dd_sds::{
-    AwsConfig, AwsType, HttpMethod, HttpValidatorConfigBuilder, MatchAction, MatchValidationType,
-    ProximityKeywordsConfig, RegexRuleConfig, RequestHeader,
+    AwsConfig, AwsType, CustomHttpConfig, HttpMethod, HttpStatusCodeRange, MatchAction,
+    MatchValidationType, ProximityKeywordsConfig, RegexRuleConfig, RootRuleConfig,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::ops::Range;
-use std::string::ToString;
-use std::time::Duration;
+use std::collections::BTreeMap;
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
@@ -66,33 +63,31 @@ impl TryFrom<&SecretRuleMatchValidation> for MatchValidationType {
                 Ok(MatchValidationType::Aws(AwsType::AwsSession))
             }
             CustomHttp(custom_http) => {
-                let invalid_ports: Vec<Range<u16>> = custom_http
+                let invalid_ports: Vec<HttpStatusCodeRange> = custom_http
                     .invalid_http_status_code
                     .iter()
-                    .map(|v| Range {
+                    .map(|v| HttpStatusCodeRange {
                         start: v.start,
                         end: v.end,
                     })
                     .collect();
-                let valid_ports: Vec<Range<u16>> = custom_http
+                let valid_ports: Vec<HttpStatusCodeRange> = custom_http
                     .valid_http_status_code
                     .iter()
-                    .map(|v| Range {
+                    .map(|v| HttpStatusCodeRange {
                         start: v.start,
                         end: v.end,
                     })
                     .collect();
-                Ok(MatchValidationType::CustomHttp(
-                    HttpValidatorConfigBuilder::new(custom_http.endpoint.clone())
-                        .set_hosts(custom_http.clone().hosts)
-                        .set_invalid_http_status_code(invalid_ports)
-                        .set_timeout(Duration::from_secs(custom_http.timeout_seconds.unwrap()))
-                        .set_request_header(custom_http.get_request_headers())
-                        .set_valid_http_status_code(valid_ports)
-                        .set_method(custom_http.http_method.into())
-                        .build()
-                        .unwrap(),
-                ))
+                Ok(MatchValidationType::CustomHttp(CustomHttpConfig {
+                    endpoint: custom_http.endpoint.clone(),
+                    hosts: custom_http.hosts.clone(),
+                    http_method: custom_http.http_method.into(),
+                    request_headers: custom_http.request_headers.clone(),
+                    valid_http_status_code: valid_ports,
+                    invalid_http_status_code: invalid_ports,
+                    timeout_seconds: custom_http.timeout_seconds.unwrap() as u32,
+                }))
             }
         }
     }
@@ -102,23 +97,11 @@ impl TryFrom<&SecretRuleMatchValidation> for MatchValidationType {
 pub struct SecretRuleMatchValidationHttp {
     pub endpoint: String,
     pub hosts: Vec<String>,
-    pub request_headers: HashMap<String, String>,
+    pub request_headers: BTreeMap<String, String>,
     pub http_method: SecretRuleMatchValidationHttpMethod,
     pub timeout_seconds: Option<u64>,
     pub valid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
     pub invalid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
-}
-
-impl SecretRuleMatchValidationHttp {
-    pub fn get_request_headers(&self) -> Vec<RequestHeader> {
-        self.request_headers
-            .iter()
-            .map(|(k, v)| RequestHeader {
-                key: k.clone(),
-                value: v.clone(),
-            })
-            .collect()
-    }
 }
 
 // This is the secret rule exposed by SDS
@@ -137,15 +120,16 @@ impl SecretRule {
     const VALIDATOR_JWT_EXPIRATION_CHECKER: &'static str = "JwtExpirationChecker";
 
     /// Convert the rule into a configuration usable by SDS.
-    pub fn convert_to_sds_ruleconfig(&self, use_debug: bool) -> RegexRuleConfig {
-        let mut rule_config = RegexRuleConfig::new(&self.pattern).match_action(MatchAction::None);
+    pub fn convert_to_sds_ruleconfig(&self, use_debug: bool) -> RootRuleConfig<RegexRuleConfig> {
+        let mut regex_rule_config = RegexRuleConfig::new(&self.pattern);
 
         if !self.default_included_keywords.is_empty() {
-            rule_config = rule_config.proximity_keywords(ProximityKeywordsConfig {
-                look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
-                included_keywords: self.default_included_keywords.clone(),
-                excluded_keywords: vec![],
-            });
+            regex_rule_config =
+                regex_rule_config.with_proximity_keywords(ProximityKeywordsConfig {
+                    look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
+                    included_keywords: self.default_included_keywords.clone(),
+                    excluded_keywords: vec![],
+                });
         }
 
         if let Some(validators) = &self.validators {
@@ -153,13 +137,16 @@ impl SecretRule {
                 .iter()
                 .any(|v| v == SecretRule::VALIDATOR_JWT_EXPIRATION_CHECKER)
             {
-                rule_config = rule_config.validator(JwtExpirationChecker);
+                regex_rule_config = regex_rule_config.with_validator(Some(JwtExpirationChecker));
             }
         }
 
+        let mut rule_config =
+            RootRuleConfig::new(regex_rule_config).match_action(MatchAction::None);
+
         if let Some(match_validation) = &self.match_validation {
             if let Ok(mvt) = match_validation.try_into() {
-                rule_config = rule_config.match_validation_type(mvt);
+                rule_config = rule_config.third_party_active_checker(mvt);
             } else if use_debug {
                 eprintln!("invalid validation: {:?}", match_validation);
             }
