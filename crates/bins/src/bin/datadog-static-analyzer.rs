@@ -31,7 +31,7 @@ use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
 use datadog_static_analyzer::{secret_analysis, static_analysis, CliResults};
-use kernel::analysis::ddsa_lib::v8_platform::initialize_v8;
+use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::classifiers::ArtifactClassification;
 use kernel::constants::{CARGO_VERSION, VERSION};
@@ -486,6 +486,12 @@ fn main() -> Result<()> {
         println!("diff aware data: {:?}", diff_aware_parameters);
     }
 
+    let mut v8: Option<V8Platform<Initialized>> = None;
+    if static_analysis_enabled {
+        let platform = initialize_v8(configuration.get_num_threads() as u32);
+        _ = v8.insert(platform)
+    }
+
     // This must be called _after_ `initialize_v8` (otherwise, PKU-related segfaults on Linux will occur).
     rayon::ThreadPoolBuilder::new()
         .num_threads(configuration.get_num_threads())
@@ -520,10 +526,9 @@ fn main() -> Result<()> {
     };
     if static_analysis_enabled {
         let static_analysis_start = Instant::now();
-        let v8 = initialize_v8(configuration.get_num_threads() as u32);
 
         let execution_result = static_analysis(
-            v8,
+            v8.expect("v8 should have been initialized manually"),
             &configuration,
             &analysis_options,
             &files_to_analyze,
