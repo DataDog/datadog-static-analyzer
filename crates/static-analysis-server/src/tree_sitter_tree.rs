@@ -25,7 +25,7 @@ pub fn process_tree_sitter_tree_request(request: TreeSitterRequest) -> TreeSitte
 
     tracing::debug!(
         "Getting tree-sitter tree (code length: {} bytes)",
-        &decoded.as_bytes().len()
+        &decoded.len()
     );
 
     // Note: [get_tree] returns None if the call to tree_sitter::Parser::set_language returns an Err

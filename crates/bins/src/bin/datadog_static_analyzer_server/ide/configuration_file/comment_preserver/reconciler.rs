@@ -27,7 +27,7 @@ pub fn prettify_yaml(content: &str) -> Result<String, ReconcileError> {
 ///
 /// * Repeated elements with `inline` comments may lead to false positives in some edge cases (see mode `inline_limitations` in tests for more info)
 /// * If the original content uses a different syntax than the one emitted by the serializer, we may not be able to determine the location of those comments (e.g. dictionaries and list can be represented in an abbreviated form)
-///  
+///
 ///
 /// # Returns
 ///
@@ -211,7 +211,7 @@ fn manage_block_comment(
             let (trimmed_above, trimmed_below) =
                 (above_line.content.trim(), below_line.content.trim());
             let found = lines.iter().enumerate().find(|(i, l)| {
-                lines.get(i + 1).map_or(false, |next| {
+                lines.get(i + 1).is_some_and(|next| {
                     l.trim().starts_with(trimmed_above) && next.trim().starts_with(trimmed_below)
                 })
             });
