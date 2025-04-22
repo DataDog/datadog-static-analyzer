@@ -826,7 +826,7 @@ function visit(captures) {
                 r#"
 // Test invariant: the number of query matches must be greater than 1 to ensure that we
 // can test the number of times `visit` is called versus `beforeAll` and `afterAll`.
-if (!(globalThis.__RUST_BRIDGE__query_match.length > 1)) {{ throw new Error("test invariant"); }}
+assert(globalThis.__RUST_BRIDGE__query_match.length > 1, "invalid test setup: not enough query matches");
 
 function visit(captures) {{
     const node = captures.get("str");
