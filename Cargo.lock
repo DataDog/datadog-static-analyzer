@@ -998,9 +998,9 @@ dependencies = [
 
 [[package]]
 name = "dot-structures"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "675e35c02a51bb4d4618cb4885b3839ce6d1787c97b664474d9208d074742e20"
+checksum = "498cfcded997a93eb31edd639361fa33fd229a8784e953b37d71035fe3890b7b"
 
 [[package]]
 name = "downcast-rs"
@@ -1335,9 +1335,9 @@ dependencies = [
 
 [[package]]
 name = "graphviz-rust"
-version = "0.9.3"
+version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f7892a4538fc9aa3658ae6962774428487c16e11663c58c594357975377c901"
+checksum = "f971272959ba59e353181bbc69f29032ffc323a164e4975ff9bed15b1b3aaf56"
 dependencies = [
  "dot-generator",
  "dot-structures",
