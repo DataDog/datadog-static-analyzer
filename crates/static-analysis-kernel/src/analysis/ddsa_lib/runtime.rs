@@ -358,8 +358,24 @@ impl JsRuntime {
 {}
 //////////////////////////////
 
+// (Experimental)
+if (typeof beforeAll === \"function\") {{
+    if (beforeAll.length === 0) {{
+        beforeAll();
+    }} else {{
+        // Pass in a clone of the array so the rule code can't mutate the QueryMatchBridge.
+        const allMatches = [...globalThis.__RUST_BRIDGE__query_match];
+        beforeAll(allMatches);
+    }}
+}}
+
 for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
     visit(queryMatch, globalThis.STELLA_COMPAT_FILENAME, globalThis.STELLA_COMPAT_FILE_CONTENTS);
+}}
+
+// (Experimental)
+if (typeof afterAll === \"function\") {{
+    afterAll();
 }}
 
 }})();
@@ -798,6 +814,113 @@ function visit(captures) {
         shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
         let lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
         assert_eq!(lines[0], "123");
+    }
+
+    /// Tests that the beforeAll/afterAll functions are properly called. If the identifier is already
+    /// defined as a non-function, a noop is performed (and thus, no error is thrown).
+    #[test]
+    fn before_all_after_all() {
+        let mut rt = cfg_test_v8().new_runtime();
+        // language=javascript
+        let text = r#"someCall("a", "b", "c");"#;
+        let filename = "some_filename.js";
+        let ts_query = "(string (string_fragment) @str)";
+
+        let make_rule = |before_all: &str, after_all: &str| -> String {
+            // language=javascript
+            format!(
+                r#"
+// Test invariant: the number of query matches must be greater than 1 to ensure that we
+// can test the number of times `visit` is called versus `beforeAll` and `afterAll`.
+assert(globalThis.__RUST_BRIDGE__query_match.length > 1, "invalid test setup: not enough query matches");
+
+function visit(captures) {{
+    const node = captures.get("str");
+    console.log(node.text);
+}}
+
+{before_all}
+
+{after_all}
+"#,
+            )
+        };
+
+        // language=javascript
+        let valid_before_all = r#"
+function beforeAll(_allMatches) {
+    console.log("beforeAll called");
+}
+"#;
+        // language=javascript
+        let valid_after_all = r#"
+function afterAll() {
+    console.log("afterAll called");
+}
+"#;
+        let rule = make_rule(valid_before_all, valid_after_all);
+        let res = shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, &rule, None);
+        if let Err(err) = res {
+            panic!("{}", err.to_string());
+        }
+        let lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(
+            lines,
+            &["beforeAll called", "a", "b", "c", "afterAll called"]
+        );
+
+        // language=javascript
+        let before_all_collision = "const beforeAll = 123;";
+        // language=javascript
+        let after_all_collision = "const afterAll = 123;";
+        let rule = make_rule(before_all_collision, after_all_collision);
+        let res = shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, &rule, None);
+        assert!(res.is_ok(), "should not error on name collision");
+        let lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(lines, &["a", "b", "c"]);
+    }
+
+    /// Mutating the `captures` array passed into the `beforeAll` function doesn't mutate the QueryMatchBridge.
+    #[test]
+    fn before_all_no_bridge_mutation() {
+        let mut rt = cfg_test_v8().new_runtime();
+
+        // language=javascript
+        let text = r#"someCall("a", "b", "c");"#;
+        let filename = "some_filename.js";
+        let ts_query = "(string (string_fragment) @str)";
+        // language=javascript
+        let rule = r#"
+function beforeAll(allMatches) {
+    // Test 1: Valid test setup
+    // The number of query matches must be greater than 1 to ensure that we can check equivalence
+    // between the passed in array in this function and the bridge.
+    assert(globalThis.__RUST_BRIDGE__query_match.length > 1, "invalid test setup: not enough query matches");
+
+    // Test 2: The passed in array contains the same data as the bridge.
+    assert(Array.isArray(allMatches), "argument wasn't an array");
+    assert(allMatches.length === globalThis.__RUST_BRIDGE__query_match.length, "arrays not of same length");
+    for (let i = 0, len = allMatches.length; i < len; i++) {
+        assert(allMatches[i] === globalThis.__RUST_BRIDGE__query_match[i], `incorrect capture at index ${i}`);
+    }
+
+    // Test 3: Mutating the array does not mutate the bridge.
+    allMatches[0] = null;
+    assert(allMatches[0] === null, "array could not be mutated");
+    assert(globalThis.__RUST_BRIDGE__query_match[0] !== null, "bridge was mutated");
+
+    console.log("before_all_no_bridge_mutation passed");
+}
+
+function visit(_captures) { }
+"#;
+
+        let res = shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, &rule, None);
+        if let Err(err) = res {
+            panic!("{}", err.to_string());
+        }
+        let lines = rt.console.borrow_mut().drain().collect::<Vec<_>>();
+        assert_eq!(lines[0], "before_all_no_bridge_mutation passed");
     }
 
     /// `scoped_execute` catches and reports JavaScript errors.
