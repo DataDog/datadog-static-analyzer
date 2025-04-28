@@ -9,4 +9,4 @@ serde = { version = "1.0.219", features = ["derive"] }
 derive_builder = { workspace = true }
 
 # other
-bstr = "1.9.1"
+bstr = "1.12.0"
