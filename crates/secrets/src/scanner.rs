@@ -32,7 +32,7 @@ pub fn find_secrets(
     sds_rules: &[SecretRule],
     filename: &str,
     code: &str,
-    options: &AnalysisOptions,
+    _options: &AnalysisOptions,
 ) -> Vec<SecretResult> {
     struct Result {
         rule_index: usize,
@@ -42,16 +42,10 @@ pub fn find_secrets(
     }
 
     let mut codemut = code.to_owned();
-    let mut matches = scanner.scan(&mut codemut, vec![]);
+    let matches = scanner.scan(&mut codemut, vec![]);
 
     if matches.is_empty() {
         return vec![];
-    }
-
-    let matches_validation = scanner.validate_matches(&mut matches);
-
-    if matches_validation.is_err() && options.use_debug {
-        eprintln!("error when validating secrets for filename {}", filename)
     }
 
     matches
