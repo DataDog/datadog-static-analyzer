@@ -100,7 +100,10 @@ impl TSQuery {
     }
 
     /// Returns a [`TSQueryCursor`] bound to the provided cursor.
-    pub fn with_cursor<'a>(&'a self, cursor: &'a mut tree_sitter::QueryCursor) -> TSQueryCursor {
+    pub fn with_cursor<'a, 'tree: 'a>(
+        &'a self,
+        cursor: &'a mut tree_sitter::QueryCursor,
+    ) -> TSQueryCursor<'a, 'tree> {
         TSQueryCursor {
             query: &self.query,
             capture_names: self.capture_names.as_slice(),

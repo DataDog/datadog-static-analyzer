@@ -36,9 +36,9 @@ impl ServerRule {
     /// The checksum of a rule is the SHA256 of the base64 of the rule code.
     /// Returns `true` if the checksum is valid, otherwise `false`.
     pub fn verify_checksum(&self) -> bool {
-        self.checksum.as_ref().map_or(false, |checksum| {
-            checksum == &compute_sha256(&self.code_base64)
-        })
+        self.checksum
+            .as_ref()
+            .is_some_and(|checksum| checksum == &compute_sha256(&self.code_base64))
     }
 }
 

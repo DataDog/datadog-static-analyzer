@@ -16,7 +16,7 @@ pub struct PackageImport<'a> {
     pub imported_from: Option<Cow<'a, str>>,
 }
 
-impl<'a> PackageImport<'a> {
+impl PackageImport<'_> {
     /// Returns `true` if the import was for a module, or `false` if it was an export within a module.
     pub fn is_module(&self) -> bool {
         self.imported_from.is_none()

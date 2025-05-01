@@ -48,7 +48,7 @@ pub struct RuleConfig<'a> {
     split_path: SplitPath,
 }
 
-impl<'a> RuleConfig<'a> {
+impl RuleConfig<'_> {
     pub fn rule_is_enabled(&self, rule_name: &str) -> bool {
         self.provider
             .path_restrictions

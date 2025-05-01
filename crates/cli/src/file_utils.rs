@@ -212,7 +212,7 @@ pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String])
     let directory_canonicalized = directory_path
         .canonicalize()
         .expect("cannot canonicalize repository directory");
-    return subdirectories.iter().all(|subdirectory| {
+    subdirectories.iter().all(|subdirectory| {
         let new_path = directory_path.join(subdirectory).canonicalize();
         match new_path {
             Err(e) => panic!("error when checking directory {}: {}", subdirectory, e),
@@ -223,7 +223,7 @@ pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String])
                 true
             }
         }
-    });
+    })
 }
 
 // filter the file according to a list of extensions
@@ -284,7 +284,7 @@ pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<
 
 pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration) -> Vec<PathBuf> {
     let max_len_bytes = configuration.max_file_size_kb * 1024;
-    return files
+    files
         .iter()
         .filter(|f| {
             let metadata = fs::metadata(f);
@@ -306,7 +306,7 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
             f.is_file() && !too_big
         })
         .cloned()
-        .collect();
+        .collect()
 }
 
 /// Filter the files to scan for diff-aware scanning.
@@ -325,7 +325,7 @@ pub fn filter_files_by_diff_aware_info(
     let files_to_scan: HashSet<&str> =
         HashSet::from_iter(diff_aware_info.files.iter().map(|f| f.as_str()));
 
-    return files
+    files
         .iter()
         .filter(|f| {
             let p = f
@@ -337,7 +337,7 @@ pub fn filter_files_by_diff_aware_info(
             files_to_scan.contains(p)
         })
         .cloned()
-        .collect();
+        .collect()
 }
 
 /// Generate a fingerprint for a violation that will uniquely identify the violation.

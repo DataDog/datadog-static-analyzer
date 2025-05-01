@@ -182,10 +182,10 @@ fn locate_node<'a>(
         let LocatedNode::Cst { text: cand_text, line: cand_line, col: cand_col, cst_kind: cand_cst_kind } = cand else {
             panic!("candidate should be `LocatedNode::CST`");
         };
-        if text.as_ref().map_or(true, |text| text == "*" || cand_text == text)
-            && line.map_or(true, |line| cand_line == line)
-            && col.map_or(true, |col| cand_col == col)
-            && cst_kind.as_ref().map_or(true, |ty| ty == "*" || cand_cst_kind == ty)
+        if text.as_ref().is_none_or(|text| text == "*" || cand_text == text)
+            && line.is_none_or(|line| cand_line == line)
+            && col.is_none_or( |col| cand_col == col)
+            && cst_kind.as_ref().is_none_or( |ty| ty == "*" || cand_cst_kind == ty)
         {
             if let Some(prev) = located.replace(cand) {
                 panic!("two CST nodes matched {:?}: ({:?}, {:?})", attrs, prev, cand);
