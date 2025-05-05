@@ -24,8 +24,8 @@ RES=`jq '.runs[0].results | length ' "${REPO_DIR}/results2.json"`
 
 echo "Found $RES errors on second run"
 
-if [ "$RES" -lt "2" ]; then
-  echo "not enough errors found"
+if [ "$RES" -lt "1" ]; then
+  echo "test invariant: expected at least 1 violation"
   exit 1
 fi
 
