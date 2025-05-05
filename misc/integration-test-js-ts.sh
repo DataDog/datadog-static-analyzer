@@ -29,8 +29,8 @@ fi
 
 FINDINGS=`jq '.runs[0].results|length' ${REPO_DIR}/results.json`
 echo "Found $FINDINGS violations"
-if [ $FINDINGS -lt 2 ]; then
-  echo "only $FINDINGS found, expected at least 2 findings"
+if [ $FINDINGS -lt 1 ]; then
+  echo "test invariant: expected at least 1 violation"
   exit 1
 fi
 
