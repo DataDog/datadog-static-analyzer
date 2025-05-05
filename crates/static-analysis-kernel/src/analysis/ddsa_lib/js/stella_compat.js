@@ -70,6 +70,11 @@ export function getCodeForNode(node, code) {
 }
 
 /**
+ * A {@link Symbol} intended to mark an object as compatibility layer string {@link Proxy}.
+ */
+export const COMPAT_STRING_PROXY_SYMBOL = Symbol("COMPAT_STRING_PROXY_SYMBOL");
+
+/**
  * An object that, when accessed, lazily fetches the filename from the DDSA runtime context.
  * @augments String
  * @deprecated
@@ -78,6 +83,8 @@ export class VisitArgFilenameCompat {
   constructor() {
     return new Proxy({ inner: undefined }, {
       get(target, p, _receiver) {
+        if (p === COMPAT_STRING_PROXY_SYMBOL) return true;
+
         // The RootContext maintains a cache, so we can re-assign the getter's return value each time without allocating.
         target.inner = globalThis.__RUST_BRIDGE__context.filename;
 
@@ -100,6 +107,8 @@ export class VisitArgCodeCompat {
   constructor() {
     return new Proxy({ inner: undefined }, {
       get(target, p, _receiver) {
+        if (p === COMPAT_STRING_PROXY_SYMBOL) return true;
+
         // The RootContext maintains a cache, so we can re-assign the getter's return value each time without allocating.
         target.inner = globalThis.__RUST_BRIDGE__context.fileContents;
 

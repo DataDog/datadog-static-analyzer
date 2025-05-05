@@ -1382,6 +1382,37 @@ function visit(query, filename, code) {
         assert_eq!(*violation, expected);
     }
 
+    /// Tests that the Proxy object used for the `filename` and `code` arguments is serialized
+    /// as if it were a normal string when referenced directly (i.e. not coerced to a primitive).
+    #[test]
+    fn stella_compat_string_proxy_console_serialization() {
+        let mut rt = cfg_test_v8().new_runtime();
+        // (Some arbitrary multi-line text to ensure proper serialization of newlines)
+        // language=javascript
+        let text = r#"
+assertEquals(1, 1);
+(() => {
+    const someName = 123;
+    run();
+})();
+
+"#;
+        let filename = "some_filename.js";
+        let ts_query = r#"
+(variable_declarator) @decl
+"#;
+        let rule = r#"
+function visit(_query, filename, code) {
+    console.log(filename);
+    console.log(code);
+}
+"#;
+
+        let _ =
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
+        assert_eq!(rt.console_lines(), &[filename, text]);
+    }
+
     /// Tests that the runtime's `TsNodeBridge` state persists between rule executions on the same
     /// tree but is cleared when the tree changes.
     #[test]
