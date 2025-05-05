@@ -16,7 +16,7 @@ echo " - python-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-django" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif
 
 cat "${REPO_DIR}/results.json"
 
@@ -35,7 +35,7 @@ if [ "$RES" -lt "1" ]; then
 fi
 
 # Test that --fail-on-any-violation returns a non-zero return code
-./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x --fail-on-any-violation=none,notice,warning,error
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif --fail-on-any-violation=none,notice,warning,error
 
 if [ $? -eq 0 ]; then
   echo "static analyzer reports 0 when it should not"

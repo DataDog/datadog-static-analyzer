@@ -20,7 +20,7 @@ echo " - tsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - javascript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - typescript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif
 
 if [ $? -ne 0 ]; then
   echo "fail to analyze juice-shop"
