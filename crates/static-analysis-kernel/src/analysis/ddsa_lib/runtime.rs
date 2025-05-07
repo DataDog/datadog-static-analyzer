@@ -1382,25 +1382,23 @@ function visit(query, filename, code) {
         assert_eq!(*violation, expected);
     }
 
-    /// Tests that the Proxy object used for the `filename` and `code` arguments is serialized
-    /// as if it were a normal string when referenced directly (i.e. not coerced to a primitive).
+    /// Passing a `VisitArgFilenameCompat` or `VisitArgCodeCompat` instance directly into console.log
+    /// returns the contents of the underlying string.
     #[test]
     fn stella_compat_string_proxy_console_serialization() {
         let mut rt = cfg_test_v8().new_runtime();
         // (Some arbitrary multi-line text to ensure proper serialization of newlines)
-        // language=javascript
         let text = r#"
-assertEquals(1, 1);
-(() => {
-    const someName = 123;
-    run();
-})();
+assert(1 === 1);
+const someName = 123;
+assert(1 === 2);
 
 "#;
         let filename = "some_filename.js";
         let ts_query = r#"
 (variable_declarator) @decl
 "#;
+        // language=javascript
         let rule = r#"
 function visit(_query, filename, code) {
     console.log(filename);
