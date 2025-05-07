@@ -1382,6 +1382,35 @@ function visit(query, filename, code) {
         assert_eq!(*violation, expected);
     }
 
+    /// Passing a `VisitArgFilenameCompat` or `VisitArgCodeCompat` instance directly into console.log
+    /// returns the contents of the underlying string.
+    #[test]
+    fn stella_compat_string_proxy_console_serialization() {
+        let mut rt = cfg_test_v8().new_runtime();
+        // (Some arbitrary multi-line text to ensure proper serialization of newlines)
+        let text = r#"
+assert(1 === 1);
+const someName = 123;
+assert(1 === 2);
+
+"#;
+        let filename = "some_filename.js";
+        let ts_query = r#"
+(variable_declarator) @decl
+"#;
+        // language=javascript
+        let rule = r#"
+function visit(_query, filename, code) {
+    console.log(filename);
+    console.log(code);
+}
+"#;
+
+        let _ =
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
+        assert_eq!(rt.console_lines(), &[filename, text]);
+    }
+
     /// Tests that the runtime's `TsNodeBridge` state persists between rule executions on the same
     /// tree but is cleared when the tree changes.
     #[test]

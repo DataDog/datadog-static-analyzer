@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 import {TreeSitterNode, TreeSitterFieldChildNode} from "ext:ddsa_lib/ts_node";
+import { COMPAT_STRING_PROXY_SYMBOL } from "ext:ddsa_lib/stella_compat";
 const { op_console_push } = Deno.core.ops;
 
 export class DDSA_Console {
@@ -47,6 +48,10 @@ export class DDSA_Console {
                 // `typeof null === "object"`
                 if (arg === null) {
                     return "null";
+                }
+                if (typeof arg === "object" && arg[COMPAT_STRING_PROXY_SYMBOL] === true) {
+                    // Call toString to invoke the underlying proxy trap (otherwise this object will serialize as "{}").
+                    return (/** @type {Proxy} */ arg).toString();
                 }
                 // The arg is either an array or an object.
                 return JSON.stringify(arg, DDSA_Console.JSONReplacer, undefined);
