@@ -16,7 +16,7 @@ git clone --depth=1 https://github.com/muh-nee/sast-files-encoding.git "${REPO_D
 echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
 echo " - python-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
-./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif
 
 if [ $? -ne 0 ]; then
   echo "failed to analyze muh-nee/sast-files-encoding"

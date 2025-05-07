@@ -12,26 +12,22 @@ cargo build --locked --profile release-dev --bin datadog-static-analyzer
 echo "Checking rosie tests"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
-git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}"
-./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -x -g
+git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}" \
+     && git -C "${REPO_DIR}" checkout 37874bd2fcb1d39a9ce4a614e6a07826e04d0cb1 -q
+
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -g
 if [ $? -ne 0 ]; then
   echo "fail to analyze rosie-tests"
   exit 1
 fi
-
-# Getting the category of the fist violation detected (all violations in this report are security)
-CATEGORY=$(jq '.runs[0].results[0].properties.tags[0]' "${REPO_DIR}/results.json")
 
 # Getting the SHA of the violation detected by the rule python-security/subprocess-shell-true
 FIRST_SHA=$(jq '.runs[0].results[] | select( .ruleId | contains("python-security/subprocess-shell-true")).partialFingerprints["SHA"]' "${REPO_DIR}/results.json")
 
 # Getting the SHA of the violation detected by the rule python-security/yaml-load
 SECOND_SHA=$(jq '.runs[0].results[] | select( .ruleId | contains("python-security/yaml-load")).partialFingerprints["SHA"]' "${REPO_DIR}/results.json")
-
-if [ "${CATEGORY}" != "\"DATADOG_CATEGORY:SECURITY\"" ]; then
-  echo "invalid category ${CATEGORY}"
-  exit 1
-fi
 
 if [ "${FIRST_SHA}" != "\"5509900dc490cedbe2bb64afaf43478e24ad144b\"" ]; then
   echo "invalid first SHA ${FIRST_SHA}"

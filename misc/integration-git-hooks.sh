@@ -31,7 +31,7 @@ SHA2=$(cd $REPO_DIR && git rev-parse HEAD)
 
 echo "Starting test: secrets should be found using the default branch"
 
-./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-secrets true --debug yes --default-branch main --output /tmp/git-hook.sarif >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-secrets true --default-branch main --output /tmp/git-hook.sarif >/tmp/plop 2>&1
 ret=$?
 if [ $ret -ne 11 ]; then
   cat /tmp/plop
@@ -61,7 +61,7 @@ fi
 #############################################################
 echo "Starting test: secrets should be found using two sha"
 
-./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-secrets true --debug yes --sha-start $SHA1 --sha-end $SHA2 >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-secrets true --sha-start $SHA1 --sha-end $SHA2 >/tmp/plop 2>&1
 ret=$?
 if [ $ret -ne 11 ]; then
   cat /tmp/plop
@@ -96,7 +96,7 @@ SHA3=$(cd $REPO_DIR && git rev-parse HEAD)
 
 echo "starting analyzer between $SHA2 and $SHA3"
 
-./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-static-analysis true --enable-secrets true --debug yes --sha-start $SHA2 --sha-end $SHA3 >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-static-analysis true --enable-secrets true --sha-start $SHA2 --sha-end $SHA3 >/tmp/plop 2>&1
 
 if [ $? -ne 11 ]; then
   echo "static analysis issues should have been found"
@@ -120,7 +120,7 @@ fi
 
 echo "Starting test: error when a branch does not exists"
 
-./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-secrets true --debug yes --default-branch mainwefwef >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --enable-secrets true --default-branch mainwefwef >/tmp/plop 2>&1
 
 if [ $? -ne 1 ]; then
   echo "branch cannot be found"
@@ -143,7 +143,7 @@ fi
 
 echo "Starting test: error when not specifying --enable-static-analysis or --enable-secrets"
 
-./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --debug yes --default-branch mainwefwef >/tmp/plop 2>&1
+./target/release-dev/datadog-static-analyzer-git-hook --repository "${REPO_DIR}" --default-branch mainwefwef >/tmp/plop 2>&1
 
 if [ $? -ne 52 ]; then
   cat /tmp/plop
