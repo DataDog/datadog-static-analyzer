@@ -349,6 +349,7 @@ pub struct SecretRuleApiAttributes {
     pub name: String,
     pub description: String,
     pub pattern: String,
+    pub sds_id: String,
     pub default_included_keywords: Option<Vec<String>>,
     pub validators: Option<Vec<String>>,
     pub match_validation: Option<SecretRuleApiMatchValidation>,
@@ -381,12 +382,14 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                         .unwrap_or_default(),
                     validators: val.attributes.validators,
                     match_validation: Some(validation),
+                    sds_id: val.attributes.sds_id,
                 }),
                 Err(s) => Err(s),
             }
         } else {
             Ok(SecretRule {
                 id: val.id,
+                sds_id: val.attributes.sds_id,
                 name: val.attributes.name,
                 description: val.attributes.description,
                 pattern: val.attributes.pattern,
@@ -525,6 +528,7 @@ mod tests {
             id: "secret_type".to_string(),
             attributes: SecretRuleApiAttributes {
                 name: "secret_rule_name".to_string(),
+                sds_id: "sds_id".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
                 default_included_keywords: None,
@@ -557,6 +561,7 @@ mod tests {
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
                 default_included_keywords: None,
+                sds_id: "sds_id".to_string(),
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING.to_string(),
@@ -585,6 +590,7 @@ mod tests {
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
                 default_included_keywords: None,
+                sds_id: "sds_id".to_string(),
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_SECRET_STRING.to_string(),
@@ -618,6 +624,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
+                sds_id: "sds_id".to_string(),
                 default_included_keywords: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
@@ -652,6 +659,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
+                sds_id: "sds_id".to_string(),
                 default_included_keywords: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {

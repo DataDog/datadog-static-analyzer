@@ -287,7 +287,10 @@ impl IntoSarif for &SecretRule {
         }
 
         let props = PropertyBagBuilder::default()
-            .tags(vec![SarifRule::rule_type_tag("SECRET")])
+            .tags(vec![
+                SarifRule::rule_type_tag("SECRET"),
+                format!("DATADOG_SDS_ID:{}", self.sds_id),
+            ])
             .build()
             .unwrap();
         builder.properties(props);
@@ -1435,6 +1438,7 @@ mod tests {
         let rule = secrets::model::secret_rule::SecretRule {
             id: "secret-rule".to_string(),
             name: "secret-rule".to_string(),
+            sds_id: "sds-id".to_string(),
             description: "secret-description".to_string(),
             pattern: "foobarbaz".to_string(),
             default_included_keywords: vec![],
@@ -1534,7 +1538,8 @@ mod tests {
                           "name": "secret-rule",
                           "properties": {
                             "tags": [
-                              "DATADOG_RULE_TYPE:SECRET"
+                              "DATADOG_RULE_TYPE:SECRET",
+                              "DATADOG_SDS_ID:sds-id"
                             ]
                           },
                           "shortDescription": {
