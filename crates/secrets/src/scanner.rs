@@ -110,6 +110,7 @@ mod tests {
     fn test_find_secrets() {
         let rules: Vec<SecretRule> = vec![SecretRule {
             id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
             name: "detect a lot of secrets!".to_string(),
             description: "super secret!".to_string(),
             pattern: "FOO(BAR|BAZ)".to_string(),

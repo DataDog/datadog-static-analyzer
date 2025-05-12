@@ -199,6 +199,7 @@ mod tests {
         let secret_rule1 = SecretRule {
             id: "id1".to_string(),
             name: "name1".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
             description: "description1".to_string(),
             pattern: "pattern1".to_string(),
             default_included_keywords: vec![],
@@ -209,6 +210,7 @@ mod tests {
         let secret_rule2 = SecretRule {
             id: "id2".to_string(),
             name: "name2".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E1".to_string(),
             description: "description2".to_string(),
             pattern: "pattern2".to_string(),
             default_included_keywords: vec![],
