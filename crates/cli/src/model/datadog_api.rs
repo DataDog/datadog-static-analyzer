@@ -528,7 +528,7 @@ mod tests {
             id: "secret_type".to_string(),
             attributes: SecretRuleApiAttributes {
                 name: "secret_rule_name".to_string(),
-                sds_id: "sds_id".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
                 default_included_keywords: None,
@@ -561,7 +561,7 @@ mod tests {
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
                 default_included_keywords: None,
-                sds_id: "sds_id".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING.to_string(),
@@ -590,7 +590,7 @@ mod tests {
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
                 default_included_keywords: None,
-                sds_id: "sds_id".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_SECRET_STRING.to_string(),
@@ -624,7 +624,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
-                sds_id: "sds_id".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 default_included_keywords: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
@@ -659,7 +659,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
-                sds_id: "sds_id".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 default_included_keywords: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {

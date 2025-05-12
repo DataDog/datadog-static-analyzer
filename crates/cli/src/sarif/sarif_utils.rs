@@ -1438,7 +1438,7 @@ mod tests {
         let rule = secrets::model::secret_rule::SecretRule {
             id: "secret-rule".to_string(),
             name: "secret-rule".to_string(),
-            sds_id: "sds-id".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
             description: "secret-description".to_string(),
             pattern: "foobarbaz".to_string(),
             default_included_keywords: vec![],
@@ -1539,7 +1539,7 @@ mod tests {
                           "properties": {
                             "tags": [
                               "DATADOG_RULE_TYPE:SECRET",
-                              "DATADOG_SDS_ID:sds-id"
+                              "DATADOG_SDS_ID:71A7A0ED-DD03-45C5-9C2E-56B30CB566E0"
                             ]
                           },
                           "shortDescription": {
