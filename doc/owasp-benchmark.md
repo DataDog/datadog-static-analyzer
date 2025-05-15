@@ -9,7 +9,7 @@
 
 ### Benchmark results
 
-These are the results of the OWASP Benchmark for the Datadog Static Analyzer as of 10/23/2024.
+These are the results of the OWASP Benchmark for the Datadog Static Analyzer as of 05/15/2025.
 
 ![Datadog Static Analysis OWASP Benchmark](imgs/owasp.png)
 
@@ -26,13 +26,13 @@ git clone https://github.com/juli1/BenchmarkUtils
 Switch to the branch `juli1/add-datadog-support`
 
 ```
-(cd BenchmarkUtils && git checkout juli1/add-datadog-support)
+cd BenchmarkUtils && git checkout juli1/add-datadog-support
 ```
 
 Then, compile and install the library. It will install it in your local maven repository.
 
 ```
-cd BenchmarkUtils && mvn compile && mvn install
+mvn compile && mvn install
 ```
 
 
@@ -59,7 +59,7 @@ git clone https://github.com/DataDog/datadog-static-analyzer.git
 Then, run it. At the top directory of the static analyzer, use
 
 ```
-cargo run --locked --release --bin datadog-static-analyzer -- --format sarif --output /path/to/BenchmarkJava/results/Benchmark_1.2-DatadogSast.sarif --directory /path/to/BenchmarkJava
+cd datadog-static-analyzer && cargo run --locked --release --bin datadog-static-analyzer -- --format sarif --output /path/to/BenchmarkJava/results/Benchmark_1.2-DatadogSast.sarif --directory /path/to/BenchmarkJava
 ```
 
 
