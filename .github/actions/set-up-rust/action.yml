@@ -1,0 +1,16 @@
+name: Set Up Rust
+description: Installs the Rust toolchain
+
+inputs:
+  target:
+    description: The `target` to pass to rustup when installing the toolchain
+    required: false
+
+runs:
+  using: composite
+  steps:
+    - name: Install Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@9d7e65c320fdb52dcd45ffaa68deb6c02c8754d9 # v1.12.0
+      with:
+        cache-bin: false
+        target: ${{ inputs.target }}
