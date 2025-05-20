@@ -24,8 +24,8 @@ use secrets::model::secret_rule::SecretRule;
 use thiserror::Error;
 use uuid::Uuid;
 
-const STAGING_DATADOG_HOSTNAME: &str = "api.datad0g.com";
-const DEFAULT_DATADOG_HOSTNAME: &str = "api.datadoghq.com";
+const STAGING_DATADOG_BASENAME: &str = "https://api.datad0g.com";
+const DEFAULT_DATADOG_BASENAME: &str = "https://api.datadoghq.com";
 
 const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "CSHARP",
@@ -106,15 +106,19 @@ pub fn get_datadog_variable_value(variable: &str) -> Result<String> {
 // If a DD_HOSTNAME envvar has been specified, use it; otherwise, use the staging hostname
 // if use_staging is true; otherwise, use the DD_SITE envvar with 'api.' prepended;
 // otherwise, use the default hostname.
-fn get_datadog_hostname(use_staging: bool) -> String {
+fn get_datadog_basename(use_staging: bool) -> String {
     if let Ok(hostname) = get_datadog_variable_value("HOSTNAME") {
-        hostname
+        if hostname.starts_with("http://") || hostname.starts_with("https://") {
+            hostname
+        } else {
+            format!("https://{}", hostname)
+        }
     } else if use_staging {
-        STAGING_DATADOG_HOSTNAME.to_string()
+        STAGING_DATADOG_BASENAME.to_string()
     } else if let Ok(site) = get_datadog_variable_value("SITE") {
-        format!("api.{}", site).to_string()
+        format!("https://api.{}", site).to_string()
     } else {
-        DEFAULT_DATADOG_HOSTNAME.to_string()
+        DEFAULT_DATADOG_BASENAME.to_string()
     }
 }
 
@@ -136,8 +140,8 @@ fn make_request(
     require_keys: bool,
 ) -> Result<RequestBuilder> {
     let url = format!(
-        "https://{}/api/v2/static-analysis/{}",
-        get_datadog_hostname(use_staging),
+        "{}/api/v2/static-analysis/{}",
+        get_datadog_basename(use_staging),
         path
     );
     let request_builder = match method {
@@ -340,8 +344,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_datadog_hostname() {
-        assert_eq!(get_datadog_hostname(true), STAGING_DATADOG_HOSTNAME);
-        assert_eq!(get_datadog_hostname(false), DEFAULT_DATADOG_HOSTNAME);
+    fn test_get_datadog_basename() {
+        assert_eq!(get_datadog_basename(true), STAGING_DATADOG_BASENAME);
+        assert_eq!(get_datadog_basename(false), DEFAULT_DATADOG_BASENAME);
     }
 }
