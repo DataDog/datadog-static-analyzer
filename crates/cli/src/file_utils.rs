@@ -20,6 +20,7 @@ static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Go, &["go"]),
     (Language::Java, &["java"]),
     (Language::JavaScript, &["js", "jsx", "mjs", "cjs"]),
+    (Language::Json, &["json"]),
     (Language::Kotlin, &["kt", "kts"]),
     (Language::Python, &["py", "py3"]),
     (Language::Ruby, &["rb"]),
