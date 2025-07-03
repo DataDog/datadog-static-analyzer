@@ -32,6 +32,7 @@ jobs:
           - { file: './misc/integration-test-sql.sh', gha_alias: 'SQL' }
           - { file: './misc/integration-test-encoding.sh', gha_alias: 'File Encoding' }
           - { file: './misc/integration-test-default-config.sh', gha_alias: 'Default Config' }
+          - { file: './misc/integration-test-secrets.sh', gha_alias: 'Secrets' }
     name: Run integration test - ${{ matrix.scripts.gha_alias }}
     steps:
       - uses: actions/checkout@v4
