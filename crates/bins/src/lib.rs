@@ -281,7 +281,7 @@ pub fn secret_analysis(
         .into_par_iter()
         .fold(
             || (Vec::new(), HashMap::new()),
-            |(_, mut path_metadata), path| {
+            |(mut fold_results, mut path_metadata), path| {
                 let relative_path = path
                     .strip_prefix(directory_path)
                     .expect("cannot strip prefix from path")
@@ -327,7 +327,9 @@ pub fn secret_analysis(
                 if let Some(pb) = &progress_bar {
                     pb.inc(1);
                 }
-                (res, path_metadata)
+                fold_results.extend(res);
+
+                (fold_results, path_metadata)
             },
         )
         .reduce(
