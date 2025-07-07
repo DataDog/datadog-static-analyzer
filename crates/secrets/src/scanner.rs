@@ -22,6 +22,7 @@ pub fn build_sds_scanner(rules: &[SecretRule], use_debug: bool) -> Scanner {
         .map(|r| r.convert_to_sds_ruleconfig(use_debug).into_dyn())
         .collect::<Vec<RootRuleConfig<Arc<dyn RuleConfig>>>>();
     Scanner::builder(&sds_rules)
+        .with_return_matches(true)
         .build()
         .expect("error when instantiating the scanner")
 }
