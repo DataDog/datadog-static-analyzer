@@ -200,7 +200,6 @@ fn main() -> Result<()> {
     let output_file = matches
         .opt_str("o")
         .context("output file must be specified")?;
-
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {
             "csv" => OutputFormat::Csv,
