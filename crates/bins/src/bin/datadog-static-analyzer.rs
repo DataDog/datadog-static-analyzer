@@ -196,6 +196,10 @@ fn main() -> Result<()> {
             vec![]
         }
     };
+    
+    let output_file = matches
+        .opt_str("o")
+        .context("output file must be specified")?;
 
     let output_format = match matches.opt_str("f") {
         Some(f) => match f.as_str() {
@@ -203,7 +207,14 @@ fn main() -> Result<()> {
             "sarif" => OutputFormat::Sarif,
             _ => OutputFormat::Json,
         },
-        None => OutputFormat::Json,
+        None => {
+            let path = std::path::Path::new(&output_file);
+            match path.extension().and_then(|ext| ext.to_str()) {
+                Some("csv") => OutputFormat::Csv,
+                Some("sarif") => OutputFormat::Sarif,
+                _ => OutputFormat::Json
+            }
+        },
     };
 
     let use_debug = *matches
@@ -226,10 +237,6 @@ fn main() -> Result<()> {
         .map(|value| value == "true" || value == "yes")
         .unwrap_or(false);
     let secrets_enabled = secrets_enabled_old_option || secrets_enabled_new_option;
-
-    let output_file = matches
-        .opt_str("o")
-        .context("output file must be specified")?;
 
     let mut path_config = PathConfig {
         ignore: Vec::new(),
