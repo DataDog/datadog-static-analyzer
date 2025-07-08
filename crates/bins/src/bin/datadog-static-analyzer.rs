@@ -212,9 +212,9 @@ fn main() -> Result<()> {
             match path.extension().and_then(|ext| ext.to_str()) {
                 Some("csv") => OutputFormat::Csv,
                 Some("sarif") => OutputFormat::Sarif,
-                _ => OutputFormat::Json
+                _ => OutputFormat::Json,
             }
-        },
+        }
     };
 
     let use_debug = *matches
