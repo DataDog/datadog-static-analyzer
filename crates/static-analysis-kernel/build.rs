@@ -183,7 +183,7 @@ fn main() {
             compilation_unit: "tree-sitter-swift".to_string(),
             repository: "https://github.com/alex-pinkus/tree-sitter-swift.git".to_string(),
             build_dir: "src".into(),
-            commit_hash: "fadd0a0188f4bff57bdfc9ba829ae71b7b01488b".to_string(),
+            commit_hash: "7c2f26b5dce12e82ef2bd932a883ef514ae566b8".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
@@ -293,6 +293,17 @@ fn main() {
             }));
 
             fs::remove_dir_all(".git").expect("Failed to remove .git directory");
+
+            // SPIKE: Manually generate the parser. Assumes tree-sitter is installed.
+            if proj.name == "tree-sitter-swift"
+                && proj.commit_hash == "7c2f26b5dce12e82ef2bd932a883ef514ae566b8"
+            {
+                assert!(Command::new("tree-sitter")
+                    .args(["generate", "grammar.js"])
+                    .status()
+                    .expect("tree-sitter should spawn")
+                    .success());
+            }
             env::set_current_dir(&base_dir).unwrap();
         }
         env::set_current_dir(&project_dir).unwrap();
