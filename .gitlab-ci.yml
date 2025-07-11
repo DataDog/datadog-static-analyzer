@@ -71,14 +71,11 @@ test-and-build-amd64:
 
 trigger_internal_image:
   stage: release
-  only:
-    - main
   trigger:
     project: DataDog/images
-    branch: ${DD_IMAGES_BRANCH}
+    branch: jf/K9VULN-4076-spike
     strategy: depend
   variables:
-    DD_IMAGES_BRANCH: master
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
     RELEASE_TAG: ${CI_COMMIT_SHORT_SHA}
