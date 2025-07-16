@@ -47,7 +47,18 @@ git clone https://github.com/OWASP-Benchmark/BenchmarkJava.git
 ```
 
 
-### Step 3: Run our static analyzer
+### Step 3: Configure the analyzer
+
+Create a `static-analysis.datadog.yml` file in the root of the BenchmarkJava repo. Put the following contents in the file:
+
+```
+rulesets:
+  - java-security
+```
+
+This ensures we will only produce findings with a CWE.
+
+### Step 4: Run our static analyzer
 
 Clone our static analyzer using the following command.
 
@@ -63,7 +74,7 @@ cd datadog-static-analyzer && cargo run --locked --release --bin datadog-static-
 ```
 
 
-### Step 4: Create Scorecards
+### Step 5: Create Scorecards
 
 Create the scorecards from the `BenchmarkJava` repository (the one created during step 2).
 
