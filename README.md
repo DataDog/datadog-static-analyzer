@@ -57,7 +57,7 @@ You can use it in your CI/CD pipeline using our integration:
 - [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
 - [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
 
-If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/code_analysis/static_analysis/setup).
+If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/security/code_security/static_analysis/setup).
 
 
 ### IntelliJ JetBrains products
