@@ -6,12 +6,12 @@ use common::model::position::Position;
 use dd_sds::MatchStatus;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub enum SecretValidationStatus {
     NotValidated,
     Valid,
     Invalid,
-    ValidationError,
+    ValidationError(String),
     NotAvailable,
 }
 
@@ -21,7 +21,7 @@ impl From<&MatchStatus> for SecretValidationStatus {
             MatchStatus::NotChecked => SecretValidationStatus::NotValidated,
             MatchStatus::Valid => SecretValidationStatus::Valid,
             MatchStatus::Invalid => SecretValidationStatus::Invalid,
-            MatchStatus::Error(_) => SecretValidationStatus::ValidationError,
+            MatchStatus::Error(s) => SecretValidationStatus::ValidationError(s.to_owned()),
             MatchStatus::NotAvailable => SecretValidationStatus::NotAvailable,
         }
     }
