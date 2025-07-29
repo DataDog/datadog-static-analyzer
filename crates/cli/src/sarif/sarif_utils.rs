@@ -141,7 +141,7 @@ impl SarifViolation {
                 SecretValidationStatus::NotValidated => "NOT_VALIDATED",
                 SecretValidationStatus::Valid => "VALID",
                 SecretValidationStatus::Invalid => "INVALID",
-                SecretValidationStatus::ValidationError => "VALIDATION_ERROR",
+                SecretValidationStatus::ValidationError(_) => "VALIDATION_ERROR",
                 SecretValidationStatus::NotAvailable => "NOT_AVAILABLE",
             };
             vec![format!("DATADOG_SECRET_VALIDATION_STATUS:{}", status).to_string()]
@@ -173,7 +173,7 @@ impl SarifRuleResult {
                         SecretValidationStatus::NotValidated => RuleSeverity::Notice,
                         SecretValidationStatus::Valid => RuleSeverity::Error,
                         SecretValidationStatus::Invalid => RuleSeverity::None,
-                        SecretValidationStatus::ValidationError => RuleSeverity::Warning,
+                        SecretValidationStatus::ValidationError(_) => RuleSeverity::Warning,
                         SecretValidationStatus::NotAvailable => RuleSeverity::Error,
                     };
 
@@ -187,7 +187,7 @@ impl SarifRuleResult {
                             fixes: vec![],
                             taint_flow: None,
                         },
-                        r.validation_status,
+                        r.validation_status.clone(),
                     )
                 })
                 .collect::<Vec<SarifViolation>>(),
@@ -761,6 +761,34 @@ fn generate_results(
                         sarif_result.level(get_level_from_severity(violation.severity));
                     }
 
+                    let mut prop_bag_builder = PropertyBagBuilder::default();
+                    prop_bag_builder
+                        .tags([tags.clone(), sarif_violation.get_properties()].concat());
+
+                    if let SarifRuleResult::Secret(res) = rule_result {
+                        let mut err_reasons = HashSet::<String>::new();
+                        for m in &res.matches {
+                            if let SecretValidationStatus::ValidationError(msg) =
+                                &m.validation_status
+                            {
+                                err_reasons.insert(msg.clone());
+                            }
+                        }
+                        if !err_reasons.is_empty() {
+                            let mut props = BTreeMap::new();
+                            let mut err_messages = err_reasons.into_iter().collect::<Vec<_>>();
+                            err_messages.sort();
+                            let err_messages = serde_json::Value::Array(
+                                err_messages
+                                    .into_iter()
+                                    .map(serde_json::Value::String)
+                                    .collect::<Vec<_>>(),
+                            );
+                            props.insert("sds_errors".to_string(), err_messages);
+                            prop_bag_builder.additional_properties(props);
+                        }
+                    }
+
                     sarif_result
                         .rule_id(rule_result.rule_id())
                         .locations([location])
@@ -771,12 +799,7 @@ fn generate_results(
                                 .build()
                                 .unwrap(),
                         )
-                        .properties(
-                            PropertyBagBuilder::default()
-                                .tags([tags.clone(), sarif_violation.get_properties()].concat())
-                                .build()
-                                .unwrap(),
-                        )
+                        .properties(prop_bag_builder.build().unwrap())
                         .partial_fingerprints(partial_fingerprints);
                     if let Some(taint_code_flow) = taint_code_flow {
                         sarif_result.code_flows(&[taint_code_flow]);
@@ -1451,7 +1474,7 @@ mod tests {
             (SecretValidationStatus::NotValidated, "DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED", "note"),
             (SecretValidationStatus::Valid, "DATADOG_SECRET_VALIDATION_STATUS:VALID", "error"),
             (SecretValidationStatus::Invalid, "DATADOG_SECRET_VALIDATION_STATUS:INVALID", "none"),
-            (SecretValidationStatus::ValidationError, "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR", "warning"),
+            (SecretValidationStatus::ValidationError(String::new()), "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR", "warning"),
             (SecretValidationStatus::NotAvailable, "DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE", "error"),
         ];
 
