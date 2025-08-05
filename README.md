@@ -7,7 +7,6 @@ datadog-static-analyzer is the static analyzer engine for Datadog [static analys
 
 ## How to use Datadog Static Analysis Tool
 
-
 ### Quick Start
 
 1. Download the binary from the [releases](https://github.com/DataDog/datadog-static-analyzer/releases)
@@ -36,7 +35,7 @@ You can choose the rules to use to scan your repository by creating a `static-an
 First, make sure you follow the [documentation](https://docs.datadoghq.com/code_analysis/static_analysis)
 and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
 
-All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules). Your `static-analysis.datadog.yml` may only contain rulesets available from the [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules)
+All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/). Your `static-analysis.datadog.yml` may only contain rulesets available from the [Datadog documentation](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/)
 
 Example of YAML file
 
@@ -50,15 +49,14 @@ ignore:
   - tests
 ```
 
-
 ### CI/CD Integration
 
 You can use it in your CI/CD pipeline using our integration:
+
 - [GitHub Action](https://github.com/DataDog/datadog-static-analyzer-github-action)
 - [CircleCI ORB](https://circleci.com/developer/orbs/orb/datadog/datadog-static-analyzer-circleci-orb)
 
 If you use it in your own CI/CD pipeline, you can integrate the tool directly: see the [Datadog documentation for more information](https://docs.datadoghq.com/security/code_security/static_analysis/setup).
-
 
 ### IntelliJ JetBrains products
 
@@ -67,7 +65,6 @@ Create a `static-analysis.datadog.yml` file, download the extension and you can 
 when fetching data with Python with the requests module.
 
 ![Datadog Static Analysis JetBrains](misc/imgs/jetbrains.gif)
-
 
 ### VS Code
 
@@ -81,7 +78,7 @@ Create a `static-analysis.datadog.yml` file, download the extension and you can 
 When you onboard on the Datadog product, you can select the ruleset you want/need. If you are not using Datadog directly, 
 there is the list of common used rulesets available in the Datadog static analysis product per language.
 
-The complete list is available in [our documentation](https://docs.datadoghq.com/code_analysis/static_analysis/setup/).
+The complete list is available in [our documentation](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/).
 
 The list of rulesets is available in [RULESETS.md](RULESETS.md).
 
@@ -109,7 +106,7 @@ datadog-static-analyzer -i <directory> -o <output-file>
 
 For the tool to work, you must have a `<directory>/static-analysis.datadog.yml` file that defines the configuration of the analyzer. This file will indicate the rules you will use for your project.
 
-You can get more information about the configuration on [Datadog documentation](https://docs.datadoghq.com/code_analysis/static_analysis/setup/).
+You can get more information about the configuration on [Datadog documentation](https://docs.datadoghq.com/security/code_security/static_analysis/setup).
 
 ### Mac OS X users
 
@@ -142,7 +139,7 @@ Set the following variables to configure an analysis:
 The static analyzer can be configured using a `static-analysis.datadog.yml` file
 at the root directory of the repository. This is a YAML file with the following entries:
 
-- `rulesets`: (required) a list with all the rulesets to use for this repository (see [Datadog Documentation](https://docs.datadoghq.com/code_analysis/static_analysis_rules) for a full list). The elements of this list must be strings or maps containing a configuration for a ruleset (described below.)
+- `rulesets`: (required) a list with all the rulesets to use for this repository (see [Datadog Documentation](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/) for a full list). The elements of this list must be strings or maps containing a configuration for a ruleset (described below.)
 - `ignore`: (optional) a list of path prefixes and glob patterns to ignore. A file that matches any of its entries will not be analyzed.
 - `only`: (optional) a list of path prefixes and glob patterns to analyze. If `only` is specified, only files that match one of its entries will be analyzed.
 - `ignore-gitignore`: (optional) by default, any entries found in the `.gitignore` file are added to the `ignore` list. If the `ignore-gitignore` option is true, the `.gitignore` file is not read.
@@ -327,4 +324,4 @@ for all details about testing and coding guidelines.
 
 ## More information
 
- - [Datadog Static Analysis](https://docs.datadoghq.com/code_analysis/static_analysis)
+ - [Datadog Static Analysis](https://docs.datadoghq.com/security/code_security/static_analysis/)
