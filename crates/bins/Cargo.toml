@@ -67,7 +67,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "json",
 ] }
 tracing-appender = "0.2"
-pretty_yaml = "0.5"
+pretty_yaml = "0.5.1"
 
 
 # For linux and macos, we need the vendored ssl
