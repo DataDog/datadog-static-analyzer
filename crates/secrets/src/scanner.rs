@@ -48,7 +48,7 @@ pub fn find_secrets(
         Err(err) => {
             if options.use_debug {
                 eprintln!(
-                    "error when scanning secrets for filename {}: {:?}", 
+                    "error when scanning secrets for filename {}: {:?}",
                     filename, err
                 );
             }
