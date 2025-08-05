@@ -15,6 +15,10 @@ jobs:
   test-docker-build:
     uses: './.github/workflows/docker-build.yml'
 
+  integration-tests:
+    uses: './.github/workflows/integration-tests.yaml'
+    secrets: inherit
+    
   verify-schema:
     uses: './.github/workflows/verify-schema.yaml'
 
