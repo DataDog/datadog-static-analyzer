@@ -47,7 +47,11 @@ pub fn find_secrets(
         Ok(matches) => matches,
         Err(err) => {
             if options.use_debug {
-                eprintln!("error when scanning secrets for filename {}: {:?}", filename, err);
+                eprintln!(
+                    "error when scanning secrets for filename {}: {:?}", 
+                    filename, 
+                    err
+                );
             }
             return vec![];
         }
