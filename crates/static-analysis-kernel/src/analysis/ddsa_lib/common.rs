@@ -330,14 +330,15 @@ pub fn set_key_value<G>(
     v8_object.set(scope, v8_key.into(), v8_value);
 }
 
-/// Creates a `v8::Global` [`UnboundScript`](v8::UnboundScript) from the given code.
+/// Creates a `v8::Global` [`UnboundScript`](v8::UnboundScript) from the given code and origin.
 pub fn compile_script(
     scope: &mut HandleScope,
     code: &str,
+    origin: Option<&v8::ScriptOrigin>,
 ) -> Result<v8::Global<v8::UnboundScript>, DDSAJsRuntimeError> {
     let code_str = v8_string(scope, code);
     let tc_scope = &mut v8::TryCatch::new(scope);
-    let script_result = v8::Script::compile(tc_scope, code_str, None);
+    let script_result = v8::Script::compile(tc_scope, code_str, origin);
 
     let script = script_result.ok_or_else(|| {
         let exception = tc_scope
@@ -390,7 +391,7 @@ mod tests {
         let invalid_js = r#"
 const invalidSyntax = const;
 "#;
-        let err = compile_script(&mut runtime.v8_handle_scope(), invalid_js).unwrap_err();
+        let err = compile_script(&mut runtime.v8_handle_scope(), invalid_js, None).unwrap_err();
         let DDSAJsRuntimeError::Interpreter { reason } = err else {
             panic!("error variant should be `Interpreter`");
         };
@@ -403,7 +404,7 @@ const invalidSyntax = const;
         let invalid_js = r#"
 const validSyntax = 123;
 "#;
-        assert!(compile_script(&mut runtime.v8_handle_scope(), invalid_js).is_ok());
+        assert!(compile_script(&mut runtime.v8_handle_scope(), invalid_js, None).is_ok());
     }
 
     /// Tests that [`inner_make_deno_core_runtime`]  can modify the default v8::Context for

@@ -7,7 +7,7 @@ use crate::analysis::ddsa_lib::bridge::{
     ContextBridge, QueryMatchBridge, TsNodeBridge, ViolationBridge,
 };
 use crate::analysis::ddsa_lib::common::{
-    compile_script, v8_interned, v8_string, DDSAJsRuntimeError, Instance,
+    compile_script, v8_interned, v8_string, DDSAJsRuntimeError, Instance, JsCallSite,
 };
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::js::{VisitArgCodeCompat, VisitArgFilenameCompat};
@@ -39,8 +39,8 @@ pub struct JsRuntime {
     bridge_query_match: QueryMatchBridge,
     bridge_ts_node: Rc<RefCell<TsNodeBridge>>,
     bridge_violation: ViolationBridge,
-    /// A map from a rule's name to its compiled `v8::UnboundScript`.
-    script_cache: Rc<RefCell<HashMap<String, v8::Global<v8::UnboundScript>>>>,
+    /// A map from a rule's name to its `CompiledRule`.
+    rule_cache: Rc<RefCell<HashMap<String, CompiledRule>>>,
     /// A pre-allocated `tree_sitter::QueryCursor` that is re-used for each execution.
     ts_query_cursor: Rc<RefCell<tree_sitter::QueryCursor>>,
     // v8-specific
@@ -129,7 +129,7 @@ impl JsRuntime {
             bridge_query_match: query_match,
             bridge_ts_node: ts_node,
             bridge_violation: violation,
-            script_cache: Rc::new(RefCell::new(HashMap::new())),
+            rule_cache: Rc::new(RefCell::new(HashMap::new())),
             ts_query_cursor: Rc::new(RefCell::new(tree_sitter::QueryCursor::new())),
             v8_ddsa_global,
         })
@@ -144,14 +144,13 @@ impl JsRuntime {
         rule_arguments: &HashMap<String, String>,
         mut timeout: Option<Duration>,
     ) -> Result<ExecutionResult, DDSAJsRuntimeError> {
-        let script_cache = Rc::clone(&self.script_cache);
-        let mut script_cache_ref = script_cache.borrow_mut();
-        if !script_cache_ref.contains_key(&rule.name) {
-            let rule_script = Self::format_rule_script(&rule.code);
-            let script = compile_script(&mut self.runtime.handle_scope(), &rule_script)?;
-            script_cache_ref.insert(rule.name.clone(), script);
+        let rule_cache = Rc::clone(&self.rule_cache);
+        let mut rule_cache_ref = rule_cache.borrow_mut();
+        if !rule_cache_ref.contains_key(&rule.name) {
+            let script = CompiledRule::new(&mut self.runtime.handle_scope(), &rule.code)?;
+            rule_cache_ref.insert(rule.name.clone(), script);
         }
-        let rule_script = script_cache_ref
+        let compiled_rule = rule_cache_ref
             .get(&rule.name)
             .expect("cache should have been populated");
 
@@ -181,16 +180,20 @@ impl JsRuntime {
 
         let now = Instant::now();
 
-        let js_violations = self.execute_rule_internal(
+        let mut execution_res = self.execute_rule_internal(
             source_text,
             source_tree,
             file_name,
             rule.language,
-            rule_script,
+            &compiled_rule.script,
             &query_matches,
             rule_arguments,
             timeout,
-        )?;
+        );
+        if let Err(DDSAJsRuntimeError::Execution { error }) = &mut execution_res {
+            compiled_rule.filter_stack_trace(&mut error.stack_trace_frames);
+        }
+        let js_violations = execution_res?;
 
         let execution_time = now.elapsed();
 
@@ -211,13 +214,13 @@ impl JsRuntime {
         })
     }
 
-    /// Clears the [`v8::UnboundScript`] cache for the given rule name, returning `true` if a script
+    /// Clears the cache for the given rule name, returning `true` if a script
     /// existed and was removed from the cache, or `false` if it didn't exist.
     ///
     /// # Panics
-    /// Panics if the `script_cache` has an existing borrow.
+    /// Panics if the `rule_cache` has an existing borrow.
     pub fn clear_rule_cache(&self, rule_name: &str) -> bool {
-        self.script_cache.borrow_mut().remove(rule_name).is_some()
+        self.rule_cache.borrow_mut().remove(rule_name).is_some()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -343,45 +346,6 @@ impl JsRuntime {
         })?;
 
         Ok(handle_return_value(tc_ctx_scope, return_val))
-    }
-
-    /// Wraps a `rule_code` with the necessary DDSA hooks to pass and receive data from Rust to v8.
-    fn format_rule_script(rule_code: &str) -> String {
-        format!(
-            "\
-'use strict';
-
-(() => {{
-
-// The rule's JavaScript code
-//////////////////////////////
-{}
-//////////////////////////////
-
-// (Experimental)
-if (typeof beforeAll === \"function\") {{
-    if (beforeAll.length === 0) {{
-        beforeAll();
-    }} else {{
-        // Pass in a clone of the array so the rule code can't mutate the QueryMatchBridge.
-        const allMatches = [...globalThis.__RUST_BRIDGE__query_match];
-        beforeAll(allMatches);
-    }}
-}}
-
-for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
-    visit(queryMatch, globalThis.STELLA_COMPAT_FILENAME, globalThis.STELLA_COMPAT_FILE_CONTENTS);
-}}
-
-// (Experimental)
-if (typeof afterAll === \"function\") {{
-    afterAll();
-}}
-
-}})();
-",
-            rule_code
-        )
     }
 
     /// Provides a [`v8::HandleScope`] for the underlying v8 isolate.
@@ -513,6 +477,96 @@ pub(crate) fn inner_make_deno_core_runtime(
     })
 }
 
+/// A [`v8::Global<v8::UnboundScript>`] script representing a static analysis rule.
+pub struct CompiledRule {
+    script: v8::Global<v8::UnboundScript>,
+    /// The number of lines in the rule code before it was interpolated into the rule template.
+    original_line_count: usize,
+}
+
+impl CompiledRule {
+    const SCRIPT_NAME: &'static str = "rule";
+
+    pub fn new(scope: &mut v8::HandleScope, rule_code: &str) -> Result<Self, DDSAJsRuntimeError> {
+        /// The line offset for code interpolated into the script created by [`format_rule_script`](Self::format_rule_script).
+        const TEMPLATE_LINE_OFFSET: usize = 6;
+
+        let rule_script = Self::format_rule_script(rule_code);
+        let script_name: v8::Local<v8::Value> = v8_string(scope, Self::SCRIPT_NAME).into();
+        let origin = v8::ScriptOrigin::new(
+            scope,
+            script_name,
+            -(TEMPLATE_LINE_OFFSET as i32),
+            0,
+            false,
+            // script_id of 0 is ok -- v8 actually ignores it and assigns its own unique id.
+            0,
+            None,
+            true,
+            false,
+            false,
+            None,
+        );
+        let script = compile_script(scope, &rule_script, Some(&origin))?;
+        let original_line_count = rule_code.lines().count();
+        Ok(Self {
+            script,
+            original_line_count,
+        })
+    }
+
+    /// Mutates the provided stack trace to remove lines that reference code outside the template.
+    pub fn filter_stack_trace(&self, stack_trace_frames: &mut Vec<JsCallSite>) {
+        stack_trace_frames.retain(|cs| {
+            // If a frame came from this script, only retain it if it could've come from the original code (not the template).
+            if cs.file_name.as_deref() == Some(Self::SCRIPT_NAME) {
+                cs.line_number <= self.original_line_count
+            } else {
+                true
+            }
+        });
+    }
+
+    /// Wraps a `rule_code` with the necessary DDSA hooks to pass and receive data from Rust to v8.
+    fn format_rule_script(rule_code: &str) -> String {
+        format!(
+            "\
+'use strict';
+
+(() => {{
+
+// The rule's JavaScript code
+//////////////////////////////
+{}
+//////////////////////////////
+
+// (Experimental)
+if (typeof beforeAll === \"function\") {{
+    if (beforeAll.length === 0) {{
+        beforeAll();
+    }} else {{
+        // Pass in a clone of the array so the rule code can't mutate the QueryMatchBridge.
+        const allMatches = [...globalThis.__RUST_BRIDGE__query_match];
+        beforeAll(allMatches);
+    }}
+}}
+
+for (const queryMatch of globalThis.__RUST_BRIDGE__query_match) {{
+    visit(queryMatch, globalThis.STELLA_COMPAT_FILENAME, globalThis.STELLA_COMPAT_FILE_CONTENTS);
+}}
+
+// (Experimental)
+if (typeof afterAll === \"function\") {{
+    afterAll();
+}}
+
+}})();
+",
+            rule_code
+        )
+    }
+}
+
 /// The result of a ddsa JavaScript execution.
 #[derive(Debug)]
 pub struct ExecutionResult {
@@ -562,7 +616,7 @@ mod tests {
     use crate::analysis::ddsa_lib::common::{
         compile_script, v8_interned, v8_uint, DDSAJsRuntimeError, Instance,
     };
-    use crate::analysis::ddsa_lib::runtime::make_base_deno_core_runtime;
+    use crate::analysis::ddsa_lib::runtime::{make_base_deno_core_runtime, CompiledRule};
     use crate::analysis::ddsa_lib::test_utils::{
         cfg_test_v8, shorthand_execute_rule, try_execute, ExecuteOptions,
     };
@@ -583,8 +637,7 @@ mod tests {
         ts_query: &str,
         rule_code: &str,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
-        let rule_script = JsRuntime::format_rule_script(rule_code);
-        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
+        let compiled_rule = CompiledRule::new(&mut runtime.v8_handle_scope(), rule_code).unwrap();
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
         let filename: Arc<str> = Arc::from("some_filename.js");
@@ -598,7 +651,7 @@ mod tests {
             tree,
             &filename,
             Language::JavaScript,
-            &rule_script,
+            &compiled_rule.script,
             &q_matches,
             &HashMap::new(),
             None,
@@ -617,8 +670,7 @@ mod tests {
         let source_text: Arc<str> = Arc::from(source_text);
         let filename: Arc<str> = Arc::from(filename);
 
-        let rule_script = JsRuntime::format_rule_script(rule_code);
-        let rule_script = compile_script(&mut runtime.v8_handle_scope(), &rule_script).unwrap();
+        let compiled_rule = CompiledRule::new(&mut runtime.v8_handle_scope(), rule_code).unwrap();
 
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let tree = Arc::new(get_tree(source_text.as_ref(), &Language::JavaScript).unwrap());
@@ -649,7 +701,7 @@ mod tests {
             &tree,
             &filename,
             Language::JavaScript,
-            &rule_script,
+            &compiled_rule.script,
             &q_matches,
             &HashMap::new(),
             timeout,
@@ -708,7 +760,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
         for obj in ["globalThis", "Object.getPrototypeOf(globalThis)"] {
             let mut rt = cfg_test_v8().new_runtime();
             let type_of = "typeof __RUST_BRIDGE__ts_node;";
-            let type_of = compile_script(&mut rt.v8_handle_scope(), type_of).unwrap();
+            let type_of = compile_script(&mut rt.v8_handle_scope(), type_of, None).unwrap();
 
             // Baseline: the bridge should be an object
             let value = rt.scoped_execute(&type_of, |s, v| v.to_rust_string_lossy(s), None);
@@ -721,7 +773,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
 typeof __RUST_BRIDGE__ts_node;
 "
             );
-            let script = compile_script(&mut rt.v8_handle_scope(), &code).unwrap();
+            let script = compile_script(&mut rt.v8_handle_scope(), &code, None).unwrap();
             let value = rt.scoped_execute(&script, |s, v| v.to_rust_string_lossy(s), None);
             // JavaScript should not be able to mutate the value.
             assert!(value.unwrap_err().to_string().contains(
@@ -769,7 +821,8 @@ typeof __RUST_BRIDGE__ts_node;
 
         // Any arbitrary, valid JavaScript code works here. We are only running a script to
         // inspect the v8 context that it executes within.
-        let script = compile_script(&mut runtime.v8_handle_scope(), "// Test execution").unwrap();
+        let script =
+            compile_script(&mut runtime.v8_handle_scope(), "// Test execution", None).unwrap();
 
         let default_ctx_id_hash = {
             let scope = &mut runtime.runtime.handle_scope();
@@ -929,7 +982,7 @@ function visit(_captures) { }
         let mut runtime = cfg_test_v8().new_runtime();
 
         let code = "abc;";
-        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+        let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
         let err = runtime
             .scoped_execute(&script, |sc, val| val.to_rust_string_lossy(sc), None)
             .unwrap_err();
@@ -1019,7 +1072,7 @@ function visit(captures) {
         let mut runtime = cfg_test_v8().new_runtime();
         let timeout = Duration::from_millis(500);
         let loop_code = "while (true) {}";
-        let loop_script = compile_script(&mut runtime.v8_handle_scope(), loop_code).unwrap();
+        let loop_script = compile_script(&mut runtime.v8_handle_scope(), loop_code, None).unwrap();
 
         let err = runtime
             .scoped_execute(&loop_script, |_, _| (), Some(timeout))
@@ -1033,7 +1086,7 @@ function visit(captures) {
         use resource_watchdog::tests::{DEFAULT_HEAP_LIMIT, OOM_CODE};
 
         let mut runtime = cfg_test_v8().new_runtime_with_heap_limit(DEFAULT_HEAP_LIMIT);
-        let loop_script = compile_script(&mut runtime.v8_handle_scope(), OOM_CODE).unwrap();
+        let loop_script = compile_script(&mut runtime.v8_handle_scope(), OOM_CODE, None).unwrap();
 
         let err = runtime
             .scoped_execute(&loop_script, |_, _| (), None)
@@ -1047,7 +1100,7 @@ function visit(captures) {
     fn scoped_execute_console_empty() {
         let mut runtime = cfg_test_v8().new_runtime();
         let code = "console.log(1234);";
-        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+        let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
         assert!(runtime.console.borrow().0.is_empty());
         runtime.scoped_execute(&script, |_, _| (), None).unwrap();
         assert_eq!(runtime.console.borrow().0.len(), 1);
@@ -1191,8 +1244,7 @@ function visit(captures) {
             // inspect its side effects on the `ddsa_lib::FileContext`. We console log a value just
             // to be able to assert that the rule was actually invoked.
             let rule_code = "function visit(captures) { console.log(123); }";
-            let rule_code = JsRuntime::format_rule_script(rule_code);
-            let rule_script = compile_script(&mut rt.v8_handle_scope(), &rule_code).unwrap();
+            let compiled_rule = CompiledRule::new(&mut rt.v8_handle_scope(), rule_code).unwrap();
 
             let text = Arc::<str>::from(text);
             let tree = Arc::new(get_tree(text.as_ref(), &language).unwrap());
@@ -1213,7 +1265,7 @@ function visit(captures) {
                 &tree,
                 &Arc::<str>::from("test_doesnt_use_filename"),
                 language,
-                &rule_script,
+                &compiled_rule.script,
                 &captures,
                 &HashMap::new(),
                 None,
@@ -1454,7 +1506,7 @@ function visit(captures) {
     fn ddsa_console_global() {
         let mut runtime = cfg_test_v8().new_runtime();
         let code = "console instanceof DDSA_Console;";
-        let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+        let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
         let correct_instance = runtime.scoped_execute(&script, |_, value| value.is_true(), None);
         assert!(correct_instance.unwrap());
     }
@@ -1564,7 +1616,7 @@ function visit(captures) {
         ];
         for name in identifiers {
             let code = &format!("{name};");
-            let script = compile_script(&mut runtime.v8_handle_scope(), code).unwrap();
+            let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
             let exe_result = runtime.scoped_execute(&script, |_, value| value.is_undefined(), None);
 
             let expected_err = format!("Uncaught ReferenceError: {name} is not defined");
@@ -1577,5 +1629,64 @@ function visit(captures) {
             };
             assert!(is_undefined, "expected `{name}` to be `undefined`");
         }
+    }
+
+    /// The stack trace from a rule execution JavaScript error filters out references to template code.
+    #[test]
+    fn rule_execution_stack_trace_filter() {
+        use crate::model::common::Language;
+        use crate::model::rule::{RuleCategory, RuleInternal, RuleSeverity};
+
+        let mut rt = cfg_test_v8().new_runtime();
+        let filename = Arc::<str>::from("unused_for_test.js");
+
+        // Arbitrary code and query that will trigger a JavaScript execution.
+        let source_text = Arc::<str>::from("const a = 1;");
+        let ts_lang = get_tree_sitter_language(&Language::JavaScript);
+        let source_tree = Arc::new(get_tree(source_text.as_ref(), &Language::JavaScript).unwrap());
+
+        let ts_query = "(variable_declarator) @decl";
+        let ts_query = TSQuery::try_new(&ts_lang, ts_query).unwrap();
+        // language=javascript
+        let rule_code = "\
+function someFunction() {
+    someFunctionThatDoesntExist();
+}
+
+function visit(captures) {
+    someFunction();
+}
+";
+
+        let rule = RuleInternal {
+            name: "test_rule".to_string(),
+            short_description: None,
+            description: None,
+            category: RuleCategory::Unknown,
+            severity: RuleSeverity::None,
+            language: Language::JavaScript,
+            code: rule_code.to_string(),
+            tree_sitter_query: ts_query,
+        };
+        let err = rt.execute_rule(
+            &source_text,
+            &source_tree,
+            &filename,
+            &rule,
+            &HashMap::new(),
+            None,
+        );
+        let DDSAJsRuntimeError::Execution { error: js_error } = err.unwrap_err() else {
+            panic!("should be this variant");
+        };
+        let stack_trace_frames = js_error
+            .stack_trace_frames
+            .into_iter()
+            .map(|cs| cs.to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            stack_trace_frames,
+            vec!["    at someFunction (rule:2:5)", "    at visit (rule:6:5)"]
+        );
     }
 }
