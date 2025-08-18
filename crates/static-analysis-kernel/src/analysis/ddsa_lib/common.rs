@@ -45,28 +45,62 @@ pub enum DDSAJsRuntimeError {
 #[derive(Debug, Clone)]
 pub struct JsError {
     pub message: String,
-    pub stack_trace: Vec<String>,
+    pub stack_trace_frames: Vec<JsCallSite>,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct JsCallSite {
+    pub type_name: Option<String>,
+    pub function_name: Option<String>,
+    pub method_name: Option<String>,
+    pub file_name: Option<String>,
+    pub line_number: usize,
+    pub column_number: usize,
+    /// The string representation of this call site, as formatted by v8 (see [stack trace format] documentation).
+    ///
+    /// [stack trace format]: https://v8.dev/docs/stack-trace-api#appendix%3A-stack-trace-format
+    v8_formatted_string: String,
+}
+
+impl Display for JsCallSite {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.v8_formatted_string)
+    }
 }
 
 impl From<deno_core::error::JsError> for JsError {
     fn from(value: deno_core::error::JsError) -> Self {
-        // `deno_core` formats the `deno_core::error::JsError::stack` such that the first line contains
-        // the error message, and all subsequent lines are a human-friendly stack trace. For example:
-        // ```
-        // TypeError: Cannot read properties of undefined (reading 'someProp')
-        //   at SomeClass.someOtherFunction (ext:ddsa_lib/someModule:572:29)
-        //   at SomeClass.someFunction (ext:ddsa_lib/someModule:157:22)
-        //   at <anonymous>:1:13
-        // ```
-        let stack_trace = value.stack.map_or(vec![], |str| {
+        // v8 formats an exception error message with a stable format described at
+        // https://v8.dev/docs/stack-trace-api#appendix%3A-stack-trace-format. `deno_core` splits
+        // this error message by line and assigns the resulting `Vec<String>` to the `stack` field.
+        // At the same time, it constructs individual JsStackFrame structs with a typed breakdown
+        // of v8's string format.
+        //
+        // The first line is the exception message (this is implicitly tested in the
+        // `v8_exception_stack_trace_parsing` test, however it's listed here to communicate the expectation)
+        // This uses a fuzzy check because there might be qualifiers like "Uncaught" before the message.
+        debug_assert!(value
+            .exception_message
+            .contains(value.stack.as_ref().unwrap().lines().next().unwrap()),);
+        // ...so it is skipped to only collect the call sites.
+        let stack_trace_frames = value.stack.map_or(vec![], |str| {
             str.lines()
                 .skip(1)
-                .map(ToString::to_string)
+                .zip(value.frames)
+                .map(|(display_str, frame)| JsCallSite {
+                    type_name: frame.type_name,
+                    function_name: frame.function_name,
+                    method_name: frame.method_name,
+                    file_name: frame.file_name,
+                    line_number: frame.line_number.unwrap_or_default() as usize,
+                    column_number: frame.column_number.unwrap_or_default() as usize,
+                    v8_formatted_string: display_str.to_string(),
+                })
                 .collect::<Vec<_>>()
         });
         Self {
             message: value.exception_message,
-            stack_trace,
+            stack_trace_frames,
         }
     }
 }
@@ -74,7 +108,7 @@ impl From<deno_core::error::JsError> for JsError {
 impl Display for JsError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}", self.message)?;
-        for line in &self.stack_trace {
+        for line in &self.stack_trace_frames {
             writeln!(f, "{}", line)?;
         }
         Ok(())
@@ -345,7 +379,7 @@ pub fn swallow_v8_error<F: FnOnce() -> T, T>(f: F) -> T {
 #[cfg(test)]
 mod tests {
     use crate::analysis::ddsa_lib::common::{
-        compile_script, v8_interned, v8_string, DDSAJsRuntimeError,
+        compile_script, v8_interned, v8_string, DDSAJsRuntimeError, JsCallSite,
     };
     use crate::analysis::ddsa_lib::runtime::inner_make_deno_core_runtime;
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
@@ -447,5 +481,48 @@ const validSyntax = 123;
             });
             assert!(result.is_err());
         }
+    }
+
+    /// The v8 exception stack trace string is properly parsed
+    #[test]
+    fn v8_exception_stack_trace_parsing() {
+        let mut runtime = cfg_test_v8().deno_core_rt();
+        // language=javascript
+        let code = "\
+function someFunction() {
+    someFunctionThatDoesntExist();
+}
+someFunction();
+";
+        let DDSAJsRuntimeError::Execution { error: js_error } =
+            try_execute(&mut runtime.handle_scope(), code).unwrap_err()
+        else {
+            panic!("should be this variant")
+        };
+        let expected = vec![
+            JsCallSite {
+                type_name: None,
+                function_name: Some("someFunction".to_string()),
+                method_name: Some("someFunction".to_string()),
+                file_name: None,
+                line_number: 2,
+                column_number: 5,
+                v8_formatted_string: "    at someFunction (<anonymous>:2:5)".to_string(),
+            },
+            JsCallSite {
+                type_name: None,
+                function_name: None,
+                method_name: None,
+                file_name: None,
+                line_number: 4,
+                column_number: 1,
+                v8_formatted_string: "    at <anonymous>:4:1".to_string(),
+            },
+        ];
+        assert_eq!(js_error.stack_trace_frames, expected);
+        assert_eq!(
+            js_error.message,
+            "Uncaught ReferenceError: someFunctionThatDoesntExist is not defined"
+        );
     }
 }
