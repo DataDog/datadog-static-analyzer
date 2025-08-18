@@ -393,7 +393,13 @@ const validSyntax = 123;
             None,
         );
         let value = try_execute(&mut runtime.handle_scope(), code).unwrap_err();
-        assert_eq!(value, "ReferenceError: Map is not defined".to_string());
+        let DDSAJsRuntimeError::Execution { error: js_error } = value else {
+            panic!("should be this variant")
+        };
+        assert_eq!(
+            js_error.message,
+            "Uncaught ReferenceError: Map is not defined"
+        );
     }
 
     // One byte characters

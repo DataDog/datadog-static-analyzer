@@ -143,6 +143,7 @@ pub fn initialize_v8(thread_pool_size: u32) -> V8Platform<Initialized> {
 #[cfg(test)]
 mod tests {
     use super::{initialize_v8, BASE_FLAGS};
+    use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute};
 
     /// `initialize_v8` can effectively only be called once.
@@ -174,10 +175,14 @@ mod tests {
             "new Function('a', 'b', 'return a + b;')(1, 2);",
         ];
         for code in samples {
-            let res = try_execute(scope, code);
+            let DDSAJsRuntimeError::Execution { error: js_error } =
+                try_execute(scope, code).unwrap_err()
+            else {
+                panic!("should be this variant");
+            };
             assert_eq!(
-                res.unwrap_err(),
-                "EvalError: Code generation from strings disallowed for this context"
+                js_error.message,
+                "Uncaught EvalError: Code generation from strings disallowed for this context"
             );
         }
     }

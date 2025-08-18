@@ -670,7 +670,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
 123;
 "#;
         let result = try_execute(scope, code).map(|v| v.uint32_value(scope).unwrap());
-        assert_eq!(result, Ok(123));
+        assert_eq!(result.unwrap(), 123);
     }
 
     /// Tests that the `v8_ddsa_global` object is the prototype of the default context's global object.

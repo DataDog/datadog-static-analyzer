@@ -158,7 +158,7 @@ assert(cap_node_ids.length === 1, "array must have exactly one elements");
 assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
 
         // A capture name that isn't present should return undefined
         let code = r#"QUERY_MATCH._getManyIds("missing_from_captures");"#;
@@ -185,7 +185,7 @@ assert(cap_node_ids.length === 3, "array must have exactly three elements");
 assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 
     /// Tests that a call to `_getManyIds` on a `MultiCapture` that happens to have only a single node id
@@ -207,7 +207,7 @@ assert(cap_node_ids.length === 1, "array must have exactly one elements");
 assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 
     /// Tests that the [`RustConverter`] creates a JS class instance with `undefined` passed in as the captures array (`_captures`).
@@ -244,7 +244,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
 
         let code = r#"assert(QUERY_MATCH.get("cap_name").id === 10);"#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 
     /// Tests that `getMany` properly retrieves nodes from the `TsNodeBridge`.
@@ -270,6 +270,6 @@ assert(stubNodes[0].id === 10);
 assert(stubNodes[1].id === 20);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 }
