@@ -405,7 +405,7 @@ fn main() -> Result<()> {
 
     let files_filtered_by_size = filter_files_by_size(&files_in_repository, &configuration);
     let repository =
-        Repository::init(&configuration.source_directory).expect("fail to initialize repository");
+        Repository::open(&configuration.source_directory).expect("fail to open repository");
 
     let modifications: HashMap<PathBuf, Vec<u32>> = match (
         &default_branch_opt,

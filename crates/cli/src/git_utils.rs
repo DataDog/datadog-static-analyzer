@@ -105,7 +105,7 @@ fn get_changed_files(diff: &Diff) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> 
 }
 
 pub fn get_repository_url(path: &str) -> anyhow::Result<String> {
-    let repository_opt = Repository::init(path);
+    let repository_opt = Repository::open(path);
     match repository_opt {
         Ok(repository) => Ok(repository
             .find_remote(ORIGIN)?
