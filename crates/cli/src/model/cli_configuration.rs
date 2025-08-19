@@ -98,7 +98,7 @@ impl CliConfiguration {
     ) -> anyhow::Result<DiffAwareRequestArguments> {
         let config_hash = self.generate_diff_aware_digest();
 
-        let repository_opt = Repository::init(&self.source_directory);
+        let repository_opt = Repository::open(&self.source_directory);
 
         if repository_opt.is_err() {
             eprintln!("Fail to get repository information");
