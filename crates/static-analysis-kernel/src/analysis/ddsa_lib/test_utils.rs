@@ -129,14 +129,19 @@ pub(crate) fn js_all_props(
 pub(crate) fn try_execute<'s>(
     scope: &mut HandleScope<'s>,
     code: &str,
-) -> Result<v8::Local<'s, v8::Value>, String> {
+) -> Result<v8::Local<'s, v8::Value>, DDSAJsRuntimeError> {
     let tc_scope = &mut v8::TryCatch::new(scope);
     let code = v8_string(tc_scope, code);
     let script = v8::Script::compile(tc_scope, code, None).unwrap();
     script.run(tc_scope).ok_or_else(|| {
-        let exception = tc_scope.exception().unwrap().to_rust_string_lossy(tc_scope);
+        let exception = tc_scope
+            .exception()
+            .expect("return value should only be `None` if an error was caught");
+        let deno_error = deno_core::error::JsError::from_v8_exception(tc_scope, exception);
         tc_scope.reset();
-        exception
+        DDSAJsRuntimeError::Execution {
+            error: deno_error.into(),
+        }
     })
 }
 

@@ -55,7 +55,7 @@ impl QueryMatchCompat<Class> {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{v8_interned, NodeId};
+    use crate::analysis::ddsa_lib::common::{v8_interned, DDSAJsRuntimeError, NodeId};
     use crate::analysis::ddsa_lib::js::query_match_compat::QueryMatchCompat;
     use crate::analysis::ddsa_lib::test_utils::{
         attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_root_context,
@@ -102,7 +102,7 @@ assert(QUERY_MATCH.captures["cap_name"].id === 10);
 assert(QUERY_MATCH.captures.cap_name.id === 10);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 
     /// Tests the edge case in `QueryMatchCompat` where a capture name collides with a `QueryMatch` instance method.
@@ -126,7 +126,7 @@ assert(QUERY_MATCH.captures["get"].id === 20);
 assert(QUERY_MATCH.captures.get.id === 20);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
 
         for method in ["get", "getMany", "_getId", "_getManyIds"] {
             let code = format!(
@@ -135,12 +135,14 @@ assert(QUERY_MATCH.captures.cap_name.id === 10);
 QUERY_MATCH.captures.{}(\"cap_name\");",
                 method
             );
-            let result = try_execute(scope, &code).map(|v| v.to_rust_string_lossy(scope));
-            let expected_msg = format!(
-                "TypeError: QUERY_MATCH.captures.{} is not a function",
-                method
-            );
-            assert_eq!(result, Err(expected_msg));
+            let expected_msg =
+                format!("Uncaught TypeError: QUERY_MATCH.captures.{method} is not a function");
+            let DDSAJsRuntimeError::Execution { error: js_error } =
+                try_execute(scope, &code).unwrap_err()
+            else {
+                panic!("should be this variant")
+            };
+            assert_eq!(js_error.message, expected_msg);
         }
     }
 
@@ -167,7 +169,7 @@ assert(stubNodes[0].id === 10);
 assert(stubNodes[1].id === 20);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 
     /// `QueryMatch` returns `undefined` for an empty capture list. `<QueryMatchCompat>.capturesList` should also return undefined.
@@ -189,7 +191,7 @@ const stubNodes = QUERY_MATCH.capturesList["cap_name"];
 assert(stubNodes === undefined);
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 
     /// Tests the interface for `<QueryMatchCompat>.context`
@@ -212,19 +214,19 @@ assert(QUERY_MATCH.context.arguments["arg_name1"] === "123");
 assert(QUERY_MATCH.context.arguments.arg_name1 === "123");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()), "`context.arguments` failed test");
+        assert_eq!(result.unwrap(), "undefined", "`context.arguments` failed test");
 
         let code = "\
 QUERY_MATCH.context.code;
 ";
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok(COMPAT_FILE_CONTENTS.to_string()), "`context.code` failed test");
+        assert_eq!(result.unwrap(), COMPAT_FILE_CONTENTS, "`context.code` failed test");
 
         let code = "\
 QUERY_MATCH.context.filename;
 ";
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok(COMPAT_FILENAME.to_string()), "`context.filename` failed test");
+        assert_eq!(result.unwrap(), COMPAT_FILENAME, "`context.filename` failed test");
     }
 
     /// Tests the `QueryMatch` interface on `<QueryMatchCompat>`
@@ -251,6 +253,6 @@ assert(QUERY_MATCH._getId("cap_name") === 30, "invalid _getId");
 assert(typeof QUERY_MATCH.get("cap_name") === "object", "invalid get");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 }

@@ -802,7 +802,7 @@ graph.adjacencyList;
         js_script += "\
 [graph.adjacencyList, transpose(graph.adjacencyList)];
 ";
-        let js_script = compile_script(&mut rt.v8_handle_scope(), &js_script).unwrap();
+        let js_script = compile_script(&mut rt.v8_handle_scope(), &js_script, None).unwrap();
 
         let vertex_transformer = |node: &dot_structures::Node| -> Option<dot_structures::Node> {
             let vid = id_str(&node.id.0).parse::<u32>().unwrap();
@@ -1039,7 +1039,7 @@ const vidPaths = _findTaintFlows(adjList, cst(1), false).map((flow) => {
 const serialized = vidPaths.map((flow) => DDSA_Console.stringify(flow)).join('\\n');
 serialized;
 ";
-        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code).unwrap();
+        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code, None).unwrap();
         let res = rt
             .scoped_execute(&js_code, |sc, value| value.to_rust_string_lossy(sc), None)
             .unwrap();
@@ -1062,7 +1062,7 @@ serialized;
 const flow = new TaintFlow([], false);
 flow instanceof Array;
 ";
-        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code).unwrap();
+        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code, None).unwrap();
         let has_array_proto = rt
             .scoped_execute(&js_code, |_, value| value.is_true(), None)
             .unwrap();

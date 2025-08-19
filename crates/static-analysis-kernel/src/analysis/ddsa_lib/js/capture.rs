@@ -139,7 +139,7 @@ assert(CAPTURE.name === "alpha", "name was incorrect");
 assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 
     /// Verifies the object shape of a `MultiCapture`.
@@ -158,7 +158,7 @@ assert(Array.isArray(CAPTURE.nodeIds), "nodeIds had wrong type");
 assert(CAPTURE.nodeIds.join(",") === "16,32,48", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
 
         // Single capture within an array should still be an array
         let capture = template.new_instance(scope, "bravo", &[16]);
@@ -168,6 +168,6 @@ assert(Array.isArray(CAPTURE.nodeIds), "nodeIds had wrong type");
 assert(CAPTURE.nodeIds.join(",") === "16", "nodeIds were incorrect");
 "#;
         let result = try_execute(scope, code).map(|v| v.to_rust_string_lossy(scope));
-        assert_eq!(result, Ok("undefined".to_string()));
+        assert_eq!(result.unwrap(), "undefined");
     }
 }
