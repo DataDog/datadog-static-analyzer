@@ -3,8 +3,8 @@ name: Publish to GHCR
 on:
   workflow_call:
     inputs:
-      release:
-        description: "Whether this is a release build or not"
+      is-production:
+        description: "Whether this is a production build or not"
         required: true
         default: false
         type: boolean
@@ -50,9 +50,9 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: |
-            latest=${{ inputs.release }}
+            latest=${{ inputs.is-production }}
           tags: |
-            type=raw,value=latest,enable=${{ inputs.release }}
+            type=raw,value=latest,enable=${{ inputs.is-production }}
             type=ref,event=tag
             type=sha
 
