@@ -178,6 +178,9 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
+        // fork of tree-sitter-swift based on
+        // https://github.com/alex-pinkus/tree-sitter-swift/commit/78d84ef82c387fceeb6094038da28717ea052e39
+        // with the generated parser.c and scanner.c
         TreeSitterProject {
             name: "tree-sitter-swift".to_string(),
             compilation_unit: "tree-sitter-swift".to_string(),
