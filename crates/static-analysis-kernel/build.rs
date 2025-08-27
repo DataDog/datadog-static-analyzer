@@ -178,12 +178,15 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
+        // fork of tree-sitter-swift based on
+        // https://github.com/alex-pinkus/tree-sitter-swift/commit/78d84ef82c387fceeb6094038da28717ea052e39
+        // with the generated parser.c and scanner.c
         TreeSitterProject {
             name: "tree-sitter-swift".to_string(),
             compilation_unit: "tree-sitter-swift".to_string(),
-            repository: "https://github.com/alex-pinkus/tree-sitter-swift.git".to_string(),
+            repository: "https://github.com/muh-nee/tree-sitter-swift.git".to_string(),
             build_dir: "src".into(),
-            commit_hash: "fadd0a0188f4bff57bdfc9ba829ae71b7b01488b".to_string(),
+            commit_hash: "434a6e90a6ce04ee8cc800902fa6357d0723c833".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
