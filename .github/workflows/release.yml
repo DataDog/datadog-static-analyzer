@@ -9,6 +9,34 @@ permissions:
   contents: write
 
 jobs:
+  release-type:
+    name: Determine release type
+    runs-on: ubuntu-latest
+    outputs:
+      is-production: ${{ steps.set-var.outputs.is-production }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Parse tag and branch
+        id: set-var
+        run: |
+          # Releases must be from the main branch and match a specific pattern.
+          if [[ $GITHUB_REF =~ ^refs/tags/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            git fetch -q -n origin main
+
+            if ! git merge-base --is-ancestor "${GITHUB_SHA}" "origin/main"; then
+              echo "::error::Release for tag ${{ github.ref_name }} must be from a commit on the main branch."
+              exit 1
+            else
+              echo "is-production=true" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "is-production=false" >> $GITHUB_OUTPUT
+          fi
+
   test-rules:
     uses: './.github/workflows/test-rules.yaml'
 
@@ -26,6 +54,8 @@ jobs:
     uses: './.github/workflows/versions-check.yaml'
 
   build:
+    needs:
+      - release-type
     strategy:
       fail-fast: false
       matrix:
@@ -101,9 +131,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  release:
+  github-release:
     name: Release on GitHub
     needs:
+      - release-type
       - test-rules
       - test-docker-build
       - integration-tests
@@ -113,26 +144,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    outputs:
-      release: ${{ steps.set-release.outputs.release }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Set release variable
-        id: set-release
-        run: |
-          mainCount=$(git branch -r --contains ${{ github.ref }} --format "%(refname:lstrip=3)" | grep -xc main)
-          if [[ $mainCount -eq 0 ]]; then
-            echo "Tag was not pushed onto main branch, exiting"
-            exit 1
-          elif [[ $GITHUB_REF =~ ^refs/tags/[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "release=true" >> $GITHUB_OUTPUT
-          else
-            echo "release=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Download build artifacts
         uses: actions/download-artifact@v4
@@ -143,8 +159,8 @@ jobs:
         run: ls -lR
         working-directory: artifacts
 
-      - name: Create release
-        if: ${{ steps.set-release.outputs.release == 'true' }}
+      - name: Create production release
+        if: ${{ needs.release-type.outputs.is-production == 'true' }}
         run: |-
           gh release create --generate-notes  \
             ${{ github.ref_name }} \
@@ -154,7 +170,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Create pre-release
-        if: ${{ steps.set-release.outputs.release == 'false' }}
+        if: ${{ needs.release-type.outputs.is-production != 'true' }}
         run: |-
           gh release create --generate-notes --prerelease \
             ${{ github.ref_name }} \
@@ -164,10 +180,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
   ghcr:
-    needs: release
+    needs:
+      - release-type
+      - github-release
+    if: ${{ needs.release-type.outputs.is-production == 'true' }}
     uses: './.github/workflows/ghcr.yml'
     with:
-      release: ${{ needs.release.outputs.release == 'true' }}
+      is-production: ${{ needs.release-type.outputs.is-production == 'true' }}
     permissions:
       contents: read
       packages: write
