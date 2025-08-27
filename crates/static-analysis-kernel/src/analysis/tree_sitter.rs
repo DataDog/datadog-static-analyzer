@@ -541,8 +541,10 @@ fun main() {
     #[test]
     fn test_swift_get_tree() {
         let source_code = r#"
-print("Hello, world!")
-}
+// HelloWorld.swift
+import Foundation
+print("Hello, World!")
+
 "#;
         let t = get_tree(source_code, &Language::Swift);
         assert!(t.is_some());
