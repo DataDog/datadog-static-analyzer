@@ -29,7 +29,7 @@ path-slash = "0.2.1"
 percent-encoding = "2.3.1"
 prettytable-rs = "0.10.0"
 # Default features are disabled to turn off "http2", "charset".
-reqwest = { version = "0.12.23", default-features = false, features = ["default-tls", "macos-system-configuration", "blocking", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["default-tls", "macos-system-configuration", "blocking", "json"] }
 valico = "4.0.0"
 walkdir = "2.5.0"
 
