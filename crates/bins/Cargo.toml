@@ -61,7 +61,7 @@ getopts = "0.2.23"
 indicatif = "0.18.0"
 rayon = "1.11.0"
 rocket = { version = "=0.5.0", features = ["json"] }
-tracing-subscriber = { version = "0.3.18", features = [
+tracing-subscriber = { version = "0.3.20", features = [
   "fmt",
   "env-filter",
   "json",
