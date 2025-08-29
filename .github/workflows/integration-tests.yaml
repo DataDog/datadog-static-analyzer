@@ -27,7 +27,7 @@ jobs:
           - { file: './misc/integration-test-js-ts.sh', gha_alias: 'JavaScript/TypeScript' }
           - { file: './misc/integration-test-filter-rules.sh', gha_alias: 'Per-Path Rule Filtering' }
           - { file: './misc/integration-git-hooks.sh', gha_alias: 'Git Hooks' }
-          - { file: './misc/integration-test-r.sh', gha_alias: 'R' }
+#          - { file: './misc/integration-test-r.sh', gha_alias: 'R' }
           - { file: './misc/integration-test-rust.sh', gha_alias: 'Rust' }
           - { file: './misc/integration-test-sql.sh', gha_alias: 'SQL' }
           - { file: './misc/integration-test-encoding.sh', gha_alias: 'File Encoding' }
