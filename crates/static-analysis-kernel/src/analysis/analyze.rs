@@ -38,8 +38,7 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         | Language::Ruby
         | Language::Terraform
         | Language::Yaml
-        | Language::Bash
-        | Language::R => {
+        | Language::Bash => {
             vec!["#"]
         }
         Language::JavaScript | Language::TypeScript | Language::Kotlin | Language::Apex => {

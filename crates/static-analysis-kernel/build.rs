@@ -237,15 +237,6 @@ fn main() {
             cpp: false,
         },
         TreeSitterProject {
-            name: "tree-sitter-r".to_string(),
-            compilation_unit: "tree-sitter-r".to_string(),
-            repository: "https://github.com/r-lib/tree-sitter-r".to_string(),
-            build_dir: "src".into(),
-            commit_hash: "369d20ff5d9fced274d3065b792951b23981b63d".to_string(),
-            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
-            cpp: false,
-        },
-        TreeSitterProject {
             name: "tree-sitter-sql".to_string(),
             compilation_unit: "tree-sitter-sql".to_string(),
             repository: "https://github.com/DerekStride/tree-sitter-sql".to_string(),
