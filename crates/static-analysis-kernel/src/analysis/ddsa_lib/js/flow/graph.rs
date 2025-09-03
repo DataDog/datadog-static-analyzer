@@ -207,8 +207,9 @@ impl VertexId {
 
     /// Returns the kind of this vertex.
     pub fn kind(&self) -> VertexKind {
-        VertexKind::try_from_id(self.0 & Self::KIND_BIT_MASK)
-            .expect("js should serialize VertexId correctly")
+        let kind = VertexKind::try_from_id(self.0 & Self::KIND_BIT_MASK);
+        debug_assert!(kind.is_ok(), "js should serialize VertexId correctly");
+        kind.unwrap_or(VertexKind::Invalid)
     }
 
     /// Returns the internal node id for this vertex. This will return a [`ddsa_lib::common::NodeId`]
@@ -244,6 +245,7 @@ impl std::fmt::Display for VertexId {
 pub enum VertexKind {
     Cst = 0,
     Phi,
+    Invalid,
 }
 
 impl std::fmt::Display for VertexKind {
@@ -282,6 +284,7 @@ impl VertexKind {
         match self {
             VertexKind::Cst => Self::CST_STR,
             VertexKind::Phi => Self::PHI_STR,
+            VertexKind::Invalid => "<invalid>",
         }
     }
 
@@ -312,7 +315,11 @@ pub(crate) fn id_str(id: &dot_structures::Id) -> Cow<str> {
 
             while let Some(ch) = chars.next() {
                 unescaped.push(match ch {
-                    '\\' => chars.next().expect("string should never end on `\\`"),
+                    '\\' => {
+                        let next_char = chars.next();
+                        debug_assert!(next_char.is_some(), "string should never end on `\\`");
+                        next_char.unwrap_or_default()
+                    }
                     _ => ch,
                 });
             }
@@ -854,6 +861,7 @@ graph.adjacencyList;
             let js_const = match rust_kind {
                 VertexKind::Cst => "VERTEX_CST",
                 VertexKind::Phi => "VERTEX_PHI",
+                VertexKind::Invalid => unreachable!(),
             };
             let js_value = try_execute(scope, &format!("{};", js_const)).unwrap();
             assert!(js_value.is_number());

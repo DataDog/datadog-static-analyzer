@@ -12,9 +12,9 @@ use std::rc::Rc;
 #[op2(fast)]
 pub fn op_console_push(state: &mut OpState, #[string] line: &str) {
     let console = state.borrow::<Rc<RefCell<runtime::JsConsole>>>();
-    let mut console = console
-        .try_borrow_mut()
-        .expect("console should only be accessed via sequential executions");
+    let Ok(mut console) = console.try_borrow_mut() else {
+        unreachable!("parallel access of console is impossible");
+    };
     console.push(line);
 }
 
@@ -268,11 +268,12 @@ pub fn op_digraph_adjacency_list_to_dot(
                 let node_text = ts_node
                     .utf8_text(text.as_bytes())
                     .expect("bytes should be utf8 sequence");
-                LocatedNode::new_cst(ts_node, node_text)
+                Some(LocatedNode::new_cst(ts_node, node_text))
             }
-            VertexKind::Phi => LocatedNode::new_phi(vid.internal_id()),
+            VertexKind::Phi => Some(LocatedNode::new_phi(vid.internal_id())),
+            VertexKind::Invalid => None,
         };
-        Some(located.into())
+        located.map(Into::into)
     };
 
     V8DotGraph::try_new(scope, adjacency_list)

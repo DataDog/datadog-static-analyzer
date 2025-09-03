@@ -249,6 +249,7 @@ impl NodeSearchAttrs {
                         panic!("phi node: unexpected attribute `{key}`");
                     }
                 }
+                VertexKind::Invalid => unreachable!(),
             }
         }
 
@@ -266,6 +267,7 @@ impl NodeSearchAttrs {
                 }
             }
             VertexKind::Phi => Self::Phi,
+            VertexKind::Invalid => unreachable!(),
         }
     }
 }

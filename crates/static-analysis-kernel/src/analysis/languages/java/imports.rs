@@ -113,15 +113,23 @@ pub fn parse_imports_with_tree<'text>(
             }
         }
 
-        let package_node = package_node.expect("query invariant: value should be Some");
-        let target = target.expect("query invariant: value should be Some");
+        let Some(package_node) = package_node else {
+            debug_assert!(false, "query invariant: value should be Some");
+            continue;
+        };
+        let Some(target) = target else {
+            debug_assert!(false, "query invariant: value should be Some");
+            continue;
+        };
         // Due to the way the tree-sitter-java grammar is defined, when there is an asterisk, what
         // we've captured as the `import_child` will represent the full text of the package.
         // Otherwise, what we've captured as `package` will.
+        let Some(import_child_node) = import_child_node else {
+            debug_assert!(false, "query invariant: value should be Some");
+            continue;
+        };
         let package = match target {
-            ImportTarget::Wildcard => {
-                import_child_node.expect("query invariant: value should be Some")
-            }
+            ImportTarget::Wildcard => import_child_node,
             ImportTarget::Class(_) => package_node,
         };
         imports.push(Import { package, target });
