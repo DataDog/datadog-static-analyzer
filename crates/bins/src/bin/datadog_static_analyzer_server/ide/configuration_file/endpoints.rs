@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use super::error::ConfigFileError;
 use super::models::{AddRuleSetsRequest, IgnoreRuleRequest};
 use super::static_analysis_config_file::StaticAnalysisConfigFile;
@@ -43,17 +45,19 @@ pub fn post_rulesets(request: Json<AddRuleSetsRequest>) -> Result<String, Custom
 }
 
 #[instrument()]
-#[rocket::get("/v1/config/rulesets/<content>")]
-pub fn get_rulesets(content: &str) -> Json<Vec<String>> {
-    tracing::debug!(%content);
-    Json(StaticAnalysisConfigFile::to_rulesets(content.to_string()))
+#[rocket::get("/v1/config/rulesets/<content..>")]
+pub fn get_rulesets(content: PathBuf) -> Json<Vec<String>> {
+    let content_str = content.to_string_lossy().into_owned();
+    tracing::debug!(%content_str);
+    Json(StaticAnalysisConfigFile::to_rulesets(content_str))
 }
 
 #[instrument()]
-#[rocket::get("/v1/config/can-onboard/<content>")]
-pub fn can_onboard(content: &str) -> Result<Json<bool>, Custom<ConfigFileError>> {
-    tracing::debug!(%content);
-    let config = StaticAnalysisConfigFile::try_from(content.to_string())
+#[rocket::get("/v1/config/can-onboard/<content..>")]
+pub fn can_onboard(content: PathBuf) -> Result<Json<bool>, Custom<ConfigFileError>> {
+    let content_str = content.to_string_lossy().into_owned();
+    tracing::debug!(%content_str);
+    let config = StaticAnalysisConfigFile::try_from(content_str)
         .map_err(|e| Custom(Status::InternalServerError, e))?;
     let can_onboard = config.is_onboarding_allowed();
     Ok(Json(can_onboard))
