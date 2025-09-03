@@ -19,7 +19,7 @@ pub fn ide_routes() -> Vec<Route> {
 mod tests {
     use std::path::PathBuf;
 
-    use openssl::base64;
+    use kernel::utils::encode_base64_string;
     use rocket::{
         form::validate::Contains,
         http::{ContentType, Status},
@@ -60,7 +60,7 @@ rulesets:
     #[test]
     fn post_ignore_rule() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(NORMAL_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
 
         let response = client
             .post(uri!(super::configuration_file::endpoints::post_ignore_rule))
@@ -92,7 +92,7 @@ rulesets:
     #[test]
     fn get_can_onboard_v1() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(NORMAL_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
 
         let uri = uri!(super::configuration_file::endpoints::get_can_onboard(
             PathBuf::from(config)
@@ -107,7 +107,7 @@ rulesets:
     #[test]
     fn get_can_onboard_v1_returns_parse_error() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(PARSE_ERROR_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(PARSE_ERROR_CONFIGURATION.to_string());
 
         let uri = uri!(super::configuration_file::endpoints::get_can_onboard(
             PathBuf::from(config)
@@ -122,7 +122,7 @@ rulesets:
     #[test]
     fn get_can_onboard_v1_returns_false() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(FALSY_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(FALSY_CONFIGURATION.to_string());
 
         let uri = uri!(super::configuration_file::endpoints::get_can_onboard(
             PathBuf::from(config)
@@ -137,7 +137,7 @@ rulesets:
     #[test]
     fn get_can_onboard_v1_does_not_fail_because_of_slash_in_content() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(WITH_SLASH_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(WITH_SLASH_CONFIGURATION.to_string());
 
         assert!(config.contains("/"), "{}", config);
 
@@ -154,7 +154,7 @@ rulesets:
     #[test]
     fn get_can_onboard_v2() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(NORMAL_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
 
         let response = client
             .post(uri!(
@@ -175,7 +175,7 @@ rulesets:
     #[test]
     fn get_can_onboard_v2_returns_parse_error() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(PARSE_ERROR_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(PARSE_ERROR_CONFIGURATION.to_string());
 
         let response = client
             .post(uri!(
@@ -196,7 +196,7 @@ rulesets:
     #[test]
     fn get_can_onboard_v2_returns_false() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(FALSY_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(FALSY_CONFIGURATION.to_string());
 
         let response = client
             .post(uri!(
@@ -217,7 +217,7 @@ rulesets:
     #[test]
     fn get_rulesets_v1() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(NORMAL_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
 
         let uri = uri!(super::configuration_file::endpoints::get_get_rulesets(
             PathBuf::from(config)
@@ -234,7 +234,7 @@ rulesets:
     #[test]
     fn get_rulesets_v1_does_not_fail_because_of_slash_in_content() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(WITH_SLASH_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(WITH_SLASH_CONFIGURATION.to_string());
 
         assert!(config.contains("/"));
 
@@ -253,7 +253,7 @@ rulesets:
     #[test]
     fn get_rulesets_v2() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(NORMAL_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
 
         let response = client
             .post(uri!(
@@ -276,7 +276,7 @@ rulesets:
     #[test]
     fn add_rulesets_v1() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(NORMAL_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
 
         let response = client
             .post(uri!(
@@ -307,7 +307,7 @@ rulesets:
     #[test]
     fn add_rulesets_v2() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
-        let config = base64::encode_block(NORMAL_CONFIGURATION.as_bytes());
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
 
         let response = client
             .post(uri!(
