@@ -216,8 +216,10 @@ pub(crate) fn parse_imports_with_tree_inner<'text>(
                 name = imported_from.take();
             }
 
+            debug_assert!(name.is_some(), "name should always be set");
+            let name = name?;
             Some(PackageImport {
-                name: name.expect("name should always be set"),
+                name,
                 imported_from,
             })
         })

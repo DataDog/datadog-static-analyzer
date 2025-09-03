@@ -104,9 +104,10 @@ impl<'a> Import<'a> {
     /// from ..common_utils.local_utils import print_array # Some(Import("common_utils"))
     /// ```
     pub fn parent_import(&self) -> Option<Import<'a>> {
-        self.full_text.rsplit_once('.').map(|(parent, _)| {
-            Import::try_new(parent, None, None, self.is_relative)
-                .expect("full_text should not have whitespace")
+        self.full_text.rsplit_once('.').and_then(|(parent, _)| {
+            let import = Import::try_new(parent, None, None, self.is_relative);
+            debug_assert!(import.is_ok());
+            import.ok()
         })
     }
 }
