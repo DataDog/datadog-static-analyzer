@@ -12,9 +12,9 @@ use std::rc::Rc;
 #[op2(fast)]
 pub fn op_console_push(state: &mut OpState, #[string] line: &str) {
     let console = state.borrow::<Rc<RefCell<runtime::JsConsole>>>();
-    let mut console = console
-        .try_borrow_mut()
-        .expect("console should only be accessed via sequential executions");
+    let Ok(mut console) = console.try_borrow_mut() else {
+        unreachable!("parallel access of console is impossible");
+    };
     console.push(line);
 }
 
