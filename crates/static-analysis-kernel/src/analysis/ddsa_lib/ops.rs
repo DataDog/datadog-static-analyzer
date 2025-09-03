@@ -268,11 +268,12 @@ pub fn op_digraph_adjacency_list_to_dot(
                 let node_text = ts_node
                     .utf8_text(text.as_bytes())
                     .expect("bytes should be utf8 sequence");
-                LocatedNode::new_cst(ts_node, node_text)
+                Some(LocatedNode::new_cst(ts_node, node_text))
             }
-            VertexKind::Phi => LocatedNode::new_phi(vid.internal_id()),
+            VertexKind::Phi => Some(LocatedNode::new_phi(vid.internal_id())),
+            VertexKind::Invalid => None,
         };
-        Some(located.into())
+        located.map(Into::into)
     };
 
     V8DotGraph::try_new(scope, adjacency_list)
