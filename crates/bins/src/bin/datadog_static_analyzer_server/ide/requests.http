@@ -70,7 +70,59 @@ Content-Type: application/json
   "encoded": false
 }
 
-### add-rulesets
+### can onboard v1
+GET {{host}}/ide/v1/config/can-onboard/{{configuration}} HTTP/1.1
+
+### can onboard v2
+POST {{host}}/ide/v2/config/can-onboard HTTP/1.1
+Content-Type: application/json
+
+{
+ "configuration": "{{configuration}}"
+}
+
+@parse_error_config = c2NoZW1hLXZlcnNpb246IHY1MDAwCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHkKb25seToKLSBpZ25vcmUvZG9tYWlu
+
+### can onboard should return a parse error v1
+GET {{host}}/ide/v1/config/can-onboard/{{{{parse_error_config}}}} HTTP/1.1
+
+
+### can onboard should return a parse error v2
+POST {{host}}/ide/v2/config/can-onboard HTTP/1.1
+Content-Type: application/json
+
+{
+ "configuration": "{{{{parse_error_config}}}}"
+}
+
+@falsy_config = c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHkKb25seToKLSBpZ25vcmUvZG9tYWlu
+
+### can onboard should return false v1
+GET {{host}}/ide/v1/config/can-onboard/{{falsy_config}} HTTP/1.1
+
+### can onboard should return false v2
+POST {{host}}/ide/v2/config/can-onboard HTTP/1.1
+Content-Type: application/json
+
+{
+ "configuration": "{{falsy_config}}"
+}
+
+### get rulesets v1
+GET {{host}}/ide/v1/config/rulesets/{{configuration}} HTTP/1.1
+# X-Request-Id: 1234
+
+
+### get rulesets v2
+POST {{host}}/ide/v2/config/get-rulesets HTTP/1.1
+# X-Request-Id: 1234
+Content-Type: application/json 
+
+{
+  "configuration": "{{configuration}}"
+}
+
+### add-rulesets v1
 POST {{host}}/ide/v1/config/rulesets HTTP/1.1
 Content-Type: application/json
 
@@ -80,15 +132,17 @@ Content-Type: application/json
   "encoded": false
 }
 
-### get rulesets
-GET {{host}}/ide/v1/config/rulesets/{{configuration}} HTTP/1.1
-# X-Request-Id: 1234
+### add-rulesets v2
+POST {{host}}/ide/v2/config/add-rulesets HTTP/1.1
+Content-Type: application/json
 
-### can onboard
-GET {{host}}/ide/v1/config/can-onboard/{{configuration}} HTTP/1.1
+{
+  "rulesets": ["ruleset1", "ruleset2"],
+  "configuration": "{{configuration}}",
+  "encoded": false
+}
 
-### can onboard should return a parse error
-GET {{host}}/ide/v1/config/can-onboard/c2NoZW1hLXZlcnNpb246IHY1MDAwCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHkKb25seToKLSBpZ25vcmUvZG9tYWlu HTTP/1.1
 
-### can onboard should return false
-GET {{host}}/ide/v1/config/can-onboard/c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHkKb25seToKLSBpZ25vcmUvZG9tYWlu HTTP/1.1
+
+
+
