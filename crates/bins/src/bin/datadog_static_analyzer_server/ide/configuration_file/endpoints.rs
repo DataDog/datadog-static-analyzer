@@ -163,7 +163,12 @@ fn add_rulesets(request: Json<AddRuleSetsRequest>) -> Result<String, Custom<Conf
 ///
 /// # Arguments
 /// * `content` - The configuration file content (base64).
-fn get_rulesets(content: String) -> Json<Vec<String>> {
+fn get_rulesets(mut content: String) -> Json<Vec<String>> {
+    if cfg!(target_os = "windows") {
+        // NOTE: this is needed due to how Rocket works with multiple segment captures.
+        // we may get rid of this once v1 endpoints are no longer needed.
+        content = content.replace("\\", "/");
+    }
     tracing::debug!(%content);
     Json(StaticAnalysisConfigFile::to_rulesets(content))
 }
@@ -172,7 +177,12 @@ fn get_rulesets(content: String) -> Json<Vec<String>> {
 ///
 /// # Arguments
 /// * `content` - The configuration file content (base64).
-fn can_onboard(content: String) -> Result<Json<bool>, Custom<ConfigFileError>> {
+fn can_onboard(mut content: String) -> Result<Json<bool>, Custom<ConfigFileError>> {
+    if cfg!(target_os = "windows") {
+        // NOTE: this is needed due to how Rocket works with multiple segment captures.
+        // we may get rid of this once v1 endpoints are no longer needed.
+        content = content.replace("\\", "/");
+    }
     tracing::debug!(%content);
     let config = StaticAnalysisConfigFile::try_from(content)
         .map_err(|e| Custom(Status::InternalServerError, e))?;
