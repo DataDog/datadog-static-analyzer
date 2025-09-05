@@ -55,11 +55,17 @@ pub fn find_secrets(
         eprintln!("error when validating secrets for filename {}", filename)
     }
 
+    // Add a newline so that if a secret is at the end of the file, we still correctly detect it.
+    // See K9VULN-8099
+    let code_for_position = codemut + "\n";
+
     matches
         .iter()
         .flat_map(|sds_match| {
-            let start = get_position_in_string(code, sds_match.start_index)?;
-            let end = get_position_in_string(code, sds_match.end_index_exclusive)?;
+            let start = get_position_in_string(code_for_position.as_str(), sds_match.start_index)?;
+
+            let end =
+                get_position_in_string(code_for_position.as_str(), sds_match.end_index_exclusive)?;
 
             Ok::<Result, Error>(Result {
                 rule_index: sds_match.rule_index,
@@ -145,6 +151,58 @@ mod tests {
         assert_eq!(
             matches.first().unwrap().matches.get(1).unwrap().end,
             Position { line: 3, col: 7 }
+        );
+    }
+
+    #[test]
+    fn test_find_secrets_end_of_file() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect a lot of secrets!".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "\\bATATT3xFfG[A-Za-z0-9\\-_]{150,180}=[A-F0-9]{8}\\b".to_string(),
+            default_included_keywords: vec!["atlassian".to_string()],
+            validators: Some(vec![]),
+            match_validation: None,
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false);
+        let text1 = "atlassian=ATATT3xFfGF0yIQmvInIjuYkSomkvLwYohOcGhiyl40T62SjC8vV0r1oJiqboDPYbylwkpnFlzjQ1xGW73fS26vLNlcEDXJwrIS5OuHptMCN-RU1ZAlChm2LdCWqmxH_lqdxv81qRVDeSBAQD20ZaMWvAQQuES3XOozwJ3tirW7SC1tOi0HQsJk=77958E0C";
+        let matches1 = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text1,
+            &AnalysisOptions::default(),
+        );
+
+        assert_eq!(matches1.first().unwrap().matches.len(), 1);
+        assert_eq!(
+            matches1.first().unwrap().matches.get(0).unwrap().start,
+            Position { line: 1, col: 11 }
+        );
+        assert_eq!(
+            matches1.first().unwrap().matches.get(0).unwrap().end,
+            Position { line: 1, col: 203 }
+        );
+
+        let text2 = "\natlassian=ATATT3xFfGF0yIQmvInIjuYkSomkvLwYohOcGhiyl40T62SjC8vV0r1oJiqboDPYbylwkpnFlzjQ1xGW73fS26vLNlcEDXJwrIS5OuHptMCN-RU1ZAlChm2LdCWqmxH_lqdxv81qRVDeSBAQD20ZaMWvAQQuES3XOozwJ3tirW7SC1tOi0HQsJk=77958E0C";
+        let matches2 = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text2,
+            &AnalysisOptions::default(),
+        );
+
+        assert_eq!(matches2.first().unwrap().matches.len(), 1);
+        assert_eq!(
+            matches2.first().unwrap().matches.get(0).unwrap().start,
+            Position { line: 2, col: 11 }
+        );
+        assert_eq!(
+            matches2.first().unwrap().matches.get(0).unwrap().end,
+            Position { line: 2, col: 203 }
         );
     }
 }
