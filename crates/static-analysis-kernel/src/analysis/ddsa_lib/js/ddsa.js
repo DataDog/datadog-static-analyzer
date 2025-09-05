@@ -45,16 +45,16 @@ export class DDSA {
     /**
      * Returns an ancestor node that satisfies a given condition, or undefined if none could be found.
      * @param {TreeSitterNode | TreeSitterFieldChildNode} node
-     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
-     * @returns {TreeSitterNode | TreeSitterFieldChildNode}
+     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} predicate
+     * @returns {TreeSitterNode | TreeSitterFieldChildNode | undefined}
      */
-    findAncestor(node, condition) {
+    findAncestor(node, predicate) {
         if (!node) {
             return undefined;
         }
         let n = ddsa.getParent(node);
-        while (n) {
-            if (condition(n)) {
+        while (n !== undefined) {
+            if (predicate(n)) {
                 return n;
             }
             n = ddsa.getParent(n);
@@ -66,16 +66,20 @@ export class DDSA {
      * Returns a descendant node that that satisfies a given condition, or undefined if none could be found.
      * Descendants are searched depth-first: the first child and all its descendants, then the second child and all its descendants, and so on.
      * @param {TreeSitterNode | TreeSitterFieldChildNode} node
-     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
-     * @returns {TreeSitterNode | TreeSitterFieldChildNode}
+     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} predicate
+     * @returns {TreeSitterNode | TreeSitterFieldChildNode | undefined}
      */
-    findDescendant(node, condition) {
+    findDescendant(node, predicate) {
+        if (!predicate) {
+            return undefined;
+        }
+
         for (const c of ddsa.getChildren(node)) {
-            if (condition(c)) {
+            if (predicate(c)) {
                 return c;
             }
-            const r = ddsa.findDescendant(c, condition)
-            if (r) {
+            const r = ddsa.findDescendant(c, predicate)
+            if (r !== undefined) {
                 return r;
             }
         }
