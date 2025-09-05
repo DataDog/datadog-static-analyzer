@@ -20,8 +20,8 @@ mod tests {
         let expected = &[
             // Methods
             "getChildren",
-            "getParentWithCondition",
-            "getChildWithCondition",
+            "findAncestor",
+            "findDescendent",
             "getParent",
             "getTaintSinks",
             "getTaintSources",
@@ -52,7 +52,7 @@ function isIdentifier(n) {{
 
 function visit(query, filename, code) {{
   const n = query.captures.module;
-  const c = ddsa.getChildWithCondition(n, isIdentifier);
+  const c = ddsa.findDescendent(n, isIdentifier);
   console.log(c.text);
 }}
 "#;
@@ -78,7 +78,7 @@ function isModule(n) {{
 
 function visit(query, filename, code) {{
   const n = query.captures.sc;
-  const c = ddsa.getParentWithCondition(n, isModule);
+  const c = ddsa.findAncestor(n, isModule);
   console.log(c.text);
 }}
 "#;

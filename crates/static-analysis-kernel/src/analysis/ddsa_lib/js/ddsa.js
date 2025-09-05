@@ -48,15 +48,18 @@ export class DDSA {
      * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
      * @returns {TreeSitterNode | TreeSitterFieldChildNode}
      */
-    getParentWithCondition(node, condition) {
-        let n = node;
+    findAncestor(node, condition) {
+        if (!node) {
+            return undefined;
+        }
+        let n = ddsa.getParent(node);
         while (n) {
             if (condition(n)) {
                 return n;
             }
             n = ddsa.getParent(n);
         }
-        return null;
+        return undefined;
     }
 
     /**
@@ -65,18 +68,17 @@ export class DDSA {
      * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
      * @returns {TreeSitterNode | TreeSitterFieldChildNode}
      */
-    getChildWithCondition(node, condition) {
-        if (condition(node)) {
-            return node;
-        }
-
+    findDescendent(node, condition) {
         for (const c of ddsa.getChildren(node)) {
-            const r = ddsa.getChildWithCondition(c, condition)
-            if (r != null) {
+            if (condition(c)) {
+                return c;
+            }
+            const r = ddsa.findDescendent(c, condition)
+            if (r) {
                 return r;
             }
         }
-        return null;
+        return undefined;
     }
 
     /**
