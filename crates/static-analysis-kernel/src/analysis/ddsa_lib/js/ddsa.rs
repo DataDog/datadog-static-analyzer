@@ -78,8 +78,7 @@ function isModule(n) {{
 
 function visit(query, filename, code) {{
   const n = query.captures.sc;
-  const c = ddsa.getParentWithCondition(n, getModule);
-  console.log(c);
+  const c = ddsa.getParentWithCondition(n, isModule);
   console.log(c.text);
 }}
 "#;
@@ -87,7 +86,7 @@ function visit(query, filename, code) {{
         // Then execute the rule that fetches the children of the node.
         let res =
             shorthand_execute_rule(&mut rt, Python, ts_query, &rule_code, text, None).unwrap();
-        assert_eq!(res.console_lines[0], "print(\"#foo\")");
+        assert_eq!(res.console_lines[0], "print(\"foo\")");
     }
 
     /// Stella syntax can get named children
