@@ -66,11 +66,11 @@ function visit(query, filename, code) {{
         let rule_code = r#"
 function isModule(n) { return n.cstType === "module"; }
 
-function visit(query, filename, code) {{
+function visit(query, filename, code) {
   const n = query.captures.sc;
   const c = ddsa.findAncestor(n, isModule);
   console.log(c.text);
-}}
+}
 "#;
 
         // Then execute the rule that fetches the children of the node.
