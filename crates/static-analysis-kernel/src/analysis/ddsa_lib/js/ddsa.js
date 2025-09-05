@@ -49,7 +49,7 @@ export class DDSA {
      * @returns {TreeSitterNode | TreeSitterFieldChildNode | undefined}
      */
     findAncestor(node, predicate) {
-        if (!node) {
+        if (node === undefined) {
             return undefined;
         }
         let n = ddsa.getParent(node);
@@ -70,7 +70,7 @@ export class DDSA {
      * @returns {TreeSitterNode | TreeSitterFieldChildNode | undefined}
      */
     findDescendant(node, predicate) {
-        if (!predicate) {
+        if (predicate === undefined) {
             return undefined;
         }
 
