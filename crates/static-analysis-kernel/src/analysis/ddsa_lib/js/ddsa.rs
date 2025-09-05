@@ -21,7 +21,7 @@ mod tests {
             // Methods
             "getChildren",
             "findAncestor",
-            "findDescendent",
+            "findDescendant",
             "getParent",
             "getTaintSinks",
             "getTaintSources",
@@ -38,21 +38,16 @@ mod tests {
     }
 
     #[test]
-    fn test_get_child_with_condition() {
+    fn test_find_descendant() {
         let mut rt = cfg_test_v8().new_runtime();
         let text = "print(foo)";
         let ts_query = "(module)@module";
         let rule_code = r#"
-function isIdentifier(n) {{
-    if (n.cstType === "identifier") {{
-        return true;
-    }}
-    return false;
-}}
+function isIdentifier(n) { return n.cstType === "identifier"; }
 
 function visit(query, filename, code) {{
   const n = query.captures.module;
-  const c = ddsa.findDescendent(n, isIdentifier);
+  const c = ddsa.findDescendant(n, isIdentifier);
   console.log(c.text);
 }}
 "#;
@@ -64,17 +59,12 @@ function visit(query, filename, code) {{
     }
 
     #[test]
-    fn test_get_parent_with_condition() {
+    fn test_find_ancestor() {
         let mut rt = cfg_test_v8().new_runtime();
         let text = "print(\"foo\")";
         let ts_query = "(string_content)@sc";
         let rule_code = r#"
-function isModule(n) {{
-    if (n.cstType === "module") {{
-        return true;
-    }}
-    return false;
-}}
+function isModule(n) { return n.cstType === "module"; }
 
 function visit(query, filename, code) {{
   const n = query.captures.sc;

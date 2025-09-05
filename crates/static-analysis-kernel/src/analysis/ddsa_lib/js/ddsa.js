@@ -43,7 +43,7 @@ export class DDSA {
     }
 
     /**
-     * Get a parent node that satisfies a given condition
+     * Returns an ancestor node that satisfies a given condition, or undefined if none could be found.
      * @param {TreeSitterNode | TreeSitterFieldChildNode} node
      * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
      * @returns {TreeSitterNode | TreeSitterFieldChildNode}
@@ -63,17 +63,18 @@ export class DDSA {
     }
 
     /**
-     * Get a child that satisfies a given condition
+     * Returns a descendant node that that satisfies a given condition, or undefined if none could be found.
+     * Descendants are searched depth-first: the first child and all its descendants, then the second child and all its descendants, and so on.
      * @param {TreeSitterNode | TreeSitterFieldChildNode} node
      * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
      * @returns {TreeSitterNode | TreeSitterFieldChildNode}
      */
-    findDescendent(node, condition) {
+    findDescendant(node, condition) {
         for (const c of ddsa.getChildren(node)) {
             if (condition(c)) {
                 return c;
             }
-            const r = ddsa.findDescendent(c, condition)
+            const r = ddsa.findDescendant(c, condition)
             if (r) {
                 return r;
             }
