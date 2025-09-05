@@ -2,10 +2,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-import { _findTaintFlows, transpose, vertexId } from "ext:ddsa_lib/flow/graph";
-import { MethodFlow } from "ext:ddsa_lib/flow/java";
-import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
-import { TreeSitterFieldChildNode } from "ext:ddsa_lib/ts_node";
+import {_findTaintFlows, transpose, vertexId} from "ext:ddsa_lib/flow/graph";
+import {MethodFlow} from "ext:ddsa_lib/flow/java";
+import {SEALED_EMPTY_ARRAY} from "ext:ddsa_lib/utility";
+import {TreeSitterFieldChildNode} from "ext:ddsa_lib/ts_node";
 
 const { op_digraph_adjacency_list_to_dot, op_ts_node_named_children, op_ts_node_parent } = Deno.core.ops;
 
@@ -40,6 +40,43 @@ export class DDSA {
             }
         }
         return children;
+    }
+
+    /**
+     * Get a parent node that satisfies a given condition
+     * @param {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
+     * @returns {TreeSitterNode | TreeSitterFieldChildNode}
+     */
+    getParentWithCondition(node, condition) {
+        let n = node;
+        while (n) {
+            if (condition(n)) {
+                return n;
+            }
+            n = ddsa.getParent(n);
+        }
+        return null;
+    }
+
+    /**
+     * Get a child that satisfies a given condition
+     * @param {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} condition
+     * @returns {TreeSitterNode | TreeSitterFieldChildNode}
+     */
+    getChildWithCondition(node, condition) {
+        if (condition(node)) {
+            return node;
+        }
+
+        for (const c of ddsa.getChildren(node)) {
+            const r = ddsa.getChildWithCondition(c, condition)
+            if (r != null) {
+                return r;
+            }
+        }
+        return null;
     }
 
     /**

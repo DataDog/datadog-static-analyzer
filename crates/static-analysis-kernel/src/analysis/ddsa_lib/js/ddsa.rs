@@ -1,6 +1,6 @@
 // Unless explicitly stated otherwise all files in this repository are licensed under the Apache License, Version 2.0.
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2024 Datadog, Inc.
+// Copyright 2024-2025 Datadog, Inc.
 
 // (NB: There is no need for any Rust business logic here, as `ddsa.js` is purely the user-facing JavaScript API)
 
@@ -12,14 +12,16 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::{
         cfg_test_v8, js_class_eq, js_instance_eq, shorthand_execute_rule,
     };
-    use crate::analysis::ddsa_lib::JsRuntime;
     use crate::analysis::tree_sitter::get_tree_sitter_language;
+    use crate::model::common::Language::Python;
 
     #[test]
     fn js_properties_canary() {
         let expected = &[
             // Methods
             "getChildren",
+            "getParentWithCondition",
+            "getChildWithCondition",
             "getParent",
             "getTaintSinks",
             "getTaintSources",
@@ -33,6 +35,59 @@ mod tests {
     #[test]
     fn op_ts_node_named_children() {
         compat_helper_op_ts_node_named_children("ddsa.getChildren(node)")
+    }
+
+    #[test]
+    fn test_get_child_with_condition() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = "print(foo)";
+        let ts_query = "(module)@module";
+        let rule_code = r#"
+function isIdentifier(n) {{
+    if (n.cstType === "identifier") {{
+        return true;
+    }}
+    return false;
+}}
+
+function visit(query, filename, code) {{
+  const n = query.captures.module;
+  const c = ddsa.getChildWithCondition(n, isIdentifier);
+  console.log(c.text);
+}}
+"#;
+
+        // Then execute the rule that fetches the children of the node.
+        let res =
+            shorthand_execute_rule(&mut rt, Python, ts_query, &rule_code, text, None).unwrap();
+        assert_eq!(res.console_lines[0], "print");
+    }
+
+    #[test]
+    fn test_get_parent_with_condition() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = "print(\"foo\")";
+        let ts_query = "(string_content)@sc";
+        let rule_code = r#"
+function isModule(n) {{
+    if (n.cstType === "module") {{
+        return true;
+    }}
+    return false;
+}}
+
+function visit(query, filename, code) {{
+  const n = query.captures.sc;
+  const c = ddsa.getParentWithCondition(n, getModule);
+  console.log(c);
+  console.log(c.text);
+}}
+"#;
+
+        // Then execute the rule that fetches the children of the node.
+        let res =
+            shorthand_execute_rule(&mut rt, Python, ts_query, &rule_code, text, None).unwrap();
+        assert_eq!(res.console_lines[0], "print(\"#foo\")");
     }
 
     /// Stella syntax can get named children
