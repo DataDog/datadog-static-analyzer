@@ -2,10 +2,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-import { _findTaintFlows, transpose, vertexId } from "ext:ddsa_lib/flow/graph";
-import { MethodFlow } from "ext:ddsa_lib/flow/java";
-import { SEALED_EMPTY_ARRAY } from "ext:ddsa_lib/utility";
-import { TreeSitterFieldChildNode } from "ext:ddsa_lib/ts_node";
+import {_findTaintFlows, transpose, vertexId} from "ext:ddsa_lib/flow/graph";
+import {MethodFlow} from "ext:ddsa_lib/flow/java";
+import {SEALED_EMPTY_ARRAY} from "ext:ddsa_lib/utility";
+import {TreeSitterFieldChildNode} from "ext:ddsa_lib/ts_node";
 
 const { op_digraph_adjacency_list_to_dot, op_ts_node_named_children, op_ts_node_parent } = Deno.core.ops;
 
@@ -40,6 +40,50 @@ export class DDSA {
             }
         }
         return children;
+    }
+
+    /**
+     * Returns an ancestor node that satisfies a given condition, or undefined if none could be found.
+     * @param {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} predicate
+     * @returns {TreeSitterNode | TreeSitterFieldChildNode | undefined}
+     */
+    findAncestor(node, predicate) {
+        if (node === undefined) {
+            return undefined;
+        }
+        let n = ddsa.getParent(node);
+        while (n !== undefined) {
+            if (predicate(n)) {
+                return n;
+            }
+            n = ddsa.getParent(n);
+        }
+        return undefined;
+    }
+
+    /**
+     * Returns a descendant node that that satisfies a given condition, or undefined if none could be found.
+     * Descendants are searched depth-first: the first child and all its descendants, then the second child and all its descendants, and so on.
+     * @param {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @param {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} predicate
+     * @returns {TreeSitterNode | TreeSitterFieldChildNode | undefined}
+     */
+    findDescendant(node, predicate) {
+        if (predicate === undefined) {
+            return undefined;
+        }
+
+        for (const c of ddsa.getChildren(node)) {
+            if (predicate(c)) {
+                return c;
+            }
+            const r = ddsa.findDescendant(c, predicate)
+            if (r !== undefined) {
+                return r;
+            }
+        }
+        return undefined;
     }
 
     /**
