@@ -240,7 +240,7 @@ where
 }
 
 pub(crate) fn print_permission_warning(header: &str) {
-    eprintln!("[{header}] Error when connecting to Datadog services, make sure your DD_API_KEY, DD_APP_KEY and DD_SITE variables are correct")
+    eprintln!("[{header}] Error when connecting to Datadog services, make sure your DD_API_KEY, DD_APP_KEY and DD_SITE variables are correct. See https://docs.datadoghq.com/security/code_security/static_analysis/generic_ci_providers/ for more information.")
 }
 
 // get rules from one ruleset at datadog
