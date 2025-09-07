@@ -415,6 +415,11 @@ pub struct APIErrorResponse {
 }
 
 #[derive(Deserialize)]
+pub struct APIErrorResponseUnauthorized {
+    pub errors: Vec<String>,
+}
+
+#[derive(Deserialize)]
 pub struct APIError {
     pub title: String,
     pub status: Option<String>,

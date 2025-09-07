@@ -1,14 +1,14 @@
 use std::env;
 
 use crate::datadog_utils::DatadogApiError::{
-    CouldNotParseJson, CouldNotParseResponse, CouldNotQuery, ErrorResponse, MissingVariable,
-    RulesetNotFound,
+    CouldNotParseJson, CouldNotParseResponse, CouldNotQuery, ErrorResponse, InvalidPermission,
+    MissingVariable, RulesetNotFound,
 };
 use crate::model::datadog_api::{
-    ApiResponseDefaultRuleset, ConfigRequest, ConfigRequestData, ConfigRequestDataAttributes,
-    ConfigResponse, DiffAwareData, DiffAwareRequest, DiffAwareRequestArguments,
-    DiffAwareRequestData, DiffAwareRequestDataAttributes, DiffAwareResponse,
-    StaticAnalysisRulesAPIResponse, StaticAnalysisSecretsAPIResponse,
+    APIErrorResponseUnauthorized, ApiResponseDefaultRuleset, ConfigRequest, ConfigRequestData,
+    ConfigRequestDataAttributes, ConfigResponse, DiffAwareData, DiffAwareRequest,
+    DiffAwareRequestArguments, DiffAwareRequestData, DiffAwareRequestDataAttributes,
+    DiffAwareResponse, StaticAnalysisRulesAPIResponse, StaticAnalysisSecretsAPIResponse,
 };
 use crate::{
     constants::{
@@ -55,6 +55,8 @@ pub enum DatadogApiError {
     CouldNotParseResponse(#[source] reqwest::Error),
     #[error("JSON parsing error: {0}")]
     CouldNotParseJson(#[source] serde_json::Error),
+    #[error("Not Authorized")]
+    InvalidPermission,
 }
 
 pub type Result<T> = std::result::Result<T, DatadogApiError>;
@@ -202,11 +204,31 @@ where
     T: serde::de::DeserializeOwned,
 {
     let status_code = server_response.status();
+
+    if status_code.as_u16() == 403 {
+        return Err(InvalidPermission);
+    }
+
     let response_text = &server_response.text().map_err(CouldNotParseResponse)?;
 
     if !status_code.is_success() {
+        // First, check if we have an error with just a list of strings
+        let error_unauthorized_res =
+            serde_json::from_str::<APIErrorResponseUnauthorized>(response_text);
+        if let Ok(error_unauthorized) = error_unauthorized_res {
+            if error_unauthorized
+                .errors
+                .iter()
+                .any(|e| e == "Unauthorized")
+            {
+                return Err(InvalidPermission);
+            }
+        }
+
+        // Then, look for other types of errors
         let error =
             serde_json::from_str::<APIErrorResponse>(response_text).map_err(CouldNotParseJson)?;
+
         let error_msg = error.errors.into_iter().next().map_or_else(
             || "Unknown error".to_string(),
             |e| e.detail.unwrap_or(e.title),
@@ -215,6 +237,10 @@ where
     }
 
     serde_json::from_str::<T>(response_text).map_err(CouldNotParseJson)
+}
+
+pub(crate) fn print_permission_warning(header: &str) {
+    eprintln!("[{header}] Error when connecting to Datadog services, make sure your DD_API_KEY, DD_APP_KEY and DD_SITE variables are correct")
 }
 
 // get rules from one ruleset at datadog
@@ -315,7 +341,7 @@ pub fn get_diff_aware_information(
         })
 }
 
-/// Get remote configuration from the Databdog backend
+/// Get remote configuration from the Datadog backend
 pub fn get_remote_configuration(
     repository_url: String,
     config_base64: Option<String>,
@@ -334,9 +360,7 @@ pub fn get_remote_configuration(
     let path = "config/client";
     let req = make_request(RequestMethod::Post, path, false, true)?.json(&request_payload);
     let server_response = perform_request(req, path, debug)?;
-    parse_response(server_response)
-        .inspect_err(|e| eprintln!("Error when issuing the config request {:?}", e))
-        .map(|d: ConfigResponse| d.data.attributes.config_base64)
+    parse_response(server_response).map(|d: ConfigResponse| d.data.attributes.config_base64)
 }
 
 #[cfg(test)]
