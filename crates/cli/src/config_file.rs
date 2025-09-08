@@ -1,4 +1,5 @@
 use crate::constants;
+use crate::datadog_utils::DatadogApiError::InvalidPermission;
 use crate::datadog_utils::{get_remote_configuration, should_use_datadog_backend};
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context, Result};
@@ -125,9 +126,19 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigM
                     }
                 }
                 Err(e) => {
-                    if debug {
-                        eprintln!("Error when attempting to fetch the remote config: {:?}", e);
-                        eprintln!("Falling back to the local configuration, if any")
+                    match e {
+                        InvalidPermission => {
+                            crate::datadog_utils::print_permission_warning("GET_CONFIG")
+                        }
+                        _ => {
+                            if debug {
+                                eprintln!(
+                                    "Error when attempting to fetch the remote config: {:?}",
+                                    e
+                                );
+                                eprintln!("Falling back to the local configuration, if any")
+                            }
+                        }
                     }
                     cf.map(|c| (c, ConfigMethod::File))
                 }
