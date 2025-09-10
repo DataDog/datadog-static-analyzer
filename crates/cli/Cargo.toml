@@ -26,7 +26,7 @@ uuid = { workspace = true }
 # other
 csv = "1.3.0"
 path-slash = "0.2.1"
-percent-encoding = "2.3.1"
+percent-encoding = "2.3.2"
 prettytable-rs = "0.10.0"
 # Default features are disabled to turn off "http2", "charset".
 reqwest = { version = "0.12", default-features = false, features = ["default-tls", "macos-system-configuration", "blocking", "json"] }
