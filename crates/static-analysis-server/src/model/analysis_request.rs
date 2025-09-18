@@ -61,6 +61,7 @@ impl From<ServerRule> for kernel::model::rule::Rule {
             arguments: value.arguments,
             tests: vec![],
             is_testing: false,
+            documentation_url: None, // no need to have documentation for executing the rule
         }
     }
 }

@@ -1050,6 +1050,7 @@ mod tests {
             .arguments(vec![])
             .tests(vec![])
             .is_testing(false)
+            .documentation_url(None)
             .build()
             .unwrap();
         let rule_taint_flow = Rule {
@@ -1069,6 +1070,7 @@ mod tests {
             arguments: vec![],
             tests: vec![],
             is_testing: false,
+            documentation_url: None,
         };
         let region0 = Region {
             start: Position { line: 50, col: 5 },
@@ -1338,6 +1340,7 @@ mod tests {
             .cwe(Some("1234".to_string()))
             .arguments(vec![])
             .tests(vec![])
+            .documentation_url(None)
             .is_testing(false)
             .build()
             .unwrap();
@@ -1586,6 +1589,7 @@ mod tests {
             .cwe(None)
             .tests(vec![])
             .is_testing(false)
+            .documentation_url(None)
             .build()
             .unwrap();
 

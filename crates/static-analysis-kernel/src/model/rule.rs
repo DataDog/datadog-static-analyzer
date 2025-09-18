@@ -155,6 +155,8 @@ pub struct Rule {
     pub tests: Vec<RuleTest>,
     #[serde(default)]
     pub is_testing: bool,
+    #[serde(default)]
+    pub documentation_url: Option<String>,
 }
 
 #[derive(Clone, Deserialize, Debug, Serialize, Builder, Eq, PartialEq)]
@@ -208,10 +210,14 @@ impl DiffAware for Rule {
 
 impl Rule {
     pub fn get_url(&self) -> String {
-        format!(
-            "https://docs.datadoghq.com/static_analysis/rules/{}",
-            self.name
-        )
+        if let Some(url) = &self.documentation_url {
+            url.clone()
+        } else {
+            format!(
+                "https://docs.datadoghq.com/static_analysis/rules/{}",
+                self.name
+            )
+        }
     }
 
     // Sometimes, the API returns an empty CWE as an empty string. If we have an empty
@@ -342,6 +348,54 @@ mod tests {
     use crate::utils::encode_base64_string;
 
     #[test]
+    fn test_get_url() {
+        let rule_without_url = Rule {
+            name: "myrule".to_string(),
+            short_description_base64: Some("bla".to_string()),
+            description_base64: Some("bli".to_string()),
+            category: RuleCategory::BestPractices,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: "mycode".to_string(),
+            checksum: "foobar".to_string(),
+            pattern: None,
+            cwe: None,
+            tree_sitter_query_base64: None,
+            arguments: vec![],
+            tests: vec![],
+            is_testing: false,
+            documentation_url: None,
+        };
+        assert_eq!(
+            rule_without_url.get_url(),
+            "https://docs.datadoghq.com/static_analysis/rules/myrule"
+        );
+
+        let rule_with_url = Rule {
+            name: "myrule".to_string(),
+            short_description_base64: Some("bla".to_string()),
+            description_base64: Some("bli".to_string()),
+            category: RuleCategory::BestPractices,
+            severity: RuleSeverity::Warning,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: "mycode".to_string(),
+            checksum: "foobar".to_string(),
+            pattern: None,
+            cwe: None,
+            tree_sitter_query_base64: None,
+            arguments: vec![],
+            tests: vec![],
+            is_testing: false,
+            documentation_url: Some("https://my-rule-url".to_string()),
+        };
+        assert_eq!(rule_with_url.get_url(), "https://my-rule-url");
+    }
+
+    #[test]
     fn test_checksum_valid() {
         let rule_invalid_checksum = Rule {
             name: "myrule".to_string(),
@@ -360,6 +414,7 @@ mod tests {
             arguments: vec![],
             tests: vec![],
             is_testing: false,
+            documentation_url: None,
         };
         let rule_valid_checksum = Rule {
             name: "myrule".to_string(),
@@ -379,6 +434,7 @@ mod tests {
             arguments: vec![],
             tests: vec![],
             is_testing: false,
+            documentation_url: None,
         };
         assert!(!rule_invalid_checksum.verify_checksum());
         assert!(rule_valid_checksum.verify_checksum());
@@ -403,6 +459,7 @@ mod tests {
             arguments: vec![],
             tests: vec![],
             is_testing: false,
+            documentation_url: None,
         };
         let fixed_ruled = rule.fix_cwe();
         assert!(fixed_ruled.cwe.is_none());
@@ -427,6 +484,7 @@ mod tests {
             arguments: vec![],
             tests: vec![],
             is_testing: false,
+            documentation_url: None,
         };
         let fixed_ruled = rule.fix_cwe();
         assert!(fixed_ruled.cwe.is_none());
@@ -451,6 +509,7 @@ mod tests {
             arguments: vec![],
             tests: vec![],
             is_testing: false,
+            documentation_url: None,
         };
         let fixed_ruled = rule.fix_cwe();
         assert!(fixed_ruled.cwe.is_some());

@@ -215,8 +215,10 @@ where
                         console_lines,
                         timing,
                     } = execution;
+
                     let console_output = (!console_lines.is_empty() && analysis_option.log_output)
                         .then_some(console_lines.join("\n"));
+
                     violations.retain(|v| {
                         let base_ignored =
                             lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line);

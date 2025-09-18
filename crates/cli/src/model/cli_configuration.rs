@@ -176,6 +176,7 @@ mod tests {
                 arguments: vec![],
                 tests: vec![],
                 is_testing: false,
+                documentation_url: None,
             }],
             rule_config_provider: RuleConfigProvider::default(),
             max_file_size_kb: 1,
