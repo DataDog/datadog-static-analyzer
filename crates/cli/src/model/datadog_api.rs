@@ -169,6 +169,7 @@ pub struct ApiResponseRule {
     pub severity: RuleSeverity,
     pub category: RuleCategory,
     pub tests: Vec<ApiResponseRuleTest>,
+    pub documentation_url: Option<String>,
     pub is_testing: bool,
 }
 
@@ -230,6 +231,7 @@ impl APIResponseRuleset {
                         })
                         .collect(),
                     is_testing: rule_from_api.is_testing,
+                    documentation_url: rule_from_api.documentation_url,
                 })
                 .collect(),
             None => Vec::new(),

@@ -1069,6 +1069,7 @@ mod tests {
             arguments: vec![],
             tests: vec![],
             is_testing: false,
+            documentation_url: None,
         };
         let region0 = Region {
             start: Position { line: 50, col: 5 },
