@@ -232,7 +232,7 @@ fn main() {
             compilation_unit: "tree-sitter-apex".to_string(),
             repository: "https://github.com/aheber/tree-sitter-sfapex".to_string(),
             build_dir: "apex/src".into(),
-            commit_hash: "9fe5d1fbfd75c11ba48a32db27ac0ed5da57ec78".to_string(),
+            commit_hash: "3597575a429766dd7ecce9f5bb97f6fec4419d5d".to_string(),
             files: vec!["parser.c".to_string()],
             cpp: false,
         },
