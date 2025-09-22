@@ -5,6 +5,30 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "Debug datadog-static-analyzer secrets",
+      "type": "lldb",             
+      "request": "launch",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin",
+          "datadog-static-analyzer"
+        ],
+        "filter": {
+          "name": "datadog-static-analyzer",
+          "kind": "bin"
+        }
+      },
+      "args": ["--directory", "", "--output", "result.json", "--format", "sarif", "--debug", "yes", "--enable-secrets", "true", "--enable-static-analysis", "false"],
+      "cwd": "${workspaceFolder}", 
+      "program": "${cargo:program}",
+      "env": {
+        "DD_API_KEY": "",
+        "DD_APP_KEY": "",
+        "DD_SITE": ""
+      }
+    },
+    {
       "type": "lldb",
       "request": "launch",
       "name": "Debug 'datadog-static-analyzer-server'",
