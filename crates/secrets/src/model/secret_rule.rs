@@ -111,6 +111,7 @@ pub struct SecretRule {
     pub name: String,
     pub description: String,
     pub pattern: String,
+    pub priority: String,
     pub default_included_keywords: Vec<String>,
     pub validators: Option<Vec<String>>,
     pub match_validation: Option<SecretRuleMatchValidation>,

@@ -352,6 +352,7 @@ pub struct SecretRuleApiAttributes {
     pub description: String,
     pub pattern: String,
     pub sds_id: String,
+    pub priority: String,
     pub default_included_keywords: Option<Vec<String>>,
     pub validators: Option<Vec<String>>,
     pub match_validation: Option<SecretRuleApiMatchValidation>,
@@ -382,6 +383,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                         .attributes
                         .default_included_keywords
                         .unwrap_or_default(),
+                    priority: val.attributes.priority,
                     validators: val.attributes.validators,
                     match_validation: Some(validation),
                     sds_id: val.attributes.sds_id,
@@ -395,6 +397,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                 name: val.attributes.name,
                 description: val.attributes.description,
                 pattern: val.attributes.pattern,
+                priority: val.attributes.priority,
                 default_included_keywords: val
                     .attributes
                     .default_included_keywords
