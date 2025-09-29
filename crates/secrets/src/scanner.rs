@@ -2,8 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use static_analysis_kernel::model::rule::RuleSeverity;
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
-use crate::model::secret_rule::SecretRule;
+use crate::model::secret_rule::{RulePriority, SecretRule};
 use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
@@ -74,6 +75,15 @@ pub fn find_secrets(
             rule_id: sds_rules[k].clone().id,
             rule_name: sds_rules[k].clone().name,
             filename: filename.to_string(),
+            // Rule priorities do not directly match to severity, so map them as closely as possible
+            severity: match sds_rules[k].priority {
+                RulePriority::Info => RuleSeverity::Notice,
+                RulePriority::Low => RuleSeverity::Notice,
+                RulePriority::Medium => RuleSeverity::Warning,
+                RulePriority::High => RuleSeverity::Error,
+                RulePriority::Critical => RuleSeverity::Error,
+                RulePriority::None => RuleSeverity::Notice,
+            },
             // there is no message for secret rules like we do with the static analyzer.
             // we are putting the rule name instead. Update this if you want to change
             // and put more context.

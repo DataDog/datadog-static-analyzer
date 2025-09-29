@@ -4,6 +4,7 @@
 
 use common::model::position::Position;
 use dd_sds::MatchStatus;
+use static_analysis_kernel::model::rule::RuleSeverity;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
@@ -40,5 +41,6 @@ pub struct SecretResult {
     pub rule_name: String,
     pub filename: String,
     pub message: String,
+    pub severity: RuleSeverity,
     pub matches: Vec<SecretResultMatch>,
 }
