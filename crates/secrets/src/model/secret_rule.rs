@@ -43,7 +43,7 @@ pub enum RulePriority {
     High,
     #[serde(rename = "critical")]
     Critical,
-    #[serde(rename = "high")]
+    #[serde(rename = "none")]
     None,
 }
 
