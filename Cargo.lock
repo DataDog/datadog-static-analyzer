@@ -3651,6 +3651,7 @@ dependencies = [
  "lazy_static",
  "serde",
  "serde_json",
+ "static-analysis-kernel",
 ]
 
 [[package]]
