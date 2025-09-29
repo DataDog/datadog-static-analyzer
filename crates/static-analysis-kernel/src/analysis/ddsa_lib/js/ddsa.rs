@@ -22,6 +22,7 @@ mod tests {
             "getChildren",
             "findAncestor",
             "findDescendant",
+            "getNamedChild",
             "getParent",
             "getTaintSinks",
             "getTaintSources",
@@ -56,6 +57,26 @@ function visit(query, filename, code) {{
         let res =
             shorthand_execute_rule(&mut rt, Python, ts_query, &rule_code, text, None).unwrap();
         assert_eq!(res.console_lines[0], "print");
+    }
+
+    #[test]
+    fn test_find_named_child() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = "def mymethod():\n  pass";
+        let ts_query = "(function_definition)@func";
+        let rule_code = r#"
+
+function visit(query, filename, code) {{
+  const n = query.captures.func;
+  const c = ddsa.findNamedChild(n, "body");
+  console.log(c.text);
+}}
+"#;
+
+        // Then execute the rule that fetches the children of the node.
+        let res =
+            shorthand_execute_rule(&mut rt, Python, ts_query, &rule_code, text, None).unwrap();
+        assert_eq!(res.console_lines[0], "pass");
     }
 
     #[test]

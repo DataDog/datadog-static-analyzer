@@ -87,6 +87,24 @@ export class DDSA {
     }
 
     /**
+     * Returns an ancestor node that satisfies a given condition, or undefined if none could be found.
+     * @param {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @param {string} childName
+     * @returns {TreeSitterNode | TreeSitterFieldChildNode | undefined}
+     */
+    findNamedChild(node, childName) {
+        if (node === undefined) {
+            return undefined;
+        }
+        for (const c of ddsa.getChildren(node)){
+            if (c.fieldName === childName){
+                return c;
+            }
+        }
+        return undefined;
+    }
+
+    /**
      * Fetches and returns the provided node's parent in the tree-sitter tree.
      * If the node is the root node of the tree, `undefined` will be returned.
      * @param {TreeSitterNode | TreeSitterFieldChildNode} node
