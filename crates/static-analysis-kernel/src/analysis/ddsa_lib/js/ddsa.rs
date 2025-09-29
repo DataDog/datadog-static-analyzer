@@ -22,7 +22,7 @@ mod tests {
             "getChildren",
             "findAncestor",
             "findDescendant",
-            "getNamedChild",
+            "findNamedChild",
             "getParent",
             "getTaintSinks",
             "getTaintSources",
