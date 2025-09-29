@@ -19,7 +19,7 @@ use kernel::model::{
 use path_slash::PathExt;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
-use secrets::model::secret_rule::SecretRule;
+use secrets::model::secret_rule::{RulePriority, SecretRule};
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
     LocationBuilder, MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder,
@@ -81,7 +81,14 @@ impl SarifRule {
     fn severity(&self) -> RuleSeverity {
         match self {
             SarifRule::StaticAnalysis(r) => r.severity,
-            SarifRule::SecretRule(_) => RuleSeverity::Error,
+            SarifRule::SecretRule(r) => match r.priority {
+                RulePriority::Info => RuleSeverity::Notice,
+                RulePriority::Low => RuleSeverity::Notice,
+                RulePriority::Medium => RuleSeverity::Warning,
+                RulePriority::High => RuleSeverity::Error,
+                RulePriority::Critical => RuleSeverity::Error,
+                RulePriority::None => RuleSeverity::Notice,
+            },
         }
     }
 

@@ -58,7 +58,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
                 start: v.start,
                 end: v.end,
                 message: secret_result.message.clone(),
-                severity: RuleSeverity::Error,
+                severity: secret_result.severity,
                 category: RuleCategory::Security,
                 fixes: vec![],
                 taint_flow: None,
