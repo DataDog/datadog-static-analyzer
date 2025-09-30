@@ -2,7 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use static_analysis_kernel::model::rule::RuleSeverity;
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
 use crate::model::secret_rule::{RulePriority, SecretRule};
 use anyhow::Error;
@@ -11,6 +10,7 @@ use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
 use dd_sds::{RootRuleConfig, RuleConfig, Scanner};
 use itertools::Itertools;
+use static_analysis_kernel::model::rule::RuleSeverity;
 use std::sync::Arc;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from

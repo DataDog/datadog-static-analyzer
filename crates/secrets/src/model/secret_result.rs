@@ -4,8 +4,8 @@
 
 use common::model::position::Position;
 use dd_sds::MatchStatus;
-use static_analysis_kernel::model::rule::RuleSeverity;
 use serde::{Deserialize, Serialize};
+use static_analysis_kernel::model::rule::RuleSeverity;
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub enum SecretValidationStatus {
