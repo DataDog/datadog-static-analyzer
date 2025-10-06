@@ -30,6 +30,7 @@ use serde_sarif::sarif::{
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
+use crate::rule_utils::map_priority_to_severity;
 use crate::sarif::sarif_utils::SarifViolation::{Secret, StaticAnalysis};
 
 trait IntoSarif {
@@ -81,14 +82,7 @@ impl SarifRule {
     fn severity(&self) -> RuleSeverity {
         match self {
             SarifRule::StaticAnalysis(r) => r.severity,
-            SarifRule::SecretRule(r) => match r.priority {
-                RulePriority::Info => RuleSeverity::Notice,
-                RulePriority::Low => RuleSeverity::Notice,
-                RulePriority::Medium => RuleSeverity::Warning,
-                RulePriority::High => RuleSeverity::Error,
-                RulePriority::Critical => RuleSeverity::Error,
-                RulePriority::None => RuleSeverity::Notice,
-            },
+            SarifRule::SecretRule(r) => map_priority_to_severity(r.priority),
         }
     }
 
