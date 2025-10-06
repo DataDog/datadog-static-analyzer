@@ -387,8 +387,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                         .attributes
                         .priority
                         .as_str()
-                        .try_into()
-                        .map_err(|_| "invalid priority")?,
+                        .try_into()?,
                     validators: val.attributes.validators,
                     match_validation: Some(validation),
                     sds_id: val.attributes.sds_id,
@@ -406,8 +405,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     .attributes
                     .priority
                     .as_str()
-                    .try_into()
-                    .map_err(|_| "invalid priority")?,
+                    .try_into()?,
                 default_included_keywords: val
                     .attributes
                     .default_included_keywords
