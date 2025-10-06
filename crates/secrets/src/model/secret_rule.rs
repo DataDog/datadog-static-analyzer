@@ -31,7 +31,7 @@ pub enum SecretRuleMatchValidationHttpMethod {
     Delete,
 }
 
-#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum RulePriority {
     Info,
