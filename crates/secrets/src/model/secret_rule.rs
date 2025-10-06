@@ -59,14 +59,15 @@ impl TryFrom<&str> for RulePriority {
 
 impl fmt::Display for RulePriority {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Info => write!(f, "error"),
-            Self::Low => write!(f, "low"),
-            Self::Medium => write!(f, "medium"),
-            Self::High => write!(f, "high"),
-            Self::Critical => write!(f, "critical"),
-            Self::None => write!(f, "none"),
+        let text = match self {
+            Self::Info => "error",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+            Self::None => "none",
         }
+        write!(f, text)
     }
 }
 
