@@ -2,10 +2,10 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::model::secret_rule::RulePriority;
 use common::model::position::Position;
 use dd_sds::MatchStatus;
 use serde::{Deserialize, Serialize};
-use crate::model::secret_rule::RulePriority;
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub enum SecretValidationStatus {
