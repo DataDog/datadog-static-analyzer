@@ -60,7 +60,7 @@ impl TryFrom<&str> for RulePriority {
 impl fmt::Display for RulePriority {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let text = match self {
-            Self::Info => "error",
+            Self::Info => "info",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
