@@ -961,6 +961,7 @@ mod tests {
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
     use secrets::model::secret_result::SecretResultMatch;
+    use secrets::model::secret_rule::RulePriority;
     use serde_json::{from_str, Value};
     use valico::json_schema;
 
@@ -1451,6 +1452,7 @@ mod tests {
             sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
             description: "secret-description".to_string(),
             pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
             default_included_keywords: vec![],
             validators: Some(vec![]),
             match_validation: None,
@@ -1471,6 +1473,7 @@ mod tests {
                 rule_name: "secret-rule".to_string(),
                 filename: "myfile.py".to_string(),
                 message: "some secret".to_string(),
+                priority: RulePriority::Medium,
                 matches: vec![SecretResultMatch {
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 2, col: 2 },
