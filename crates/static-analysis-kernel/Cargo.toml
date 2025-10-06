@@ -20,7 +20,7 @@ tree-sitter = { workspace = true }
 # other
 deno_core = "0.330.0"
 globset = "0.4.16"
-graphviz-rust = "0.9.5"
+graphviz-rust = "0.9.6"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
 streaming-iterator = "0.1.9"
