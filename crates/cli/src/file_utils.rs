@@ -10,6 +10,7 @@ use walkdir::WalkDir;
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
 use kernel::model::common::Language;
+use kernel::model::common::Language::Dockerfile;
 use kernel::model::config_file::PathConfig;
 use kernel::model::violation::Violation;
 
@@ -113,6 +114,19 @@ pub fn get_language_for_file(path: &Path) -> Option<Language> {
             .map(|x| x.to_string())
             .collect::<Vec<String>>();
         if match_prefix_filename(path, prefix_string.as_slice()) {
+            // If we have a file such as Dockerfile.<something>.dockerignore, we just ignore it
+            if *language == Dockerfile {
+                if let Some(ext) = path.extension() {
+                    if ext
+                        .to_str()
+                        .map(|s| s.ends_with("dockerignore"))
+                        .unwrap_or(false)
+                    {
+                        return None;
+                    }
+                }
+            }
+
             return Some(*language);
         }
     }
@@ -935,6 +949,12 @@ mod tests {
         assert_eq!(
             get_language_for_file(&PathBuf::from("Dockerfile.foobar")),
             Some(Language::Dockerfile)
+        );
+
+        // prefix
+        assert_eq!(
+            get_language_for_file(&PathBuf::from("Dockerfile.foobar.dockerignore")),
+            None
         );
 
         // none
