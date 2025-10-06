@@ -3,14 +3,13 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
-use crate::model::secret_rule::{RulePriority, SecretRule};
+use crate::model::secret_rule::SecretRule;
 use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
 use dd_sds::{RootRuleConfig, RuleConfig, Scanner};
 use itertools::Itertools;
-use static_analysis_kernel::model::rule::RuleSeverity;
 use std::sync::Arc;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from
@@ -75,15 +74,7 @@ pub fn find_secrets(
             rule_id: sds_rules[k].clone().id,
             rule_name: sds_rules[k].clone().name,
             filename: filename.to_string(),
-            // Rule priorities do not directly match to severity, so map them as closely as possible
-            severity: match sds_rules[k].priority {
-                RulePriority::Info => RuleSeverity::Notice,
-                RulePriority::Low => RuleSeverity::Notice,
-                RulePriority::Medium => RuleSeverity::Warning,
-                RulePriority::High => RuleSeverity::Error,
-                RulePriority::Critical => RuleSeverity::Error,
-                RulePriority::None => RuleSeverity::Notice,
-            },
+            priority: sds_rules[k].priority,
             // there is no message for secret rules like we do with the static analyzer.
             // we are putting the rule name instead. Update this if you want to change
             // and put more context.
@@ -102,6 +93,7 @@ pub fn find_secrets(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::secret_rule::RulePriority;
 
     #[test]
     fn test_get_position_in_string() {
@@ -126,6 +118,7 @@ mod tests {
             description: "super secret!".to_string(),
             pattern: "FOO(BAR|BAZ)".to_string(),
             default_included_keywords: vec![],
+            priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,
         }];

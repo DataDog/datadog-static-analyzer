@@ -5,7 +5,7 @@
 use common::model::position::Position;
 use dd_sds::MatchStatus;
 use serde::{Deserialize, Serialize};
-use static_analysis_kernel::model::rule::RuleSeverity;
+use crate::model::secret_rule::RulePriority;
 
 #[derive(Clone, Copy, Debug, PartialEq, Hash, Eq, Serialize, Deserialize)]
 pub enum SecretValidationStatus {
@@ -41,6 +41,6 @@ pub struct SecretResult {
     pub rule_name: String,
     pub filename: String,
     pub message: String,
-    pub severity: RuleSeverity,
+    pub priority: RulePriority,
     pub matches: Vec<SecretResultMatch>,
 }

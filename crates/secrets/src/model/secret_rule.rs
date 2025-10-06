@@ -66,8 +66,8 @@ impl fmt::Display for RulePriority {
             Self::High => "high",
             Self::Critical => "critical",
             Self::None => "none",
-        }
-        write!(f, text)
+        };
+        write!(f, "{text}")
     }
 }
 
