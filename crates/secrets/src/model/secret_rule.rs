@@ -47,6 +47,7 @@ impl TryFrom<&str> for RulePriority {
 
     fn try_from(s: &str) -> Result<Self, &'static str> {
         match s.to_lowercase().as_str() {
+            "none" => Ok(RulePriority::Info),
             "info" => Ok(RulePriority::Info),
             "low" => Ok(RulePriority::Low),
             "medium" => Ok(RulePriority::Medium),
