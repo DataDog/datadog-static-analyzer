@@ -74,6 +74,7 @@ pub fn find_secrets(
             rule_id: sds_rules[k].clone().id,
             rule_name: sds_rules[k].clone().name,
             filename: filename.to_string(),
+            priority: sds_rules[k].priority,
             // there is no message for secret rules like we do with the static analyzer.
             // we are putting the rule name instead. Update this if you want to change
             // and put more context.
@@ -92,6 +93,7 @@ pub fn find_secrets(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::secret_rule::RulePriority;
 
     #[test]
     fn test_get_position_in_string() {
@@ -116,6 +118,7 @@ mod tests {
             description: "super secret!".to_string(),
             pattern: "FOO(BAR|BAZ)".to_string(),
             default_included_keywords: vec![],
+            priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,
         }];

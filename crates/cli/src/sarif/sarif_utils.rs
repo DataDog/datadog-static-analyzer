@@ -30,6 +30,7 @@ use serde_sarif::sarif::{
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
+use crate::rule_utils::map_priority_to_severity;
 use crate::sarif::sarif_utils::SarifViolation::{Secret, StaticAnalysis};
 
 trait IntoSarif {
@@ -81,7 +82,7 @@ impl SarifRule {
     fn severity(&self) -> RuleSeverity {
         match self {
             SarifRule::StaticAnalysis(r) => r.severity,
-            SarifRule::SecretRule(_) => RuleSeverity::Error,
+            SarifRule::SecretRule(r) => map_priority_to_severity(r.priority),
         }
     }
 
@@ -954,6 +955,7 @@ mod tests {
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
     use secrets::model::secret_result::SecretResultMatch;
+    use secrets::model::secret_rule::RulePriority;
     use serde_json::{from_str, Value};
     use valico::json_schema;
 
@@ -1444,6 +1446,7 @@ mod tests {
             sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
             description: "secret-description".to_string(),
             pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
             default_included_keywords: vec![],
             validators: Some(vec![]),
             match_validation: None,
@@ -1464,6 +1467,7 @@ mod tests {
                 rule_name: "secret-rule".to_string(),
                 filename: "myfile.py".to_string(),
                 message: "some secret".to_string(),
+                priority: RulePriority::Medium,
                 matches: vec![SecretResultMatch {
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 2, col: 2 },

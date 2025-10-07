@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::model::secret_rule::RulePriority;
 use common::model::position::Position;
 use dd_sds::MatchStatus;
 use serde::{Deserialize, Serialize};
@@ -40,5 +41,6 @@ pub struct SecretResult {
     pub rule_name: String,
     pub filename: String,
     pub message: String,
+    pub priority: RulePriority,
     pub matches: Vec<SecretResultMatch>,
 }

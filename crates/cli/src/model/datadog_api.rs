@@ -352,6 +352,7 @@ pub struct SecretRuleApiAttributes {
     pub description: String,
     pub pattern: String,
     pub sds_id: String,
+    pub priority: String,
     pub default_included_keywords: Option<Vec<String>>,
     pub validators: Option<Vec<String>>,
     pub match_validation: Option<SecretRuleApiMatchValidation>,
@@ -382,6 +383,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                         .attributes
                         .default_included_keywords
                         .unwrap_or_default(),
+                    priority: val.attributes.priority.as_str().try_into()?,
                     validators: val.attributes.validators,
                     match_validation: Some(validation),
                     sds_id: val.attributes.sds_id,
@@ -395,6 +397,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                 name: val.attributes.name,
                 description: val.attributes.description,
                 pattern: val.attributes.pattern,
+                priority: val.attributes.priority.as_str().try_into()?,
                 default_included_keywords: val
                     .attributes
                     .default_included_keywords
@@ -538,6 +541,7 @@ mod tests {
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
+                priority: "medium".to_string(),
                 default_included_keywords: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
@@ -567,6 +571,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
+                priority: "medium".to_string(),
                 default_included_keywords: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
@@ -596,6 +601,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
+                priority: "medium".to_string(),
                 default_included_keywords: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
@@ -631,6 +637,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
+                priority: "medium".to_string(),
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 default_included_keywords: None,
                 validators: None,
@@ -666,6 +673,7 @@ mod tests {
                 name: "secret_rule_name".to_string(),
                 description: "secret_rule_description".to_string(),
                 pattern: "pattern".to_string(),
+                priority: "medium".to_string(),
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 default_included_keywords: None,
                 validators: None,

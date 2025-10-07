@@ -143,6 +143,7 @@ mod tests {
     use kernel::model::common::Language;
     use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
+    use secrets::model::secret_rule::RulePriority;
 
     use super::*;
 
@@ -204,6 +205,7 @@ mod tests {
             description: "description1".to_string(),
             pattern: "pattern1".to_string(),
             default_included_keywords: vec![],
+            priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,
         };
@@ -215,6 +217,7 @@ mod tests {
             description: "description2".to_string(),
             pattern: "pattern2".to_string(),
             default_included_keywords: vec![],
+            priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,
         };

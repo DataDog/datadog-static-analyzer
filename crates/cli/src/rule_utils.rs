@@ -5,6 +5,7 @@ use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleResult, RuleSeve
 use kernel::model::ruleset::RuleSet;
 use kernel::model::violation::Violation;
 use secrets::model::secret_result::SecretResult;
+use secrets::model::secret_rule::RulePriority;
 use std::collections::HashSet;
 use std::time::Instant;
 use std::{fs::File, io::BufReader};
@@ -40,6 +41,18 @@ pub fn count_violations_by_severities(
         .sum()
 }
 
+/// Maps a RulePriority to a RuleSeverity
+pub fn map_priority_to_severity(priority: RulePriority) -> RuleSeverity {
+    match priority {
+        RulePriority::Info => RuleSeverity::Notice,
+        RulePriority::Low => RuleSeverity::Notice,
+        RulePriority::Medium => RuleSeverity::Warning,
+        RulePriority::High => RuleSeverity::Error,
+        RulePriority::Critical => RuleSeverity::Error,
+        RulePriority::None => RuleSeverity::Notice,
+    }
+}
+
 /// Transform a secret result into a rule result, which is required for output purposes.
 pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> RuleResult {
     RuleResult {
@@ -58,7 +71,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
                 start: v.start,
                 end: v.end,
                 message: secret_result.message.clone(),
-                severity: RuleSeverity::Error,
+                severity: map_priority_to_severity(secret_result.priority),
                 category: RuleCategory::Security,
                 fixes: vec![],
                 taint_flow: None,

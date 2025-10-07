@@ -11,6 +11,7 @@ use dd_sds::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use std::fmt;
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
@@ -28,6 +29,47 @@ pub enum SecretRuleMatchValidationHttpMethod {
     Put,
     Patch,
     Delete,
+}
+
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum RulePriority {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+    None,
+}
+
+impl TryFrom<&str> for RulePriority {
+    type Error = &'static str;
+
+    fn try_from(s: &str) -> Result<Self, &'static str> {
+        match s.to_lowercase().as_str() {
+            "none" => Ok(RulePriority::Info),
+            "info" => Ok(RulePriority::Info),
+            "low" => Ok(RulePriority::Low),
+            "medium" => Ok(RulePriority::Medium),
+            "high" => Ok(RulePriority::High),
+            "critical" => Ok(RulePriority::Critical),
+            _ => Err("unknown priority"),
+        }
+    }
+}
+
+impl fmt::Display for RulePriority {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let text = match self {
+            Self::Info => "info",
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+            Self::Critical => "critical",
+            Self::None => "none",
+        };
+        write!(f, "{text}")
+    }
 }
 
 impl From<SecretRuleMatchValidationHttpMethod> for HttpMethod {
@@ -111,6 +153,7 @@ pub struct SecretRule {
     pub name: String,
     pub description: String,
     pub pattern: String,
+    pub priority: RulePriority,
     pub default_included_keywords: Vec<String>,
     pub validators: Option<Vec<String>>,
     pub match_validation: Option<SecretRuleMatchValidation>,

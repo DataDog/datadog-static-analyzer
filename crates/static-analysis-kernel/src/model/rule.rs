@@ -49,7 +49,7 @@ impl fmt::Display for RuleCategory {
     }
 }
 
-#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
+#[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq, Hash)]
 pub enum RuleSeverity {
     #[serde(rename = "ERROR")]
     Error,
