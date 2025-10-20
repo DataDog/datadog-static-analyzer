@@ -87,6 +87,30 @@ export class DDSA {
     }
 
     /**
+     * Returns the list of all descendants that match the given predicate.
+     * @param node {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @param predicate {function(TreeSitterNode | TreeSitterFieldChildNode): boolean} predicate
+     * @returns {undefined|*[TreeSitterNode | TreeSitterFieldChildNode]}
+     */
+    findDescendants(node, predicate) {
+        let res = [];
+        if (predicate === undefined) {
+            return undefined;
+        }
+
+        for (const c of ddsa.getChildren(node)) {
+            if (predicate(c)) {
+                res.push(c);
+            }
+            const childRes = ddsa.findDescendants(c, predicate)
+            if (childRes.length > 0) {
+                res.push(...childRes);
+            }
+        }
+        return res;
+    }
+
+    /**
      * Fetches and returns the provided node's parent in the tree-sitter tree.
      * If the node is the root node of the tree, `undefined` will be returned.
      * @param {TreeSitterNode | TreeSitterFieldChildNode} node

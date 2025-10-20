@@ -22,6 +22,7 @@ mod tests {
             "getChildren",
             "findAncestor",
             "findDescendant",
+            "findDescendants",
             "getParent",
             "getTaintSinks",
             "getTaintSources",
@@ -56,6 +57,31 @@ function visit(query, filename, code) {{
         let res =
             shorthand_execute_rule(&mut rt, Python, ts_query, &rule_code, text, None).unwrap();
         assert_eq!(res.console_lines[0], "print");
+    }
+
+    #[test]
+    fn test_find_descendants() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = "print(foo)";
+        let ts_query = "(module)@module";
+        let rule_code = r#"
+function isIdentifier(n) { return n.cstType === "identifier"; }
+
+function visit(query, filename, code) {{
+  const n = query.captures.module;
+  const c = ddsa.findDescendants(n, isIdentifier);
+  console.log(c.length);
+  console.log(c[0].text);
+  console.log(c[1].text);
+}}
+"#;
+
+        // Then execute the rule that fetches the children of the node.
+        let res =
+            shorthand_execute_rule(&mut rt, Python, ts_query, &rule_code, text, None).unwrap();
+        assert_eq!(res.console_lines[0], "2");
+        assert_eq!(res.console_lines[1], "print");
+        assert_eq!(res.console_lines[2], "foo");
     }
 
     #[test]
