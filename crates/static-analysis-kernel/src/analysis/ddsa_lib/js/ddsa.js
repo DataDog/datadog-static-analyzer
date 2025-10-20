@@ -98,6 +98,10 @@ export class DDSA {
             return undefined;
         }
 
+        if (node === undefined) {
+            return res;
+        }
+
         for (const c of ddsa.getChildren(node)) {
             if (predicate(c)) {
                 res.push(c);
