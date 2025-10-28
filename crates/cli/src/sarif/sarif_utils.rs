@@ -262,6 +262,7 @@ pub struct SarifGenerationOptions {
     pub diff_aware_parameters: Option<DiffAwareData>,
     pub repository_directory: String,
     pub execution_time_secs: u64,
+    pub is_public_repository: bool,
 }
 
 impl IntoSarif for &SecretRule {
@@ -774,7 +775,17 @@ fn generate_results(
                         )
                         .properties(
                             PropertyBagBuilder::default()
-                                .tags([tags.clone(), sarif_violation.get_properties()].concat())
+                                .tags(
+                                    [
+                                        tags.clone(),
+                                        sarif_violation.get_properties(),
+                                        vec![format!(
+                                            "DATADOG_PUBLIC_REPOSITORY_STATUS:{}",
+                                            options.is_public_repository
+                                        )],
+                                    ]
+                                    .concat(),
+                                )
                                 .build()
                                 .unwrap(),
                         )
@@ -871,6 +882,7 @@ pub fn generate_sarif_report(
         diff_aware_parameters: tool_information.diff_aware_parameters.clone(),
         repository_directory: directory.clone(),
         execution_time_secs: tool_information.execution_time_secs,
+        is_public_repository: configuration.is_public_repository,
     };
 
     let artifacts_kv = extract_artifacts(
