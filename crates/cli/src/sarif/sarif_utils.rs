@@ -860,6 +860,7 @@ pub fn generate_sarif_report(
     directory: &String,
     tool_information: SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
+    is_public_repository: bool,
 ) -> Result<Sarif> {
     // if we enable git info, we are then getting the repository object. We put that
     // into an `Arc` object to be able to clone the object.
@@ -882,7 +883,7 @@ pub fn generate_sarif_report(
         diff_aware_parameters: tool_information.diff_aware_parameters.clone(),
         repository_directory: directory.clone(),
         execution_time_secs: tool_information.execution_time_secs,
-        is_public_repository: configuration.is_public_repository,
+        is_public_repository,
     };
 
     let artifacts_kv = extract_artifacts(
@@ -941,6 +942,7 @@ pub fn generate_sarif_file(
         &configuration.source_directory,
         sarif_report_metadata,
         path_metadata,
+        configuration.is_public_repository,
     ) {
         Ok(report) => {
             Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
@@ -1168,6 +1170,7 @@ mod tests {
                 execution_time_secs: 42,
             },
             &Default::default(),
+            false,
         )
         .expect("generate sarif report");
 
@@ -1308,6 +1311,7 @@ mod tests {
                 execution_time_secs: 42,
             },
             &Default::default(),
+            false,
         )
         .expect("generate sarif report");
 
@@ -1405,6 +1409,7 @@ mod tests {
                 execution_time_secs: 42,
             },
             &Default::default(),
+            false,
         )
         .expect("generate sarif report");
 
@@ -1655,6 +1660,7 @@ mod tests {
                 execution_time_secs: 42,
             },
             &Default::default(),
+            false,
         )
         .expect("generate sarif report");
         assert!(sarif_report
@@ -1720,6 +1726,7 @@ mod tests {
                 execution_time_secs: 42,
             },
             &Default::default(),
+            false,
         )
         .unwrap();
 

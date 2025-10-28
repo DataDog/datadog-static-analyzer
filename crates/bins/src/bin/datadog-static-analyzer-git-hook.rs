@@ -363,6 +363,7 @@ fn main() -> Result<()> {
         secrets_rules: secrets_rules.clone(),
         should_verify_checksum: true,
         debug_java_dfa: false,
+        is_public_repository: false,
     };
 
     if configuration.use_debug {
