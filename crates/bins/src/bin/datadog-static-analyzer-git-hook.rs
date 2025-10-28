@@ -180,6 +180,11 @@ fn main() -> Result<()> {
         "how long a rule can run before being killed, in milliseconds",
         "1000",
     );
+    opts.optflag(
+        "",
+        "public-repository",
+        "flag repository being scanned as public",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -216,6 +221,7 @@ fn main() -> Result<()> {
     let sha_start_opt = matches.opt_str("sha-start");
     let sha_end_opt = matches.opt_str("sha-end");
     let output_opt = matches.opt_str("output");
+    let is_public_repository = matches.opt_present("public-repository");
 
     let use_debug = *matches
         .opt_str("d")
@@ -363,7 +369,7 @@ fn main() -> Result<()> {
         secrets_rules: secrets_rules.clone(),
         should_verify_checksum: true,
         debug_java_dfa: false,
-        is_public_repository: false,
+        is_public_repository,
     };
 
     if configuration.use_debug {
