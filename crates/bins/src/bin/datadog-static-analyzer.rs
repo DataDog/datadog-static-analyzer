@@ -153,6 +153,11 @@ fn main() -> Result<()> {
         "how long a rule can run before being killed, in milliseconds",
         "1000",
     );
+    opts.optflag(
+        "",
+        "public-repository",
+        "flag repository being scanned as public",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -185,6 +190,7 @@ fn main() -> Result<()> {
     let enable_performance_statistics = matches.opt_present("x");
     let print_violations = matches.opt_present("print-violations");
     let secrets_enabled_old_option = matches.opt_present("secrets");
+    let is_public_repository = matches.opt_present("public-repository");
 
     // if --fail-on-any-violation is specified, get the list of severities to exit with a non-zero code
     let fail_any_violation_severities = match matches.opt_str("fail-on-any-violation") {
