@@ -412,6 +412,7 @@ fn main() -> Result<()> {
         secrets_rules: secrets_rules.clone(),
         should_verify_checksum,
         debug_java_dfa,
+        is_public_repository,
     };
 
     print_configuration(&configuration);
