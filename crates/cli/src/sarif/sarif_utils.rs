@@ -1470,7 +1470,7 @@ mod tests {
         };
 
         #[rustfmt::skip]
-        let test_cases = [
+        let validation_status_cases = [
             (SecretValidationStatus::NotValidated, "DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED", "note"),
             (SecretValidationStatus::Valid, "DATADOG_SECRET_VALIDATION_STATUS:VALID", "error"),
             (SecretValidationStatus::Invalid, "DATADOG_SECRET_VALIDATION_STATUS:INVALID", "none"),
@@ -1478,114 +1478,123 @@ mod tests {
             (SecretValidationStatus::NotAvailable, "DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE", "error"),
         ];
 
-        for case in test_cases {
-            let secret_results = vec![SecretResult {
-                rule_id: "secret-rule".to_string(),
-                rule_name: "secret-rule".to_string(),
-                filename: "myfile.py".to_string(),
-                message: "some secret".to_string(),
-                priority: RulePriority::Medium,
-                matches: vec![SecretResultMatch {
-                    start: Position { line: 1, col: 1 },
-                    end: Position { line: 2, col: 2 },
-                    validation_status: case.0,
-                }],
-            }];
+        let public_repo_cases = [
+            (false, "DATADOG_PUBLIC_REPOSITORY_STATUS:false"),
+            (true, "DATADOG_PUBLIC_REPOSITORY_STATUS:true"),
+        ];
 
-            let sarif_secret_results = secret_results
-                .into_iter()
-                .map(SarifRuleResult::try_from)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(anyhow::Error::msg)
-                .expect("getting results");
+        for validation_case in validation_status_cases {
+            for public_repo_case in public_repo_cases {
+                let secret_results = vec![SecretResult {
+                    rule_id: "secret-rule".to_string(),
+                    rule_name: "secret-rule".to_string(),
+                    filename: "myfile.py".to_string(),
+                    message: "some secret".to_string(),
+                    priority: RulePriority::Medium,
+                    matches: vec![SecretResultMatch {
+                        start: Position { line: 1, col: 1 },
+                        end: Position { line: 2, col: 2 },
+                        validation_status: validation_case.0,
+                    }],
+                }];
 
-            let sarif_report = generate_sarif_report(
-                &[rule.clone().into()],
-                &sarif_secret_results,
-                &"mydir".to_string(),
-                SarifReportMetadata {
-                    add_git_info: false,
-                    debug: false,
-                    config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
-                    diff_aware_parameters: None,
-                    execution_time_secs: 42,
-                },
-                &Default::default(),
-            )
-            .expect("generate sarif report");
+                let sarif_secret_results = secret_results
+                    .into_iter()
+                    .map(SarifRuleResult::try_from)
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(anyhow::Error::msg)
+                    .expect("getting results");
 
-            let expected_subset = serde_json::json!(
-            {
-              "runs": [
-                {
-                  "results": [
-                    {
-                      "fixes": [],
-                      "level": case.2,
-                      "locations": [
-                        {
-                          "physicalLocation": {
-                            "artifactLocation": {
-                              "uri": "myfile.py"
-                            },
-                            "region": {
-                              "endColumn": 2,
-                              "endLine": 2,
-                              "startColumn": 1,
-                              "startLine": 1
-                            }
-                          }
-                        }
-                      ],
-                      "message": {
-                        "text": "some secret"
-                      },
-                      "partialFingerprints": {},
-                      "properties": {
-                        "tags": [
-                          "DATADOG_CATEGORY:SECURITY",
-                          case.1,
-                        ]
-                      },
-                      "ruleId": "secret-rule",
-                      "ruleIndex": 0
+                let sarif_report = generate_sarif_report(
+                    &[rule.clone().into()],
+                    &sarif_secret_results,
+                    &"mydir".to_string(),
+                    SarifReportMetadata {
+                        add_git_info: false,
+                        debug: false,
+                        config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                        diff_aware_parameters: None,
+                        execution_time_secs: 42,
                     },
-                  ],
-                  "tool": {
-                    "driver": {
-                      "rules": [
+                    &Default::default(),
+                    public_repo_case.0,
+                )
+                .expect("generate sarif report");
+
+                let expected_subset = serde_json::json!(
+                {
+                  "runs": [
+                    {
+                      "results": [
                         {
-                          "fullDescription": {
-                            "text": "secret-description"
+                          "fixes": [],
+                          "level": validation_case.2,
+                          "locations": [
+                            {
+                              "physicalLocation": {
+                                "artifactLocation": {
+                                  "uri": "myfile.py"
+                                },
+                                "region": {
+                                  "endColumn": 2,
+                                  "endLine": 2,
+                                  "startColumn": 1,
+                                  "startLine": 1
+                                }
+                              }
+                            }
+                          ],
+                          "message": {
+                            "text": "some secret"
                           },
-                          "id": "secret-rule",
-                          "name": "secret-rule",
+                          "partialFingerprints": {},
                           "properties": {
                             "tags": [
-                              "DATADOG_RULE_TYPE:SECRET",
-                              "DATADOG_SDS_ID:71A7A0ED-DD03-45C5-9C2E-56B30CB566E0"
+                              "DATADOG_CATEGORY:SECURITY",
+                              validation_case.1,
+                              public_repo_case.1,
                             ]
                           },
-                          "shortDescription": {
-                            "text": "secret-rule"
-                          }
-                        }
+                          "ruleId": "secret-rule",
+                          "ruleIndex": 0
+                        },
                       ],
+                      "tool": {
+                        "driver": {
+                          "rules": [
+                            {
+                              "fullDescription": {
+                                "text": "secret-description"
+                              },
+                              "id": "secret-rule",
+                              "name": "secret-rule",
+                              "properties": {
+                                "tags": [
+                                  "DATADOG_RULE_TYPE:SECRET",
+                                  "DATADOG_SDS_ID:71A7A0ED-DD03-45C5-9C2E-56B30CB566E0"
+                                ]
+                              },
+                              "shortDescription": {
+                                "text": "secret-rule"
+                              }
+                            }
+                          ],
+                        }
+                      }
                     }
-                  }
+                  ],
                 }
-              ],
+                        );
+
+                let sarif_json = serde_json::to_value(sarif_report).unwrap();
+                assert_json_include!(
+                    actual: sarif_json,
+                    expected: expected_subset,
+                );
+
+                // validate the schema
+                assert!(validate_data(&sarif_json));
             }
-                    );
-
-            let sarif_json = serde_json::to_value(sarif_report).unwrap();
-            assert_json_include!(
-                actual: sarif_json,
-                expected: expected_subset,
-            );
-
-            // validate the schema
-            assert!(validate_data(&sarif_json));
         }
     }
 
@@ -1824,6 +1833,7 @@ mod tests {
                 execution_time_secs: 42,
             },
             &path_metadata,
+            false,
         )
         .unwrap();
 
