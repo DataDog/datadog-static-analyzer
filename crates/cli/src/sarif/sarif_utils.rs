@@ -775,17 +775,17 @@ fn generate_results(
                         )
                         .properties(
                             PropertyBagBuilder::default()
-                                .tags(
-                                    [
-                                        tags.clone(),
-                                        sarif_violation.get_properties(),
-                                        vec![format!(
+                                .tags({
+                                    let mut all_tags = [tags.clone(), sarif_violation.get_properties()].concat();
+                                    // Only add public repository status tag for secrets results
+                                    if let SarifRuleResult::Secret(_) = rule_result {
+                                        all_tags.push(format!(
                                             "DATADOG_PUBLIC_REPOSITORY_STATUS:{}",
                                             options.is_public_repository
-                                        )],
-                                    ]
-                                    .concat(),
-                                )
+                                        ));
+                                    }
+                                    all_tags
+                                })
                                 .build()
                                 .unwrap(),
                         )
