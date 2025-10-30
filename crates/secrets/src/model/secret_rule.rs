@@ -12,10 +12,9 @@ use dd_sds::{
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::fmt;
 use std::collections::HashSet;
+use std::fmt;
 use strum::IntoEnumIterator;
-
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
@@ -196,7 +195,7 @@ impl SecretRule {
                         .find(|val| val.as_ref() == v)
                         .expect("validator should exist");
                     regex_rule_config = regex_rule_config.with_validator(Some(validator));
-                } else {
+                } else if use_debug {
                     eprintln!("invalid validator: {}", v);
                 }
             }
