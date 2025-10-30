@@ -4,7 +4,7 @@
 
 use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
 use common::model::diff_aware::DiffAware;
-use dd_sds::SecondaryValidator::JwtExpirationChecker;
+use dd_sds::SecondaryValidator;
 use dd_sds::{
     AwsConfig, AwsType, CustomHttpConfig, HttpMethod, HttpStatusCodeRange, MatchAction,
     MatchValidationType, ProximityKeywordsConfig, RegexRuleConfig, RootRuleConfig,
@@ -12,6 +12,9 @@ use dd_sds::{
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::collections::HashSet;
+use strum::IntoEnumIterator;
+
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
@@ -161,8 +164,6 @@ pub struct SecretRule {
 }
 
 impl SecretRule {
-    const VALIDATOR_JWT_EXPIRATION_CHECKER: &'static str = "JwtExpirationChecker";
-
     /// Convert the rule into a configuration usable by SDS.
     pub fn convert_to_sds_ruleconfig(&self, use_debug: bool) -> RootRuleConfig<RegexRuleConfig> {
         let mut regex_rule_config = RegexRuleConfig::new(&self.pattern);
@@ -177,11 +178,22 @@ impl SecretRule {
         }
 
         if let Some(validators) = &self.validators {
-            if validators
-                .iter()
-                .any(|v| v == SecretRule::VALIDATOR_JWT_EXPIRATION_CHECKER)
-            {
-                regex_rule_config = regex_rule_config.with_validator(Some(JwtExpirationChecker));
+            // Build a set of allowed validator names
+            // TODO: When sds version is bumped, will need to support JwtClaimsValidator configurations.
+            let allowed: HashSet<_> = SecondaryValidator::iter()
+                .map(|v| v.as_ref().to_string())
+                .collect();
+
+            for v in validators {
+                if allowed.contains(v) {
+                    // Safe because `v` is guaranteed to be in the enum
+                    let validator = SecondaryValidator::iter()
+                        .find(|val| val.as_ref() == v)
+                        .expect("validator should exist");
+                    regex_rule_config = regex_rule_config.with_validator(Some(validator));
+                } else {
+                    eprintln!("invalid validator: {}", v);
+                }
             }
         }
 
