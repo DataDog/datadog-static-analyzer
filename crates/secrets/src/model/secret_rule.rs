@@ -9,6 +9,7 @@ use dd_sds::{
     AwsConfig, AwsType, CustomHttpConfig, HttpMethod, HttpStatusCodeRange, MatchAction,
     MatchValidationType, ProximityKeywordsConfig, RegexRuleConfig, RootRuleConfig,
 };
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -17,6 +18,15 @@ use strum::IntoEnumIterator;
 
 
 const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
+
+lazy_static! {
+    /// Set of all valid secondary validator names, computed once at initialization.
+    static ref ALLOWED_VALIDATORS: HashSet<String> = {
+        SecondaryValidator::iter()
+            .map(|v| v.as_ref().to_string())
+            .collect()
+    };
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct SecretRuleMatchValidationHttpCode {
@@ -178,14 +188,9 @@ impl SecretRule {
         }
 
         if let Some(validators) = &self.validators {
-            // Build a set of allowed validator names
             // TODO: When sds version is bumped, will need to support JwtClaimsValidator configurations.
-            let allowed: HashSet<_> = SecondaryValidator::iter()
-                .map(|v| v.as_ref().to_string())
-                .collect();
-
             for v in validators {
-                if allowed.contains(v) {
+                if ALLOWED_VALIDATORS.contains(v) {
                     // Safe because `v` is guaranteed to be in the enum
                     let validator = SecondaryValidator::iter()
                         .find(|val| val.as_ref() == v)
