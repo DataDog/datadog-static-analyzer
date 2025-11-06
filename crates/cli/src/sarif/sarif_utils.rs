@@ -596,11 +596,10 @@ fn generate_results(
             if let Some(rule_index) = rules.iter().position(|r| r.id() == rule_result.rule_id()) {
                 let rule = &rules[rule_index];
                 let category = format!("DATADOG_CATEGORY:{}", rule.category()).to_uppercase();
+                tags.push(category);
 
                 result_builder.rule_index(i64::try_from(rule_index).unwrap());
-
                 result_builder.level(get_level_from_severity(rule.severity()));
-                tags.push(category);
 
                 // If there is a CWE, add it
                 if let Some(cwe) = rule.cwe() {
@@ -754,13 +753,6 @@ fn generate_results(
                         };
 
                     let mut sarif_result = result_builder.clone();
-
-                    // For secrets, the level is set by violation depending on the validation
-                    // status. We override it here. For static analysis, we report the
-                    // severity of the rule before.
-                    if let SarifRuleResult::Secret(_) = rule_result {
-                        sarif_result.level(get_level_from_severity(violation.severity));
-                    }
 
                     sarif_result
                         .rule_id(rule_result.rule_id())
@@ -1454,11 +1446,11 @@ mod tests {
 
         #[rustfmt::skip]
         let test_cases = [
-            (SecretValidationStatus::NotValidated, "DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED", "note"),
-            (SecretValidationStatus::Valid, "DATADOG_SECRET_VALIDATION_STATUS:VALID", "error"),
-            (SecretValidationStatus::Invalid, "DATADOG_SECRET_VALIDATION_STATUS:INVALID", "none"),
+            (SecretValidationStatus::NotValidated, "DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED", "warning"),
+            (SecretValidationStatus::Valid, "DATADOG_SECRET_VALIDATION_STATUS:VALID", "warning"),
+            (SecretValidationStatus::Invalid, "DATADOG_SECRET_VALIDATION_STATUS:INVALID", "warning"),
             (SecretValidationStatus::ValidationError, "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR", "warning"),
-            (SecretValidationStatus::NotAvailable, "DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE", "error"),
+            (SecretValidationStatus::NotAvailable, "DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE", "warning"),
         ];
 
         for case in test_cases {
@@ -1569,6 +1561,77 @@ mod tests {
 
             // validate the schema
             assert!(validate_data(&sarif_json));
+        }
+    }
+
+    #[test]
+    fn test_secret_level_uses_rule_severity() {
+        // ensure the SARIF level honors the rule's configured severity for all priorities
+        let priorities = [
+            RulePriority::Info,
+            RulePriority::Low,
+            RulePriority::Medium,
+            RulePriority::High,
+            RulePriority::Critical,
+        ];
+
+        for priority in priorities {
+            let rule = secrets::model::secret_rule::SecretRule {
+                id: "secret-rule".to_string(),
+                name: "secret-rule".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+                description: "secret-description".to_string(),
+                pattern: "foobarbaz".to_string(),
+                priority,
+                default_included_keywords: vec![],
+                validators: Some(vec![]),
+                match_validation: None,
+            };
+            let expected_level = get_level_from_severity(map_priority_to_severity(rule.priority));
+
+            let secret_results = vec![SecretResult {
+                rule_id: rule.id.clone(),
+                rule_name: rule.name.clone(),
+                filename: "myfile.py".to_string(),
+                message: "some secret".to_string(),
+                priority,
+                matches: vec![SecretResultMatch {
+                    start: Position { line: 1, col: 1 },
+                    end: Position { line: 1, col: 5 },
+                    validation_status: SecretValidationStatus::Valid,
+                }],
+            }];
+            let sarif_secret_results = secret_results
+                .into_iter()
+                .map(SarifRuleResult::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)
+                .expect("getting results");
+
+            let sarif_report = generate_sarif_report(
+                &[rule.clone().into()],
+                &sarif_secret_results,
+                &"mydir".to_string(),
+                SarifReportMetadata {
+                    add_git_info: false,
+                    debug: false,
+                    config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                    diff_aware_parameters: None,
+                    execution_time_secs: 42,
+                },
+                &Default::default(),
+            )
+            .expect("generate sarif report");
+
+            let sarif_json = serde_json::to_value(&sarif_report).unwrap();
+            let actual_level = sarif_json["runs"][0]["results"][0]["level"]
+                .as_str()
+                .expect("sarif result should contain a level");
+            assert_eq!(
+                actual_level, expected_level,
+                "priority {:?} should map to {}",
+                priority, expected_level
+            );
         }
     }
 
