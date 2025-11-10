@@ -377,7 +377,7 @@ mod tests {
     use super::{parse_imports, Entity, Import, ImportEntities};
 
     /// A shorthand to build an [`Entity`] without an alias.
-    pub fn ent(name: &str) -> Entity {
+    pub fn ent(name: &str) -> Entity<'_> {
         Entity { name, alias: None }
     }
 
