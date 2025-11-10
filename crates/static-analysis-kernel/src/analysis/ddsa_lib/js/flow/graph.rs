@@ -304,7 +304,7 @@ impl VertexKind {
 }
 
 /// Returns the string form of a `dot_structures::Id`.
-pub(crate) fn id_str(id: &dot_structures::Id) -> Cow<str> {
+pub(crate) fn id_str(id: &dot_structures::Id) -> Cow<'_, str> {
     use dot_structures::Id;
     match id {
         Id::Html(s) | Id::Plain(s) | Id::Anonymous(s) => Cow::Borrowed(s),

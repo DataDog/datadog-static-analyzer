@@ -15,7 +15,7 @@ const TS_IMPORTS_QUERY: &str = javascript::JS_IMPORTS_QUERY;
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, you should use [`parse_imports_with_tree`].
-pub fn parse_imports(source_code: &str) -> Vec<javascript::PackageImport> {
+pub fn parse_imports(source_code: &str) -> Vec<javascript::PackageImport<'_>> {
     get_tree(source_code, &Language::TypeScript)
         .map(|tree| parse_imports_with_tree(source_code, &tree))
         .unwrap_or_default()

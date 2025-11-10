@@ -116,7 +116,7 @@ impl TSQuery {
     ///
     /// This is relatively slow, as it allocates a new [`tree_sitter::QueryCursor`] and drops it after
     /// performing the query. Consider using [`TSQuery::with_cursor`] where possible.
-    pub fn cursor(&self) -> TSQueryCursor {
+    pub fn cursor(&self) -> TSQueryCursor<'_, '_> {
         let cursor = MaybeOwnedMut::Owned(tree_sitter::QueryCursor::new());
         TSQueryCursor {
             query: &self.query,

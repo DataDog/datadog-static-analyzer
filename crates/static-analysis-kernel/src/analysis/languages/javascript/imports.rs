@@ -137,7 +137,7 @@ pub(crate) const JS_IMPORTS_QUERY: &str = r#"
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, you should use [`parse_imports_with_tree`].
-pub fn parse_imports(source_code: &str) -> Vec<PackageImport> {
+pub fn parse_imports(source_code: &str) -> Vec<PackageImport<'_>> {
     get_tree(source_code, &Language::JavaScript)
         .map(|tree| parse_imports_with_tree(source_code, &tree))
         .unwrap_or_default()

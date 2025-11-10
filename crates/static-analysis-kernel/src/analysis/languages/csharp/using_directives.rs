@@ -31,7 +31,7 @@ pub struct Using<'a> {
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, you should use [`parse_using_with_tree`].
-pub fn parse_using(source_code: &str) -> Vec<Using> {
+pub fn parse_using(source_code: &str) -> Vec<Using<'_>> {
     get_tree(source_code, &Language::Csharp)
         .map(|tree| parse_using_with_tree(source_code, &tree))
         .unwrap_or_default()

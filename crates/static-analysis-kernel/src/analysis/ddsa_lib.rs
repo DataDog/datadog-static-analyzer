@@ -36,7 +36,7 @@ impl RawTSNode {
     // (This clippy lint is overridden in order to tie the `tree_sitter::Node<'a>` lifetime
     // to `&'a RawTSNode` to make it harder to do something unintended. Note that this restriction
     // is artificial because `RawTSNode` is Copy).
-    unsafe fn to_node(&self) -> tree_sitter::Node {
+    unsafe fn to_node(&self) -> tree_sitter::Node<'_> {
         tree_sitter::Node::from_raw(self.0)
     }
 }
