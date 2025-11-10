@@ -516,7 +516,7 @@ dependencies = [
 
 [[package]]
 name = "cli"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "bstr",
@@ -822,7 +822,7 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "datadog-static-analyzer"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "cargo-husky",
@@ -3671,7 +3671,7 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "common",
@@ -4052,7 +4052,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-kernel"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "base64 0.21.7",
@@ -4077,7 +4077,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-server"
-version = "0.7.0"
+version = "0.7.1"
 dependencies = [
  "anyhow",
  "assert-json-diff",
