@@ -43,17 +43,24 @@ pub fn find_secrets(
     }
 
     let mut codemut = code.to_owned();
-    let mut matches = scanner.scan(&mut codemut);
+    let mut matches = match scanner.scan(&mut codemut) {
+        Ok(m) => m,
+        Err(e) => {
+            if options.use_debug {
+                eprintln!(
+                    "error when scanning for secrets in filename {}: {}",
+                    filename, e
+                );
+            }
+            return vec![];
+        }
+    };
 
     if matches.is_empty() {
         return vec![];
     }
 
-    let matches_validation = scanner.validate_matches(&mut matches);
-
-    if matches_validation.is_err() && options.use_debug {
-        eprintln!("error when validating secrets for filename {}", filename)
-    }
+    scanner.validate_matches(&mut matches);
 
     matches
         .iter()
