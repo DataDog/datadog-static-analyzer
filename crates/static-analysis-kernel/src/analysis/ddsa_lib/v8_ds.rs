@@ -477,6 +477,7 @@ mod tests {
     rust_converter!((IntConverter, i32), |&self, scope, value| {
         v8::Integer::new(scope, *value).into()
     });
+    #[allow(dead_code)]
     struct StringConverter;
     rust_converter!((StringConverter, String), |&self, scope, value| {
         v8_string(scope, value).into()

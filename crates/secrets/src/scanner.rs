@@ -134,11 +134,11 @@ mod tests {
 
         assert_eq!(matches.first().unwrap().matches.len(), 2);
         assert_eq!(
-            matches.first().unwrap().matches.get(0).unwrap().start,
+            matches.first().unwrap().matches.first().unwrap().start,
             Position { line: 2, col: 1 }
         );
         assert_eq!(
-            matches.first().unwrap().matches.get(0).unwrap().end,
+            matches.first().unwrap().matches.first().unwrap().end,
             Position { line: 2, col: 7 }
         );
         assert_eq!(
