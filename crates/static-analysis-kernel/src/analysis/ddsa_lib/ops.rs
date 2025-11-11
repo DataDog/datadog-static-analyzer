@@ -201,7 +201,7 @@ impl OpSafeRawTSNode {
     }
 
     /// Returns a `tree_sitter::Node` representing this raw node.
-    pub fn to_node(&self) -> tree_sitter::Node {
+    pub fn to_node(&self) -> tree_sitter::Node<'_> {
         // Safety:
         // 1. An op will only be called during a JavaScript rule execution, where it's guaranteed that
         //    the `tree_sitter::Tree` exists (because it is owned by the `ddsa_lib::RootContext` on the `bridge::ContextBridge`).

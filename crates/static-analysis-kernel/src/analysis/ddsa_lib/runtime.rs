@@ -350,7 +350,7 @@ impl JsRuntime {
 
     /// Provides a [`v8::HandleScope`] for the underlying v8 isolate.
     #[cfg(test)]
-    pub fn v8_handle_scope(&mut self) -> v8::HandleScope {
+    pub fn v8_handle_scope(&mut self) -> v8::HandleScope<'_> {
         self.runtime.handle_scope()
     }
 

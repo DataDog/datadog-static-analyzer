@@ -153,7 +153,7 @@ struct MaybeAliased<'a> {
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, you should use [`parse_imports_with_tree`].
-pub fn parse_imports(source_code: &str) -> Vec<Import> {
+pub fn parse_imports(source_code: &str) -> Vec<Import<'_>> {
     get_tree(source_code, &Language::Python)
         .map(|tree| parse_imports_with_tree(source_code, &tree))
         .unwrap_or_default()
@@ -377,7 +377,7 @@ mod tests {
     use super::{parse_imports, Entity, Import, ImportEntities};
 
     /// A shorthand to build an [`Entity`] without an alias.
-    pub fn ent(name: &str) -> Entity {
+    pub fn ent(name: &str) -> Entity<'_> {
         Entity { name, alias: None }
     }
 

@@ -23,7 +23,7 @@ impl RuleConfigProvider {
         }
     }
 
-    pub fn config_for_file(&self, file_path: &str) -> RuleConfig {
+    pub fn config_for_file(&self, file_path: &str) -> RuleConfig<'_> {
         RuleConfig {
             provider: self,
             file_path: file_path.to_string(),
