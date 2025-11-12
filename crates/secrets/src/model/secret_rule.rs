@@ -20,8 +20,10 @@ const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
 lazy_static! {
     /// Set of all valid secondary validator names, computed once at initialization.
+    // TODO: Remove JwtClaimsValidator filter once it's config field is supported from the API.
     static ref ALLOWED_VALIDATORS: HashSet<String> = {
         SecondaryValidator::iter()
+            .filter(|v| v.as_ref() != "JwtClaimsValidator")
             .map(|v| v.as_ref().to_string())
             .collect()
     };
