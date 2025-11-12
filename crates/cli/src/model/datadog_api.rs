@@ -4,7 +4,7 @@ use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
 use secrets::model::secret_rule::{
     SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttp,
-    SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod,
+    SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod, SecretRuleValidator,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -347,6 +347,22 @@ impl TryFrom<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiValidator {
+    #[serde(rename = "type")]
+    pub r#type: String,
+    pub config: Option<serde_json::Value>,
+}
+
+impl From<SecretRuleApiValidator> for SecretRuleValidator {
+    fn from(val: SecretRuleApiValidator) -> Self {
+        SecretRuleValidator {
+            type_: val.r#type,
+            config: val.config,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SecretRuleApiAttributes {
     pub name: String,
     pub description: String,
@@ -357,7 +373,9 @@ pub struct SecretRuleApiAttributes {
     pub default_excluded_keywords: Option<Vec<String>>,
     pub look_ahead_character_count: Option<usize>,
     pub validators: Option<Vec<String>>,
+    pub validators_v2: Option<Vec<SecretRuleApiValidator>>,
     pub match_validation: Option<SecretRuleApiMatchValidation>,
+    pub pattern_capture_groups: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -392,8 +410,10 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     look_ahead_character_count: val.attributes.look_ahead_character_count,
                     priority: val.attributes.priority.as_str().try_into()?,
                     validators: val.attributes.validators,
+                    validators_v2: val.attributes.validators_v2.map(|v| v.into_iter().map(|validator| validator.into()).collect()),
                     match_validation: Some(validation),
                     sds_id: val.attributes.sds_id,
+                    pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
                 }),
                 Err(s) => Err(s),
             }
@@ -415,7 +435,9 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     .unwrap_or_default(),
                 look_ahead_character_count: val.attributes.look_ahead_character_count,
                 validators: val.attributes.validators,
+                validators_v2: val.attributes.validators_v2.map(|v| v.into_iter().map(|validator| validator.into()).collect()),
                 match_validation: None,
+                pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
             })
         }
     }
@@ -558,6 +580,7 @@ mod tests {
                 default_excluded_keywords: None,
                 look_ahead_character_count: None,
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: "foo".to_string(),
                     endpoint: None,
@@ -568,6 +591,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -591,6 +615,7 @@ mod tests {
                 look_ahead_character_count: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING.to_string(),
                     endpoint: Some("endpoint".to_string()),
@@ -601,6 +626,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -623,6 +649,7 @@ mod tests {
                 look_ahead_character_count: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_SECRET_STRING.to_string(),
                     endpoint: None,
@@ -633,6 +660,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -661,6 +689,7 @@ mod tests {
                 default_excluded_keywords: None,
                 look_ahead_character_count: None,
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_ID_STRING.to_string(),
                     endpoint: None,
@@ -671,6 +700,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -699,6 +729,7 @@ mod tests {
                 default_excluded_keywords: None,
                 look_ahead_character_count: None,
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_SESSION_STRING.to_string(),
                     endpoint: None,
@@ -709,6 +740,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(

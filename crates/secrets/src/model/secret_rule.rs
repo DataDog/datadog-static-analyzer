@@ -6,7 +6,7 @@ use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
 use common::model::diff_aware::DiffAware;
 use dd_sds::SecondaryValidator;
 use dd_sds::{
-    AwsConfig, AwsType, ClaimRequirement, CustomHttpConfig, HttpMethod, HttpStatusCodeRange,
+    AwsConfig, AwsType, CustomHttpConfig, HttpMethod, HttpStatusCodeRange,
     JwtClaimsValidatorConfig, MatchAction, MatchValidationType, ProximityKeywordsConfig,
     RegexRuleConfig, RootRuleConfig,
 };
@@ -24,7 +24,6 @@ lazy_static! {
     // TODO: Remove JwtClaimsValidator filter once it's config field is supported from the API.
     static ref ALLOWED_VALIDATORS: HashSet<String> = {
         SecondaryValidator::iter()
-            .filter(|v| v.as_ref() != "JwtClaimsValidator")
             .map(|v| v.as_ref().to_string())
             .collect()
     };
@@ -161,7 +160,7 @@ pub struct SecretRuleMatchValidationHttp {
     pub invalid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct SecretRuleValidator {
     #[serde(rename = "type")]
     pub type_: String,
@@ -193,7 +192,7 @@ impl SecretRuleValidator {
                     match serde_json::from_value::<JwtClaimsValidatorConfig>(config_value.clone()) {
                         Ok(jwt_config) => {
                             // Create a JwtClaimsValidator with the config
-                            Some(SecondaryValidator::JwtClaimsValidator(jwt_config))
+                            Some(SecondaryValidator::JwtClaimsValidator{ config: jwt_config })
                         }
                         Err(e) => {
                             if use_debug {
@@ -234,11 +233,9 @@ pub struct SecretRule {
     pub default_excluded_keywords: Vec<String>,
     pub look_ahead_character_count: Option<usize>,
     pub validators: Option<Vec<String>>,
-    #[serde(rename = "validators_v2")]
     pub validators_v2: Option<Vec<SecretRuleValidator>>,
     pub match_validation: Option<SecretRuleMatchValidation>,
     pub sds_id: String,
-    #[serde(default)]
     pub pattern_capture_groups: Vec<String>,
 }
 
