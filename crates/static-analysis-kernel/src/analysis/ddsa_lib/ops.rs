@@ -183,7 +183,7 @@ pub fn op_java_get_bin_expr_operator(state: &OpState, #[smi] node_id: u32) -> i3
 ///
 /// Returns `Some(123)` if `true` is passed in, or `None` if `false` is passed in.
 //  Note: Due to the op2 macro implementation, we can't mark this `[cfg(test)]`
-#[allow(dead_code)]
+#[cfg(test)]
 #[op2]
 pub(crate) fn cfg_test_op_rust_option(return_some: bool) -> Option<u32> {
     return_some.then_some(123)
