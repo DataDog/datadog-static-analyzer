@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
-use crate::model::secret_rule::{SecretRule, DEFAULT_LOOK_AHEAD_CHARACTER_COUNT};
+use crate::model::secret_rule::SecretRule;
 use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
@@ -126,7 +126,7 @@ mod tests {
             pattern: "FOO(BAR|BAZ)".to_string(),
             default_included_keywords: vec![],
             default_excluded_keywords: vec![],
-            look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
+            look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,

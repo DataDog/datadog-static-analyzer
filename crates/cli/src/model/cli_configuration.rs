@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use crate::model::datadog_api::DiffAwareRequestArguments;
 use crate::utils::get_num_threads_to_use;
 use kernel::model::rule::Rule;
-use secrets::model::secret_rule::{SecretRule, DEFAULT_LOOK_AHEAD_CHARACTER_COUNT};
+use secrets::model::secret_rule::SecretRule;
 
 /// represents the CLI configuration
 #[derive(Clone)]
@@ -206,7 +206,7 @@ mod tests {
             pattern: "pattern1".to_string(),
             default_included_keywords: vec![],
             default_excluded_keywords: vec![],
-            look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
+            look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,
@@ -220,7 +220,7 @@ mod tests {
             pattern: "pattern2".to_string(),
             default_included_keywords: vec![],
             default_excluded_keywords: vec![],
-            look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
+            look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,
