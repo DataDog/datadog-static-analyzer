@@ -355,7 +355,7 @@ pub struct SecretRuleApiAttributes {
     pub priority: String,
     pub default_included_keywords: Option<Vec<String>>,
     pub default_excluded_keywords: Option<Vec<String>>,
-    pub lookahead_character_count: Option<usize>,
+    pub look_ahead_character_count: Option<usize>,
     pub validators: Option<Vec<String>>,
     pub match_validation: Option<SecretRuleApiMatchValidation>,
 }
@@ -389,7 +389,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                         .attributes
                         .default_excluded_keywords
                         .unwrap_or_default(),
-                    lookahead_character_count: val.attributes.lookahead_character_count,
+                    look_ahead_character_count: val.attributes.look_ahead_character_count,
                     priority: val.attributes.priority.as_str().try_into()?,
                     validators: val.attributes.validators,
                     match_validation: Some(validation),
@@ -413,7 +413,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     .attributes
                     .default_excluded_keywords
                     .unwrap_or_default(),
-                lookahead_character_count: val.attributes.lookahead_character_count,
+                look_ahead_character_count: val.attributes.look_ahead_character_count,
                 validators: val.attributes.validators,
                 match_validation: None,
             })
@@ -556,7 +556,7 @@ mod tests {
                 priority: "medium".to_string(),
                 default_included_keywords: None,
                 default_excluded_keywords: None,
-                lookahead_character_count: None,
+                look_ahead_character_count: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: "foo".to_string(),
@@ -588,7 +588,7 @@ mod tests {
                 priority: "medium".to_string(),
                 default_included_keywords: None,
                 default_excluded_keywords: None,
-                lookahead_character_count: None,
+                look_ahead_character_count: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
@@ -620,7 +620,7 @@ mod tests {
                 priority: "medium".to_string(),
                 default_included_keywords: None,
                 default_excluded_keywords: None,
-                lookahead_character_count: None,
+                look_ahead_character_count: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
@@ -659,7 +659,7 @@ mod tests {
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 default_included_keywords: None,
                 default_excluded_keywords: None,
-                lookahead_character_count: None,
+                look_ahead_character_count: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_ID_STRING.to_string(),
@@ -697,7 +697,7 @@ mod tests {
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 default_included_keywords: None,
                 default_excluded_keywords: None,
-                lookahead_character_count: None,
+                look_ahead_character_count: None,
                 validators: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_SESSION_STRING.to_string(),
