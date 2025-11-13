@@ -410,10 +410,16 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     look_ahead_character_count: val.attributes.look_ahead_character_count,
                     priority: val.attributes.priority.as_str().try_into()?,
                     validators: val.attributes.validators,
-                    validators_v2: val.attributes.validators_v2.map(|v| v.into_iter().map(|validator| validator.into()).collect()),
+                    validators_v2: val
+                        .attributes
+                        .validators_v2
+                        .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
                     match_validation: Some(validation),
                     sds_id: val.attributes.sds_id,
-                    pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
+                    pattern_capture_groups: val
+                        .attributes
+                        .pattern_capture_groups
+                        .unwrap_or_default(),
                 }),
                 Err(s) => Err(s),
             }
@@ -435,7 +441,10 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     .unwrap_or_default(),
                 look_ahead_character_count: val.attributes.look_ahead_character_count,
                 validators: val.attributes.validators,
-                validators_v2: val.attributes.validators_v2.map(|v| v.into_iter().map(|validator| validator.into()).collect()),
+                validators_v2: val
+                    .attributes
+                    .validators_v2
+                    .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
                 match_validation: None,
                 pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
             })
@@ -838,47 +847,50 @@ mod tests {
             ]
         });
 
-        let api_response: StaticAnalysisSecretsAPIResponse = 
+        let api_response: StaticAnalysisSecretsAPIResponse =
             serde_json::from_value(json_data).expect("Failed to deserialize JSON");
-        
+
         // Test Adobe Access Token with JwtClaimsValidator config
-        let adobe_rule: SecretRule = api_response.data[0].clone().try_into()
+        let adobe_rule: SecretRule = api_response.data[0]
+            .clone()
+            .try_into()
             .expect("Failed to convert Adobe rule");
-        
+
         assert_eq!(adobe_rule.id, "secrets/adobe-access-token");
         assert_eq!(adobe_rule.name, "Adobe Access Token Scanner");
         assert!(adobe_rule.validators_v2.is_some());
-        
+
         let adobe_validators = adobe_rule.validators_v2.as_ref().unwrap();
         assert_eq!(adobe_validators.len(), 1);
         assert_eq!(adobe_validators[0].type_, "JwtClaimsValidator");
         assert!(adobe_validators[0].config.is_some());
-        
+
         // Verify the validator can be successfully converted to dd_sds::SecondaryValidator
-        let secondary_validator = adobe_validators[0]
-            .try_to_secondary_validator(false);
+        let secondary_validator = adobe_validators[0].try_to_secondary_validator(false);
         assert!(
             secondary_validator.is_some(),
             "Should successfully convert to SecondaryValidator::JwtClaimsValidator"
         );
-        
+
         // Check pattern capture groups
         assert_eq!(adobe_rule.pattern_capture_groups.len(), 1);
         assert_eq!(adobe_rule.pattern_capture_groups[0], "sds_match");
-        
+
         // Test Github Access Token with simple validator (no config)
-        let github_rule: SecretRule = api_response.data[1].clone().try_into()
+        let github_rule: SecretRule = api_response.data[1]
+            .clone()
+            .try_into()
             .expect("Failed to convert Github rule");
-        
+
         assert_eq!(github_rule.id, "secrets/github-access-token");
         assert_eq!(github_rule.name, "Github Access Token Scanner");
         assert!(github_rule.validators_v2.is_some());
-        
+
         let github_validators = github_rule.validators_v2.as_ref().unwrap();
         assert_eq!(github_validators.len(), 1);
         assert_eq!(github_validators[0].type_, "GithubTokenChecksum");
         assert!(github_validators[0].config.is_none());
-        
+
         assert_eq!(github_rule.pattern_capture_groups.len(), 0);
     }
 }
