@@ -6,8 +6,9 @@ use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
 use common::model::diff_aware::DiffAware;
 use dd_sds::SecondaryValidator;
 use dd_sds::{
-    AwsConfig, AwsType, CustomHttpConfig, HttpMethod, HttpStatusCodeRange, MatchAction,
-    MatchValidationType, ProximityKeywordsConfig, RegexRuleConfig, RootRuleConfig,
+    AwsConfig, AwsType, CustomHttpConfig, HttpMethod, HttpStatusCodeRange,
+    JwtClaimsValidatorConfig, MatchAction, MatchValidationType, ProximityKeywordsConfig,
+    RegexRuleConfig, RootRuleConfig,
 };
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -20,10 +21,8 @@ const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
 lazy_static! {
     /// Set of all valid secondary validator names, computed once at initialization.
-    // TODO: Remove JwtClaimsValidator filter once it's config field is supported from the API.
     static ref ALLOWED_VALIDATORS: HashSet<String> = {
         SecondaryValidator::iter()
-            .filter(|v| v.as_ref() != "JwtClaimsValidator")
             .map(|v| v.as_ref().to_string())
             .collect()
     };
@@ -160,6 +159,67 @@ pub struct SecretRuleMatchValidationHttp {
     pub invalid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleValidator {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub config: Option<serde_json::Value>,
+}
+
+impl SecretRuleValidator {
+    /// Convert the validator and its configuration to a SecondaryValidator that can be used with RegexRuleConfig.
+    /// Returns the validator if successful, or an error message if the validator type or configuration is invalid.
+    pub fn try_to_secondary_validator(&self, use_debug: bool) -> Option<SecondaryValidator> {
+        // Check if the validator type is valid
+        if !ALLOWED_VALIDATORS.contains(&self.type_) {
+            if use_debug {
+                eprintln!("invalid validator type: {}", self.type_);
+            }
+            return None;
+        }
+
+        // Find the matching SecondaryValidator enum variant
+        let base_validator = SecondaryValidator::iter()
+            .find(|val| val.as_ref() == self.type_)
+            .expect("validator should exist");
+
+        // If there's a config, we need to handle it based on the validator type
+        if let Some(config_value) = &self.config {
+            match self.type_.as_str() {
+                "JwtClaimsValidator" => {
+                    // Deserialize the config into JwtClaimsValidatorConfig
+                    match serde_json::from_value::<JwtClaimsValidatorConfig>(config_value.clone()) {
+                        Ok(jwt_config) => {
+                            // Create a JwtClaimsValidator with the config
+                            Some(SecondaryValidator::JwtClaimsValidator { config: jwt_config })
+                        }
+                        Err(e) => {
+                            if use_debug {
+                                eprintln!("failed to deserialize JwtClaimsValidator config: {}", e);
+                            }
+                            None
+                        }
+                    }
+                }
+                // Add other validator types with configurations as needed
+                _ => {
+                    // Unknown validator type with config - drop it since it will fail in dd_sds
+                    if use_debug {
+                        eprintln!(
+                            "validator {} has configuration but is not supported, dropping validator",
+                            self.type_
+                        );
+                    }
+                    None
+                }
+            }
+        } else {
+            // No config provided, use the base validator
+            Some(base_validator)
+        }
+    }
+}
+
 // This is the secret rule exposed by SDS
 #[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub struct SecretRule {
@@ -172,8 +232,10 @@ pub struct SecretRule {
     pub default_excluded_keywords: Vec<String>,
     pub look_ahead_character_count: Option<usize>,
     pub validators: Option<Vec<String>>,
+    pub validators_v2: Option<Vec<SecretRuleValidator>>,
     pub match_validation: Option<SecretRuleMatchValidation>,
     pub sds_id: String,
+    pub pattern_capture_groups: Vec<String>,
 }
 
 impl SecretRule {
@@ -192,9 +254,27 @@ impl SecretRule {
                 });
         }
 
-        if let Some(validators) = &self.validators {
-            // TODO: When sds version is bumped, will need to support JwtClaimsValidator configurations.
+        // Handle validators_v2 (with configuration support) if present, otherwise fall back to validators
+        if let Some(validators_v2) = &self.validators_v2 {
+            for validator_config in validators_v2 {
+                if let Some(validator) = validator_config.try_to_secondary_validator(use_debug) {
+                    regex_rule_config = regex_rule_config.with_validator(Some(validator));
+                }
+            }
+        } else if let Some(validators) = &self.validators {
+            // TODO: Deprecate in favor of validators_v2
+            // Legacy validators without configuration
             for v in validators {
+                // Skip JwtClaimsValidator in v1 path - it requires configuration only available in v2
+                if v == "JwtClaimsValidator" {
+                    if use_debug {
+                        eprintln!(
+                            "JwtClaimsValidator requires validators_v2 with config, skipping"
+                        );
+                    }
+                    continue;
+                }
+
                 if ALLOWED_VALIDATORS.contains(v) {
                     // Safe because `v` is guaranteed to be in the enum
                     let validator = SecondaryValidator::iter()
@@ -205,6 +285,11 @@ impl SecretRule {
                     eprintln!("invalid validator: {}", v);
                 }
             }
+        }
+
+        if !self.pattern_capture_groups.is_empty() {
+            regex_rule_config =
+                regex_rule_config.with_pattern_capture_groups(self.pattern_capture_groups.clone());
         }
 
         let mut rule_config =
@@ -225,5 +310,98 @@ impl SecretRule {
 impl DiffAware for SecretRule {
     fn generate_diff_aware_digest(&self) -> String {
         format!("{}:{}", self.id, self.pattern).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_try_to_secondary_validator_with_jwt_config() {
+        let validator = SecretRuleValidator {
+            type_: "JwtClaimsValidator".to_string(),
+            config: Some(serde_json::json!({
+                "required_claims": {
+                    "aa_id": {"type":"Present"}
+                },
+                "required_headers": {
+                     "itt": {"type":"ExactValue","config":"at"}
+                }
+            })),
+        };
+
+        let result = validator.try_to_secondary_validator(false);
+        assert!(result.is_some());
+
+        // Verify the validator is a JwtClaimsValidator with correct config
+        if let SecondaryValidator::JwtClaimsValidator { config } = result.unwrap() {
+            // Check that required_claims contains the aa_id key
+            assert!(config.required_claims.contains_key("aa_id"));
+            assert_eq!(config.required_claims.len(), 1);
+            // Check that required_headers contains the itt key
+            assert!(config.required_headers.contains_key("itt"));
+            assert_eq!(config.required_headers.len(), 1);
+        } else {
+            panic!("Expected JwtClaimsValidator variant");
+        }
+    }
+
+    #[test]
+    fn test_try_to_secondary_validator_invalid_type() {
+        let validator = SecretRuleValidator {
+            type_: "InvalidValidator".to_string(),
+            config: None,
+        };
+
+        let result = validator.try_to_secondary_validator(false);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_try_to_secondary_validator_known_type_without_config() {
+        // LuhnChecksum is a known validator that doesn't require config
+        // Test that if a config is provided, we don't panic and return None
+        let validator = SecretRuleValidator {
+            type_: "LuhnChecksum".to_string(),
+            config: Some(serde_json::json!({
+                "test": "test"
+            })),
+        };
+
+        let result = validator.try_to_secondary_validator(false);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_convert_to_sds_ruleconfig_with_validators_v2() {
+        let rule = SecretRule {
+            id: "test-rule".to_string(),
+            sds_id: "sds-123".to_string(),
+            name: "Test Rule".to_string(),
+            description: "Test description".to_string(),
+            pattern: "test.*pattern".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: None,
+            validators_v2: Some(vec![SecretRuleValidator {
+                type_: "JwtClaimsValidator".to_string(),
+                config: Some(serde_json::json!({
+                    "required_claims": {
+                        "aa_id": {"type":"Present"}
+                    },
+                    "required_headers": {
+                        "itt": {"type":"ExactValue","config":"at"}
+                    }
+                })),
+            }]),
+            match_validation: None,
+            pattern_capture_groups: vec!["sds_match".to_string()],
+        };
+
+        // Validates that convert_to_sds_ruleconfig doesn't panic and returns a valid config.
+        let _config = rule.convert_to_sds_ruleconfig(false);
     }
 }

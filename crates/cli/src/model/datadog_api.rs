@@ -4,7 +4,7 @@ use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
 use secrets::model::secret_rule::{
     SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttp,
-    SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod,
+    SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod, SecretRuleValidator,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -347,6 +347,22 @@ impl TryFrom<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SecretRuleApiValidator {
+    #[serde(rename = "type")]
+    pub r#type: String,
+    pub config: Option<serde_json::Value>,
+}
+
+impl From<SecretRuleApiValidator> for SecretRuleValidator {
+    fn from(val: SecretRuleApiValidator) -> Self {
+        SecretRuleValidator {
+            type_: val.r#type,
+            config: val.config,
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SecretRuleApiAttributes {
     pub name: String,
     pub description: String,
@@ -357,7 +373,9 @@ pub struct SecretRuleApiAttributes {
     pub default_excluded_keywords: Option<Vec<String>>,
     pub look_ahead_character_count: Option<usize>,
     pub validators: Option<Vec<String>>,
+    pub validators_v2: Option<Vec<SecretRuleApiValidator>>,
     pub match_validation: Option<SecretRuleApiMatchValidation>,
+    pub pattern_capture_groups: Option<Vec<String>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -392,8 +410,16 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     look_ahead_character_count: val.attributes.look_ahead_character_count,
                     priority: val.attributes.priority.as_str().try_into()?,
                     validators: val.attributes.validators,
+                    validators_v2: val
+                        .attributes
+                        .validators_v2
+                        .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
                     match_validation: Some(validation),
                     sds_id: val.attributes.sds_id,
+                    pattern_capture_groups: val
+                        .attributes
+                        .pattern_capture_groups
+                        .unwrap_or_default(),
                 }),
                 Err(s) => Err(s),
             }
@@ -415,7 +441,12 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                     .unwrap_or_default(),
                 look_ahead_character_count: val.attributes.look_ahead_character_count,
                 validators: val.attributes.validators,
+                validators_v2: val
+                    .attributes
+                    .validators_v2
+                    .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
                 match_validation: None,
+                pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
             })
         }
     }
@@ -558,6 +589,7 @@ mod tests {
                 default_excluded_keywords: None,
                 look_ahead_character_count: None,
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: "foo".to_string(),
                     endpoint: None,
@@ -568,6 +600,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -591,6 +624,7 @@ mod tests {
                 look_ahead_character_count: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING.to_string(),
                     endpoint: Some("endpoint".to_string()),
@@ -601,6 +635,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -623,6 +658,7 @@ mod tests {
                 look_ahead_character_count: None,
                 sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_SECRET_STRING.to_string(),
                     endpoint: None,
@@ -633,6 +669,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -661,6 +698,7 @@ mod tests {
                 default_excluded_keywords: None,
                 look_ahead_character_count: None,
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_ID_STRING.to_string(),
                     endpoint: None,
@@ -671,6 +709,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -699,6 +738,7 @@ mod tests {
                 default_excluded_keywords: None,
                 look_ahead_character_count: None,
                 validators: None,
+                validators_v2: None,
                 match_validation: Some(SecretRuleApiMatchValidation {
                     r#type: SecretRuleApiMatchValidation::AWS_SESSION_STRING.to_string(),
                     endpoint: None,
@@ -709,6 +749,7 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                pattern_capture_groups: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -721,5 +762,105 @@ mod tests {
                 .unwrap(),
             SecretRuleMatchValidation::AwsSession
         );
+    }
+
+    #[test]
+    fn convert_secrets_rules_with_validators_v2() {
+        let json_data = json!({
+            "data": [
+                {
+                    "id": "secrets/adobe-access-token",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "default_included_keywords": [],
+                        "description": "test description",
+                        "license": "legal notice",
+                        "name": "Adobe Access Token Scanner",
+                        "pattern": "\\b(?<sds_match>abc)",
+                        "pattern_capture_groups": ["sds_match"],
+                        "priority": "medium",
+                        "sds_id": "qORGfxt5PrpmZ3uvQA937v",
+                        "validators": null,
+                        "validators_v2": [
+                            {
+                                "type": "JwtClaimsValidator",
+                                "config": {
+                                    "required_claims": {
+                                        "as": {"type": "Present"},
+                                        "client_id": {"type": "Present"}
+                                    },
+                                    "required_headers": {
+                                        "itt": {"type": "ExactValue", "config": "at"},
+                                        "x5u": {"type": "Present"}
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": "secrets/github-access-token",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "default_included_keywords": ["access", "github", "token"],
+                        "description": "test description",
+                        "license": "legal notice",
+                        "name": "Github Access Token Scanner",
+                        "pattern": "\\bgh[opsu]_[0-9a-zA-Z]{36}\\b",
+                        "priority": "high",
+                        "sds_id": "5rjXkBMvQ3GbbYrpVP_HdQ",
+                        "validators": ["GithubTokenChecksum"],
+                        "validators_v2": [
+                            {
+                                "type": "GithubTokenChecksum"
+                            }
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let api_response: StaticAnalysisSecretsAPIResponse =
+            serde_json::from_value(json_data).expect("Failed to deserialize JSON");
+
+        // Test Adobe Access Token with JwtClaimsValidator config
+        let adobe_rule: SecretRule = api_response.data[0]
+            .clone()
+            .try_into()
+            .expect("Failed to convert Adobe rule");
+
+        assert_eq!(adobe_rule.id, "secrets/adobe-access-token");
+        assert!(adobe_rule.validators_v2.is_some());
+        let adobe_validators = adobe_rule.validators_v2.as_ref().unwrap();
+        assert_eq!(adobe_validators.len(), 1);
+        assert_eq!(adobe_validators[0].type_, "JwtClaimsValidator");
+        assert!(adobe_validators[0].config.is_some());
+
+        // Verify the validator can be successfully converted to dd_sds::SecondaryValidator
+        let secondary_validator = adobe_validators[0].try_to_secondary_validator(false);
+        assert!(
+            secondary_validator.is_some(),
+            "Should successfully convert to SecondaryValidator::JwtClaimsValidator"
+        );
+
+        // Check pattern capture groups
+        assert_eq!(adobe_rule.pattern_capture_groups.len(), 1);
+        assert_eq!(adobe_rule.pattern_capture_groups[0], "sds_match");
+
+        // Test Github Access Token with simple validator (no config)
+        let github_rule: SecretRule = api_response.data[1]
+            .clone()
+            .try_into()
+            .expect("Failed to convert Github rule");
+
+        assert_eq!(github_rule.id, "secrets/github-access-token");
+        assert!(github_rule.validators_v2.is_some());
+        let github_validators = github_rule.validators_v2.as_ref().unwrap();
+        assert_eq!(github_validators.len(), 1);
+        assert_eq!(github_validators[0].type_, "GithubTokenChecksum");
+        assert!(github_validators[0].config.is_none());
+
+        // Check pattern capture group is empty
+        assert!(github_rule.pattern_capture_groups.is_empty());
     }
 }

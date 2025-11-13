@@ -129,7 +129,9 @@ mod tests {
             look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: Some(vec![]),
+            validators_v2: None,
             match_validation: None,
+            pattern_capture_groups: vec![],
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false);
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";

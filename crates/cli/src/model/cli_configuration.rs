@@ -209,7 +209,9 @@ mod tests {
             look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: Some(vec![]),
+            validators_v2: None,
             match_validation: None,
+            pattern_capture_groups: vec![],
         };
 
         let secret_rule2 = SecretRule {
@@ -223,7 +225,9 @@ mod tests {
             look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: Some(vec![]),
+            validators_v2: None,
             match_validation: None,
+            pattern_capture_groups: vec![],
         };
 
         let cli_configuration_base = CliConfiguration {
