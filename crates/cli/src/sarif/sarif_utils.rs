@@ -1587,7 +1587,7 @@ mod tests {
                 priority,
                 default_included_keywords: vec![],
                 default_excluded_keywords: vec![],
-                look_ahead_character_count: 30,
+                look_ahead_character_count: Some(30),
                 validators: Some(vec![]),
                 match_validation: None,
             };
