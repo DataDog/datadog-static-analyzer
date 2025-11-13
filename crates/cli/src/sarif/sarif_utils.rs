@@ -1443,7 +1443,9 @@ mod tests {
             default_excluded_keywords: vec![],
             look_ahead_character_count: Some(30),
             validators: Some(vec![]),
+            validators_v2: None,
             match_validation: None,
+            pattern_capture_groups: vec![],
         };
 
         #[rustfmt::skip]
@@ -1589,7 +1591,9 @@ mod tests {
                 default_excluded_keywords: vec![],
                 look_ahead_character_count: Some(30),
                 validators: Some(vec![]),
+                validators_v2: None,
                 match_validation: None,
+                pattern_capture_groups: vec![],
             };
             let expected_level = get_level_from_severity(map_priority_to_severity(rule.priority));
 

@@ -754,4 +754,131 @@ mod tests {
             SecretRuleMatchValidation::AwsSession
         );
     }
+
+    #[test]
+    fn convert_secrets_rules_with_validators_v2() {
+        let json_data = json!({
+            "data": [
+                {
+                    "id": "secrets/adobe-access-token",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "default_included_keywords": [],
+                        "description": "test description",
+                        "license": "legal notice",
+                        "match_validation": {
+                            "type": "CustomHttp",
+                            "endpoint": "https://ims-na1.adobelogin.com/ims/userinfo/v2",
+                            "hosts": [],
+                            "request_headers": {
+                                "Authorization": "Bearer $MATCH",
+                                "User-Agent": "Datadog Match Validator"
+                            },
+                            "http_method": "GET",
+                            "timeout_seconds": 3,
+                            "valid_http_status_code": [{"start": 200, "end": 300}],
+                            "invalid_http_status_code": [{"start": 400, "end": 404}]
+                        },
+                        "name": "Adobe Access Token Scanner",
+                        "pattern": "\\b(?<sds_match>abc)",
+                        "pattern_capture_groups": ["sds_match"],
+                        "priority": "medium",
+                        "sds_id": "qORGfxt5PrpmZ3uvQA937v",
+                        "validators": null,
+                        "validators_v2": [
+                            {
+                                "type": "JwtClaimsValidator",
+                                "config": {
+                                    "required_claims": {
+                                        "as": {"type": "Present"},
+                                        "client_id": {"type": "Present"}
+                                    },
+                                    "required_headers": {
+                                        "itt": {"type": "ExactValue", "config": "at"},
+                                        "x5u": {"type": "Present"}
+                                    }
+                                }
+                            }
+                        ]
+                    }
+                },
+                {
+                    "id": "secrets/github-access-token",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "default_included_keywords": ["access", "github", "token"],
+                        "description": "test description",
+                        "license": "legal notice",
+                        "match_validation": {
+                            "type": "CustomHttp",
+                            "endpoint": "https://api.github.com/octocat",
+                            "hosts": [],
+                            "request_headers": {
+                                "Authorization": "Bearer $MATCH",
+                                "User-Agent": "Datadog Match Validator",
+                                "X-GitHub-Api-Version": "2022-11-28"
+                            },
+                            "http_method": "GET",
+                            "timeout_seconds": 3,
+                            "valid_http_status_code": [{"start": 200, "end": 300}],
+                            "invalid_http_status_code": [{"start": 401, "end": 404}]
+                        },
+                        "name": "Github Access Token Scanner",
+                        "pattern": "\\bgh[opsu]_[0-9a-zA-Z]{36}\\b",
+                        "priority": "high",
+                        "sds_id": "5rjXkBMvQ3GbbYrpVP_HdQ",
+                        "validators": ["GithubTokenChecksum"],
+                        "validators_v2": [
+                            {
+                                "type": "GithubTokenChecksum"
+                            }
+                        ]
+                    }
+                }
+            ]
+        });
+
+        let api_response: StaticAnalysisSecretsAPIResponse = 
+            serde_json::from_value(json_data).expect("Failed to deserialize JSON");
+        
+        // Test Adobe Access Token with JwtClaimsValidator config
+        let adobe_rule: SecretRule = api_response.data[0].clone().try_into()
+            .expect("Failed to convert Adobe rule");
+        
+        assert_eq!(adobe_rule.id, "secrets/adobe-access-token");
+        assert_eq!(adobe_rule.name, "Adobe Access Token Scanner");
+        assert!(adobe_rule.validators_v2.is_some());
+        
+        let adobe_validators = adobe_rule.validators_v2.as_ref().unwrap();
+        assert_eq!(adobe_validators.len(), 1);
+        assert_eq!(adobe_validators[0].type_, "JwtClaimsValidator");
+        assert!(adobe_validators[0].config.is_some());
+        
+        // Verify the validator can be successfully converted to dd_sds::SecondaryValidator
+        let secondary_validator = adobe_validators[0]
+            .try_to_secondary_validator(false);
+        assert!(
+            secondary_validator.is_some(),
+            "Should successfully convert to SecondaryValidator::JwtClaimsValidator"
+        );
+        
+        // Check pattern capture groups
+        assert_eq!(adobe_rule.pattern_capture_groups.len(), 1);
+        assert_eq!(adobe_rule.pattern_capture_groups[0], "sds_match");
+        
+        // Test Github Access Token with simple validator (no config)
+        let github_rule: SecretRule = api_response.data[1].clone().try_into()
+            .expect("Failed to convert Github rule");
+        
+        assert_eq!(github_rule.id, "secrets/github-access-token");
+        assert_eq!(github_rule.name, "Github Access Token Scanner");
+        assert!(github_rule.validators_v2.is_some());
+        
+        let github_validators = github_rule.validators_v2.as_ref().unwrap();
+        assert_eq!(github_validators.len(), 1);
+        assert_eq!(github_validators[0].type_, "GithubTokenChecksum");
+        assert!(github_validators[0].config.is_none());
+        
+        assert_eq!(github_rule.pattern_capture_groups.len(), 0);
+    }
 }

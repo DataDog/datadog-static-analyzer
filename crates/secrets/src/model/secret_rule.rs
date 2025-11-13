@@ -192,7 +192,7 @@ impl SecretRuleValidator {
                     match serde_json::from_value::<JwtClaimsValidatorConfig>(config_value.clone()) {
                         Ok(jwt_config) => {
                             // Create a JwtClaimsValidator with the config
-                            Some(SecondaryValidator::JwtClaimsValidator{ config: jwt_config })
+                            Some(SecondaryValidator::JwtClaimsValidator { config: jwt_config })
                         }
                         Err(e) => {
                             if use_debug {
@@ -323,7 +323,7 @@ mod tests {
 
         let result = validator.try_to_secondary_validator(false);
         assert!(result.is_some());
-        
+
         // Verify the validator is a JwtClaimsValidator with correct config
         if let SecondaryValidator::JwtClaimsValidator { config } = result.unwrap() {
             // Check that required_claims contains the aa_id key
