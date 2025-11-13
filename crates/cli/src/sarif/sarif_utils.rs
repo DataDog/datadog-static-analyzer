@@ -19,7 +19,7 @@ use kernel::model::{
 use path_slash::PathExt;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
 use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
-use secrets::model::secret_rule::SecretRule;
+use secrets::model::secret_rule::{SecretRule, DEFAULT_LOOK_AHEAD_CHARACTER_COUNT};
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
     LocationBuilder, MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder,
@@ -1440,6 +1440,8 @@ mod tests {
             pattern: "foobarbaz".to_string(),
             priority: RulePriority::Medium,
             default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
             validators: Some(vec![]),
             match_validation: None,
         };
@@ -1584,6 +1586,8 @@ mod tests {
                 pattern: "foobarbaz".to_string(),
                 priority,
                 default_included_keywords: vec![],
+                default_excluded_keywords: vec![],
+                look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
                 validators: Some(vec![]),
                 match_validation: None,
             };
