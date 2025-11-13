@@ -21,7 +21,6 @@ const DEFAULT_LOOK_AHEAD_CHARACTER_COUNT: usize = 30;
 
 lazy_static! {
     /// Set of all valid secondary validator names, computed once at initialization.
-    // TODO: Remove JwtClaimsValidator filter once it's config field is supported from the API.
     static ref ALLOWED_VALIDATORS: HashSet<String> = {
         SecondaryValidator::iter()
             .map(|v| v.as_ref().to_string())
@@ -263,8 +262,19 @@ impl SecretRule {
                 }
             }
         } else if let Some(validators) = &self.validators {
+            // TODO: Deprecate in favor of validators_v2
             // Legacy validators without configuration
             for v in validators {
+                // Skip JwtClaimsValidator in v1 path - it requires configuration only available in v2
+                if v == "JwtClaimsValidator" {
+                    if use_debug {
+                        eprintln!(
+                            "JwtClaimsValidator requires validators_v2 with config, skipping"
+                        );
+                    }
+                    continue;
+                }
+
                 if ALLOWED_VALIDATORS.contains(v) {
                     // Safe because `v` is guaranteed to be in the enum
                     let validator = SecondaryValidator::iter()
