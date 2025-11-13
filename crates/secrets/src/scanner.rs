@@ -125,6 +125,8 @@ mod tests {
             description: "super secret!".to_string(),
             pattern: "FOO(BAR|BAZ)".to_string(),
             default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: Some(vec![]),
             match_validation: None,

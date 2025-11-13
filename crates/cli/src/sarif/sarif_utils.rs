@@ -1440,6 +1440,8 @@ mod tests {
             pattern: "foobarbaz".to_string(),
             priority: RulePriority::Medium,
             default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
             validators: Some(vec![]),
             match_validation: None,
         };
@@ -1584,6 +1586,8 @@ mod tests {
                 pattern: "foobarbaz".to_string(),
                 priority,
                 default_included_keywords: vec![],
+                default_excluded_keywords: vec![],
+                look_ahead_character_count: Some(30),
                 validators: Some(vec![]),
                 match_validation: None,
             };

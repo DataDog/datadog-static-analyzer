@@ -169,6 +169,8 @@ pub struct SecretRule {
     pub pattern: String,
     pub priority: RulePriority,
     pub default_included_keywords: Vec<String>,
+    pub default_excluded_keywords: Vec<String>,
+    pub look_ahead_character_count: Option<usize>,
     pub validators: Option<Vec<String>>,
     pub match_validation: Option<SecretRuleMatchValidation>,
     pub sds_id: String,
@@ -182,9 +184,11 @@ impl SecretRule {
         if !self.default_included_keywords.is_empty() {
             regex_rule_config =
                 regex_rule_config.with_proximity_keywords(ProximityKeywordsConfig {
-                    look_ahead_character_count: DEFAULT_LOOK_AHEAD_CHARACTER_COUNT,
+                    look_ahead_character_count: self
+                        .look_ahead_character_count
+                        .unwrap_or(DEFAULT_LOOK_AHEAD_CHARACTER_COUNT),
                     included_keywords: self.default_included_keywords.clone(),
-                    excluded_keywords: vec![],
+                    excluded_keywords: self.default_excluded_keywords.clone(),
                 });
         }
 
