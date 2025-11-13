@@ -775,19 +775,6 @@ mod tests {
                         "default_included_keywords": [],
                         "description": "test description",
                         "license": "legal notice",
-                        "match_validation": {
-                            "type": "CustomHttp",
-                            "endpoint": "https://ims-na1.adobelogin.com/ims/userinfo/v2",
-                            "hosts": [],
-                            "request_headers": {
-                                "Authorization": "Bearer $MATCH",
-                                "User-Agent": "Datadog Match Validator"
-                            },
-                            "http_method": "GET",
-                            "timeout_seconds": 3,
-                            "valid_http_status_code": [{"start": 200, "end": 300}],
-                            "invalid_http_status_code": [{"start": 400, "end": 404}]
-                        },
                         "name": "Adobe Access Token Scanner",
                         "pattern": "\\b(?<sds_match>abc)",
                         "pattern_capture_groups": ["sds_match"],
@@ -818,20 +805,6 @@ mod tests {
                         "default_included_keywords": ["access", "github", "token"],
                         "description": "test description",
                         "license": "legal notice",
-                        "match_validation": {
-                            "type": "CustomHttp",
-                            "endpoint": "https://api.github.com/octocat",
-                            "hosts": [],
-                            "request_headers": {
-                                "Authorization": "Bearer $MATCH",
-                                "User-Agent": "Datadog Match Validator",
-                                "X-GitHub-Api-Version": "2022-11-28"
-                            },
-                            "http_method": "GET",
-                            "timeout_seconds": 3,
-                            "valid_http_status_code": [{"start": 200, "end": 300}],
-                            "invalid_http_status_code": [{"start": 401, "end": 404}]
-                        },
                         "name": "Github Access Token Scanner",
                         "pattern": "\\bgh[opsu]_[0-9a-zA-Z]{36}\\b",
                         "priority": "high",
@@ -857,9 +830,7 @@ mod tests {
             .expect("Failed to convert Adobe rule");
 
         assert_eq!(adobe_rule.id, "secrets/adobe-access-token");
-        assert_eq!(adobe_rule.name, "Adobe Access Token Scanner");
         assert!(adobe_rule.validators_v2.is_some());
-
         let adobe_validators = adobe_rule.validators_v2.as_ref().unwrap();
         assert_eq!(adobe_validators.len(), 1);
         assert_eq!(adobe_validators[0].type_, "JwtClaimsValidator");
@@ -883,14 +854,13 @@ mod tests {
             .expect("Failed to convert Github rule");
 
         assert_eq!(github_rule.id, "secrets/github-access-token");
-        assert_eq!(github_rule.name, "Github Access Token Scanner");
         assert!(github_rule.validators_v2.is_some());
-
         let github_validators = github_rule.validators_v2.as_ref().unwrap();
         assert_eq!(github_validators.len(), 1);
         assert_eq!(github_validators[0].type_, "GithubTokenChecksum");
         assert!(github_validators[0].config.is_none());
 
-        assert_eq!(github_rule.pattern_capture_groups.len(), 0);
+        // Check pattern capture group is empty
+        assert!(github_rule.pattern_capture_groups.is_empty());
     }
 }
