@@ -53,7 +53,7 @@ pub struct SarifReportMetadata {
 #[derive(Debug, Clone)]
 pub enum SarifRule {
     StaticAnalysis(Box<Rule>),
-    SecretRule(SecretRule),
+    SecretRule(Box<SecretRule>),
 }
 
 impl SarifRule {
@@ -117,7 +117,7 @@ impl From<Rule> for SarifRule {
 
 impl From<SecretRule> for SarifRule {
     fn from(value: SecretRule) -> Self {
-        Self::SecretRule(value)
+        Self::SecretRule(Box::new(value))
     }
 }
 

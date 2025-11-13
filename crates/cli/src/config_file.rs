@@ -84,17 +84,14 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigM
     // Get the config file
     config_file.map(|cf| {
         // if we need to fetch the remote config
-        if should_use_datadog_backend() && repository_url_opt.is_ok() {
+        if let (true, Ok(repository_url)) = (should_use_datadog_backend(), repository_url_opt) {
             let existing_config_file_base64 =
                 read_config_file_in_base64(path).expect("cannot get the config file in base64");
 
             let has_config_file = existing_config_file_base64.is_some();
 
-            let remote_config = get_remote_configuration(
-                repository_url_opt.expect("repository URL should exist"),
-                existing_config_file_base64,
-                debug,
-            );
+            let remote_config =
+                get_remote_configuration(repository_url, existing_config_file_base64, debug);
 
             // if we get the remote config, we parse it. If we succeed, we use the remote config
             // otherwise, we use the file config.

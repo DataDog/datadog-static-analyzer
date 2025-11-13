@@ -227,9 +227,15 @@ pub enum EndpointError {
     #[error("Error trying to start the rocket thread")]
     JoinHandleError,
     #[error("Rocket error {0:?}")]
-    RocketError(#[from] rocket::Error),
+    RocketError(Box<rocket::Error>),
     #[error("Error from exit code {0:?}")]
     ExitCode(i32),
+}
+
+impl From<rocket::Error> for EndpointError {
+    fn from(value: rocket::Error) -> Self {
+        Self::RocketError(Box::new(value))
+    }
 }
 
 impl From<i32> for EndpointError {
