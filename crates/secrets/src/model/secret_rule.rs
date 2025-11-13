@@ -382,6 +382,8 @@ mod tests {
             description: "Test description".to_string(),
             pattern: "test.*pattern".to_string(),
             default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
             priority: RulePriority::Medium,
             validators: None,
             validators_v2: Some(vec![SecretRuleValidator {
