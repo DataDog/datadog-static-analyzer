@@ -1,4 +1,4 @@
-name: Test Rules (staging + prod)
+name: Test Rules
 
 on:
   push:
@@ -48,7 +48,7 @@ jobs:
           fi
             
           echo "languages=$concat_languages" >> $GITHUB_OUTPUT
-  production_rules:
+  run_tests:
     needs: extract-languages
     runs-on: ubuntu-latest
     env:
@@ -62,30 +62,7 @@ jobs:
       - name: Fetch dependencies
         run: cargo fetch
 
-      - name: Test all production rules
-        run: |
-          cargo build --locked --profile release-dev --bin datadog-static-analyzer && \
-          cargo build --locked --profile release-dev --bin datadog-static-analyzer-server && \
-          sudo apt-get install python3-requests && \
-          for language in ${{ needs.extract-languages.outputs.languages }}; do \
-            python misc/test-rules.py -c $PWD/target/release-dev/datadog-static-analyzer -s $PWD/target/release-dev/datadog-static-analyzer-server -l $language ; \
-          done
-
-  staging_rules:
-    needs: extract-languages
-    runs-on: ubuntu-latest
-    env:
-      DD_SITE: datad0g.com
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - uses: ./.github/actions/set-up-rust
-
-      - name: Fetch dependencies
-        run: cargo fetch
-
-      - name: Test all staging rules
+      - name: Test all rules
         run: |
           cargo build --locked --profile release-dev --bin datadog-static-analyzer && \
           cargo build --locked --profile release-dev --bin datadog-static-analyzer-server && \
