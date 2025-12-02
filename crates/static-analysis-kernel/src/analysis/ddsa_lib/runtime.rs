@@ -426,6 +426,8 @@ pub(crate) fn make_base_deno_core_runtime(
     const DEFAULT_OVERRIDDEN_GLOBAL_PROPS: &[&str] = &[
         // `deno_core` (as of "0.330.0") manually sets v8 flag: `--js-float16array`.
         "Float16Array",
+        // v8 (as of "134.0.0") always exposes wasm unless disabled at compile time.
+        "WebAssembly",
     ];
     inner_make_deno_core_runtime(
         extensions,
