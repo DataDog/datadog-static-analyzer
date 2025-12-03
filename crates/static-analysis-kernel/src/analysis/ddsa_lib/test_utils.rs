@@ -163,7 +163,7 @@ pub(crate) fn parse_code(code: impl AsRef<str>, language: Language) -> tree_sitt
 /// to execute JavaScript (and, because it's not an ES module, a script can't perform imports).
 fn cfg_test_deno_ext() -> deno_core::Extension {
     // The extension we use in production.
-    let mut production_extension = ddsa_lib::init_ops_and_esm();
+    let mut production_extension = ddsa_lib::init();
     let prod_entrypoint = production_extension.get_esm_entry_point().unwrap();
     let prod_ops = production_extension.init_ops().to_owned();
     #[allow(unused_mut)]
@@ -177,7 +177,7 @@ fn cfg_test_deno_ext() -> deno_core::Extension {
     #[cfg(test)]
     {
         use crate::analysis::ddsa_lib::extension::ddsa_lib_cfg_test;
-        let mut cfg_test_extension = ddsa_lib_cfg_test::init_ops_and_esm();
+        let mut cfg_test_extension = ddsa_lib_cfg_test::init();
         esm_sources.extend(cfg_test_extension.get_esm_sources().to_owned());
         ops.extend(cfg_test_extension.init_ops().to_owned());
     }
