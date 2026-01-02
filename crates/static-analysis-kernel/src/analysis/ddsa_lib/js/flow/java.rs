@@ -873,6 +873,38 @@ strict digraph full {
     }
 
     #[test]
+    fn expr_stmt_list_return() {
+        assert_digraph!(
+            // language=java
+            "\
+void method(String param_A) {
+    var_A = \"abc\";
+    return var_A + param_A;
+}
+",
+            // language=dot
+            r#"
+strict digraph full {
+    param_A_0 [text=param_A,line=1]
+    param_A_1 [text=param_A,line=3]
+    var_A_0 [text=var_A,line=2]
+    var_A_1 [text=var_A,line=3]
+    abc [text="*",cstkind=string_literal]
+    binExpr [text="var_A + param_A",cstkind=binary_expression]
+
+    binExpr -> param_A_1 [kind=dependence]
+    binExpr -> var_A_1 [kind=dependence]
+
+    var_A_1 -> var_A_0 [kind=dependence]
+    var_A_0 -> abc [kind=assignment]
+
+    param_A_1 -> param_A_0 [kind=dependence]
+}
+"#
+        );
+    }
+
+    #[test]
     fn if_statement_cfg_exhaustive_non_exhaustive() {
         assert_digraph!(
             // language=java
