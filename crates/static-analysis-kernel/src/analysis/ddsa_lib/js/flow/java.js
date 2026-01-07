@@ -821,7 +821,6 @@ export class MethodFlow {
                 case "break_statement":
                 case "throw_statement":
                 case "continue_statement":
-                case "return_statement":
                     // All subsequent nodes are unreachable.
                     break outer;
                 case "yield_statement": {
@@ -831,6 +830,17 @@ export class MethodFlow {
                         this.visit(child);
                     }
                     this.propagateLastTaint(parent);
+                    // All subsequent nodes are unreachable.
+                    break outer;
+                }
+                case "return_statement": {
+                    // [simplification]
+                    // No taint is propagated via a return statement because our implementation is intra-method.
+                    // Additionally, we don't support block lambdas (which would require this propagation).
+                    const children = ddsa.getChildren(node);
+                    for (const child of children) {
+                        this.visit(child);
+                    }
                     // All subsequent nodes are unreachable.
                     break outer;
                 }
