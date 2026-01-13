@@ -18,8 +18,8 @@ jobs:
       - name: Upload coverage to Datadog
         run: |
           curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/usr/local/bin/datadog-ci" && chmod +x /usr/local/bin/datadog-ci
-          datadog-ci coverage upload lcov.info
+          /usr/local/bin/datadog-ci coverage upload lcov.info
         env:
-          dd_api_key: ${{ secrets.DD_API_KEY }}
-          dd_app_key: ${{ secrets.DD_APP_KEY }}
-          dd_site: ${{ vars.DD_SITE }}
+          DD_API_KEY: ${{ secrets.DD_API_KEY }}
+          DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+          DD_SITE: ${{ vars.DD_SITE }}
