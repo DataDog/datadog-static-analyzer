@@ -247,6 +247,9 @@ pub(crate) fn print_permission_warning(header: &str) {
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
 // the rulesets. We then extract all the rulesets
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool, debug: bool) -> Result<RuleSet> {
+    if ruleset_name == "github-actions" {
+        return Ok(RuleSet::new("github-actions", None, vec![]));
+    }
     let path = format!("rulesets/{ruleset_name}?include_tests=false&include_testing_rules=true");
     let req = make_request(RequestMethod::Get, &path, use_staging, false)?;
     parse_response::<StaticAnalysisRulesAPIResponse>(perform_request(req, &path, debug)?)
