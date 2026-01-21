@@ -247,6 +247,7 @@ pub(crate) fn print_permission_warning(header: &str) {
 // it connects to the API using the DD_SITE, DD_APP_KEY and DD_API_KEY and retrieve
 // the rulesets. We then extract all the rulesets
 pub fn get_ruleset(ruleset_name: &str, use_staging: bool, debug: bool) -> Result<RuleSet> {
+    // More context https://github.com/DataDog/datadog-static-analyzer/pull/803
     if ruleset_name == "github-actions" {
         return Ok(RuleSet::new("github-actions", None, vec![]));
     }
