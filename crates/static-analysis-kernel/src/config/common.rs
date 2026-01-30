@@ -9,11 +9,12 @@ use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
 use std::borrow::Borrow;
 use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct PathPattern {
     pub glob: Option<GlobMatcher>,
     pub prefix: PathBuf,
@@ -163,6 +164,20 @@ impl From<PathPattern> for String {
 impl PartialEq for PathPattern {
     fn eq(&self, other: &Self) -> bool {
         self.prefix.eq(&other.prefix)
+    }
+}
+
+impl Debug for PathPattern {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let glob_str = if self.glob.is_some() {
+            "Some(<opaque>)"
+        } else {
+            "None"
+        };
+        f.debug_struct("PathPattern")
+            .field("prefix", &self.prefix)
+            .field("glob", &glob_str)
+            .finish()
     }
 }
 
