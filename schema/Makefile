@@ -6,9 +6,9 @@ INVALID_FILES=examples/invalid/*.yml
 VALID_FILES=examples/valid/*.yml
 
 test-valid:
-	pajv test -s schema.json -d "${VALID_FILES}" --valid
+	npx --yes ajv-cli@5.0.0 test -s schema.json -d "${VALID_FILES}" --valid
 
 test-invalid:
-	pajv test -s schema.json -d "${INVALID_FILES}" --invalid
+	npx --yes ajv-cli@5.0.0 test -s schema.json -d "${INVALID_FILES}" --invalid
 
 .PHONY: test test-valid test-invalid

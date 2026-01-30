@@ -6,7 +6,7 @@
 
 ## How to test
 
-1. Install https://www.npmjs.com/package/pajv (`npm install -g pajv`)
+1. Ensure Node.js and npm are installed
 2. Invoke `make`
 
 
