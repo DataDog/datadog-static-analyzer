@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::file_mgmt::get_lines_to_ignore;
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
 use crate::model::secret_rule::SecretRule;
 use anyhow::Error;
@@ -42,6 +43,9 @@ pub fn find_secrets(
         validation_status: SecretValidationStatus,
     }
 
+    // Get lines to ignore based on no-dd-secrets directives
+    let lines_to_ignore = get_lines_to_ignore(code);
+
     let mut codemut = code.to_owned();
     let mut matches = match scanner.scan(&mut codemut) {
         Ok(m) => m,
@@ -75,6 +79,7 @@ pub fn find_secrets(
                 validation_status: SecretValidationStatus::from(&sds_match.match_status),
             })
         })
+        .filter(|result| !lines_to_ignore.contains(&result.start.line))
         .chunk_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
@@ -160,5 +165,122 @@ mod tests {
             matches.first().unwrap().matches.get(1).unwrap().end,
             Position { line: 3, col: 7 }
         );
+    }
+
+    #[test]
+    fn test_find_secrets_with_ignore_directive() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false);
+        // Line 1: FOOBAR - should be found
+        // Line 2: #no-dd-secrets
+        // Line 3: FOOBAZ - should be ignored
+        let text = "FOOBAR\n#no-dd-secrets\nFOOBAZ";
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+        );
+
+        // Only FOOBAR on line 1 should be found, FOOBAZ on line 3 should be ignored
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches.first().unwrap().matches.len(), 1);
+        assert_eq!(
+            matches.first().unwrap().matches.first().unwrap().start,
+            Position { line: 1, col: 1 }
+        );
+    }
+
+    #[test]
+    fn test_find_secrets_with_multiple_ignore_directives() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false);
+        // Line 1: FOOBAR - should be found
+        // Line 2: #no-dd-secrets
+        // Line 3: FOOBAZ - should be ignored
+        // Line 4: FOOBAR - should be found
+        // Line 5: //no-dd-secrets
+        // Line 6: FOOBAZ - should be ignored
+        let text = "FOOBAR\n#no-dd-secrets\nFOOBAZ\nFOOBAR\n//no-dd-secrets\nFOOBAZ";
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+        );
+
+        // Only FOOBAR on lines 1 and 4 should be found
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches.first().unwrap().matches.len(), 2);
+        assert_eq!(
+            matches.first().unwrap().matches.first().unwrap().start,
+            Position { line: 1, col: 1 }
+        );
+        assert_eq!(
+            matches.first().unwrap().matches.get(1).unwrap().start,
+            Position { line: 4, col: 1 }
+        );
+    }
+
+    #[test]
+    fn test_find_secrets_all_ignored() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false);
+        // Directive on line 1 means ignore entire file
+        let text = "#no-dd-secrets\nFOOBAR\nFOOBAZ";
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+        );
+
+        // All secrets should be ignored because directive is on line 1
+        assert_eq!(matches.len(), 0);
     }
 }
