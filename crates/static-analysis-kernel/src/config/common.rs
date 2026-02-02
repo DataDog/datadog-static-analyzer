@@ -236,3 +236,73 @@ where
     }
     out
 }
+
+// YAML-serializable schema version.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum YamlSchemaVersion {
+    V1,
+    V2,
+    /// Input that isn't recognized as a supported schema version.
+    Invalid(String),
+}
+
+const V1: &str = "v1";
+const V2: &str = "v2";
+
+impl serde::Serialize for YamlSchemaVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            YamlSchemaVersion::V1 => serializer.serialize_str(V1),
+            YamlSchemaVersion::V2 => serializer.serialize_str(V2),
+            YamlSchemaVersion::Invalid(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for YamlSchemaVersion {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            V1 => YamlSchemaVersion::V1,
+            V2 => YamlSchemaVersion::V2,
+            _ => {
+                s.truncate(8);
+                YamlSchemaVersion::Invalid(s)
+            }
+        })
+    }
+}
+
+impl fmt::Display for YamlSchemaVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let val = match self {
+            YamlSchemaVersion::V1 => V1,
+            YamlSchemaVersion::V2 => V2,
+            YamlSchemaVersion::Invalid(text) => text.as_str(),
+        };
+        write!(f, "{val}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn yaml_schema_version_deserialize() {
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v1").unwrap();
+        assert_eq!(version, YamlSchemaVersion::V1);
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v2").unwrap();
+        assert_eq!(version, YamlSchemaVersion::V2);
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v9").unwrap();
+        assert_eq!(version, YamlSchemaVersion::Invalid("v9".to_string()));
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("truncation test").unwrap();
+        assert_eq!(version, YamlSchemaVersion::Invalid("truncati".to_string()));
+    }
+}
