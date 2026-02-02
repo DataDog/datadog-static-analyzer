@@ -1,0 +1,4 @@
+schema-version: v2
+
+global-config:
+  some-field-not-defined-in-the-schema: true

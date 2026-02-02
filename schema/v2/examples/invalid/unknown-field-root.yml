@@ -1,0 +1,3 @@
+schema-version: v2
+
+some-field-not-defined-in-the-schema: true

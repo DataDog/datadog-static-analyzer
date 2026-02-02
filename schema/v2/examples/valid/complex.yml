@@ -1,0 +1,36 @@
+schema-version: v2
+
+use-default-rulesets: false
+use-rulesets:
+  - java-security
+  - python-security
+
+global-config:
+  only-paths:
+    - src/
+    - lib/
+  ignore-paths:
+    - "*/**/out/*.py"
+    - "**/vendor/"
+  use-gitignore: true
+  ignore-generated-files: true
+  max-file-size-kb: 500
+
+ruleset-configs:
+  python-security:
+    only-paths:
+      - "src/.py"
+    ignore-paths:
+      - tests/
+    rule-configs:
+      insecure-hash-functions:
+        severity: ERROR
+        arguments:
+          ignore-functions: "md5"
+
+  java-best-practices:
+    rule-configs:
+      ssl-context:
+        only-paths:
+          - src/main/java/com/company/router
+        severity: WARNING
