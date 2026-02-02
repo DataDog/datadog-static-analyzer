@@ -4,3 +4,4 @@
 
 pub mod common;
 pub mod file_v1;
+pub mod file_v2;
