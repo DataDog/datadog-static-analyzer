@@ -61,7 +61,7 @@ impl From<YamlConfigFile> for ConfigFile {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 struct YamlGlobalConfig {
@@ -94,7 +94,7 @@ impl From<YamlGlobalConfig> for GlobalConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Default, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct YamlRulesetConfig {
@@ -119,7 +119,7 @@ impl From<YamlRulesetConfig> for RulesetConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Deserialize, Serialize, Default, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct YamlRuleConfig {
@@ -163,10 +163,7 @@ pub struct YamlPathConfig {
 
 impl From<YamlPathConfig> for Option<PathConfig> {
     fn from(value: YamlPathConfig) -> Self {
-        if value.only_paths.is_none() && value.ignore_paths.is_none() {
-            return None;
-        }
-        Some(PathConfig {
+        (value != YamlPathConfig::default()).then(|| PathConfig {
             only: value
                 .only_paths
                 .map(|only| only.into_iter().map(PathPattern::from).collect()),
