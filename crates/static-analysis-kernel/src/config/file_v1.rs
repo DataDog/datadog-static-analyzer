@@ -335,7 +335,7 @@ impl From<RuleConfig> for YamlRuleConfig {
 // YAML-serializable element whose value depends on the position in the repo tree.
 // If it only contains one value for the root directory, it serializes and deserializes as
 // a singular value; otherwise, as a map from path prefix to value.
-#[derive(Debug, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct YamlBySubtree<V>(IndexMap<String, V>);
 
 impl<'de, V> Deserialize<'de> for YamlBySubtree<V>
@@ -469,7 +469,7 @@ impl<'de> Deserialize<'de> for YamlRuleCategory {
 }
 
 // A map from string to value that disallows repeated keys when deserializing.
-#[derive(Debug, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq, Eq)]
 #[serde(transparent)]
 pub(crate) struct UniqueKeyMap<V>(pub(crate) IndexMap<String, V>);
 
@@ -519,7 +519,7 @@ where
 }
 
 // A value that, when deserializing, is cast to a string.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub(crate) enum AnyAsString {
     Bool(bool),
