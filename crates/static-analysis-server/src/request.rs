@@ -8,7 +8,7 @@ use crate::model::violation::ServerViolation;
 use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::analyze_with;
 use kernel::analysis::ddsa_lib::JsRuntime;
-use kernel::config_file::parse_config_file;
+use kernel::config::file_v1::parse_config_file;
 use kernel::model::rule::RuleInternal;
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;

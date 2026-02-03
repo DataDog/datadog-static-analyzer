@@ -2,12 +2,9 @@ use super::comment_preserver::{prettify_yaml, reconcile_comments};
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use kernel::config_file::config_file_to_yaml;
-use kernel::{
-    config_file::parse_config_file,
-    model::config_file::{ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig},
-    utils::decode_base64_string,
-};
+use kernel::config::common::{ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig};
+use kernel::config::file_v1::{config_file_to_yaml, parse_config_file};
+use kernel::utils::decode_base64_string;
 use std::{borrow::Cow, fmt::Debug, ops::Deref};
 use tracing::instrument;
 

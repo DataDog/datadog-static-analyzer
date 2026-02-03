@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 
-use crate::model::config_file::{PathConfig, RulesetConfig};
+use crate::config::common::{PathConfig, RulesetConfig};
 use common::model::diff_aware::DiffAware;
 use std::collections::HashMap;
 
@@ -91,7 +91,7 @@ fn split_rule_name(name: &str) -> (&str, &str) {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::config_file::{PathConfig, RuleConfig, RulesetConfig};
+    use crate::config::common::{PathConfig, RuleConfig, RulesetConfig};
     use crate::path_restrictions::PathRestrictions;
     use common::model::diff_aware::DiffAware;
 

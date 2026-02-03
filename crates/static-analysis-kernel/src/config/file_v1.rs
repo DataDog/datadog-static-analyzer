@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache License, Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::de::value::MapAccessDeserializer;
@@ -9,7 +13,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 
-use crate::model::config_file::{
+use crate::config::common::{
     join_path, split_path, BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig,
     RulesetConfig,
 };
@@ -30,7 +34,7 @@ pub fn config_file_to_yaml(cfg: &ConfigFile) -> Result<String> {
 #[serde(rename_all = "kebab-case")]
 struct YamlConfigFile {
     #[serde(default)]
-    schema_version: YamlSchemaVersion,
+    schema_version: V1,
     rulesets: YamlRulesetList,
     #[serde(flatten)]
     paths: YamlPathConfig,
@@ -67,7 +71,7 @@ impl From<YamlConfigFile> for ConfigFile {
 impl From<ConfigFile> for YamlConfigFile {
     fn from(value: ConfigFile) -> Self {
         YamlConfigFile {
-            schema_version: YamlSchemaVersion::V1,
+            schema_version: V1::V1,
             rulesets: value.rulesets.into(),
             paths: value.paths.into(),
             ignore_paths: None,
@@ -81,8 +85,8 @@ impl From<ConfigFile> for YamlConfigFile {
 // YAML-serializable schema version.
 // It only contains the expected value for this parser.
 #[derive(Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
-enum YamlSchemaVersion {
+enum V1 {
+    #[serde(rename = "v1")]
     #[default]
     V1,
 }
@@ -550,7 +554,7 @@ impl Display for AnyAsString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::config_file::{
+    use crate::config::common::{
         values_by_subtree, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::fs;

@@ -2,8 +2,8 @@ use crate::git_utils::{get_branch, ORIGIN};
 use anyhow::anyhow;
 use common::model::diff_aware::DiffAware;
 use git2::Repository;
+use kernel::config::common::{ConfigMethod, PathConfig};
 use kernel::model::common::OutputFormat;
-use kernel::model::config_file::{ConfigMethod, PathConfig};
 use kernel::rule_config::RuleConfigProvider;
 use sha2::{Digest, Sha256};
 

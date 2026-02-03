@@ -1,5 +1,5 @@
 use crate::arguments::ArgumentProvider;
-use crate::model::config_file::{split_path, ConfigFile, SplitPath};
+use crate::config::common::{split_path, ConfigFile, SplitPath};
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use crate::path_restrictions::PathRestrictions;
 use crate::rule_overrides::RuleOverrides;

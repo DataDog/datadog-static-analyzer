@@ -9,9 +9,9 @@ use walkdir::WalkDir;
 
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
+use kernel::config::common::PathConfig;
 use kernel::model::common::Language;
 use kernel::model::common::Language::Dockerfile;
-use kernel::model::config_file::PathConfig;
 use kernel::model::violation::Violation;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[

@@ -1,4 +1,4 @@
-use crate::model::config_file::{BySubtree, ConfigFile, SplitPath};
+use crate::config::common::{BySubtree, ConfigFile, SplitPath};
 use common::model::diff_aware::DiffAware;
 use std::collections::HashMap;
 
@@ -105,7 +105,7 @@ impl Default for ArgumentProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::config_file::split_path;
+    use crate::config::common::split_path;
     use std::collections::HashMap;
 
     #[test]
