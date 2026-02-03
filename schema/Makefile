@@ -1,14 +1,20 @@
 all: test
 
-test: test-valid test-invalid
+test: test-schema-valid test-schema-invalid test-v1-valid test-v1-invalid
 
-INVALID_FILES=examples/invalid/*.yml
-VALID_FILES=examples/valid/*.yml
+examples-valid = $(1)/examples/valid/*.yml
+examples-invalid = $(1)/examples/invalid/*.yml
 
-test-valid:
-	npx --yes ajv-cli@5.0.0 test -s schema.json -d "${VALID_FILES}" --valid
+test-schema-valid:
+	npx --yes ajv-cli@5.0.0 test -s schema.json -r v1/schema.json -d "$(call examples-valid,v1)" --valid
 
-test-invalid:
-	npx --yes ajv-cli@5.0.0 test -s schema.json -d "${INVALID_FILES}" --invalid
+test-schema-invalid:
+	npx --yes ajv-cli@5.0.0 test -s schema.json -r v1/schema.json -d "$(call examples-invalid,v1)" --invalid
 
-.PHONY: test test-valid test-invalid
+test-v1-valid:
+	npx --yes ajv-cli@5.0.0 test -s v1/schema.json -d "$(call examples-valid,v1)" --valid
+
+test-v1-invalid:
+	npx --yes ajv-cli@5.0.0 test -s v1/schema.json -d "$(call examples-invalid,v1)" --invalid
+
+.PHONY: test test-schema-valid test-schema-invalid test-v1-valid test-v1-invalid

@@ -264,10 +264,10 @@ There is a JSON Schema definition for the `static-analysis.datadog.yml` in the `
 
 You can use it to check the syntax of your configuration file:
 
-1. Execute `npx --yes ajv-cli@5.0.0 validate -s schema/schema.json -r schema/*/*.json -d path/to/your/static-analysis.datadog.yml`
+1. Execute `npx --yes ajv-cli@5.0.0 validate -s schema/schema.json -r 'schema/*/*.json' -d path/to/your/static-analysis.datadog.yml`
 
-There are some examples of valid and invalid configuration files in the [`schema/examples/valid`](schema/examples/valid)
-and [`schema/examples/invalid`](schema/examples/invalid) subdirectories, respectively. If you make changes to the JSON
+There are some examples of valid and invalid configuration files in the [`schema/v1/examples/valid`](schema/v1/examples/valid)
+and [`schema/v1/examples/invalid`](schema/v1/examples/invalid) subdirectories, respectively. If you make changes to the JSON
 Schema, you can test them against our examples:
 
 1. Execute `make -C schema`

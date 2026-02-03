@@ -557,7 +557,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     // Location of the configuration file examples that accompany the schema.
-    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/examples";
+    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/v1/examples";
 
     // Returns pairs of (path, content) of the example files in the given subdirectory.
     fn get_example_configs(suffix: &str) -> impl Iterator<Item = (PathBuf, String)> {
