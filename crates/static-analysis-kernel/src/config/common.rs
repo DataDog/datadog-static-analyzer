@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache License, Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use common::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
@@ -5,11 +9,12 @@ use indexmap::IndexMap;
 use sequence_trie::SequenceTrie;
 use std::borrow::Borrow;
 use std::fmt;
+use std::fmt::{Debug, Formatter};
 use std::path::{Path, PathBuf};
 
 // A pattern for an 'only' or 'ignore' field. The 'glob' field contains a precompiled glob pattern,
 // while the 'prefix' field contains a path prefix.
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct PathPattern {
     pub glob: Option<GlobMatcher>,
     pub prefix: PathBuf,
@@ -162,6 +167,20 @@ impl PartialEq for PathPattern {
     }
 }
 
+impl Debug for PathPattern {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let glob_str = if self.glob.is_some() {
+            "Some(<opaque>)"
+        } else {
+            "None"
+        };
+        f.debug_struct("PathPattern")
+            .field("prefix", &self.prefix)
+            .field("glob", &glob_str)
+            .finish()
+    }
+}
+
 impl PathConfig {
     pub fn allows_file(&self, file_name: &str) -> bool {
         !self.ignore.iter().any(|pattern| pattern.matches(file_name))
@@ -216,4 +235,74 @@ where
         out.insert(&split_path(k), v);
     }
     out
+}
+
+// YAML-serializable schema version.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum YamlSchemaVersion {
+    V1,
+    V2,
+    /// Input that isn't recognized as a supported schema version.
+    Invalid(String),
+}
+
+const V1: &str = "v1";
+const V2: &str = "v2";
+
+impl serde::Serialize for YamlSchemaVersion {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            YamlSchemaVersion::V1 => serializer.serialize_str(V1),
+            YamlSchemaVersion::V2 => serializer.serialize_str(V2),
+            YamlSchemaVersion::Invalid(s) => serializer.serialize_str(s),
+        }
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for YamlSchemaVersion {
+    fn deserialize<D>(d: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let mut s = String::deserialize(d)?;
+        Ok(match s.as_str() {
+            V1 => YamlSchemaVersion::V1,
+            V2 => YamlSchemaVersion::V2,
+            _ => {
+                s.truncate(8);
+                YamlSchemaVersion::Invalid(s)
+            }
+        })
+    }
+}
+
+impl fmt::Display for YamlSchemaVersion {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let val = match self {
+            YamlSchemaVersion::V1 => V1,
+            YamlSchemaVersion::V2 => V2,
+            YamlSchemaVersion::Invalid(text) => text.as_str(),
+        };
+        write!(f, "{val}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn yaml_schema_version_deserialize() {
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v1").unwrap();
+        assert_eq!(version, YamlSchemaVersion::V1);
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v2").unwrap();
+        assert_eq!(version, YamlSchemaVersion::V2);
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v9").unwrap();
+        assert_eq!(version, YamlSchemaVersion::Invalid("v9".to_string()));
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("truncation test").unwrap();
+        assert_eq!(version, YamlSchemaVersion::Invalid("truncati".to_string()));
+    }
 }

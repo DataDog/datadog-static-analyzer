@@ -1,0 +1,11 @@
+schema-version: v2
+
+ruleset-configs:
+  lorem_ipsum:
+    rule-configs:
+      dolor:
+        arguments:
+          sit_amet: "20"
+          consectetur:
+            /: 40
+            one/two/three/four: "80"

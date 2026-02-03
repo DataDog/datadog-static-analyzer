@@ -1,4 +1,4 @@
-use crate::model::config_file::{BySubtree, ConfigFile, SplitPath};
+use crate::config::common::{BySubtree, ConfigFile, SplitPath};
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use std::collections::HashMap;
 

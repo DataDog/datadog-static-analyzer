@@ -1,0 +1,4 @@
+schema-version: v1
+
+use-rulesets:
+  - java-security

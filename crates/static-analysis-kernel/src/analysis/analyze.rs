@@ -396,7 +396,7 @@ mod tests {
     use super::*;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::tree_sitter::get_query;
-    use crate::config_file::parse_config_file;
+    use crate::config::file_v1::parse_config_file;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use crate::rule_config::RuleConfigProvider;

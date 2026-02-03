@@ -1,7 +1,7 @@
 pub mod analysis;
 pub mod arguments;
 pub mod classifiers;
-pub mod config_file;
+pub mod config;
 pub mod constants;
 pub mod model;
 pub mod path_restrictions;

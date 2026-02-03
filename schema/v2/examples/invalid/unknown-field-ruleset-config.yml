@@ -1,0 +1,5 @@
+schema-version: v2
+
+ruleset-configs:
+  java-security:
+    some-field-not-defined-in-the-schema: true

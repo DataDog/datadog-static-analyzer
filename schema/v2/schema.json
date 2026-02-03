@@ -1,0 +1,183 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/DataDog/datadog-static-analyzer/schema/v2/schema.json",
+  "title": "Datadog Static Analyzer Configuration v2",
+  "type": "object",
+  "properties": {
+    "schema-version": {
+      "type": "string",
+      "enum": ["v2"]
+    },
+    "use-default-rulesets": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable Datadog's default rulesets. Defaults to true."
+    },
+    "use-rulesets": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "List of rulesets to enable (in addition to defaults, if use-default-rulesets is true)."
+    },
+    "ignore-rulesets": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "List of rulesets to disable. Takes precedence over default rulesets and those listed in use-rulesets."
+    },
+    "ruleset-configs": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/rulesetConfig"
+      },
+      "description": "Per-ruleset configurations"
+    },
+    "global-config": {
+      "$ref": "#/definitions/globalConfig",
+      "description": "Global settings for the static analyzer."
+    }
+  },
+  "required": ["schema-version"],
+  "additionalProperties": false,
+  "definitions": {
+    "globalConfig": {
+      "type": "object",
+      "properties": {
+        "only-paths": {
+          "$ref": "#/definitions/pathList"
+        },
+        "ignore-paths": {
+          "$ref": "#/definitions/pathList"
+        },
+        "use-gitignore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use .gitignore to exclude files. Defaults to true."
+        },
+        "ignore-generated-files": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ignore generated files. Defaults to true."
+        },
+        "max-file-size-kb": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "rulesetConfig": {
+      "type": "object",
+      "properties": {
+        "only-paths": {
+          "$ref": "#/definitions/pathList",
+          "description": "Paths to analyze for this ruleset."
+        },
+        "ignore-paths": {
+          "$ref": "#/definitions/pathList",
+          "description": "Paths to exclude for this ruleset."
+        },
+        "rule-configs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/ruleConfig"
+          },
+          "description": "Per-rule configurations within this ruleset."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ruleConfig": {
+      "type": "object",
+      "properties": {
+        "only-paths": {
+          "$ref": "#/definitions/pathList"
+        },
+        "ignore-paths": {
+          "$ref": "#/definitions/pathList"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/argumentValue"
+          }
+        },
+        "severity": {
+          "$ref": "#/definitions/severityValue"
+        },
+        "category": {
+          "enum": [
+            "BEST_PRACTICES",
+            "CODE_STYLE",
+            "ERROR_PRONE",
+            "PERFORMANCE",
+            "SECURITY"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "pathList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "List of file paths or glob patterns."
+    },
+    "argumentValue": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/singularArgumentValue"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/singularArgumentValue"
+          }
+        }
+      ],
+      "description": "Argument value (singular or by-path)."
+    },
+    "singularArgumentValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number",
+          "$comment": "will be internally coerced to string"
+        },
+        {
+          "type": "boolean",
+          "$comment": "will be internally coerced to string"
+        }
+      ]
+    },
+    "severityValue": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/singularSeverityValue"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/singularSeverityValue"
+          }
+        }
+      ]
+    },
+    "singularSeverityValue": {
+      "enum": [
+        "ERROR",
+        "WARNING",
+        "NOTICE",
+        "NONE"
+      ]
+    }
+  }
+}

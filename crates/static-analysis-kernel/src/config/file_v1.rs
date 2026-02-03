@@ -1,3 +1,7 @@
+// Unless explicitly stated otherwise all files in this repository are licensed under the Apache License, Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
 use anyhow::Result;
 use indexmap::IndexMap;
 use serde::de::value::MapAccessDeserializer;
@@ -9,7 +13,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 
-use crate::model::config_file::{
+use crate::config::common::{
     join_path, split_path, BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig,
     RulesetConfig,
 };
@@ -30,7 +34,7 @@ pub fn config_file_to_yaml(cfg: &ConfigFile) -> Result<String> {
 #[serde(rename_all = "kebab-case")]
 struct YamlConfigFile {
     #[serde(default)]
-    schema_version: YamlSchemaVersion,
+    schema_version: V1,
     rulesets: YamlRulesetList,
     #[serde(flatten)]
     paths: YamlPathConfig,
@@ -67,7 +71,7 @@ impl From<YamlConfigFile> for ConfigFile {
 impl From<ConfigFile> for YamlConfigFile {
     fn from(value: ConfigFile) -> Self {
         YamlConfigFile {
-            schema_version: YamlSchemaVersion::V1,
+            schema_version: V1::V1,
             rulesets: value.rulesets.into(),
             paths: value.paths.into(),
             ignore_paths: None,
@@ -81,8 +85,8 @@ impl From<ConfigFile> for YamlConfigFile {
 // YAML-serializable schema version.
 // It only contains the expected value for this parser.
 #[derive(Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
-enum YamlSchemaVersion {
+enum V1 {
+    #[serde(rename = "v1")]
     #[default]
     V1,
 }
@@ -331,8 +335,8 @@ impl From<RuleConfig> for YamlRuleConfig {
 // YAML-serializable element whose value depends on the position in the repo tree.
 // If it only contains one value for the root directory, it serializes and deserializes as
 // a singular value; otherwise, as a map from path prefix to value.
-#[derive(Default, PartialEq)]
-struct YamlBySubtree<V>(IndexMap<String, V>);
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct YamlBySubtree<V>(IndexMap<String, V>);
 
 impl<'de, V> Deserialize<'de> for YamlBySubtree<V>
 where
@@ -443,9 +447,9 @@ impl From<BySubtree<String>> for YamlBySubtree<AnyAsString> {
 }
 
 // YAML-serializable rule category. The 'unknown' value is disallowed when deserializing.
-#[derive(Serialize, PartialEq)]
+#[derive(Debug, Copy, Clone, Serialize, PartialEq, Eq)]
 #[serde(transparent)]
-struct YamlRuleCategory(RuleCategory);
+pub(crate) struct YamlRuleCategory(pub(crate) RuleCategory);
 
 impl<'de> Deserialize<'de> for YamlRuleCategory {
     fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
@@ -465,9 +469,9 @@ impl<'de> Deserialize<'de> for YamlRuleCategory {
 }
 
 // A map from string to value that disallows repeated keys when deserializing.
-#[derive(Serialize, Default, PartialEq)]
+#[derive(Debug, Serialize, Default, PartialEq, Eq)]
 #[serde(transparent)]
-struct UniqueKeyMap<V>(IndexMap<String, V>);
+pub(crate) struct UniqueKeyMap<V>(pub(crate) IndexMap<String, V>);
 
 impl<V> UniqueKeyMap<V> {
     fn is_empty(&self) -> bool {
@@ -515,9 +519,9 @@ where
 }
 
 // A value that, when deserializing, is cast to a string.
-#[derive(Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
-enum AnyAsString {
+pub(crate) enum AnyAsString {
     Bool(bool),
     I64(i64),
     U64(u64),
@@ -550,14 +554,14 @@ impl Display for AnyAsString {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::config_file::{
+    use crate::config::common::{
         values_by_subtree, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
 
     // Location of the configuration file examples that accompany the schema.
-    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/examples";
+    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/v1/examples";
 
     // Returns pairs of (path, content) of the example files in the given subdirectory.
     fn get_example_configs(suffix: &str) -> impl Iterator<Item = (PathBuf, String)> {

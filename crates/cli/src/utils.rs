@@ -1,9 +1,9 @@
 use crate::constants::DEFAULT_MAX_CPUS;
 use crate::model::cli_configuration::CliConfiguration;
 use crate::rule_utils::get_languages_for_rules;
+use kernel::config::common::ConfigMethod;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
-use kernel::model::config_file::ConfigMethod;
 
 /// Returns the user's requested core count, clamped to the number of logical cores on the system.
 /// If unspecified, up to [DEFAULT_MAX_CPUS] CPUs will be used.
