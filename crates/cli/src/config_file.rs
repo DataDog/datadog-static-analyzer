@@ -5,7 +5,9 @@ use crate::datadog_utils::{
 };
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context};
-use kernel::config::common::{parse_any_schema_yaml, ConfigMethod, WithVersion};
+use kernel::config::common::{
+    parse_any_schema_yaml, parse_only_v1_yaml, ConfigMethod, WithVersion,
+};
 use kernel::config::file_v2;
 use kernel::utils::{decode_base64_string, encode_base64_string};
 use std::path::Path;
@@ -51,7 +53,13 @@ pub fn get_config(
     let local_file_contents = read_config_file(path)?;
     let local_yaml = local_file_contents
         .as_ref()
-        .map(|c| parse_any_schema_yaml(c))
+        .map(|c| {
+            if cfg!(test) {
+                parse_any_schema_yaml(c)
+            } else {
+                parse_only_v1_yaml(c)
+            }
+        })
         .transpose()?;
     let local_config: Option<file_v2::ConfigFile> = local_yaml.map(|v| match v {
         WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),

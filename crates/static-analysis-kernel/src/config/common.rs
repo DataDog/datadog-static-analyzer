@@ -314,6 +314,19 @@ pub fn parse_any_schema_yaml(
     }
 }
 
+/// Like [`parse_any_schema_yaml`], except only ever returns a [`WithVersion::V1`].
+///
+/// # Note
+/// This is a temporary function used to artificially disable v2 support within the static analyzer.
+/// When the Datadog backend implements v2 support, this will be removed.
+pub fn parse_only_v1_yaml(
+    config_contents: &str,
+) -> Result<WithVersion<file_v1::YamlConfigFile, file_v2::YamlConfigFile>, ConfigError> {
+    file_v1::parse_yaml(config_contents)
+        .map(WithVersion::V1)
+        .map_err(ConfigError::Parse)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,5 +403,22 @@ schema-version: v2
                 Err(ConfigError::Parse(_))
             ));
         }
+    }
+
+    /// See [`parse_only_v1_yaml`] for documentation.
+    #[test]
+    fn parse_v1_yaml_v1_only() {
+        // language=yaml
+        let v1 = "\
+schema-version: v1
+rulesets:
+  - java-security
+";
+        // language=yaml
+        let v2 = "\
+schema-version: v2
+";
+        assert!(matches!(parse_only_v1_yaml(v2), Err(ConfigError::Parse(_))));
+        assert!(matches!(parse_only_v1_yaml(v1), Ok(WithVersion::V1(_))));
     }
 }

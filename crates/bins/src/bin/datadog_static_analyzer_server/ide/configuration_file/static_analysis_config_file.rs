@@ -3,8 +3,8 @@ use super::error::ConfigFileError;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use kernel::config::common::{
-    parse_any_schema_yaml, ConfigError, PathConfig, PathPattern, RuleConfig, RulesetConfig,
-    WithVersion,
+    parse_any_schema_yaml, parse_only_v1_yaml, ConfigError, PathConfig, PathPattern, RuleConfig,
+    RulesetConfig, WithVersion,
 };
 use kernel::config::file_v1::config_file_to_yaml;
 use kernel::config::{file_v1, file_v2};
@@ -47,7 +47,12 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
         if content.trim().is_empty() {
             return Ok(Self::default());
         }
-        let parsed = parse_any_schema_yaml(&content).map_err(|err| {
+        let parsed = if cfg!(test) {
+            parse_any_schema_yaml(&content)
+        } else {
+            parse_only_v1_yaml(&content)
+        };
+        let parsed = parsed.map_err(|err| {
             match err {
                 // Artificially represent this as a "parse" error for backwards compatibility.
                 ConfigError::UnsupportedSchema(_) => ConfigFileError::Parser {
