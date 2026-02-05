@@ -31,20 +31,20 @@ pub fn config_file_to_yaml(cfg: &ConfigFile) -> anyhow::Result<String> {
 // YAML-serializable configuration file.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct YamlConfigFile {
+pub struct YamlConfigFile {
     #[serde(default)]
     schema_version: V1,
-    rulesets: YamlRulesetList,
+    pub(crate) rulesets: YamlRulesetList,
     #[serde(flatten)]
-    paths: YamlPathConfig,
+    pub(crate) paths: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_paths: Option<Vec<String>>,
+    pub(crate) ignore_paths: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_gitignore: Option<bool>,
+    pub(crate) ignore_gitignore: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_file_size_kb: Option<u64>,
+    pub(crate) max_file_size_kb: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_generated_files: Option<bool>,
+    pub(crate) ignore_generated_files: Option<bool>,
 }
 
 impl From<YamlConfigFile> for ConfigFile {
@@ -94,7 +94,7 @@ enum V1 {
 // When deserializing, disallows two rulesets with the same name.
 #[derive(Serialize)]
 #[serde(transparent)]
-struct YamlRulesetList(Vec<YamlNamedRulesetConfig>);
+pub(crate) struct YamlRulesetList(pub(crate) Vec<YamlNamedRulesetConfig>);
 
 impl<'de> Deserialize<'de> for YamlRulesetList {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
@@ -142,9 +142,9 @@ impl From<IndexMap<String, RulesetConfig>> for YamlRulesetList {
 // YAML-serializable ruleset configuration, including a name.
 // With a default configuration, this serializes and deserialized to only the ruleset name;
 // otherwise, to a map whose first element has the ruleset name as the key and a null value.
-struct YamlNamedRulesetConfig {
-    name: String,
-    cfg: YamlRulesetConfig,
+pub(crate) struct YamlNamedRulesetConfig {
+    pub(crate) name: String,
+    pub(crate) cfg: YamlRulesetConfig,
 }
 
 impl<'de> Deserialize<'de> for YamlNamedRulesetConfig {
@@ -218,11 +218,11 @@ impl Serialize for YamlNamedRulesetConfig {
 
 // YAML-serializable ruleset configuration, without the name.
 #[derive(Deserialize, Serialize, Default, PartialEq)]
-struct YamlRulesetConfig {
+pub(crate) struct YamlRulesetConfig {
     #[serde(flatten)]
-    paths: YamlPathConfig,
+    pub(crate) paths: YamlPathConfig,
     #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
-    rules: UniqueKeyMap<YamlRuleConfig>,
+    pub(crate) rules: UniqueKeyMap<YamlRuleConfig>,
 }
 
 impl From<YamlRulesetConfig> for RulesetConfig {
@@ -256,11 +256,11 @@ impl From<RulesetConfig> for YamlRulesetConfig {
 
 // YAML-serializable by-path-or-glob include/exclude configuration.
 #[derive(Deserialize, Serialize, Default, PartialEq)]
-struct YamlPathConfig {
+pub(crate) struct YamlPathConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    only: Option<Vec<String>>,
+    pub(crate) only: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    ignore: Vec<String>,
+    pub(crate) ignore: Vec<String>,
 }
 
 impl From<YamlPathConfig> for PathConfig {
@@ -287,15 +287,15 @@ impl From<PathConfig> for YamlPathConfig {
 
 // YAML-serializeable rule configuration.
 #[derive(Deserialize, Serialize, Default, PartialEq)]
-struct YamlRuleConfig {
+pub(crate) struct YamlRuleConfig {
     #[serde(flatten)]
-    paths: YamlPathConfig,
+    pub(crate) paths: YamlPathConfig,
     #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
-    arguments: UniqueKeyMap<YamlBySubtree<AnyAsString>>,
+    pub(crate) arguments: UniqueKeyMap<YamlBySubtree<AnyAsString>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    severity: Option<YamlBySubtree<RuleSeverity>>,
+    pub(crate) severity: Option<YamlBySubtree<RuleSeverity>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    category: Option<YamlRuleCategory>,
+    pub(crate) category: Option<YamlRuleCategory>,
 }
 
 impl From<YamlRuleConfig> for RuleConfig {
@@ -335,7 +335,7 @@ impl From<RuleConfig> for YamlRuleConfig {
 // If it only contains one value for the root directory, it serializes and deserializes as
 // a singular value; otherwise, as a map from path prefix to value.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct YamlBySubtree<V>(IndexMap<String, V>);
+pub(crate) struct YamlBySubtree<V>(pub(crate) IndexMap<String, V>);
 
 impl<'de, V> Deserialize<'de> for YamlBySubtree<V>
 where
