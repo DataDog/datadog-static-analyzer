@@ -4,7 +4,7 @@ use crate::datadog_utils::{
     get_remote_configuration, print_permission_warning, should_use_datadog_backend,
 };
 use crate::git_utils::get_repository_url;
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context};
 use kernel::config::common::{ConfigFile, ConfigMethod};
 use kernel::config::file_v1::parse_config_file;
 use kernel::utils::{decode_base64_string, encode_base64_string};
@@ -14,7 +14,7 @@ use std::path::Path;
 // If it fails, we try to read static-analysis.datadog.yaml
 // If the file does not exist, we return a Ok(None).
 // If there is an error reading the file, we return a failure
-pub fn read_config_file(base_path: &str) -> Result<Option<String>> {
+pub fn read_config_file(base_path: &str) -> anyhow::Result<Option<String>> {
     const EXTENSIONS: [&str; 2] = ["yml", "yaml"];
 
     for ext in EXTENSIONS {
@@ -44,7 +44,7 @@ pub fn read_config_file(base_path: &str) -> Result<Option<String>> {
 /// - If the user is a Datadog user (e.g. with API keys), we fetch the remote configuration
 ///   and merge it
 /// - If not, we just return the configuration
-pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigMethod)>> {
+pub fn get_config(path: &str, debug: bool) -> anyhow::Result<Option<(ConfigFile, ConfigMethod)>> {
     let local_file_contents = read_config_file(path)?;
     let local_config = local_file_contents
         .as_ref()

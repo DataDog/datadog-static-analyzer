@@ -2,7 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-use anyhow::Result;
 use indexmap::IndexMap;
 use serde::de::value::MapAccessDeserializer;
 use serde::de::{Error, MapAccess, Unexpected, Visitor};
@@ -19,12 +18,12 @@ use crate::config::common::{
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
-pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
+pub fn parse_config_file(config_contents: &str) -> anyhow::Result<ConfigFile> {
     let yaml_config: YamlConfigFile = serde_yaml::from_str(config_contents)?;
     Ok(yaml_config.into())
 }
 
-pub fn config_file_to_yaml(cfg: &ConfigFile) -> Result<String> {
+pub fn config_file_to_yaml(cfg: &ConfigFile) -> anyhow::Result<String> {
     let yaml_config: YamlConfigFile = cfg.clone().into();
     Ok(serde_yaml::to_string(&yaml_config)?)
 }
@@ -98,7 +97,7 @@ enum V1 {
 struct YamlRulesetList(Vec<YamlNamedRulesetConfig>);
 
 impl<'de> Deserialize<'de> for YamlRulesetList {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -149,7 +148,7 @@ struct YamlNamedRulesetConfig {
 }
 
 impl<'de> Deserialize<'de> for YamlNamedRulesetConfig {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -194,7 +193,7 @@ impl<'de> Deserialize<'de> for YamlNamedRulesetConfig {
 }
 
 impl Serialize for YamlNamedRulesetConfig {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -342,7 +341,7 @@ impl<'de, V> Deserialize<'de> for YamlBySubtree<V>
 where
     V: Deserialize<'de>,
 {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -374,7 +373,7 @@ impl<V> Serialize for YamlBySubtree<V>
 where
     V: Serialize,
 {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -452,7 +451,7 @@ impl From<BySubtree<String>> for YamlBySubtree<AnyAsString> {
 pub(crate) struct YamlRuleCategory(pub(crate) RuleCategory);
 
 impl<'de> Deserialize<'de> for YamlRuleCategory {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -483,7 +482,7 @@ impl<'de, V> Deserialize<'de> for UniqueKeyMap<V>
 where
     V: Deserialize<'de>,
 {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -496,7 +495,7 @@ where
             fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
                 formatter.write_str("a map with unique keys")
             }
-            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: MapAccess<'de>,
             {
