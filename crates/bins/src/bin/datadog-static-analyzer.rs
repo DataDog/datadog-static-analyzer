@@ -34,7 +34,8 @@ use datadog_static_analyzer::{secret_analysis, static_analysis, CliResults};
 use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::classifiers::ArtifactClassification;
-use kernel::config::common::{ConfigFile, ConfigMethod, PathConfig};
+use kernel::config::common::{ConfigMethod, PathConfig};
+use kernel::config::file_v1;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleSeverity};
@@ -262,20 +263,22 @@ fn main() -> Result<()> {
 
     let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
 
-    let (configuration_file, configuration_method): (Option<ConfigFile>, Option<ConfigMethod>) =
-        match configuration_file_and_method {
-            Ok(cfg) => match cfg {
-                Some((config_file, config_method)) => (Some(config_file), Some(config_method)),
-                _ => (None, None),
-            },
-            Err(err) => {
-                eprintln!(
-                    "Error reading configuration file from {}:\n  {}",
-                    directory_to_analyze, err
-                );
-                exit(EXIT_CODE_INVALID_CONFIGURATION)
-            }
-        };
+    let (configuration_file, configuration_method): (
+        Option<file_v1::ConfigFile>,
+        Option<ConfigMethod>,
+    ) = match configuration_file_and_method {
+        Ok(cfg) => match cfg {
+            Some((config_file, config_method)) => (Some(config_file), Some(config_method)),
+            _ => (None, None),
+        },
+        Err(err) => {
+            eprintln!(
+                "Error reading configuration file from {}:\n  {}",
+                directory_to_analyze, err
+            );
+            exit(EXIT_CODE_INVALID_CONFIGURATION)
+        }
+    };
 
     if configuration_file.is_none() && use_debug {
         eprintln!("INFO: no configuration detected locally or remotely")

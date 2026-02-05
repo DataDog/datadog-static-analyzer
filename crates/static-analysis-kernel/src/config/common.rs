@@ -102,27 +102,6 @@ pub enum ConfigMethod {
     RemoteConfigurationWithFile,
 }
 
-// The parsed configuration file without any legacy fields.
-#[derive(Debug, PartialEq, Default, Clone)]
-pub struct ConfigFile {
-    // Configurations for the rulesets.
-    pub rulesets: IndexMap<String, RulesetConfig>,
-    // Paths to include/exclude from analysis.
-    pub paths: PathConfig,
-    // Ignore all the paths in the .gitignore file.
-    pub ignore_gitignore: Option<bool>,
-    // Analyze only files up to this size.
-    pub max_file_size_kb: Option<u64>,
-    // Do not analyze generated files.
-    pub ignore_generated_files: Option<bool>,
-}
-
-impl fmt::Display for ConfigFile {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
 impl PathPattern {
     pub fn matches(&self, path: &str) -> bool {
         self.glob

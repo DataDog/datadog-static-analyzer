@@ -1,4 +1,5 @@
-use crate::config::common::{BySubtree, ConfigFile, SplitPath};
+use crate::config::common::{BySubtree, SplitPath};
+use crate::config::file_v1;
 use common::model::diff_aware::DiffAware;
 use std::collections::HashMap;
 
@@ -49,7 +50,7 @@ impl ArgumentProvider {
         }
     }
 
-    pub fn from(config: &ConfigFile) -> Self {
+    pub fn from(config: &file_v1::ConfigFile) -> Self {
         let mut provider = ArgumentProvider::new();
         for (ruleset_name, ruleset_cfg) in &config.rulesets {
             for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {

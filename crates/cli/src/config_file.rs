@@ -5,7 +5,8 @@ use crate::datadog_utils::{
 };
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context};
-use kernel::config::common::{ConfigFile, ConfigMethod};
+use kernel::config::common::ConfigMethod;
+use kernel::config::file_v1;
 use kernel::config::file_v1::parse_config_file;
 use kernel::utils::{decode_base64_string, encode_base64_string};
 use std::path::Path;
@@ -44,7 +45,10 @@ pub fn read_config_file(base_path: &str) -> anyhow::Result<Option<String>> {
 /// - If the user is a Datadog user (e.g. with API keys), we fetch the remote configuration
 ///   and merge it
 /// - If not, we just return the configuration
-pub fn get_config(path: &str, debug: bool) -> anyhow::Result<Option<(ConfigFile, ConfigMethod)>> {
+pub fn get_config(
+    path: &str,
+    debug: bool,
+) -> anyhow::Result<Option<(file_v1::ConfigFile, ConfigMethod)>> {
     let local_file_contents = read_config_file(path)?;
     let local_config = local_file_contents
         .as_ref()

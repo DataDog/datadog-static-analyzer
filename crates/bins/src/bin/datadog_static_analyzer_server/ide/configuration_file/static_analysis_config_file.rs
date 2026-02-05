@@ -2,7 +2,8 @@ use super::comment_preserver::{prettify_yaml, reconcile_comments};
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use kernel::config::common::{ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig};
+use kernel::config::common::{PathConfig, PathPattern, RuleConfig, RulesetConfig};
+use kernel::config::file_v1;
 use kernel::config::file_v1::{config_file_to_yaml, parse_config_file};
 use kernel::utils::decode_base64_string;
 use std::{borrow::Cow, fmt::Debug, ops::Deref};
@@ -10,12 +11,12 @@ use tracing::instrument;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct StaticAnalysisConfigFile {
-    config_file: ConfigFile,
+    config_file: file_v1::ConfigFile,
     original_content: Option<String>,
 }
 
-impl From<ConfigFile> for StaticAnalysisConfigFile {
-    fn from(value: ConfigFile) -> Self {
+impl From<file_v1::ConfigFile> for StaticAnalysisConfigFile {
+    fn from(value: file_v1::ConfigFile) -> Self {
         Self {
             config_file: value,
             original_content: None,
@@ -40,7 +41,7 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
 }
 
 impl Deref for StaticAnalysisConfigFile {
-    type Target = ConfigFile;
+    type Target = file_v1::ConfigFile;
     fn deref(&self) -> &Self::Target {
         &self.config_file
     }

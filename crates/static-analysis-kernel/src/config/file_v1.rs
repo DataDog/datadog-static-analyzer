@@ -13,8 +13,7 @@ use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 
 use crate::config::common::{
-    join_path, split_path, BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig,
-    RulesetConfig,
+    join_path, split_path, BySubtree, PathConfig, PathPattern, RuleConfig, RulesetConfig,
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
@@ -50,6 +49,27 @@ pub struct YamlConfigFile {
     pub(crate) max_file_size_kb: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ignore_generated_files: Option<bool>,
+}
+
+// The parsed configuration file without any legacy fields.
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct ConfigFile {
+    // Configurations for the rulesets.
+    pub rulesets: IndexMap<String, RulesetConfig>,
+    // Paths to include/exclude from analysis.
+    pub paths: PathConfig,
+    // Ignore all the paths in the .gitignore file.
+    pub ignore_gitignore: Option<bool>,
+    // Analyze only files up to this size.
+    pub max_file_size_kb: Option<u64>,
+    // Do not analyze generated files.
+    pub ignore_generated_files: Option<bool>,
+}
+
+impl fmt::Display for ConfigFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl From<YamlConfigFile> for ConfigFile {
@@ -559,7 +579,7 @@ impl Display for AnyAsString {
 mod tests {
     use super::*;
     use crate::config::common::{
-        values_by_subtree, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+        values_by_subtree, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
