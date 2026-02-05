@@ -18,8 +18,13 @@ use crate::config::common::{
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
+/// Parses a v1 YAML configuration specification
+pub(crate) fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, serde_yaml::Error> {
+    serde_yaml::from_str(config_contents)
+}
+
 pub fn parse_config_file(config_contents: &str) -> anyhow::Result<ConfigFile> {
-    let yaml_config: YamlConfigFile = serde_yaml::from_str(config_contents)?;
+    let yaml_config = parse_yaml(config_contents)?;
     Ok(yaml_config.into())
 }
 
@@ -579,7 +584,7 @@ mod tests {
     #[test]
     fn test_valid_examples_can_be_parsed() {
         for (path, cfg) in get_example_configs("valid") {
-            let result = parse_config_file(&cfg);
+            let result = parse_yaml(&cfg);
             assert!(
                 result.is_ok(),
                 "expected a valid configuration in {}: {}",
@@ -593,7 +598,7 @@ mod tests {
     #[test]
     fn test_invalid_examples_cannot_be_parsed() {
         for (path, cfg) in get_example_configs("invalid") {
-            let result = parse_config_file(&cfg);
+            let result = parse_yaml(&cfg);
             assert!(
                 result.is_err(),
                 "expected an invalid configuration in {}",
@@ -640,7 +645,7 @@ rulesets:
       random-iv:
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -708,7 +713,7 @@ rulesets:
         - "bar"
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -722,7 +727,7 @@ rulesets:
   - go-best-practices
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
         let data = r#"
 rulesets:
@@ -731,7 +736,7 @@ rulesets:
   go-best-practices:
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -784,7 +789,7 @@ rulesets:
       - no-eval
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
 
         let data = r#"
@@ -798,7 +803,7 @@ rulesets:
             - "py/insecure/**"
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -817,7 +822,7 @@ rulesets:
           - "bar"
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -941,7 +946,7 @@ max-file-size-kb: 512
     fn test_parse_no_rulesets() {
         let data = r#"
     "#;
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
