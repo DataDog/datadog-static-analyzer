@@ -495,7 +495,7 @@ impl<'de> Deserialize<'de> for YamlRuleCategory {
 // A map from string to value that disallows repeated keys when deserializing.
 #[derive(Debug, Clone, Serialize, Default, PartialEq, Eq)]
 #[serde(transparent)]
-pub(crate) struct UniqueKeyMap<V>(pub(crate) IndexMap<String, V>);
+pub struct UniqueKeyMap<V>(pub IndexMap<String, V>);
 
 impl<V> UniqueKeyMap<V> {
     fn is_empty(&self) -> bool {

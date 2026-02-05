@@ -28,13 +28,13 @@ pub struct YamlConfigFile {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) use_default_rulesets: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) use_rulesets: Option<Vec<String>>,
+    pub use_rulesets: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) ignore_rulesets: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) ruleset_configs: Option<UniqueKeyMap<YamlRulesetConfig>>,
+    pub ruleset_configs: Option<UniqueKeyMap<YamlRulesetConfig>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) global_config: Option<YamlGlobalConfig>,
+    pub global_config: Option<YamlGlobalConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -64,9 +64,9 @@ impl From<YamlConfigFile> for ConfigFile {
 #[derive(Debug, Clone, Deserialize, Serialize, Default, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub(crate) struct YamlGlobalConfig {
+pub struct YamlGlobalConfig {
     #[serde(flatten)]
-    pub(crate) path_config: YamlPathConfig,
+    pub path_config: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) use_gitignore: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,11 +97,11 @@ impl From<YamlGlobalConfig> for GlobalConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub(crate) struct YamlRulesetConfig {
+pub struct YamlRulesetConfig {
     #[serde(flatten)]
-    pub(crate) path_config: YamlPathConfig,
+    pub path_config: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) rule_configs: Option<UniqueKeyMap<YamlRuleConfig>>,
+    pub rule_configs: Option<UniqueKeyMap<YamlRuleConfig>>,
 }
 
 impl From<YamlRulesetConfig> for RulesetConfig {
@@ -122,9 +122,9 @@ impl From<YamlRulesetConfig> for RulesetConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub(crate) struct YamlRuleConfig {
+pub struct YamlRuleConfig {
     #[serde(flatten)]
-    pub(crate) path_config: YamlPathConfig,
+    pub path_config: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) arguments: Option<UniqueKeyMap<file_v1::YamlBySubtree<AnyAsString>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -154,11 +154,11 @@ impl From<YamlRuleConfig> for RuleConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub(crate) struct YamlPathConfig {
+pub struct YamlPathConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) only_paths: Option<Vec<String>>,
+    pub only_paths: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) ignore_paths: Option<Vec<String>>,
+    pub ignore_paths: Option<Vec<String>>,
 }
 
 impl From<YamlPathConfig> for Option<PathConfig> {

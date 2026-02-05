@@ -2,23 +2,37 @@ use super::comment_preserver::{prettify_yaml, reconcile_comments};
 use super::error::ConfigFileError;
 use indexmap::IndexMap;
 use itertools::Itertools;
-use kernel::config::common::{PathConfig, PathPattern, RuleConfig, RulesetConfig};
-use kernel::config::file_v1;
-use kernel::config::file_v1::{config_file_to_yaml, parse_config_file};
+use kernel::config::common::{
+    parse_any_schema_yaml, ConfigError, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+    WithVersion,
+};
+use kernel::config::file_v1::config_file_to_yaml;
+use kernel::config::{file_v1, file_v2};
 use kernel::utils::decode_base64_string;
-use std::{borrow::Cow, fmt::Debug, ops::Deref};
+use std::{borrow::Cow, fmt::Debug};
 use tracing::instrument;
 
-#[derive(Debug, Default, Clone, PartialEq)]
+const WILDCARD_IGNORE: &str = "**";
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct StaticAnalysisConfigFile {
-    config_file: file_v1::ConfigFile,
+    config_file: WithVersion<file_v1::ConfigFile, file_v2::YamlConfigFile>,
     original_content: Option<String>,
+}
+
+impl Default for StaticAnalysisConfigFile {
+    fn default() -> Self {
+        Self {
+            config_file: WithVersion::V1(Default::default()),
+            original_content: None,
+        }
+    }
 }
 
 impl From<file_v1::ConfigFile> for StaticAnalysisConfigFile {
     fn from(value: file_v1::ConfigFile) -> Self {
         Self {
-            config_file: value,
+            config_file: WithVersion::V1(value),
             original_content: None,
         }
     }
@@ -28,30 +42,44 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
     type Error = ConfigFileError;
 
     fn try_from(base64_str: String) -> Result<Self, Self::Error> {
+        use serde::de::Error;
         let content = decode_base64_string(base64_str)?;
         if content.trim().is_empty() {
             return Ok(Self::default());
         }
-        let config = parse_config_file(&content)?;
+        let parsed = parse_any_schema_yaml(&content).map_err(|err| {
+            match err {
+                // Artificially represent this as a "parse" error for backwards compatibility.
+                ConfigError::UnsupportedSchema(_) => ConfigFileError::Parser {
+                    source: serde_yaml::Error::custom(err),
+                },
+                ConfigError::Parse(err) => ConfigFileError::Parser { source: err },
+            }
+        })?;
+        let config_file = match parsed {
+            WithVersion::V1(yaml) => WithVersion::V1(file_v1::ConfigFile::from(yaml)),
+            WithVersion::V2(yaml) => WithVersion::V2(yaml),
+        };
         Ok(Self {
-            config_file: config,
+            config_file,
             original_content: Some(content),
         })
     }
 }
 
-impl Deref for StaticAnalysisConfigFile {
-    type Target = file_v1::ConfigFile;
-    fn deref(&self) -> &Self::Target {
-        &self.config_file
-    }
+/// Returns a vec representing an ignored path (via the `**` glob).
+fn create_ignored_path() -> Vec<String> {
+    vec![WILDCARD_IGNORE.to_string()]
 }
 
 fn create_ignored_pattern() -> Vec<PathPattern> {
-    vec![PathPattern {
-        prefix: "**".into(),
-        glob: None,
-    }]
+    create_ignored_path()
+        .into_iter()
+        .map(|path_str| PathPattern {
+            prefix: std::path::PathBuf::from(path_str),
+            glob: None,
+        })
+        .collect()
 }
 
 fn create_ignored_rule() -> RuleConfig {
@@ -113,32 +141,48 @@ impl StaticAnalysisConfigFile {
 
     #[instrument(skip(self))]
     pub fn ignore_rule(&mut self, rule: Cow<str>) {
-        let config = &mut self.config_file;
-        if let Some((ruleset_name, rule_name)) = rule.split_once('/') {
-            // the ruleset may exist and contain other rules so we
-            // can't update it blindly
-            if let Some(existing_ruleset) = config.rulesets.get_mut(ruleset_name) {
-                // if the rule already exists we need to see if the rule was already present.
-                // if that's the case, we need to keep the old properties
-                if let Some(existing_rule) = existing_ruleset.rules.get_mut(rule_name) {
-                    existing_rule.paths.ignore = create_ignored_pattern();
+        let Some((ruleset_name, rule_name)) = rule.split_once('/') else {
+            return;
+        };
+        match &mut self.config_file {
+            WithVersion::V1(config) => {
+                // the ruleset may exist and contain other rules so we
+                // can't update it blindly
+                if let Some(existing_ruleset) = config.rulesets.get_mut(ruleset_name) {
+                    // if the rule already exists we need to see if the rule was already present.
+                    // if that's the case, we need to keep the old properties
+                    if let Some(existing_rule) = existing_ruleset.rules.get_mut(rule_name) {
+                        existing_rule.paths.ignore = create_ignored_pattern();
+                    } else {
+                        existing_ruleset
+                            .rules
+                            .insert(rule_name.to_string(), create_ignored_rule());
+                    }
                 } else {
-                    existing_ruleset
-                        .rules
-                        .insert(rule_name.to_string(), create_ignored_rule());
-                }
-            } else {
-                // we can add the new ruleset
-                let mut rules_to_ignore = IndexMap::new();
-                rules_to_ignore.insert(rule_name.to_string(), create_ignored_rule());
+                    // we can add the new ruleset
+                    let mut rules_to_ignore = IndexMap::new();
+                    rules_to_ignore.insert(rule_name.to_string(), create_ignored_rule());
 
-                config.rulesets.insert(
-                    ruleset_name.to_string(),
-                    RulesetConfig {
-                        rules: rules_to_ignore,
-                        ..Default::default()
-                    },
-                );
+                    config.rulesets.insert(
+                        ruleset_name.to_string(),
+                        RulesetConfig {
+                            rules: rules_to_ignore,
+                            ..Default::default()
+                        },
+                    );
+                }
+            }
+            WithVersion::V2(config) => {
+                // (All logic for this is translated from the V1 match arm)
+                let map = config.ruleset_configs.get_or_insert_default();
+                let ruleset_config = map.0.entry(ruleset_name.to_string()).or_default();
+                let rule_config = ruleset_config
+                    .rule_configs
+                    .get_or_insert_default()
+                    .0
+                    .entry(rule_name.to_string())
+                    .or_default();
+                rule_config.path_config.ignore_paths = Some(create_ignored_path());
             }
         }
     }
@@ -193,12 +237,29 @@ impl StaticAnalysisConfigFile {
 
     #[instrument(skip(self))]
     pub fn add_rulesets(&mut self, rulesets: &[impl AsRef<str> + Debug]) {
-        let config = &mut self.config_file;
-        for ruleset in rulesets {
-            if !config.rulesets.contains_key(ruleset.as_ref()) {
-                config
-                    .rulesets
-                    .insert(ruleset.as_ref().to_owned(), RulesetConfig::default());
+        match &mut self.config_file {
+            WithVersion::V1(config) => {
+                for ruleset in rulesets {
+                    if !config.rulesets.contains_key(ruleset.as_ref()) {
+                        config
+                            .rulesets
+                            .insert(ruleset.as_ref().to_owned(), RulesetConfig::default());
+                    }
+                }
+            }
+            WithVersion::V2(config) => {
+                if rulesets.is_empty() {
+                    return;
+                }
+                let list = config
+                    .use_rulesets
+                    .get_or_insert_with(|| Vec::with_capacity(rulesets.len()));
+                for ruleset_name in rulesets {
+                    // if list.iter().find(|&name| ruleset_name.as_ref() ==)
+                    if !list.iter().any(|name| ruleset_name.as_ref() == name) {
+                        list.push(ruleset_name.as_ref().to_string())
+                    }
+                }
             }
         }
     }
@@ -224,19 +285,32 @@ impl StaticAnalysisConfigFile {
     /// ```
     #[instrument]
     pub fn to_rulesets(config_content_base64: String) -> Vec<String> {
-        let config = match Self::try_from(config_content_base64) {
+        let parsed = match Self::try_from(config_content_base64) {
             Ok(config) => config,
             Err(e) => {
                 tracing::error!(error =?e, "Error trying to parse config file");
                 return vec![];
             }
         };
-        config.rulesets.iter().map(|rs| rs.0.clone()).collect()
+        match parsed.config_file {
+            WithVersion::V1(config) => config.rulesets.iter().map(|rs| rs.0.clone()).collect(),
+            WithVersion::V2(config) => config.use_rulesets.clone().unwrap_or_default(),
+        }
     }
 
     #[instrument(skip(self))]
     pub fn is_onboarding_allowed(&self) -> bool {
-        self.paths.only.is_none() && self.paths.ignore.is_empty()
+        match &self.config_file {
+            WithVersion::V1(config) => {
+                config.paths.only.is_none() && config.paths.ignore.is_empty()
+            }
+            WithVersion::V2(config) => {
+                config.global_config.is_none()
+                    || config.global_config.as_ref().is_some_and(|c| {
+                        c.path_config.ignore_paths.is_none() && c.path_config.only_paths.is_none()
+                    })
+            }
+        }
     }
 
     /// Serializes the `StaticAnalysisConfigFile` into a YAML string.
@@ -251,31 +325,34 @@ impl StaticAnalysisConfigFile {
     /// Returns a `ConfigFileError` if something goes wrong.
     #[instrument(skip(self))]
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
-        let str = config_file_to_yaml(self)?;
-        // fix null maps, note that str will not have comments and it will be using the default serde format.
-        let fixed = str
-            .lines()
-            .map(|l| {
-                if l.ends_with(": null") {
-                    l.replace(": null", ":")
-                } else {
-                    l.to_string()
-                }
-            })
-            .join("\n");
-
+        let yaml = match &self.config_file {
+            WithVersion::V1(config) => {
+                let str = config_file_to_yaml(config)?;
+                // fix null maps, note that str will not have comments and it will be using the default serde format.
+                str.lines()
+                    .map(|l| {
+                        if l.ends_with(": null") {
+                            l.replace(": null", ":")
+                        } else {
+                            l.to_string()
+                        }
+                    })
+                    .join("\n")
+            }
+            WithVersion::V2(config) => serde_yaml::to_string(&config)?,
+        };
         // reconcile and format
         // NOTE: if this fails, we're going to return the content
         // and swallow the error.
         self.original_content
             .as_ref()
             .map_or_else(
-                || prettify_yaml(&fixed),
-                |original_content| reconcile_comments(original_content, &fixed, true),
+                || prettify_yaml(&yaml),
+                |original_content| reconcile_comments(original_content, &yaml, true),
             )
             .or_else(|e| {
                 tracing::debug!(error = ?e, "Reconciliation or formatting error: {}", e.to_string());
-                Ok::<String, ConfigFileError>(fixed)
+                Ok::<String, ConfigFileError>(yaml)
             })
     }
 }
@@ -853,3 +930,6 @@ rulesets:
         assert_eq!(config.trim(), expected.trim());
     }
 }
+
+// test behaviors
+// add empty rulesets  to v2 doesn't instantiate a use_rulesets
