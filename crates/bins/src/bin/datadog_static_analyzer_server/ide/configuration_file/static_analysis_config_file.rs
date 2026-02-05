@@ -481,21 +481,15 @@ rulesets:
 
         #[test]
         fn it_works_simple() {
-            let content = to_encoded_content(
-                r"
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
 - java-security
 - java-1
-",
-            );
-            let config = StaticAnalysisConfigFile::with_added_rulesets(
-                &["ruleset1", "ruleset2", "a-ruleset3"],
-                Some(content),
-            )
-            .unwrap();
-
-            let expected = r"
+";
+            // language=yaml
+            let v1_expected = r"
 schema-version: v1
 rulesets:
   - java-security
@@ -505,11 +499,77 @@ rulesets:
   - a-ruleset3
 ";
 
-            assert_eq!(config.trim(), expected.trim());
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+use-rulesets:
+- java-security
+- java-1
+";
+            // language=yaml
+            let v2_expected = r"
+schema-version: v2
+use-rulesets:
+  - java-security
+  - java-1
+  - ruleset1
+  - ruleset2
+  - a-ruleset3
+";
+            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+                let config = StaticAnalysisConfigFile::with_added_rulesets(
+                    &["ruleset1", "ruleset2", "a-ruleset3"],
+                    Some(to_encoded_content(yaml)),
+                )
+                .unwrap();
+
+                assert_eq!(config.trim(), expected.trim());
+            }
+        }
+
+        #[test]
+        fn add_no_duplicate_rulesets() {
+            // language=yaml
+            let v1 = r"
+schema-version: v1
+rulesets:
+- java-security
+";
+            // language=yaml
+            let v1_expected = r"
+schema-version: v1
+rulesets:
+  - java-security
+  - new-ruleset
+";
+
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+use-rulesets:
+- java-security
+";
+            // language=yaml
+            let v2_expected = r"
+schema-version: v2
+use-rulesets:
+  - java-security
+  - new-ruleset
+";
+            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+                let config = StaticAnalysisConfigFile::with_added_rulesets(
+                    &["new-ruleset", "new-ruleset"],
+                    Some(to_encoded_content(yaml)),
+                )
+                .unwrap();
+
+                assert_eq!(config.trim(), expected.trim());
+            }
         }
 
         #[test]
         fn it_works_complex() {
+            // language=yaml
             let content = to_encoded_content(
                 r#"
 schema-version: v1
@@ -532,6 +592,7 @@ rulesets:
             )
             .unwrap();
 
+            // language=yaml
             let expected = r#"
 schema-version: v1
 rulesets:
@@ -550,10 +611,15 @@ rulesets:
 "#;
 
             assert_eq!(config.trim(), expected.trim());
+
+            // NOTE:
+            // Translating this specific test is not required for v2 because "use-rulesets"
+            // is conceptually separate from "ruleset-configs"
         }
 
         #[test]
         fn it_fails_if_wrong_version() {
+            // language=yaml
             let content = to_encoded_content(
                 r"
 schema-version: v354
@@ -578,19 +644,15 @@ rulesets:
 
         #[test]
         fn it_works_with_non_previously_existing_ruleset() {
-            let content = to_encoded_content(
-                r"
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
 - java-1
 - java-security
-",
-            );
-            let config =
-                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
-                    .unwrap();
-
-            let expected = r#"
+";
+            // language=yaml
+            let v1_expected = r#"
 schema-version: v1
 rulesets:
   - java-1
@@ -602,24 +664,70 @@ rulesets:
           - "**"
 "#;
 
-            assert_eq!(config.trim(), expected.trim());
+            // language=yaml
+            let v2_with_rs_configs = r"
+schema-version: v2
+ruleset-configs:
+  ruleset2:
+    only-paths:
+      - foo/bar
+";
+            // language=yaml
+            let v2_with_rs_configs_expected = r#"
+schema-version: v2
+ruleset-configs:
+  ruleset2:
+    only-paths:
+      - foo/bar
+  ruleset1:
+    rule-configs:
+      rule1:
+        ignore-paths:
+          - "**"
+"#;
+
+            // language=yaml
+            let v2_without_rs_configs = r"
+schema-version: v2
+";
+            // language=yaml
+            let v2_without_rs_configs_expected = r#"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule1:
+        ignore-paths:
+          - "**"
+"#;
+
+            for (yaml, expected) in [
+                (v1, v1_expected),
+                (v2_with_rs_configs, v2_with_rs_configs_expected),
+                (v2_without_rs_configs, v2_without_rs_configs_expected),
+            ] {
+                let config = StaticAnalysisConfigFile::with_ignored_rule(
+                    "ruleset1/rule1".into(),
+                    to_encoded_content(yaml),
+                )
+                .unwrap();
+
+                assert_eq!(config.trim(), expected.trim());
+            }
         }
 
         #[test]
         fn it_works_with_a_previously_existing_ruleset() {
-            let content = to_encoded_content(
-                r"
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
 - java-1
 - java-security
-- ruleset1",
-            );
-            let config =
-                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
-                    .unwrap();
-
-            let expected = r#"
+- ruleset1
+";
+            // language=yaml
+            let v1_expected = r#"
 schema-version: v1
 rulesets:
   - java-1
@@ -631,13 +739,41 @@ rulesets:
           - "**"
 "#;
 
-            assert_eq!(config.trim(), expected.trim());
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+";
+            // language=yaml
+            let v2_expected = r#"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule1:
+        ignore-paths:
+          - "**"
+"#;
+
+            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+                let config = StaticAnalysisConfigFile::with_ignored_rule(
+                    "ruleset1/rule1".into(),
+                    to_encoded_content(yaml),
+                )
+                .unwrap();
+
+                assert_eq!(config.trim(), expected.trim());
+            }
         }
 
+        /// NOTE: While conceptually redundant with [`it_keeps_existing_properties_when_ignoring_same_rule`],
+        /// this is explicitly tested because [`PathConfig`] is a single struct with `only` and `ignore`,
+        /// and so `ignore` should be the only field mutated.
         #[test]
-        fn it_works_with_a_previously_existing_ruleset_with_same_rule() {
-            let content = to_encoded_content(
-                r"
+        fn it_works_with_a_previously_existing_ruleset_with_same_rule_path_config() {
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
 - java-1
@@ -647,13 +783,9 @@ rulesets:
     rule1:
       only:
       - foo/bar
-        ",
-            );
-            let config =
-                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
-                    .unwrap();
-
-            let expected = r#"
+";
+            // language=yaml
+            let v1_expected = r#"
 schema-version: v1
 rulesets:
   - java-1
@@ -667,11 +799,43 @@ rulesets:
           - "**"
 "#;
 
-            assert_eq!(config.trim(), expected.trim());
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule1:
+        only-paths:
+          - foo/bar
+";
+            // language=yaml
+            let v2_expected = r#"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule1:
+        only-paths:
+          - foo/bar
+        ignore-paths:
+          - "**"
+"#;
+
+            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+                let config = StaticAnalysisConfigFile::with_ignored_rule(
+                    "ruleset1/rule1".into(),
+                    to_encoded_content(yaml),
+                )
+                .unwrap();
+
+                assert_eq!(config.trim(), expected.trim());
+            }
         }
 
         #[test]
         fn it_works_with_a_previously_existing_ruleset_with_same_rule_with_paths() {
+            // language=yaml
             let content = to_encoded_content(
                 r"
 schema-version: v1
@@ -689,6 +853,7 @@ rulesets:
                 StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
                     .unwrap();
 
+            // language=yaml
             let expected = r#"
 schema-version: v1
 rulesets:
@@ -704,10 +869,16 @@ rulesets:
           - "**"
 "#;
             assert_eq!(config.trim(), expected.trim());
+
+            // NOTE:
+            // Translating this specific test is not required for v2 because
+            // `it_keeps_existing_properties_when_ignoring_other_rules` already demonstrates
+            // (`only-paths` and `severity` are conceptually the same: properties of a RuleConfig)
         }
 
         #[test]
         fn it_fails_if_wrong_version() {
+            // language=yaml
             let content = to_encoded_content(
                 r"
 schema-version: v354
@@ -724,8 +895,8 @@ rulesets:
 
         #[test]
         fn it_keeps_existing_properties_when_ignoring_other_rules() {
-            let content = to_encoded_content(
-                r"
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
 - java-security
@@ -734,14 +905,9 @@ rulesets:
   rules:
     rule2:
       severity: ERROR
-",
-            );
-
-            let config =
-                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
-                    .unwrap();
-
-            let expected = r#"
+";
+            // language=yaml
+            let v1_expected = r#"
 schema-version: v1
 rulesets:
   - java-security
@@ -755,13 +921,43 @@ rulesets:
           - "**"
 "#;
 
-            assert_eq!(config.trim(), expected.trim());
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule2:
+        severity: ERROR
+";
+            // language=yaml
+            let v2_expected = r#"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule2:
+        severity: ERROR
+      rule1:
+        ignore-paths:
+          - "**"
+"#;
+
+            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+                let config = StaticAnalysisConfigFile::with_ignored_rule(
+                    "ruleset1/rule1".into(),
+                    to_encoded_content(yaml),
+                )
+                .unwrap();
+
+                assert_eq!(config.trim(), expected.trim());
+            }
         }
 
         #[test]
         fn it_keeps_existing_properties_when_ignoring_same_rule() {
-            let content = to_encoded_content(
-                r"
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
 - java-security
@@ -770,14 +966,9 @@ rulesets:
   rules:
     rule2:
       severity: ERROR
-",
-            );
-
-            let config =
-                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule2".into(), content)
-                    .unwrap();
-
-            let expected = r#"
+";
+            // language=yaml
+            let v1_expected = r#"
 schema-version: v1
 rulesets:
   - java-security
@@ -790,7 +981,36 @@ rulesets:
         severity: ERROR
 "#;
 
-            assert_eq!(config.trim(), expected.trim());
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule2:
+        severity: ERROR
+";
+            // language=yaml
+            let v2_expected = r#"
+schema-version: v2
+ruleset-configs:
+  ruleset1:
+    rule-configs:
+      rule2:
+        ignore-paths:
+          - "**"
+        severity: ERROR
+"#;
+
+            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+                let config = StaticAnalysisConfigFile::with_ignored_rule(
+                    "ruleset1/rule2".into(),
+                    to_encoded_content(yaml),
+                )
+                .unwrap();
+
+                assert_eq!(config.trim(), expected.trim());
+            }
         }
     }
 
@@ -800,43 +1020,27 @@ rulesets:
         use super::*;
 
         #[test]
-        fn it_should_return_false_if_only_at_top_level_is_present() {
-            let content = to_encoded_content(
-                r"
+        fn it_should_return_false_for_top_level_ignore_only() {
+            // language=yaml
+            let v1_only = r"#
 schema-version: v1
 rulesets:
     - java-security
     - java-1
 only:
     - domains/project1
-",
-            );
-
-            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
-            assert!(!config.is_onboarding_allowed())
-        }
-
-        #[test]
-        fn it_should_return_false_if_ignore_at_top_level_is_present() {
-            let content = to_encoded_content(
-                r"
+";
+            // language=yaml
+            let v1_ignore = r"
 schema-version: v1
 rulesets:
     - java-security
     - java-1
 ignore:
     - domains/project1
-",
-            );
-
-            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
-            assert!(!config.is_onboarding_allowed())
-        }
-
-        #[test]
-        fn it_should_return_false_if_ignore_and_only_at_top_level_are_present() {
-            let content = to_encoded_content(
-                r"
+";
+            // language=yaml
+            let v1_both = r"
 schema-version: v1
 rulesets:
     - java-security
@@ -845,43 +1049,88 @@ only:
     - domains/project1
 ignore:
     - domains/project1
-",
-            );
+";
+            // language=yaml
+            let v2_only = r"
+schema-version: v2
+global-config:
+  only-paths:
+    - domains/project1
+";
+            // language=yaml
+            let v2_ignore = r"
+schema-version: v2
+global-config:
+  ignore-paths:
+    - domains/project1/abc
+";
+            // language=yaml
+            let v2_both = r"
+schema-version: v2
+global-config:
+  only-paths:
+    - domains/project1
+  ignore-paths:
+    - domains/project1/abc
+";
 
-            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
-            assert!(!config.is_onboarding_allowed())
+            for yaml in [v1_only, v1_ignore, v1_both, v2_only, v2_ignore, v2_both] {
+                let config = StaticAnalysisConfigFile::try_from(to_encoded_content(yaml)).unwrap();
+                assert!(!config.is_onboarding_allowed())
+            }
         }
 
         #[test]
         fn it_should_return_true_if_ignore_and_only_at_top_level_are_not_present() {
-            let content = to_encoded_content(
-                r"
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
     - java-security
     - java-1
-",
-            );
+";
+            // language=yaml
+            let v2_no_global = r"
+schema-version: v2
+";
+            // language=yaml
+            let v2_with_global = r"
+schema-version: v2
+global-config:
+  # A global config that doesn't specify only-paths/ignore-paths
+  use-gitignore: true
+";
 
-            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
-            assert!(config.is_onboarding_allowed())
+            for yaml in [v1, v2_no_global, v2_with_global] {
+                let config = StaticAnalysisConfigFile::try_from(to_encoded_content(yaml)).unwrap();
+                assert!(config.is_onboarding_allowed())
+            }
         }
 
         #[test]
         fn it_should_return_true_with_nested_paths() {
-            let content = to_encoded_content(
-                r"
+            // language=yaml
+            let v1 = r"
 schema-version: v1
 rulesets:
     - java-security
     - java-1:
       only:
         - domains/project1
-",
-            );
+";
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+ruleset-configs:
+  java-1:
+    only-paths:
+      - domains/project1
+";
 
-            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
-            assert!(config.is_onboarding_allowed())
+            for yaml in [v1, v2] {
+                let config = StaticAnalysisConfigFile::try_from(to_encoded_content(yaml)).unwrap();
+                assert!(config.is_onboarding_allowed())
+            }
         }
     }
 
