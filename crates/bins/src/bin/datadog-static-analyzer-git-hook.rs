@@ -320,11 +320,17 @@ fn main() -> Result<()> {
 
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
-        let paths_from_gitignore = read_files_from_gitignore(directory_to_analyze.as_str())
-            .expect("error when reading gitignore file");
-        path_config
-            .ignore
-            .extend(paths_from_gitignore.iter().map(|p| p.clone().into()));
+        match read_files_from_gitignore(directory_to_analyze.as_str()) {
+            Ok(paths_from_gitignore) => {
+                path_config
+                    .ignore
+                    .extend(paths_from_gitignore.iter().map(|p| p.clone().into()));
+            }
+            Err(e) => {
+                eprintln!("Warning: error when reading .gitignore file: {}", e);
+                eprintln!("Continuing without .gitignore patterns");
+            }
+        }
     }
 
     let files_in_repository = get_files(directory_to_analyze.as_str(), vec![], &path_config)
