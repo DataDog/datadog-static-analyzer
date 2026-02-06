@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fs;
-use std::fs::read_to_string;
+use std::fs::{read_to_string, File};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
@@ -140,9 +141,11 @@ pub fn get_language_for_file(path: &Path) -> Option<Language> {
 // not being included and totally skipped).
 pub fn read_files_from_gitignore_internal(path: &PathBuf) -> Result<Vec<String>> {
     if path.exists() {
-        let lines: Vec<String> = read_to_string(path)?
+        let file = File::open(path)?;
+        let reader = BufReader::new(file);
+        let lines = reader
             .lines()
-            .map(String::from)
+            .flatten()
             .filter(|v| !v.starts_with('#'))
             .filter(|v| !v.contains('!'))
             .filter(|v| !v.is_empty())
