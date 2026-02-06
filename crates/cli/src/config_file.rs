@@ -1,4 +1,4 @@
-use crate::constants;
+use crate::constants::DATADOG_CONFIG_FILE_WITHOUT_EXTENSION;
 use crate::datadog_utils::DatadogApiError::InvalidPermission;
 use crate::datadog_utils::{
     get_remote_configuration, print_permission_warning, should_use_datadog_backend,
@@ -8,70 +8,35 @@ use anyhow::{anyhow, Context, Result};
 use kernel::config::common::{ConfigFile, ConfigMethod};
 use kernel::config::file_v1::parse_config_file;
 use kernel::utils::{decode_base64_string, encode_base64_string};
-use std::fs::File;
-use std::io::Read;
 use std::path::Path;
-
-fn get_config_file(path: &str) -> Result<Option<File>> {
-    let yml_file_path = Path::new(path).join(format!(
-        "{}.yml",
-        constants::DATADOG_CONFIG_FILE_WITHOUT_PREFIX
-    ));
-    let yaml_file_path = Path::new(path).join(format!(
-        "{}.yaml",
-        constants::DATADOG_CONFIG_FILE_WITHOUT_PREFIX
-    ));
-
-    // first, static-analysis.datadog.yml
-    match File::open(yml_file_path) {
-        Ok(f) => Ok(Some(f)),
-        Err(e1) if e1.kind() == std::io::ErrorKind::NotFound => {
-            // second, static-analysis.datadog.yaml
-            match File::open(yaml_file_path) {
-                Ok(f) => Ok(Some(f)),
-                Err(e2) if e2.kind() == std::io::ErrorKind::NotFound => Ok(None),
-                _ => Err(anyhow!("cannot open config file")),
-            }
-        }
-        _ => Err(anyhow!("cannot open config file")),
-    }
-}
 
 // We first try to read static-analysis.datadog.yml
 // If it fails, we try to read static-analysis.datadog.yaml
 // If the file does not exist, we return a Ok(None).
 // If there is an error reading the file, we return a failure
-pub fn read_config_file(path: &str) -> Result<Option<ConfigFile>> {
-    if let Some(mut file) = get_config_file(path)? {
-        let mut contents = String::new();
+pub fn read_config_file(base_path: &str) -> Result<Option<String>> {
+    const EXTENSIONS: [&str; 2] = ["yml", "yaml"];
 
-        let size_read = file
-            .read_to_string(&mut contents)
-            .context("error when reading the configration file")?;
-        if size_read == 0 {
-            return Err(anyhow!("the config file is empty"));
+    for ext in EXTENSIONS {
+        let config_path =
+            Path::new(base_path).join(format!("{DATADOG_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
+        match std::fs::read_to_string(config_path) {
+            Ok(contents) => {
+                return if !contents.is_empty() {
+                    Ok(Some(contents))
+                } else {
+                    Err(anyhow!("the config file is empty"))
+                }
+            }
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    continue;
+                }
+                return Err(err).context("error when reading the configuration file");
+            }
         }
-        parse_config_file(&contents).map(Some)
-    } else {
-        Ok(None)
     }
-}
-
-// Read the config file in base64
-pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
-    if let Some(mut file) = get_config_file(path)? {
-        let mut contents = String::new();
-
-        let size_read = file
-            .read_to_string(&mut contents)
-            .context("error when reading the configration file")?;
-        if size_read == 0 {
-            return Err(anyhow!("the config file is empty"));
-        }
-        Ok(Some(encode_base64_string(contents)))
-    } else {
-        Ok(None)
-    }
+    Ok(None)
 }
 
 /// Get the final configuration for the analyzer
@@ -80,36 +45,41 @@ pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
 ///   and merge it
 /// - If not, we just return the configuration
 pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigMethod)>> {
-    let config_file = read_config_file(path)?;
+    let local_file_contents = read_config_file(path)?;
+    let local_config = local_file_contents
+        .as_ref()
+        .map(|c| parse_config_file(c))
+        .transpose()?;
 
     if !should_use_datadog_backend() {
         if debug {
             eprintln!("not attempting to use remote configuration");
         }
-        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+        return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     }
 
     let Ok(repository_url) = get_repository_url(path) else {
         if debug {
             eprintln!("no git remote found. not attempting to use remote configuration");
         }
-        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+        return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
 
-    let local_config_base64 = read_config_file_in_base64(path)?;
-    let has_local_config = local_config_base64.is_some();
-
-    let res =
-        get_remote_configuration(repository_url, local_config_base64, debug).inspect_err(|err| {
-            if matches!(err, InvalidPermission) {
-                print_permission_warning("GET_CONFIG");
-            } else if debug {
-                eprintln!("Error when attempting to fetch the remote config: {err:?}");
-                eprintln!("Falling back to the local configuration, if any");
-            }
-        });
+    let res = get_remote_configuration(
+        repository_url,
+        local_file_contents.map(encode_base64_string),
+        debug,
+    )
+    .inspect_err(|err| {
+        if matches!(err, InvalidPermission) {
+            print_permission_warning("GET_CONFIG");
+        } else if debug {
+            eprintln!("Error when attempting to fetch the remote config: {err:?}");
+            eprintln!("Falling back to the local configuration, if any");
+        }
+    });
     let Ok(remote_config_base64) = res else {
-        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+        return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
 
     if debug {
@@ -125,10 +95,10 @@ pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigM
         }
     });
     let Ok(remote_config) = res else {
-        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+        return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
 
-    let config_method = if has_local_config {
+    let config_method = if local_config.is_some() {
         ConfigMethod::RemoteConfigurationWithFile
     } else {
         ConfigMethod::RemoteConfiguration
