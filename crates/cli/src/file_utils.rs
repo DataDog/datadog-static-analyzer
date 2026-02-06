@@ -145,7 +145,7 @@ pub fn read_files_from_gitignore_internal(path: &PathBuf) -> Result<Vec<String>>
         let reader = BufReader::new(file);
         let lines = reader
             .lines()
-            .flatten()
+            .map_while(Result::ok)
             .filter(|v| !v.starts_with('#'))
             .filter(|v| !v.contains('!'))
             .filter(|v| !v.is_empty())
