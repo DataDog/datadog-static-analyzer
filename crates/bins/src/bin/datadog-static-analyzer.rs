@@ -35,7 +35,7 @@ use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Plat
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::classifiers::ArtifactClassification;
 use kernel::config::common::{ConfigMethod, PathConfig};
-use kernel::config::file_v1;
+use kernel::config::file_v2;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleSeverity};
@@ -264,7 +264,7 @@ fn main() -> Result<()> {
     let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
 
     let (configuration_file, configuration_method): (
-        Option<file_v1::ConfigFile>,
+        Option<file_v2::ConfigFile>,
         Option<ConfigMethod>,
     ) = match configuration_file_and_method {
         Ok(cfg) => match cfg {
@@ -290,47 +290,74 @@ fn main() -> Result<()> {
         .unwrap_or_default();
     let mut rules: Vec<Rule> = Vec::new();
 
+    // A list of rulesets that were fetched due to being specifically listed in a ConfigFile::use_rulesets list.
+    let mut fetched_rulesets = Vec::<&str>::new();
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
-    if let Some(conf) = configuration_file {
-        ignore_gitignore = conf.ignore_gitignore.unwrap_or(false);
+    if let Some(conf) = &configuration_file {
+        ignore_gitignore = conf
+            .global_config
+            .as_ref()
+            .and_then(|g| g.use_gitignore.map(|b| !b))
+            .unwrap_or(false);
         if rules_file.is_some() {
             eprintln!("a rule file cannot be specified when a configuration file is present.");
             exit(EXIT_CODE_RULE_FILE_WITH_CONFIGURATION);
         }
 
         if static_analysis_enabled {
-            let rulesets = conf.rulesets.keys().cloned().collect_vec();
-            let rules_from_api = get_rules_from_rulesets(&rulesets, use_staging, use_debug)
-                .inspect_err(|e| {
-                    if let DatadogApiError::RulesetNotFound(rs) = e {
-                        eprintln!("Error: ruleset {rs} not found");
-                        exit(EXIT_CODE_RULESET_NOT_FOUND);
-                    }
-                })
-                .context("error when reading rules from API")?;
-            rules.extend(rules_from_api);
+            if let Some(rulesets) = &conf.use_rulesets {
+                let rules_from_api = get_rules_from_rulesets(rulesets, use_staging, use_debug)
+                    .inspect_err(|e| {
+                        if let DatadogApiError::RulesetNotFound(rs) = e {
+                            eprintln!("Error: ruleset {rs} not found");
+                            exit(EXIT_CODE_RULESET_NOT_FOUND);
+                        }
+                    })
+                    .context("error when reading rules from API")?;
+                rules.extend(rules_from_api);
+                for r in rulesets {
+                    fetched_rulesets.push(r.as_str());
+                }
+            }
         }
         // copy the only and ignore paths from the configuration file
-        path_config.ignore.extend(conf.paths.ignore);
-        path_config.only = conf.paths.only;
+        if let Some(pc) = conf.global_config.as_ref().and_then(|g| g.paths.as_ref()) {
+            path_config.ignore.extend_from_slice(&pc.ignore);
+            path_config.only = pc.only.clone();
+        }
 
         // Get the max file size from the configuration or default to the default constant.
-        max_file_size_kb = conf.max_file_size_kb.unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
-        ignore_generated_files = conf.ignore_generated_files.unwrap_or(true);
-    } else if static_analysis_enabled {
+        max_file_size_kb = conf
+            .global_config
+            .as_ref()
+            .and_then(|g| g.max_file_size_kb)
+            .unwrap_or(DEFAULT_MAX_FILE_SIZE_KB);
+        ignore_generated_files = conf
+            .global_config
+            .as_ref()
+            .and_then(|g| g.ignore_generated_files)
+            .unwrap_or(true);
+    }
+
+    if static_analysis_enabled {
         // if there is no config file, we take the default rules from our APIs.
         if rules_file.is_none() {
-            println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
-            println!("Check the following resources to configure your rules:");
-            println!(
-                " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
-            );
-            println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
-            let rulesets_from_api =
-                get_all_default_rulesets(use_staging, use_debug).expect("cannot get default rules");
-
-            rules.extend(rulesets_from_api.into_iter().flat_map(|rs| rs.into_rules()));
+            if configuration_file.is_none() {
+                println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
+                println!("Check the following resources to configure your rules:");
+                println!(
+                    " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
+                );
+                println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
+            }
+            let should_fetch = !matches!(&configuration_file, Some(config) if config.use_default_rulesets == Some(false));
+            if should_fetch {
+                let rulesets_from_api =
+                    get_all_default_rulesets(use_staging, use_debug, &fetched_rulesets)
+                        .context("cannot get default rules")?;
+                rules.extend(rulesets_from_api.into_iter().flat_map(|rs| rs.into_rules()));
+            }
         } else {
             let rulesets_from_file = get_rulesets_from_file(rules_file.clone().unwrap().as_str());
             rules.extend(

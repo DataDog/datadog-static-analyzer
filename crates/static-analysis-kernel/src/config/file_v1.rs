@@ -22,11 +22,6 @@ pub(crate) fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, serde_
     serde_yaml::from_str(config_contents)
 }
 
-pub fn parse_config_file(config_contents: &str) -> anyhow::Result<ConfigFile> {
-    let yaml_config = parse_yaml(config_contents)?;
-    Ok(yaml_config.into())
-}
-
 pub fn config_file_to_yaml(cfg: &ConfigFile) -> anyhow::Result<String> {
     let yaml_config: YamlConfigFile = cfg.clone().into();
     Ok(serde_yaml::to_string(&yaml_config)?)
@@ -586,6 +581,12 @@ mod tests {
 
     // Location of the configuration file examples that accompany the schema.
     const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/v1/examples";
+
+    /// Shorthand function to deserialize a string into a [`ConfigFile`].
+    fn parse_config_file(config_contents: &str) -> anyhow::Result<ConfigFile> {
+        let yaml_config = parse_yaml(config_contents)?;
+        Ok(yaml_config.into())
+    }
 
     // Returns pairs of (path, content) of the example files in the given subdirectory.
     fn get_example_configs(suffix: &str) -> impl Iterator<Item = (PathBuf, String)> {

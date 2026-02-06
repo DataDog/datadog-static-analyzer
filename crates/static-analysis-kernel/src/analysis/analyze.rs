@@ -396,7 +396,8 @@ mod tests {
     use super::*;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::tree_sitter::get_query;
-    use crate::config::file_v1::parse_config_file;
+    use crate::config::common::{parse_any_schema_yaml, WithVersion};
+    use crate::config::file_v2;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use crate::rule_config::RuleConfigProvider;
@@ -1169,10 +1170,9 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
 
-        let analysis_options = AnalysisOptions::default();
-        let rule_config_provider = RuleConfigProvider::from_config(
-            &parse_config_file(
-                r#"
+        let local_config: file_v2::ConfigFile = parse_any_schema_yaml(
+            // language=yaml
+            r#"
 rulesets:
   - rs:
     rules:
@@ -1181,9 +1181,15 @@ rulesets:
           my-argument: 101
           another-arg: 101
         "#,
-            )
-            .unwrap(),
-        );
+        )
+        .map(|v| match v {
+            WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
+            WithVersion::V2(v2) => v2.into(),
+        })
+        .unwrap();
+
+        let analysis_options = AnalysisOptions::default();
+        let rule_config_provider = RuleConfigProvider::from_config(&local_config);
         let rule_config = rule_config_provider.config_for_file("myfile.py");
 
         let results = analyze(
@@ -1291,9 +1297,10 @@ function visit(node, filename, code) {
             ignore_generated_files: false,
             timeout: None,
         };
-        let rule_config_provider = RuleConfigProvider::from_config(
-            &parse_config_file(
-                r#"
+
+        let local_config: file_v2::ConfigFile = parse_any_schema_yaml(
+            // language=yaml
+            r#"
 rulesets:
   - rs:
     rules:
@@ -1305,9 +1312,14 @@ rulesets:
           uno: NOTICE
           dos/myfile.py: ERROR
         "#,
-            )
-            .unwrap(),
-        );
+        )
+        .map(|v| match v {
+            WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
+            WithVersion::V2(v2) => v2.into(),
+        })
+        .unwrap();
+
+        let rule_config_provider = RuleConfigProvider::from_config(&local_config);
         let rules = vec![rule1, rule2];
 
         let results = analyze(

@@ -5,9 +5,8 @@ use crate::datadog_utils::{
 };
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context};
-use kernel::config::common::ConfigMethod;
-use kernel::config::file_v1;
-use kernel::config::file_v1::parse_config_file;
+use kernel::config::common::{parse_any_schema_yaml, ConfigMethod, WithVersion};
+use kernel::config::file_v2;
 use kernel::utils::{decode_base64_string, encode_base64_string};
 use std::path::Path;
 
@@ -48,12 +47,16 @@ pub fn read_config_file(base_path: &str) -> anyhow::Result<Option<String>> {
 pub fn get_config(
     path: &str,
     debug: bool,
-) -> anyhow::Result<Option<(file_v1::ConfigFile, ConfigMethod)>> {
+) -> anyhow::Result<Option<(file_v2::ConfigFile, ConfigMethod)>> {
     let local_file_contents = read_config_file(path)?;
-    let local_config = local_file_contents
+    let local_yaml = local_file_contents
         .as_ref()
-        .map(|c| parse_config_file(c))
+        .map(|c| parse_any_schema_yaml(c))
         .transpose()?;
+    let local_config: Option<file_v2::ConfigFile> = local_yaml.map(|v| match v {
+        WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
+        WithVersion::V2(v2) => v2.into(),
+    });
 
     if !should_use_datadog_backend() {
         if debug {
@@ -92,14 +95,18 @@ pub fn get_config(
     let text = decode_base64_string(remote_config_base64)
         .context("error when decoding base64 remote config")?;
 
-    let res = parse_config_file(&text).inspect_err(|err| {
+    let res = parse_any_schema_yaml(&text).inspect_err(|err| {
         if debug {
             eprintln!("Error when parsing remote config: {err:?}");
             eprintln!("Proceeding with local config");
         }
     });
-    let Ok(remote_config) = res else {
+    let Ok(remote_yaml) = res else {
         return Ok(local_config.map(|c| (c, ConfigMethod::File)));
+    };
+    let remote_config: file_v2::ConfigFile = match remote_yaml {
+        WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
+        WithVersion::V2(v2) => v2.into(),
     };
 
     let config_method = if local_config.is_some() {

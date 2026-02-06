@@ -1,6 +1,6 @@
 use crate::arguments::ArgumentProvider;
 use crate::config::common::{split_path, SplitPath};
-use crate::config::file_v1;
+use crate::config::file_v2;
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use crate::path_restrictions::PathRestrictions;
 use crate::rule_overrides::RuleOverrides;
@@ -16,9 +16,13 @@ pub struct RuleConfigProvider {
 }
 
 impl RuleConfigProvider {
-    pub fn from_config(cfg: &file_v1::ConfigFile) -> RuleConfigProvider {
+    pub fn from_config(cfg: &file_v2::ConfigFile) -> RuleConfigProvider {
         RuleConfigProvider {
-            path_restrictions: PathRestrictions::from_ruleset_configs(&cfg.rulesets),
+            path_restrictions: cfg
+                .ruleset_configs
+                .as_ref()
+                .map(PathRestrictions::from_ruleset_configs)
+                .unwrap_or_default(),
             argument_provider: ArgumentProvider::from(cfg),
             rule_overrides: RuleOverrides::from_config_file(cfg),
         }

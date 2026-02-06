@@ -8,7 +8,8 @@ use crate::model::violation::ServerViolation;
 use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::analyze_with;
 use kernel::analysis::ddsa_lib::JsRuntime;
-use kernel::config::file_v1::parse_config_file;
+use kernel::config::common::{parse_any_schema_yaml, WithVersion};
+use kernel::config::file_v2;
 use kernel::model::rule::RuleInternal;
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
@@ -28,9 +29,14 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
     let configuration = if let Some(config_b64) = request.configuration_base64 {
         let config =
             decode_base64_string(config_b64).map_err(|_| ERROR_CONFIGURATION_NOT_BASE64)?;
-        let cfg_file =
-            parse_config_file(&config).map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION)?;
-        Some(cfg_file)
+        let v2_yaml = parse_any_schema_yaml(&config)
+            .map(|v| match v {
+                WithVersion::V1(yaml) => file_v2::YamlConfigFile::from(yaml),
+                WithVersion::V2(yaml) => yaml,
+            })
+            .map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION)?;
+
+        Some(file_v2::ConfigFile::from(v2_yaml))
     } else {
         None
     };
@@ -38,7 +44,9 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
     // If the file is excluded by the global configuration, stop early.
     if configuration
         .as_ref()
-        .is_some_and(|cfg_file| !cfg_file.paths.allows_file(&request.filename))
+        .and_then(|c| c.global_config.as_ref())
+        .and_then(|g| g.paths.as_ref())
+        .is_some_and(|pc| !pc.allows_file(&request.filename))
     {
         tracing::debug!("Skipped excluded file: {}", request.filename);
         return Ok(vec![]);
