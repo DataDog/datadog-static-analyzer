@@ -1,6 +1,8 @@
 use crate::constants;
 use crate::datadog_utils::DatadogApiError::InvalidPermission;
-use crate::datadog_utils::{get_remote_configuration, should_use_datadog_backend};
+use crate::datadog_utils::{
+    get_remote_configuration, print_permission_warning, should_use_datadog_backend,
+};
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context, Result};
 use kernel::config::common::{ConfigFile, ConfigMethod};
@@ -78,73 +80,58 @@ pub fn read_config_file_in_base64(path: &str) -> Result<Option<String>> {
 ///   and merge it
 /// - If not, we just return the configuration
 pub fn get_config(path: &str, debug: bool) -> Result<Option<(ConfigFile, ConfigMethod)>> {
-    let config_file = read_config_file(path);
-    let repository_url_opt = get_repository_url(path);
+    let config_file = read_config_file(path)?;
 
-    // Get the config file
-    config_file.map(|cf| {
-        // if we need to fetch the remote config
-        if let (true, Ok(repository_url)) = (should_use_datadog_backend(), repository_url_opt) {
-            let existing_config_file_base64 =
-                read_config_file_in_base64(path).expect("cannot get the config file in base64");
-
-            let has_config_file = existing_config_file_base64.is_some();
-
-            let remote_config =
-                get_remote_configuration(repository_url, existing_config_file_base64, debug);
-
-            // if we get the remote config, we parse it. If we succeed, we use the remote config
-            // otherwise, we use the file config.
-            match remote_config {
-                Ok(rc) => {
-                    if debug {
-                        eprintln!("Remote config (base64): {:?}", rc);
-                    }
-
-                    let remote_config_string =
-                        decode_base64_string(rc).expect("error when decoding base64");
-                    match parse_config_file(remote_config_string.as_str()) {
-                        Ok(remote_config) => {
-                            let config_method = if has_config_file {
-                                ConfigMethod::RemoteConfigurationWithFile
-                            } else {
-                                ConfigMethod::RemoteConfiguration
-                            };
-                            Some((remote_config, config_method))
-                        }
-                        Err(e) => {
-                            if debug {
-                                eprintln!("Error when parsing remote config: {:?}", e);
-                                eprintln!("Proceeding with local config");
-                            }
-
-                            cf.map(|c| (c, ConfigMethod::File))
-                        }
-                    }
-                }
-                Err(e) => {
-                    match e {
-                        InvalidPermission => {
-                            crate::datadog_utils::print_permission_warning("GET_CONFIG")
-                        }
-                        _ => {
-                            if debug {
-                                eprintln!(
-                                    "Error when attempting to fetch the remote config: {:?}",
-                                    e
-                                );
-                                eprintln!("Falling back to the local configuration, if any")
-                            }
-                        }
-                    }
-                    cf.map(|c| (c, ConfigMethod::File))
-                }
-            }
-        } else {
-            if debug {
-                eprintln!("not attempting to use remote configuration");
-            }
-            cf.map(|c| (c, ConfigMethod::File))
+    if !should_use_datadog_backend() {
+        if debug {
+            eprintln!("not attempting to use remote configuration");
         }
-    })
+        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+    }
+
+    let Ok(repository_url) = get_repository_url(path) else {
+        if debug {
+            eprintln!("no git remote found. not attempting to use remote configuration");
+        }
+        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+    };
+
+    let local_config_base64 = read_config_file_in_base64(path)?;
+    let has_local_config = local_config_base64.is_some();
+
+    let res =
+        get_remote_configuration(repository_url, local_config_base64, debug).inspect_err(|err| {
+            if matches!(err, InvalidPermission) {
+                print_permission_warning("GET_CONFIG");
+            } else if debug {
+                eprintln!("Error when attempting to fetch the remote config: {err:?}");
+                eprintln!("Falling back to the local configuration, if any");
+            }
+        });
+    let Ok(remote_config_base64) = res else {
+        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+    };
+
+    if debug {
+        eprintln!("Remote config (base64): {:?}", remote_config_base64);
+    }
+    let text = decode_base64_string(remote_config_base64)
+        .context("error when decoding base64 remote config")?;
+
+    let res = parse_config_file(&text).inspect_err(|err| {
+        if debug {
+            eprintln!("Error when parsing remote config: {err:?}");
+            eprintln!("Proceeding with local config");
+        }
+    });
+    let Ok(remote_config) = res else {
+        return Ok(config_file.map(|c| (c, ConfigMethod::File)));
+    };
+
+    let config_method = if has_local_config {
+        ConfigMethod::RemoteConfigurationWithFile
+    } else {
+        ConfigMethod::RemoteConfiguration
+    };
+    Ok(Some((remote_config, config_method)))
 }
