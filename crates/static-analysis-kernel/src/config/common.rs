@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
+use crate::config::{file_v1, file_v2};
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use common::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
@@ -269,6 +270,50 @@ impl fmt::Display for YamlSchemaVersion {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("unsupported schema `{0}`")]
+    UnsupportedSchema(String),
+    #[error(transparent)]
+    Parse(#[from] serde_yaml::Error),
+}
+
+/// A type intended to carry a "ConfigFile" as well as the schema version it was constructed
+/// from. (This info is preserved for backwards compatibility so that v1 schemas can be output
+/// by the datadog-static-analyzer-server.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum WithVersion<V1, V2> {
+    V1(V1),
+    V2(V2),
+}
+
+/// Parses a YAML configuration for any schema.
+pub fn parse_any_schema_yaml(
+    config_contents: &str,
+) -> Result<WithVersion<file_v1::YamlConfigFile, file_v2::YamlConfigFile>, ConfigError> {
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct Version {
+        schema_version: Option<YamlSchemaVersion>,
+    }
+    let v: Version = serde_yaml::from_str(config_contents).map_err(ConfigError::Parse)?;
+    let schema_version = v.schema_version.unwrap_or(YamlSchemaVersion::V1);
+
+    match schema_version {
+        YamlSchemaVersion::V1 => file_v1::parse_yaml(config_contents)
+            .map(WithVersion::V1)
+            .map_err(ConfigError::Parse),
+        YamlSchemaVersion::V2 => file_v2::parse_yaml(config_contents)
+            .map(WithVersion::V2)
+            .map_err(|err| match err {
+                file_v2::ParseError::Parse(inner) => ConfigError::Parse(inner),
+                // Match arm is `YamlSchemaVersion::V2`, so this is impossible.
+                file_v2::ParseError::WrongSchema(_) => unreachable!(),
+            }),
+        YamlSchemaVersion::Invalid(content) => Err(ConfigError::UnsupportedSchema(content)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -283,5 +328,67 @@ mod tests {
         assert_eq!(version, YamlSchemaVersion::Invalid("v9".to_string()));
         let version = serde_yaml::from_str::<YamlSchemaVersion>("truncation test").unwrap();
         assert_eq!(version, YamlSchemaVersion::Invalid("truncati".to_string()));
+    }
+
+    #[test]
+    fn parse_any_v1_v2() {
+        // language=yaml
+        let v1 = "\
+schema-version: v1
+rulesets:
+  - java-security
+";
+        // language=yaml
+        let schemaless = "\
+rulesets:
+  - java-security
+";
+        // language=yaml
+        let v2 = "\
+schema-version: v2
+use-default-rulesets: false
+use-rulesets:
+  - java-security
+";
+        for (config_contents, expected_variant) in [(v1, "v1"), (schemaless, "v1"), (v2, "v2")] {
+            let parsed = parse_any_schema_yaml(config_contents).unwrap();
+            match expected_variant {
+                "v1" => assert!(matches!(parsed, WithVersion::V1(_))),
+                "v2" => assert!(matches!(parsed, WithVersion::V2(_))),
+                // (If this triggers, you need to add a match arm from a &str to the new version, e.g "v2.1" to WithVersion::V2_1)
+                _ => panic!("broken test setup: unknown schema `{expected_variant}`"),
+            }
+        }
+    }
+
+    #[test]
+    fn config_errors() {
+        // language=yaml
+        let unknown_schema = "\
+schema-version: v9
+";
+        assert!(matches!(
+            parse_any_schema_yaml(unknown_schema), Err(ConfigError::UnsupportedSchema(v)) if v == "v9"));
+
+        let invalid_yaml = "some \\ invalid: - '' syntax";
+        let invalid_syntax_before_schema = format!(
+            "\
+{invalid_yaml}
+schema-version: v2
+"
+        );
+
+        let invalid_syntax_after_schema = format!(
+            "\
+schema-version: v2
+{invalid_yaml}
+"
+        );
+        for config_contents in [invalid_syntax_before_schema, invalid_syntax_after_schema] {
+            assert!(matches!(
+                parse_any_schema_yaml(&config_contents),
+                Err(ConfigError::Parse(_))
+            ));
+        }
     }
 }
