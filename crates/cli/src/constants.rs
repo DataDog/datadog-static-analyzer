@@ -1,4 +1,4 @@
-pub static DATADOG_CONFIG_FILE_WITHOUT_PREFIX: &str = "static-analysis.datadog";
+pub static DATADOG_CONFIG_FILE_WITHOUT_EXTENSION: &str = "static-analysis.datadog";
 
 pub static DATADOG_HEADER_APP_KEY: &str = "dd-application-key";
 pub static DATADOG_HEADER_API_KEY: &str = "dd-api-key";
