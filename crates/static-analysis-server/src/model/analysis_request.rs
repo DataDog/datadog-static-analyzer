@@ -102,4 +102,8 @@ pub struct AnalysisRequest<T> {
     #[serde(rename = "configuration")]
     pub configuration_base64: Option<String>,
     pub options: Option<AnalysisRequestOptions>,
+    /// Optional secret detection rules. If provided, the endpoint will also scan for secrets.
+    /// This field is backward compatible - old clients that don't provide it will only get static analysis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub secret_rules: Option<Vec<serde_json::Value>>,
 }
