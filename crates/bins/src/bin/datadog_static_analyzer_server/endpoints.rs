@@ -222,7 +222,7 @@ async fn analyze(
             let request_inner = request.into_inner();
 
             // Extract secret_rules before passing to static analysis
-            let secret_rules_json = request_inner.secret_rules.clone();
+            let secret_rules_json = request_inner.secret_rules;
 
             // 1. Run static analysis (existing logic)
             let (mut rule_responses, mut errors) = match cached_analysis_request(
@@ -248,8 +248,8 @@ async fn analyze(
             if let Some(secret_rules_json) = secret_rules_json {
                 // Deserialize secret rules from JSON
                 let secret_rules: Result<Vec<SecretRule>, _> = secret_rules_json
-                    .iter()
-                    .map(|r| serde_json::from_value(r.clone()))
+                    .into_iter()
+                    .map(serde_json::from_value)
                     .collect();
 
                 match secret_rules {
