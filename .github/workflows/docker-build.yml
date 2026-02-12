@@ -14,17 +14,35 @@ name: Test Docker Container
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform: [linux/amd64, linux/arm64]
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
-      - name: Build Docker image
-        run: docker build -t test-image .
+      - name: Set up Docker BuildKit
+        uses: docker/setup-buildx-action@v3
 
-      - name: Verify binary exists and runs
+      - name: Build Docker image for ${{ matrix.platform }}
         run: |
-          # Run container and execute the binaries to verify they exist and run
-          docker run --rm test-image datadog-static-analyzer --help
-          docker run --rm test-image datadog-static-analyzer-server --help
-          docker run --rm test-image datadog-static-analyzer-git-hook --help
+          docker buildx build --platform ${{ matrix.platform }} --load -t cross-test .
+
+      - name: Verify binary architecture
+        run: |
+          EXPECTED_ARCH="${{ matrix.platform == 'linux/amd64' && 'x86-64' || 'aarch64' }}"
+          tmp_file=$(mktemp)
+          docker create --name check-arch cross-test
+          docker cp check-arch:/usr/bin/datadog-static-analyzer "$tmp_file"
+          docker rm check-arch
+          FILE_OUTPUT=$(file "$tmp_file")
+          echo "$FILE_OUTPUT"
+          echo "$FILE_OUTPUT" | grep -q "$EXPECTED_ARCH"
+
+      - name: Verify PATH
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          docker run --rm cross-test datadog-static-analyzer --help
+          docker run --rm cross-test datadog-static-analyzer-server --help
+          docker run --rm cross-test datadog-static-analyzer-git-hook --help
