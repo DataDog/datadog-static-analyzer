@@ -260,7 +260,6 @@ impl StaticAnalysisConfigFile {
                     .use_rulesets
                     .get_or_insert_with(|| Vec::with_capacity(rulesets.len()));
                 for ruleset_name in rulesets {
-                    // if list.iter().find(|&name| ruleset_name.as_ref() ==)
                     if !list.iter().any(|name| ruleset_name.as_ref() == name) {
                         list.push(ruleset_name.as_ref().to_string())
                     }
@@ -570,6 +569,19 @@ use-rulesets:
 
                 assert_eq!(config.trim(), expected.trim());
             }
+        }
+
+        #[test]
+        fn empty_rulesets_v2() {
+            // language=yaml
+            let v2 = r"
+schema-version: v2
+";
+            let expected = v2;
+            let mut config = StaticAnalysisConfigFile::try_from(to_encoded_content(v2)).unwrap();
+            config.add_rulesets(&[] as &[&str]);
+
+            assert_eq!(config.to_string().unwrap().trim(), expected.trim());
         }
 
         #[test]
@@ -1184,6 +1196,3 @@ rulesets:
         assert_eq!(config.trim(), expected.trim());
     }
 }
-
-// test behaviors
-// add empty rulesets  to v2 doesn't instantiate a use_rulesets
