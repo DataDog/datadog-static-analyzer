@@ -31,9 +31,6 @@ jobs:
         shell: bash
         run: sed "s/development/$GITHUB_SHA/g" crates/static-analysis-kernel/src/constants.rs > bla && rm crates/static-analysis-kernel/src/constants.rs && mv bla crates/static-analysis-kernel/src/constants.rs
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
