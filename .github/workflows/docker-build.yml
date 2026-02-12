@@ -2,11 +2,17 @@ on:
   push:
     paths:
       - "Dockerfile"
+      - "rust-toolchain.toml"
+      - "Cargo.lock"
+      - ".github/workflows/docker-build.yml"
     branches:
       - "**"
   pull_request:
     paths:
       - "Dockerfile"
+      - "rust-toolchain.toml"
+      - "Cargo.lock"
+      - ".github/workflows/docker-build.yml"
   workflow_call:
 
 name: Test Docker Container
