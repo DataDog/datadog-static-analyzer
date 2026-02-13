@@ -1,5 +1,12 @@
 #!/bin/sh -l
 
+# NOTE:
+# This file is invoked by datadog-static-analyzer-github-action@v1 and v2. These actions are
+# no longer supported. Any proposed changes to the logic below should be added instead to the
+# action steps in datadog-static-analyzer-github-action@v3.
+
+echo "::warning title=Unsupported Action Version::datadog-static-analyzer-github-action@v1 and v2 are unsupported.%0A%0AConsider upgrading to v3.%0A%0ASee: https://github.com/DataDog/datadog-static-analyzer-github-action/releases/tag/v3.0.0"
+
 ########################################################
 # Check variables
 ########################################################
