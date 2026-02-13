@@ -3,5 +3,6 @@
 // Copyright 2026 Datadog, Inc.
 
 pub mod common;
+mod conversion;
 pub mod file_v1;
 pub mod file_v2;

@@ -281,15 +281,24 @@ pub fn get_default_rulesets_name_for_language(
 }
 
 /// Get all the default rulesets available at DataDog. Take all the language
-/// from `DEFAULT_RULESETS_LANGAGES` and get their rulesets
-pub fn get_all_default_rulesets(use_staging: bool, debug: bool) -> Result<Vec<RuleSet>> {
+/// from [`DEFAULT_RULESETS_LANGUAGES`] and get their rulesets
+///
+/// Any ruleset names present in `excluded` will not be fetched.
+pub fn get_all_default_rulesets(
+    use_staging: bool,
+    debug: bool,
+    excluded: &[&str],
+) -> Result<Vec<RuleSet>> {
     let mut result: Vec<RuleSet> = vec![];
 
     for language in DEFAULT_RULESETS_LANGUAGES {
         let ruleset_names =
             get_default_rulesets_name_for_language(language.to_string(), use_staging, debug)?;
 
-        for ruleset_name in ruleset_names {
+        for ruleset_name in ruleset_names
+            .into_iter()
+            .filter(|name| !excluded.contains(&name.as_str()))
+        {
             result.push(get_ruleset(ruleset_name.as_str(), use_staging, debug)?);
         }
     }
