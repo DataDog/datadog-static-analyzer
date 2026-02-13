@@ -183,7 +183,6 @@ jobs:
     needs:
       - release-type
       - github-release
-    if: ${{ needs.release-type.outputs.is-production == 'true' }}
     uses: './.github/workflows/ghcr.yml'
     with:
       is-production: ${{ needs.release-type.outputs.is-production == 'true' }}
