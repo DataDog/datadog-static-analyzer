@@ -114,6 +114,7 @@ pub(crate) fn cached_analysis_request(
             rules: rule_internals,
             configuration_base64: request.configuration_base64,
             options: request.options,
+            secret_rules: request.secret_rules,
         };
         process_analysis_request(req_with_compiled, runtime, timeout)
     } else {
@@ -132,6 +133,7 @@ pub(crate) fn cached_analysis_request(
             rules: rule_internals,
             configuration_base64: request.configuration_base64,
             options: request.options,
+            secret_rules: request.secret_rules,
         };
         process_analysis_request(req_with_internal, runtime, timeout)
     }
@@ -189,6 +191,7 @@ def abc():
                 rules: vec![server_rule],
                 configuration_base64: None,
                 options: None,
+                secret_rules: None,
             }
         }
 
