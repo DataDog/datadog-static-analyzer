@@ -24,6 +24,8 @@ impl From<&MatchStatus> for SecretValidationStatus {
             MatchStatus::Invalid => SecretValidationStatus::Invalid,
             MatchStatus::Error(_) => SecretValidationStatus::ValidationError,
             MatchStatus::NotAvailable => SecretValidationStatus::NotAvailable,
+            // TODO: do we want to create a dedicated status for this?
+            MatchStatus::Partial => SecretValidationStatus::NotValidated,
         }
     }
 }
