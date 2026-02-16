@@ -1,50 +1,60 @@
-// Unless explicitly stated otherwise all files in this repository are licensed under the Apache License, Version 2.0.
-// This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2024 Datadog, Inc.
-
+use common::model::position::Position;
+use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
+use secrets::model::secret_rule::RulePriority;
 use serde::{Deserialize, Serialize};
 
-/// Request to scan code for secrets
-///
-/// This request type supports generic rule formats to allow flexibility
-/// in how secret detection rules are provided.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretScanRequest<T = serde_json::Value> {
-    /// Filename being scanned (for reporting purposes)
     pub filename: String,
-
-    /// Source code to scan
     pub code: String,
-
-    /// Secret detection rules to apply
     pub rules: Vec<T>,
-
-    /// Enable debug mode
     #[serde(default)]
     pub use_debug: bool,
 }
 
-/// Response from secret scanning
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SecretScanResponse {
-    /// Detected secrets with positions (JSON representation of SecretResult)
-    pub results: Vec<serde_json::Value>,
-
-    /// Errors that occurred during scanning
-    #[serde(default)]
-    pub errors: Vec<String>,
-
-    /// Total execution time in milliseconds
-    pub execution_time_ms: u64,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ServerSecretMatch {
+    pub start: Position,
+    pub end: Position,
+    pub validation_status: SecretValidationStatus,
 }
 
-impl SecretScanResponse {
-    /// Helper to create an error response
-    pub fn error(message: String) -> Self {
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SecretRuleResponse {
+    pub identifier: String,
+    pub rule_name: String,
+    pub filename: String,
+    pub message: String,
+    pub priority: RulePriority,
+    pub matches: Vec<ServerSecretMatch>,
+    #[serde(default)]
+    pub errors: Vec<String>,
+}
+
+impl From<SecretResult> for SecretRuleResponse {
+    fn from(result: SecretResult) -> Self {
         Self {
-            results: vec![],
-            errors: vec![message],
-            execution_time_ms: 0,
+            identifier: result.rule_id,
+            rule_name: result.rule_name,
+            filename: result.filename,
+            message: result.message,
+            priority: result.priority,
+            matches: result
+                .matches
+                .into_iter()
+                .map(|m| ServerSecretMatch {
+                    start: m.start,
+                    end: m.end,
+                    validation_status: m.validation_status,
+                })
+                .collect(),
+            errors: vec![],
         }
     }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SecretScanResponse {
+    pub rule_responses: Vec<SecretRuleResponse>,
+    pub errors: Vec<String>,
 }

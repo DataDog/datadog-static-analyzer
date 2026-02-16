@@ -14,7 +14,7 @@ use rocket::{
 };
 use server::model::analysis_request::ServerRule;
 use server::model::analysis_response::AnalysisResponse;
-use server::model::secret_scan::{SecretScanRequest, SecretScanResponse};
+use server::model::secret_scan::{SecretRuleResponse, SecretScanRequest, SecretScanResponse};
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
 };
@@ -152,122 +152,94 @@ async fn analyze(
     .unwrap()
 }
 
+fn process_secret_scan_request(
+    request: SecretScanRequest,
+) -> Result<Vec<SecretRuleResponse>, String> {
+
+    // Maximum code size is 10MB to prevent memory exhaustion and DoS attacks.
+    const MAX_CODE_SIZE: usize = 10 * 1024 * 1024;
+
+    // Maximum number of rules per request to prevent excessive CPU usage.
+    const MAX_RULES_COUNT: usize = 1000;
+
+    // Validate filename (prevent path traversal attacks)
+    if request.filename.contains("..") || request.filename.contains('\0') {
+        return Err("Invalid filename: path traversal detected".to_string());
+    }
+
+    // Validate code size (prevent DoS attacks via large payloads)
+    if request.code.len() > MAX_CODE_SIZE {
+        return Err(format!(
+            "Code too large: {} bytes exceeds maximum of {} bytes",
+            request.code.len(),
+            MAX_CODE_SIZE
+        ));
+    }
+
+    // Deserialize rules from JSON
+    let rules: Vec<secrets::model::secret_rule::SecretRule> = request
+        .rules
+        .iter()
+        .map(|r| serde_json::from_value(r.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to parse rules: {}", e))?;
+
+    // Validate rules count (prevent excessive CPU usage)
+    if rules.is_empty() {
+        return Err("No rules provided".to_string());
+    }
+
+    if rules.len() > MAX_RULES_COUNT {
+        return Err(format!(
+            "Too many rules: {} exceeds maximum of {}",
+            rules.len(),
+            MAX_RULES_COUNT
+        ));
+    }
+
+    // Build the scanner with the provided rules
+    let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug);
+
+    // Configure analysis options
+    let options = common::analysis_options::AnalysisOptions {
+        use_debug: request.use_debug,
+        ..Default::default()
+    };
+
+    // Perform the secret scan
+    let results = secrets::scanner::find_secrets(
+        &scanner,
+        &rules,
+        &request.filename,
+        &request.code,
+        &options,
+    );
+
+    // Convert SecretResult to SecretRuleResponse (server type)
+    let secret_rule_responses: Vec<SecretRuleResponse> = results
+        .into_iter()
+        .map(SecretRuleResponse::from)
+        .collect();
+
+    Ok(secret_rule_responses)
+}
+
 /// Scans source code for secrets using the provided detection rules.
-///
-/// This endpoint accepts a code snippet, filename, and a set of secret detection rules,
-/// then scans the code to identify potential secrets like API keys, passwords, tokens, etc.
-///
-/// # Security Considerations
-///
-/// - Validates filename to prevent path traversal attacks (blocks `..` and null bytes)
-/// - Enforces a maximum code size limit to prevent DoS attacks
-/// - Limits the number of rules that can be processed in a single request
 #[rocket::post("/scan-secrets", format = "application/json", data = "<request>")]
 async fn scan_secrets(span: TraceSpan, request: Json<SecretScanRequest>) -> Value {
     let _entered = span.enter();
 
     rocket::tokio::task::spawn_blocking(move || {
-        let start = std::time::Instant::now();
-        let req = request.into_inner();
+        let request = request.into_inner();
+        let (rule_responses, errors) = match process_secret_scan_request(request) {
+            Ok(resp) => (resp, vec![]),
+            Err(err) => (vec![], vec![err]),
+        };
 
-        // Maximum code size to prevent memory exhaustion and DoS attacks.
-        // 10MB is sufficient for most source files while preventing abuse.
-        const MAX_CODE_SIZE: usize = 10 * 1024 * 1024;
-
-        // Maximum number of rules per request to prevent excessive CPU usage.
-        // 1000 rules should be sufficient for comprehensive secret detection.
-        const MAX_RULES_COUNT: usize = 1000;
-
-        // Perform validation and processing, collecting errors instead of early returns
-        let result: Result<SecretScanResponse, String> = (|| {
-            // Validate filename (prevent path traversal attacks)
-            if req.filename.contains("..") || req.filename.contains('\0') {
-                return Err("Invalid filename: path traversal detected".to_string());
-            }
-
-            // Validate code size (prevent DoS attacks via large payloads)
-            if req.code.len() > MAX_CODE_SIZE {
-                return Err(format!(
-                    "Code too large: {} bytes exceeds maximum of {} bytes",
-                    req.code.len(),
-                    MAX_CODE_SIZE
-                ));
-            }
-
-            // Deserialize rules from JSON
-            let rules: Vec<secrets::model::secret_rule::SecretRule> = req
-                .rules
-                .iter()
-                .map(|r| serde_json::from_value(r.clone()))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| format!("Failed to parse rules: {}", e))?;
-
-            // Validate rules count (prevent excessive CPU usage)
-            if rules.is_empty() {
-                return Err("No rules provided".to_string());
-            }
-
-            if rules.len() > MAX_RULES_COUNT {
-                return Err(format!(
-                    "Too many rules: {} exceeds maximum of {}",
-                    rules.len(),
-                    MAX_RULES_COUNT
-                ));
-            }
-
-            // Build the scanner with the provided rules
-            let scanner = secrets::scanner::build_sds_scanner(&rules, req.use_debug);
-
-            // Configure analysis options
-            let options = common::analysis_options::AnalysisOptions {
-                use_debug: req.use_debug,
-                ..Default::default()
-            };
-
-            // Perform the secret scan
-            let results = secrets::scanner::find_secrets(
-                &scanner,
-                &rules,
-                &req.filename,
-                &req.code,
-                &options,
-            );
-
-            // Serialize results, collecting any serialization errors separately
-            let mut serialization_errors = Vec::new();
-            let serialized_results: Vec<serde_json::Value> = results
-                .iter()
-                .filter_map(|r| match serde_json::to_value(r) {
-                    Ok(value) => Some(value),
-                    Err(e) => {
-                        serialization_errors.push(format!(
-                            "Failed to serialize result for rule '{}': {}",
-                            r.rule_id, e
-                        ));
-                        None
-                    }
-                })
-                .collect();
-
-            let duration = start.elapsed();
-
-            Ok(SecretScanResponse {
-                results: serialized_results,
-                errors: serialization_errors,
-                execution_time_ms: duration.as_millis() as u64,
-            })
-        })();
-
-        // Convert Result to final response
-        let duration = start.elapsed();
-        match result {
-            Ok(response) => json!(response),
-            Err(error) => json!(SecretScanResponse {
-                results: vec![],
-                errors: vec![error],
-                execution_time_ms: duration.as_millis() as u64,
-            }),
-        }
+        json!(SecretScanResponse {
+            rule_responses,
+            errors,
+        })
     })
     .await
     .unwrap()
