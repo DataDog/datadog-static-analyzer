@@ -27,8 +27,6 @@ pub struct SecretRuleResponse {
     pub message: String,
     pub priority: RulePriority,
     pub matches: Vec<ServerSecretMatch>,
-    #[serde(default)]
-    pub errors: Vec<String>,
 }
 
 impl From<SecretResult> for SecretRuleResponse {
@@ -48,7 +46,6 @@ impl From<SecretResult> for SecretRuleResponse {
                     validation_status: m.validation_status,
                 })
                 .collect(),
-            errors: vec![],
         }
     }
 }
