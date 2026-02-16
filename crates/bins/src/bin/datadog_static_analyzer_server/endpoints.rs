@@ -155,7 +155,6 @@ async fn analyze(
 fn process_secret_scan_request(
     request: SecretScanRequest,
 ) -> Result<Vec<SecretRuleResponse>, String> {
-
     // Maximum code size is 10MB to prevent memory exhaustion and DoS attacks.
     const MAX_CODE_SIZE: usize = 10 * 1024 * 1024;
 
@@ -216,10 +215,8 @@ fn process_secret_scan_request(
     );
 
     // Convert SecretResult to SecretRuleResponse (server type)
-    let secret_rule_responses: Vec<SecretRuleResponse> = results
-        .into_iter()
-        .map(SecretRuleResponse::from)
-        .collect();
+    let secret_rule_responses: Vec<SecretRuleResponse> =
+        results.into_iter().map(SecretRuleResponse::from).collect();
 
     Ok(secret_rule_responses)
 }
