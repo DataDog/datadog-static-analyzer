@@ -1,4 +1,5 @@
-use crate::config::common::{BySubtree, ConfigFile, SplitPath};
+use crate::config::common::{BySubtree, SplitPath};
+use crate::config::file_v2;
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use std::collections::HashMap;
 
@@ -11,29 +12,22 @@ pub struct RuleOverrides {
 
 impl RuleOverrides {
     // Reads the overrides from the configuration file.
-    pub fn from_config_file(cfg: &ConfigFile) -> Self {
-        let severities: HashMap<String, BySubtree<RuleSeverity>> = cfg
-            .rulesets
-            .iter()
-            .flat_map(|(rs_name, cfg)| {
-                cfg.rules.iter().filter_map(move |(rule_name, rule)| {
-                    rule.severity
-                        .as_ref()
-                        .map(|sev| (format!("{}/{}", rs_name, rule_name), sev.clone()))
-                })
-            })
-            .collect();
-        let categories: HashMap<String, RuleCategory> = cfg
-            .rulesets
-            .iter()
-            .flat_map(|(rs_name, cfg)| {
-                cfg.rules.iter().filter_map(move |(rule_name, rule)| {
-                    rule.category
-                        .as_ref()
-                        .map(|cat| (format!("{}/{}", rs_name, rule_name), *cat))
-                })
-            })
-            .collect();
+    pub fn from_config_file(cfg: &file_v2::ConfigFile) -> Self {
+        let mut severities = HashMap::<String, BySubtree<RuleSeverity>>::new();
+        let mut categories = HashMap::<String, RuleCategory>::new();
+
+        if let Some(ruleset_configs) = &cfg.ruleset_configs {
+            for (ruleset_name, cfg) in ruleset_configs {
+                for (rule_name, rule) in &cfg.rules {
+                    if let Some(sev) = &rule.severity {
+                        severities.insert(format!("{ruleset_name}/{rule_name}"), sev.clone());
+                    }
+                    if let Some(cat) = rule.category {
+                        categories.insert(format!("{ruleset_name}/{rule_name}"), cat);
+                    }
+                }
+            }
+        }
         RuleOverrides {
             severities,
             categories,

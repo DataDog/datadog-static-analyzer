@@ -2,7 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-use anyhow::Result;
 use indexmap::IndexMap;
 use serde::de::value::MapAccessDeserializer;
 use serde::de::{Error, MapAccess, Unexpected, Visitor};
@@ -14,17 +13,16 @@ use std::fmt::{Display, Formatter};
 use std::marker::PhantomData;
 
 use crate::config::common::{
-    join_path, split_path, BySubtree, ConfigFile, PathConfig, PathPattern, RuleConfig,
-    RulesetConfig,
+    join_path, split_path, BySubtree, PathConfig, PathPattern, RuleConfig, RulesetConfig,
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
-pub fn parse_config_file(config_contents: &str) -> Result<ConfigFile> {
-    let yaml_config: YamlConfigFile = serde_yaml::from_str(config_contents)?;
-    Ok(yaml_config.into())
+/// Parses a v1 YAML configuration specification
+pub(crate) fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, serde_yaml::Error> {
+    serde_yaml::from_str(config_contents)
 }
 
-pub fn config_file_to_yaml(cfg: &ConfigFile) -> Result<String> {
+pub fn config_file_to_yaml(cfg: &ConfigFile) -> anyhow::Result<String> {
     let yaml_config: YamlConfigFile = cfg.clone().into();
     Ok(serde_yaml::to_string(&yaml_config)?)
 }
@@ -32,20 +30,41 @@ pub fn config_file_to_yaml(cfg: &ConfigFile) -> Result<String> {
 // YAML-serializable configuration file.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-struct YamlConfigFile {
+pub struct YamlConfigFile {
     #[serde(default)]
     schema_version: V1,
-    rulesets: YamlRulesetList,
+    pub(crate) rulesets: YamlRulesetList,
     #[serde(flatten)]
-    paths: YamlPathConfig,
+    pub(crate) paths: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_paths: Option<Vec<String>>,
+    pub(crate) ignore_paths: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_gitignore: Option<bool>,
+    pub(crate) ignore_gitignore: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_file_size_kb: Option<u64>,
+    pub(crate) max_file_size_kb: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_generated_files: Option<bool>,
+    pub(crate) ignore_generated_files: Option<bool>,
+}
+
+// The parsed configuration file without any legacy fields.
+#[derive(Debug, PartialEq, Default, Clone)]
+pub struct ConfigFile {
+    // Configurations for the rulesets.
+    pub rulesets: IndexMap<String, RulesetConfig>,
+    // Paths to include/exclude from analysis.
+    pub paths: PathConfig,
+    // Ignore all the paths in the .gitignore file.
+    pub ignore_gitignore: Option<bool>,
+    // Analyze only files up to this size.
+    pub max_file_size_kb: Option<u64>,
+    // Do not analyze generated files.
+    pub ignore_generated_files: Option<bool>,
+}
+
+impl fmt::Display for ConfigFile {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 impl From<YamlConfigFile> for ConfigFile {
@@ -95,10 +114,10 @@ enum V1 {
 // When deserializing, disallows two rulesets with the same name.
 #[derive(Serialize)]
 #[serde(transparent)]
-struct YamlRulesetList(Vec<YamlNamedRulesetConfig>);
+pub(crate) struct YamlRulesetList(pub(crate) Vec<YamlNamedRulesetConfig>);
 
 impl<'de> Deserialize<'de> for YamlRulesetList {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -143,13 +162,13 @@ impl From<IndexMap<String, RulesetConfig>> for YamlRulesetList {
 // YAML-serializable ruleset configuration, including a name.
 // With a default configuration, this serializes and deserialized to only the ruleset name;
 // otherwise, to a map whose first element has the ruleset name as the key and a null value.
-struct YamlNamedRulesetConfig {
-    name: String,
-    cfg: YamlRulesetConfig,
+pub(crate) struct YamlNamedRulesetConfig {
+    pub(crate) name: String,
+    pub(crate) cfg: YamlRulesetConfig,
 }
 
 impl<'de> Deserialize<'de> for YamlNamedRulesetConfig {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -194,7 +213,7 @@ impl<'de> Deserialize<'de> for YamlNamedRulesetConfig {
 }
 
 impl Serialize for YamlNamedRulesetConfig {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -219,11 +238,11 @@ impl Serialize for YamlNamedRulesetConfig {
 
 // YAML-serializable ruleset configuration, without the name.
 #[derive(Deserialize, Serialize, Default, PartialEq)]
-struct YamlRulesetConfig {
+pub(crate) struct YamlRulesetConfig {
     #[serde(flatten)]
-    paths: YamlPathConfig,
+    pub(crate) paths: YamlPathConfig,
     #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
-    rules: UniqueKeyMap<YamlRuleConfig>,
+    pub(crate) rules: UniqueKeyMap<YamlRuleConfig>,
 }
 
 impl From<YamlRulesetConfig> for RulesetConfig {
@@ -257,11 +276,11 @@ impl From<RulesetConfig> for YamlRulesetConfig {
 
 // YAML-serializable by-path-or-glob include/exclude configuration.
 #[derive(Deserialize, Serialize, Default, PartialEq)]
-struct YamlPathConfig {
+pub(crate) struct YamlPathConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    only: Option<Vec<String>>,
+    pub(crate) only: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    ignore: Vec<String>,
+    pub(crate) ignore: Vec<String>,
 }
 
 impl From<YamlPathConfig> for PathConfig {
@@ -288,15 +307,15 @@ impl From<PathConfig> for YamlPathConfig {
 
 // YAML-serializeable rule configuration.
 #[derive(Deserialize, Serialize, Default, PartialEq)]
-struct YamlRuleConfig {
+pub(crate) struct YamlRuleConfig {
     #[serde(flatten)]
-    paths: YamlPathConfig,
+    pub(crate) paths: YamlPathConfig,
     #[serde(default, skip_serializing_if = "UniqueKeyMap::is_empty")]
-    arguments: UniqueKeyMap<YamlBySubtree<AnyAsString>>,
+    pub(crate) arguments: UniqueKeyMap<YamlBySubtree<AnyAsString>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    severity: Option<YamlBySubtree<RuleSeverity>>,
+    pub(crate) severity: Option<YamlBySubtree<RuleSeverity>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    category: Option<YamlRuleCategory>,
+    pub(crate) category: Option<YamlRuleCategory>,
 }
 
 impl From<YamlRuleConfig> for RuleConfig {
@@ -335,14 +354,14 @@ impl From<RuleConfig> for YamlRuleConfig {
 // YAML-serializable element whose value depends on the position in the repo tree.
 // If it only contains one value for the root directory, it serializes and deserializes as
 // a singular value; otherwise, as a map from path prefix to value.
-#[derive(Debug, Default, PartialEq, Eq)]
-pub(crate) struct YamlBySubtree<V>(IndexMap<String, V>);
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct YamlBySubtree<V>(pub(crate) IndexMap<String, V>);
 
 impl<'de, V> Deserialize<'de> for YamlBySubtree<V>
 where
     V: Deserialize<'de>,
 {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -374,7 +393,7 @@ impl<V> Serialize for YamlBySubtree<V>
 where
     V: Serialize,
 {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
@@ -452,7 +471,7 @@ impl From<BySubtree<String>> for YamlBySubtree<AnyAsString> {
 pub(crate) struct YamlRuleCategory(pub(crate) RuleCategory);
 
 impl<'de> Deserialize<'de> for YamlRuleCategory {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -469,9 +488,9 @@ impl<'de> Deserialize<'de> for YamlRuleCategory {
 }
 
 // A map from string to value that disallows repeated keys when deserializing.
-#[derive(Debug, Serialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Default, PartialEq, Eq)]
 #[serde(transparent)]
-pub(crate) struct UniqueKeyMap<V>(pub(crate) IndexMap<String, V>);
+pub struct UniqueKeyMap<V>(pub IndexMap<String, V>);
 
 impl<V> UniqueKeyMap<V> {
     fn is_empty(&self) -> bool {
@@ -483,7 +502,7 @@ impl<'de, V> Deserialize<'de> for UniqueKeyMap<V>
 where
     V: Deserialize<'de>,
 {
-    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -496,7 +515,7 @@ where
             fn expecting(&self, formatter: &mut Formatter) -> fmt::Result {
                 formatter.write_str("a map with unique keys")
             }
-            fn visit_map<A>(self, mut map: A) -> std::result::Result<Self::Value, A::Error>
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
             where
                 A: MapAccess<'de>,
             {
@@ -519,7 +538,7 @@ where
 }
 
 // A value that, when deserializing, is cast to a string.
-#[derive(Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub(crate) enum AnyAsString {
     Bool(bool),
@@ -555,13 +574,19 @@ impl Display for AnyAsString {
 mod tests {
     use super::*;
     use crate::config::common::{
-        values_by_subtree, ConfigFile, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+        values_by_subtree, PathConfig, PathPattern, RuleConfig, RulesetConfig,
     };
     use std::fs;
     use std::path::{Path, PathBuf};
 
     // Location of the configuration file examples that accompany the schema.
     const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/v1/examples";
+
+    /// Shorthand function to deserialize a string into a [`ConfigFile`].
+    fn parse_config_file(config_contents: &str) -> anyhow::Result<ConfigFile> {
+        let yaml_config = parse_yaml(config_contents)?;
+        Ok(yaml_config.into())
+    }
 
     // Returns pairs of (path, content) of the example files in the given subdirectory.
     fn get_example_configs(suffix: &str) -> impl Iterator<Item = (PathBuf, String)> {
@@ -580,7 +605,7 @@ mod tests {
     #[test]
     fn test_valid_examples_can_be_parsed() {
         for (path, cfg) in get_example_configs("valid") {
-            let result = parse_config_file(&cfg);
+            let result = parse_yaml(&cfg);
             assert!(
                 result.is_ok(),
                 "expected a valid configuration in {}: {}",
@@ -594,7 +619,7 @@ mod tests {
     #[test]
     fn test_invalid_examples_cannot_be_parsed() {
         for (path, cfg) in get_example_configs("invalid") {
-            let result = parse_config_file(&cfg);
+            let result = parse_yaml(&cfg);
             assert!(
                 result.is_err(),
                 "expected an invalid configuration in {}",
@@ -641,7 +666,7 @@ rulesets:
       random-iv:
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -709,7 +734,7 @@ rulesets:
         - "bar"
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -723,7 +748,7 @@ rulesets:
   - go-best-practices
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
         let data = r#"
 rulesets:
@@ -732,7 +757,7 @@ rulesets:
   go-best-practices:
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -785,7 +810,7 @@ rulesets:
       - no-eval
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
 
         let data = r#"
@@ -799,7 +824,7 @@ rulesets:
             - "py/insecure/**"
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -818,7 +843,7 @@ rulesets:
           - "bar"
     "#;
 
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 
@@ -942,7 +967,7 @@ max-file-size-kb: 512
     fn test_parse_no_rulesets() {
         let data = r#"
     "#;
-        let res = parse_config_file(data);
+        let res = parse_yaml(data);
         assert!(res.is_err());
     }
 

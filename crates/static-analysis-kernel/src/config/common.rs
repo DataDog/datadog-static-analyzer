@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
+use crate::config::{file_v1, file_v2};
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use common::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
@@ -100,27 +101,6 @@ pub enum ConfigMethod {
     File,
     RemoteConfiguration,
     RemoteConfigurationWithFile,
-}
-
-// The parsed configuration file without any legacy fields.
-#[derive(Debug, PartialEq, Default, Clone)]
-pub struct ConfigFile {
-    // Configurations for the rulesets.
-    pub rulesets: IndexMap<String, RulesetConfig>,
-    // Paths to include/exclude from analysis.
-    pub paths: PathConfig,
-    // Ignore all the paths in the .gitignore file.
-    pub ignore_gitignore: Option<bool>,
-    // Analyze only files up to this size.
-    pub max_file_size_kb: Option<u64>,
-    // Do not analyze generated files.
-    pub ignore_generated_files: Option<bool>,
-}
-
-impl fmt::Display for ConfigFile {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 impl PathPattern {
@@ -290,6 +270,63 @@ impl fmt::Display for YamlSchemaVersion {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("unsupported schema `{0}`")]
+    UnsupportedSchema(String),
+    #[error(transparent)]
+    Parse(#[from] serde_yaml::Error),
+}
+
+/// A type intended to carry a "ConfigFile" as well as the schema version it was constructed
+/// from. (This info is preserved for backwards compatibility so that v1 schemas can be output
+/// by the datadog-static-analyzer-server.
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum WithVersion<V1, V2> {
+    V1(V1),
+    V2(V2),
+}
+
+/// Parses a YAML configuration for any schema.
+pub fn parse_any_schema_yaml(
+    config_contents: &str,
+) -> Result<WithVersion<file_v1::YamlConfigFile, file_v2::YamlConfigFile>, ConfigError> {
+    #[derive(Debug, serde::Deserialize)]
+    #[serde(rename_all = "kebab-case")]
+    struct Version {
+        schema_version: Option<YamlSchemaVersion>,
+    }
+    let v: Version = serde_yaml::from_str(config_contents).map_err(ConfigError::Parse)?;
+    let schema_version = v.schema_version.unwrap_or(YamlSchemaVersion::V1);
+
+    match schema_version {
+        YamlSchemaVersion::V1 => file_v1::parse_yaml(config_contents)
+            .map(WithVersion::V1)
+            .map_err(ConfigError::Parse),
+        YamlSchemaVersion::V2 => file_v2::parse_yaml(config_contents)
+            .map(WithVersion::V2)
+            .map_err(|err| match err {
+                file_v2::ParseError::Parse(inner) => ConfigError::Parse(inner),
+                // Match arm is `YamlSchemaVersion::V2`, so this is impossible.
+                file_v2::ParseError::WrongSchema(_) => unreachable!(),
+            }),
+        YamlSchemaVersion::Invalid(content) => Err(ConfigError::UnsupportedSchema(content)),
+    }
+}
+
+/// Like [`parse_any_schema_yaml`], except only ever returns a [`WithVersion::V1`].
+///
+/// # Note
+/// This is a temporary function used to artificially disable v2 support within the static analyzer.
+/// When the Datadog backend implements v2 support, this will be removed.
+pub fn parse_only_v1_yaml(
+    config_contents: &str,
+) -> Result<WithVersion<file_v1::YamlConfigFile, file_v2::YamlConfigFile>, ConfigError> {
+    file_v1::parse_yaml(config_contents)
+        .map(WithVersion::V1)
+        .map_err(ConfigError::Parse)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -304,5 +341,84 @@ mod tests {
         assert_eq!(version, YamlSchemaVersion::Invalid("v9".to_string()));
         let version = serde_yaml::from_str::<YamlSchemaVersion>("truncation test").unwrap();
         assert_eq!(version, YamlSchemaVersion::Invalid("truncati".to_string()));
+    }
+
+    #[test]
+    fn parse_any_v1_v2() {
+        // language=yaml
+        let v1 = "\
+schema-version: v1
+rulesets:
+  - java-security
+";
+        // language=yaml
+        let schemaless = "\
+rulesets:
+  - java-security
+";
+        // language=yaml
+        let v2 = "\
+schema-version: v2
+use-default-rulesets: false
+use-rulesets:
+  - java-security
+";
+        for (config_contents, expected_variant) in [(v1, "v1"), (schemaless, "v1"), (v2, "v2")] {
+            let parsed = parse_any_schema_yaml(config_contents).unwrap();
+            match expected_variant {
+                "v1" => assert!(matches!(parsed, WithVersion::V1(_))),
+                "v2" => assert!(matches!(parsed, WithVersion::V2(_))),
+                // (If this triggers, you need to add a match arm from a &str to the new version, e.g "v2.1" to WithVersion::V2_1)
+                _ => panic!("broken test setup: unknown schema `{expected_variant}`"),
+            }
+        }
+    }
+
+    #[test]
+    fn config_errors() {
+        // language=yaml
+        let unknown_schema = "\
+schema-version: v9
+";
+        assert!(matches!(
+            parse_any_schema_yaml(unknown_schema), Err(ConfigError::UnsupportedSchema(v)) if v == "v9"));
+
+        let invalid_yaml = "some \\ invalid: - '' syntax";
+        let invalid_syntax_before_schema = format!(
+            "\
+{invalid_yaml}
+schema-version: v2
+"
+        );
+
+        let invalid_syntax_after_schema = format!(
+            "\
+schema-version: v2
+{invalid_yaml}
+"
+        );
+        for config_contents in [invalid_syntax_before_schema, invalid_syntax_after_schema] {
+            assert!(matches!(
+                parse_any_schema_yaml(&config_contents),
+                Err(ConfigError::Parse(_))
+            ));
+        }
+    }
+
+    /// See [`parse_only_v1_yaml`] for documentation.
+    #[test]
+    fn parse_v1_yaml_v1_only() {
+        // language=yaml
+        let v1 = "\
+schema-version: v1
+rulesets:
+  - java-security
+";
+        // language=yaml
+        let v2 = "\
+schema-version: v2
+";
+        assert!(matches!(parse_only_v1_yaml(v2), Err(ConfigError::Parse(_))));
+        assert!(matches!(parse_only_v1_yaml(v1), Ok(WithVersion::V1(_))));
     }
 }

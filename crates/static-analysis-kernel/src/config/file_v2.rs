@@ -12,29 +12,29 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, thiserror::Error)]
-pub enum ParseError {
+pub(crate) enum ParseError {
     #[error("unsupported schema `{0}`")]
     WrongSchema(YamlSchemaVersion),
     #[error(transparent)]
     Parse(#[from] serde_yaml::Error),
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct YamlConfigFile {
     /// Always equivalent to [`YamlSchemaVersion::V2`]
-    schema_version: YamlSchemaVersion,
+    pub(crate) schema_version: YamlSchemaVersion,
     #[serde(skip_serializing_if = "Option::is_none")]
-    use_default_rulesets: Option<bool>,
+    pub(crate) use_default_rulesets: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    use_rulesets: Option<Vec<String>>,
+    pub use_rulesets: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_rulesets: Option<Vec<String>>,
+    pub(crate) ignore_rulesets: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ruleset_configs: Option<UniqueKeyMap<YamlRulesetConfig>>,
+    pub ruleset_configs: Option<UniqueKeyMap<YamlRulesetConfig>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    global_config: Option<YamlGlobalConfig>,
+    pub global_config: Option<YamlGlobalConfig>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,18 +61,18 @@ impl From<YamlConfigFile> for ConfigFile {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, Eq, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-struct YamlGlobalConfig {
+pub struct YamlGlobalConfig {
     #[serde(flatten)]
-    path_config: YamlPathConfig,
+    pub path_config: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    use_gitignore: Option<bool>,
+    pub(crate) use_gitignore: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_generated_files: Option<bool>,
+    pub(crate) ignore_generated_files: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    max_file_size_kb: Option<u64>,
+    pub(crate) max_file_size_kb: Option<u64>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -94,14 +94,14 @@ impl From<YamlGlobalConfig> for GlobalConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct YamlRulesetConfig {
     #[serde(flatten)]
-    path_config: YamlPathConfig,
+    pub path_config: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    rule_configs: Option<UniqueKeyMap<YamlRuleConfig>>,
+    pub rule_configs: Option<UniqueKeyMap<YamlRuleConfig>>,
 }
 
 impl From<YamlRulesetConfig> for RulesetConfig {
@@ -119,18 +119,18 @@ impl From<YamlRulesetConfig> for RulesetConfig {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct YamlRuleConfig {
     #[serde(flatten)]
-    path_config: YamlPathConfig,
+    pub path_config: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    arguments: Option<UniqueKeyMap<file_v1::YamlBySubtree<AnyAsString>>>,
+    pub(crate) arguments: Option<UniqueKeyMap<file_v1::YamlBySubtree<AnyAsString>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    severity: Option<file_v1::YamlBySubtree<RuleSeverity>>,
+    pub(crate) severity: Option<file_v1::YamlBySubtree<RuleSeverity>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    category: Option<file_v1::YamlRuleCategory>,
+    pub(crate) category: Option<file_v1::YamlRuleCategory>,
 }
 
 impl From<YamlRuleConfig> for RuleConfig {
@@ -156,17 +156,14 @@ impl From<YamlRuleConfig> for RuleConfig {
 #[serde(deny_unknown_fields)]
 pub struct YamlPathConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    only_paths: Option<Vec<String>>,
+    pub only_paths: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    ignore_paths: Option<Vec<String>>,
+    pub ignore_paths: Option<Vec<String>>,
 }
 
 impl From<YamlPathConfig> for Option<PathConfig> {
     fn from(value: YamlPathConfig) -> Self {
-        if value.only_paths.is_none() && value.ignore_paths.is_none() {
-            return None;
-        }
-        Some(PathConfig {
+        (value != YamlPathConfig::default()).then(|| PathConfig {
             only: value
                 .only_paths
                 .map(|only| only.into_iter().map(PathPattern::from).collect()),
@@ -180,8 +177,8 @@ impl From<YamlPathConfig> for Option<PathConfig> {
     }
 }
 
-#[allow(unused)]
-pub(crate) fn parse(config_contents: &str) -> Result<ConfigFile, ParseError> {
+/// Parses a v2 YAML configuration specification
+pub(crate) fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, ParseError> {
     let yaml_cfg: YamlConfigFile =
         serde_yaml::from_str(config_contents).map_err(ParseError::Parse)?;
 
@@ -189,14 +186,14 @@ pub(crate) fn parse(config_contents: &str) -> Result<ConfigFile, ParseError> {
         return Err(ParseError::WrongSchema(yaml_cfg.schema_version));
     }
 
-    Ok(yaml_cfg.into())
+    Ok(yaml_cfg)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::config::common;
     use crate::config::common::YamlSchemaVersion;
-    use crate::config::file_v2::{parse, ConfigFile, GlobalConfig, ParseError};
+    use crate::config::file_v2::{parse_yaml, ConfigFile, GlobalConfig, ParseError};
     use crate::model::rule::RuleCategory;
     use indexmap::IndexMap;
 
@@ -206,7 +203,7 @@ mod tests {
         let config = r#"
 schema-version: v2
 "#;
-        let res = parse(config).unwrap();
+        let res = ConfigFile::from(parse_yaml(config).unwrap());
         assert_eq!(
             res,
             ConfigFile {
@@ -226,7 +223,7 @@ schema-version: v2
 schema-version: v2
 ignore-rulesets: []
 "#;
-        let res = parse(config).unwrap();
+        let res = parse_yaml(config).unwrap();
         assert_eq!(res.ignore_rulesets, Some(Vec::default()));
     }
 
@@ -250,7 +247,7 @@ ruleset-configs:
 global-config:
   max-file-size-kb: 2000
 "#;
-        let res = parse(config).unwrap();
+        let res = ConfigFile::from(parse_yaml(config).unwrap());
 
         assert_eq!(
             res,
@@ -335,14 +332,14 @@ ruleset-configs:
             yaml_ruleset_config,
             yaml_rule_config,
         ] {
-            let err = parse(config).unwrap_err();
+            let err = parse_yaml(config).unwrap_err();
             assert!(matches!(err, ParseError::Parse(e) if e.to_string().contains(err_msg)));
         }
     }
 
     #[test]
     fn parse_no_schema_version() {
-        let err = parse("use-default-rulesets: true\n").unwrap_err();
+        let err = parse_yaml("use-default-rulesets: true\n").unwrap_err();
         assert!(
             matches!(err, ParseError::Parse(e) if e.to_string().contains("missing field `schema-version`"))
         );
@@ -350,13 +347,13 @@ ruleset-configs:
 
     #[test]
     fn parse_config_only_v2() {
-        let err = parse("schema-version: v1\n").unwrap_err();
+        let err = parse_yaml("schema-version: v1\n").unwrap_err();
         assert!(matches!(err, ParseError::WrongSchema(v) if v == YamlSchemaVersion::V1));
-        let err = parse("schema-version: v9\n").unwrap_err();
+        let err = parse_yaml("schema-version: v9\n").unwrap_err();
         assert!(
             matches!(err, ParseError::WrongSchema(v) if v == YamlSchemaVersion::Invalid("v9".to_string()))
         );
 
-        assert!(parse("schema-version: v2\n").is_ok());
+        assert!(parse_yaml("schema-version: v2\n").is_ok());
     }
 }

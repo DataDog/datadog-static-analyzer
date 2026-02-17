@@ -1,4 +1,5 @@
-use crate::config::common::{BySubtree, ConfigFile, SplitPath};
+use crate::config::common::{BySubtree, SplitPath};
+use crate::config::file_v2;
 use common::model::diff_aware::DiffAware;
 use std::collections::HashMap;
 
@@ -49,19 +50,21 @@ impl ArgumentProvider {
         }
     }
 
-    pub fn from(config: &ConfigFile) -> Self {
+    pub fn from(config: &file_v2::ConfigFile) -> Self {
         let mut provider = ArgumentProvider::new();
-        for (ruleset_name, ruleset_cfg) in &config.rulesets {
-            for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
-                let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
-                for (arg_name, arg_values) in &rule_cfg.arguments {
-                    for (prefix, value) in arg_values.iter() {
-                        provider.add_argument(
-                            &rule_name,
-                            &prefix.into_iter().cloned().collect(),
-                            arg_name,
-                            value,
-                        );
+        if let Some(rulesets) = &config.ruleset_configs {
+            for (ruleset_name, ruleset_cfg) in rulesets {
+                for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
+                    let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
+                    for (arg_name, arg_values) in &rule_cfg.arguments {
+                        for (prefix, value) in arg_values.iter() {
+                            provider.add_argument(
+                                &rule_name,
+                                &prefix.into_iter().cloned().collect(),
+                                arg_name,
+                                value,
+                            );
+                        }
                     }
                 }
             }
