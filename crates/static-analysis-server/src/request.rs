@@ -186,6 +186,7 @@ mod tests {
             rules,
             configuration_base64: request.configuration_base64,
             options: request.options,
+            secret_rules: None,
         };
         super::process_analysis_request(req_with_internal, &mut runtime, timeout)
     }
@@ -253,6 +254,7 @@ function visit(node, filename, code) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
         let rule_responses = shorthand_process_req(request).unwrap();
@@ -294,6 +296,7 @@ function visit(captures) {
             code_base64: encode_base64_string(text.to_string()),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![make_server_rule(
                 "java-security/flow-rule",
                 Language::Java,
@@ -317,6 +320,7 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![server_rule],
         };
         let err_message = shorthand_process_req(request).unwrap_err();
@@ -332,6 +336,7 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKI()--2#$#$Bhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
         let err_message = shorthand_process_req(request).unwrap_err();
@@ -351,6 +356,7 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![server_rule],
         };
         let err_message = shorthand_process_req(request).unwrap_err();
@@ -372,6 +378,7 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![server_rule],
         };
         let err_message = shorthand_process_req(request).unwrap_err();
@@ -387,6 +394,7 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
         let err_message = shorthand_process_req(request).unwrap_err();
@@ -403,6 +411,7 @@ function visit(captures) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![
                 ServerRule {
                     name: "rs_one/rule_a".to_string(),
@@ -556,6 +565,7 @@ rulesets:
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: Some(":::::::".to_string()),
             options: None,
+            secret_rules: None,
             rules: vec![make_server_rule("myrule", Language::Python, DEFAULT_RULE)],
         };
         let err_message = shorthand_process_req(request.clone()).unwrap_err();
@@ -589,6 +599,7 @@ rulesets:
                 .to_string(),
             )),
             options: None,
+            secret_rules: None,
             rules: vec![make_server_rule(
                 "myrs/myrule",
                 Language::Python,
@@ -619,6 +630,7 @@ function visit(node, filename, code) {
             code_base64: "ZGVmIGZvbyhhcmcxKToKICAgIHBhc3M=".to_string(),
             configuration_base64: None,
             options: None,
+            secret_rules: None,
             rules: vec![make_server_rule(
                 "myrs/myrule",
                 Language::Python,
@@ -738,6 +750,7 @@ rulesets:
                 use_tree_sitter: None,
                 log_output: Some(true),
             }),
+            secret_rules: None,
             rules: vec![base_rule.clone()],
         };
         let rule_responses = shorthand_process_req(request.clone()).unwrap();
