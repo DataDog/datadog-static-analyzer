@@ -8,6 +8,8 @@ import {CodeRegion} from "ext:ddsa_lib/region";
 import {DDSA, DDSAPrivate} from "ext:ddsa_lib/ddsa";
 import {DDSA_Console} from "ext:ddsa_lib/utility";
 import {Digraph} from "ext:ddsa_lib/flow/graph";
+import {DxCursor} from "ext:ddsa_lib/dx_cursor";
+import {DxGo} from "ext:ddsa_lib/dx_go";
 import {FileContext} from "ext:ddsa_lib/context_file";
 import {FileContextGo} from "ext:ddsa_lib/context_file_go";
 import {FileContextTerraform, TerraformResource} from "ext:ddsa_lib/context_file_tf";
@@ -26,6 +28,8 @@ globalThis.CodeRegion = CodeRegion;
 globalThis.DDSA_Console = DDSA_Console;
 globalThis.DDSA = DDSA;
 globalThis.Digraph = Digraph;
+globalThis.DxCursor = DxCursor;
+globalThis.DxGo = DxGo;
 globalThis.FileContext = FileContext;
 globalThis.FileContextGo = FileContextGo;
 globalThis.FileContextJavaScript = FileContextJavaScript;
@@ -55,3 +59,7 @@ globalThis.console = new DDSA_Console();
 globalThis.ddsa = new DDSA();
 // Note: The name "private" is just used to communicate intent -- there is no enforcement preventing rules from using this.
 globalThis.__ddsaPrivate__ = new DDSAPrivate();
+globalThis.dx = {
+    cursor: new DxCursor(),
+    go: new DxGo()
+};
