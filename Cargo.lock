@@ -4079,6 +4079,7 @@ dependencies = [
  "base64 0.21.7",
  "common",
  "derive_builder",
+ "secrets",
  "serde",
  "serde_json",
  "static-analysis-kernel",
