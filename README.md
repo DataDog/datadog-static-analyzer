@@ -9,9 +9,22 @@ datadog-static-analyzer is the static analyzer engine for Datadog [static analys
 
 ### Quick Start
 
+#### Installation on macOS
+
+On macOS, you can install the static analyzer using Homebrew:
+
+```shell
+brew install datadog-static-analyzer
+```
+
+#### Installation on other platforms
+
 1. Download the binary from the [releases](https://github.com/DataDog/datadog-static-analyzer/releases)
-2. Run the analyzer on your repository (as shown below)
-3. It will run the analyzer with the default rules available for the support languages
+2. Extract and run the analyzer on your repository (as shown below)
+
+#### Running the analyzer
+
+Once installed, run the analyzer with the default rules:
 
 ```shell
 datadog-static-analyzer --directory /path/to/directory --output report.csv --format csv
@@ -110,7 +123,9 @@ You can get more information about the configuration on [Datadog documentation](
 
 ### Mac OS X users
 
-The binary cannot be executed as is. You need to flag the binary as safe to execute using the following command.
+If you installed via Homebrew (`brew install datadog-static-analyzer`), you can skip this section.
+
+If you downloaded the binary manually, it cannot be executed as is. You need to flag the binary as safe to execute using the following command:
 
 ```shell
 xattr -dr com.apple.quarantine datadog-static-analyzer
