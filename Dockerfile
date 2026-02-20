@@ -51,6 +51,20 @@ FROM node:24-bookworm-slim
 RUN npm install -g @datadog/datadog-ci@^4 --no-audit --no-fund --progress=false --no-update-notifier --loglevel=error && \
     datadog-ci --version
 
+# Add passthrough datadog-ci shim that logs a deprecation notice
+RUN DATADOG_CI_PATH=$(command -v datadog-ci) && \
+    mv "$DATADOG_CI_PATH" "$DATADOG_CI_PATH-target" && \
+    printf '#!/bin/sh\n\
+echo "================================================================================" >&2\n\
+echo "WARNING:" >&2\n\
+echo "The datadog-ci binary in this container will be removed in a future release." >&2\n\
+echo "Please install datadog-ci separately in your environment if you need it." >&2\n\
+echo "" >&2\n\
+echo "If using datadog-static-analyzer-github-action, consider upgrading to v3." >&2\n\
+echo "================================================================================" >&2\n\
+exec "%s-target" "$@"\n' "$DATADOG_CI_PATH" > "$DATADOG_CI_PATH" && \
+    chmod +x "$DATADOG_CI_PATH"
+
 COPY --from=builder /target/datadog-static-analyzer /usr/bin/datadog-static-analyzer
 COPY --from=builder /target/datadog-static-analyzer-server /usr/bin/datadog-static-analyzer-server
 COPY --from=builder /target/datadog-static-analyzer-git-hook /usr/bin/datadog-static-analyzer-git-hook
