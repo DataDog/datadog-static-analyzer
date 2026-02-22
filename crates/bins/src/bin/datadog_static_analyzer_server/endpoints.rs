@@ -14,7 +14,8 @@ use rocket::{
 };
 use server::model::analysis_request::ServerRule;
 use server::model::analysis_response::AnalysisResponse;
-use server::model::secret_scan::{SecretRuleResponse, SecretScanRequest, SecretScanResponse};
+use secrets::model::secret_result::SecretResult;
+use server::model::secret_scan::{SecretScanRequest, SecretScanResponse};
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
 };
@@ -154,7 +155,7 @@ async fn analyze(
 
 fn process_secret_scan_request(
     request: SecretScanRequest,
-) -> Result<Vec<SecretRuleResponse>, String> {
+) -> Result<Vec<SecretResult>, String> {
     // Maximum code size is 10MB to prevent memory exhaustion and DoS attacks.
     const MAX_CODE_SIZE: usize = 10 * 1024 * 1024;
 
@@ -214,11 +215,7 @@ fn process_secret_scan_request(
         &options,
     );
 
-    // Convert SecretResult to SecretRuleResponse (server type)
-    let secret_rule_responses: Vec<SecretRuleResponse> =
-        results.into_iter().map(SecretRuleResponse::from).collect();
-
-    Ok(secret_rule_responses)
+    Ok(results)
 }
 
 /// Scans source code for secrets using the provided detection rules.
