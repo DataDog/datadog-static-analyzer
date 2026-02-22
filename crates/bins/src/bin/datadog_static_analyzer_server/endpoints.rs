@@ -12,9 +12,9 @@ use rocket::{
     serde::json::{json, Json, Value},
     Build, Rocket, Shutdown, State,
 };
+use secrets::model::secret_result::SecretResult;
 use server::model::analysis_request::ServerRule;
 use server::model::analysis_response::AnalysisResponse;
-use secrets::model::secret_result::SecretResult;
 use server::model::secret_scan::{SecretScanRequest, SecretScanResponse};
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
@@ -153,9 +153,7 @@ async fn analyze(
     .unwrap()
 }
 
-fn process_secret_scan_request(
-    request: SecretScanRequest,
-) -> Result<Vec<SecretResult>, String> {
+fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretResult>, String> {
     // Maximum code size is 10MB to prevent memory exhaustion and DoS attacks.
     const MAX_CODE_SIZE: usize = 10 * 1024 * 1024;
 
