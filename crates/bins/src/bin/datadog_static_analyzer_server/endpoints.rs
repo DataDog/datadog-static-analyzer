@@ -157,6 +157,18 @@ fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretR
     // Maximum number of rules per request to prevent excessive CPU usage.
     const MAX_RULES_COUNT: usize = 1000;
 
+    if request.rules.is_empty() {
+        return Err("No rules provided".to_string());
+    }
+
+    if request.rules.len() > MAX_RULES_COUNT {
+        return Err(format!(
+            "Too many rules: {} exceeds maximum of {}",
+            request.rules.len(),
+            MAX_RULES_COUNT
+        ));
+    }
+
     // Validate filename (prevent path traversal attacks)
     if request.filename.contains("..") || request.filename.contains('\0') {
         return Err("Invalid filename: path traversal detected".to_string());
@@ -169,19 +181,6 @@ fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretR
         .map(|r| serde_json::from_value(r.clone()))
         .collect::<Result<Vec<_>, _>>()
         .map_err(|e| format!("Failed to parse rules: {}", e))?;
-
-    // Validate rules count (prevent excessive CPU usage)
-    if rules.is_empty() {
-        return Err("No rules provided".to_string());
-    }
-
-    if rules.len() > MAX_RULES_COUNT {
-        return Err(format!(
-            "Too many rules: {} exceeds maximum of {}",
-            rules.len(),
-            MAX_RULES_COUNT
-        ));
-    }
 
     // Build the scanner with the provided rules
     let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug);
