@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SecretScanRequest<T = serde_json::Value> {
     pub filename: String,
-    pub code: String,
+    pub data: String,
     pub rules: Vec<T>,
     #[serde(default)]
     pub use_debug: bool,

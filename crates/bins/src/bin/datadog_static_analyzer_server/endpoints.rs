@@ -167,10 +167,10 @@ fn process_secret_scan_request(
     }
 
     // Validate code size (prevent DoS attacks via large payloads)
-    if request.code.len() > MAX_CODE_SIZE {
+    if request.data.len() > MAX_CODE_SIZE {
         return Err(format!(
             "Code too large: {} bytes exceeds maximum of {} bytes",
-            request.code.len(),
+            request.data.len(),
             MAX_CODE_SIZE
         ));
     }
@@ -210,7 +210,7 @@ fn process_secret_scan_request(
         &scanner,
         &rules,
         &request.filename,
-        &request.code,
+        &request.data,
         &options,
     );
 
