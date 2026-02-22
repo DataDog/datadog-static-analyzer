@@ -154,24 +154,12 @@ async fn analyze(
 }
 
 fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretResult>, String> {
-    // Maximum code size is 10MB to prevent memory exhaustion and DoS attacks.
-    const MAX_CODE_SIZE: usize = 10 * 1024 * 1024;
-
     // Maximum number of rules per request to prevent excessive CPU usage.
     const MAX_RULES_COUNT: usize = 1000;
 
     // Validate filename (prevent path traversal attacks)
     if request.filename.contains("..") || request.filename.contains('\0') {
         return Err("Invalid filename: path traversal detected".to_string());
-    }
-
-    // Validate code size (prevent DoS attacks via large payloads)
-    if request.data.len() > MAX_CODE_SIZE {
-        return Err(format!(
-            "Code too large: {} bytes exceeds maximum of {} bytes",
-            request.data.len(),
-            MAX_CODE_SIZE
-        ));
     }
 
     // Deserialize rules from JSON
