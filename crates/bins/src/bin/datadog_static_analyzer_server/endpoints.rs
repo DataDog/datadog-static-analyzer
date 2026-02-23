@@ -183,7 +183,7 @@ fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretR
         .map_err(|e| format!("Failed to parse rules: {}", e))?;
 
     // Build the scanner with the provided rules
-    let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug);
+    let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug)?;
 
     // Configure analysis options
     let options = common::analysis_options::AnalysisOptions {
@@ -221,7 +221,12 @@ async fn scan_secrets(span: TraceSpan, request: Json<SecretScanRequest>) -> Valu
         })
     })
     .await
-    .unwrap()
+    .unwrap_or_else(|e| {
+        json!(SecretScanResponse {
+            rule_responses: vec![],
+            errors: vec![format!("Internal error: {e}")],
+        })
+    })
 }
 
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
