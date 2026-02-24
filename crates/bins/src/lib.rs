@@ -267,8 +267,8 @@ pub fn secret_analysis(
     files_to_analyze: &[PathBuf],
 ) -> anyhow::Result<AnalysisResult<SecretResult>> {
     let secrets_rules = &config.secrets_rules;
-    let sds_scanner = build_sds_scanner(secrets_rules, config.use_debug)
-        .expect("error when instantiating the scanner");
+    let sds_scanner =
+        build_sds_scanner(secrets_rules, config.use_debug).map_err(|e| anyhow::anyhow!(e))?;
 
     let nb_secrets_files = files_to_analyze.len();
     let directory_path = Path::new(config.source_directory.as_str());
