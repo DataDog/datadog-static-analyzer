@@ -12,8 +12,10 @@ use rocket::{
     serde::json::{json, Json, Value},
     Build, Rocket, Shutdown, State,
 };
+use secrets::model::secret_result::SecretResult;
 use server::model::analysis_request::ServerRule;
 use server::model::analysis_response::AnalysisResponse;
+use server::model::secret_scan::{SecretScanRequest, SecretScanResponse};
 use server::model::{
     analysis_request::AnalysisRequest, tree_sitter_tree_request::TreeSitterRequest,
 };
@@ -151,6 +153,82 @@ async fn analyze(
     .unwrap()
 }
 
+fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretResult>, String> {
+    // Maximum number of rules per request to prevent excessive CPU usage.
+    const MAX_RULES_COUNT: usize = 1000;
+
+    if request.rules.is_empty() {
+        return Err("No rules provided".to_string());
+    }
+
+    if request.rules.len() > MAX_RULES_COUNT {
+        return Err(format!(
+            "Too many rules: {} exceeds maximum of {}",
+            request.rules.len(),
+            MAX_RULES_COUNT
+        ));
+    }
+
+    // Validate filename (prevent path traversal attacks)
+    if request.filename.contains("..") || request.filename.contains('\0') {
+        return Err("Invalid filename: path traversal detected".to_string());
+    }
+
+    // Deserialize rules from JSON
+    let rules: Vec<secrets::model::secret_rule::SecretRule> = request
+        .rules
+        .iter()
+        .map(|r| serde_json::from_value(r.clone()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("Failed to parse rules: {}", e))?;
+
+    // Build the scanner with the provided rules
+    let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug)?;
+
+    // Configure analysis options
+    let options = common::analysis_options::AnalysisOptions {
+        use_debug: request.use_debug,
+        ..Default::default()
+    };
+
+    // Perform the secret scan
+    let results = secrets::scanner::find_secrets(
+        &scanner,
+        &rules,
+        &request.filename,
+        &request.data,
+        &options,
+    );
+
+    Ok(results)
+}
+
+/// Scans source code for secrets using the provided detection rules.
+#[rocket::post("/scan-secrets", format = "application/json", data = "<request>")]
+async fn scan_secrets(span: TraceSpan, request: Json<SecretScanRequest>) -> Value {
+    let _entered = span.enter();
+
+    rocket::tokio::task::spawn_blocking(move || {
+        let request = request.into_inner();
+        let (rule_responses, errors) = match process_secret_scan_request(request) {
+            Ok(resp) => (resp, vec![]),
+            Err(err) => (vec![], vec![err]),
+        };
+
+        json!(SecretScanResponse {
+            rule_responses,
+            errors,
+        })
+    })
+    .await
+    .unwrap_or_else(|e| {
+        json!(SecretScanResponse {
+            rule_responses: vec![],
+            errors: vec![format!("Internal error: {e}")],
+        })
+    })
+}
+
 #[rocket::post("/get-treesitter-ast", format = "application/json", data = "<request>")]
 fn get_tree(span: TraceSpan, request: Json<TreeSitterRequest>) -> Value {
     let _entered = span.enter();
@@ -207,6 +285,7 @@ fn mount_endpoints(rocket: Rocket<Build>) -> Rocket<Build> {
             "/",
             rocket::routes![
                 analyze,
+                scan_secrets,
                 get_tree,
                 get_version,
                 get_revision,

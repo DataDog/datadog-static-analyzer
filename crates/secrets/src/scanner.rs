@@ -17,7 +17,7 @@ use std::sync::Arc;
 /// our API.
 ///
 /// Once the scanner is built, use scanner.scan() to find secrets.
-pub fn build_sds_scanner(rules: &[SecretRule], use_debug: bool) -> Scanner {
+pub fn build_sds_scanner(rules: &[SecretRule], use_debug: bool) -> Result<Scanner, String> {
     let sds_rules = rules
         .iter()
         .map(|r| r.convert_to_sds_ruleconfig(use_debug).into_dyn())
@@ -25,7 +25,7 @@ pub fn build_sds_scanner(rules: &[SecretRule], use_debug: bool) -> Scanner {
     Scanner::builder(&sds_rules)
         .with_return_matches(true)
         .build()
-        .expect("error when instantiating the scanner")
+        .map_err(|e| format!("Failed to build scanner: {e}"))
 }
 
 /// Find secrets in code. This is the main entrypoint for our SDS integration.
@@ -138,7 +138,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
         }];
-        let scanner = build_sds_scanner(rules.as_slice(), false);
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
         let matches = find_secrets(
             &scanner,
@@ -184,7 +184,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
         }];
-        let scanner = build_sds_scanner(rules.as_slice(), false);
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
         // Line 2: #no-dd-secrets
         // Line 3: FOOBAZ - should be ignored
@@ -223,7 +223,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
         }];
-        let scanner = build_sds_scanner(rules.as_slice(), false);
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
         // Line 2: #no-dd-secrets
         // Line 3: FOOBAZ - should be ignored
@@ -269,7 +269,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
         }];
-        let scanner = build_sds_scanner(rules.as_slice(), false);
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Directive on line 1 means ignore entire file
         let text = "#no-dd-secrets\nFOOBAR\nFOOBAZ";
         let matches = find_secrets(
