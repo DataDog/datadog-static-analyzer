@@ -31,7 +31,7 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
             decode_base64_string(config_b64).map_err(|_| ERROR_CONFIGURATION_NOT_BASE64)?;
         let v2_yaml = parse_any_schema_yaml(&config)
             .map(|v| match v {
-                WithVersion::V1(yaml) => file_v2::YamlConfigFile::from(yaml),
+                WithVersion::Legacy(yaml) => file_v2::YamlConfigFile::from(yaml),
                 WithVersion::V2(yaml) => yaml,
             })
             .map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION)?;

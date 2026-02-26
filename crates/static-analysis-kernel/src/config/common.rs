@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-use crate::config::{file_v1, file_v2};
+use crate::config::{file_legacy, file_v2};
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use common::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
@@ -220,13 +220,13 @@ where
 // YAML-serializable schema version.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum YamlSchemaVersion {
-    V1,
+    Legacy,
     V2,
     /// Input that isn't recognized as a supported schema version.
     Invalid(String),
 }
 
-const V1: &str = "v1";
+const LEGACY: &str = "v1";
 const V2: &str = "v2";
 
 impl serde::Serialize for YamlSchemaVersion {
@@ -235,7 +235,7 @@ impl serde::Serialize for YamlSchemaVersion {
         S: serde::Serializer,
     {
         match self {
-            YamlSchemaVersion::V1 => serializer.serialize_str(V1),
+            YamlSchemaVersion::Legacy => serializer.serialize_str(LEGACY),
             YamlSchemaVersion::V2 => serializer.serialize_str(V2),
             YamlSchemaVersion::Invalid(s) => serializer.serialize_str(s),
         }
@@ -249,7 +249,7 @@ impl<'de> serde::Deserialize<'de> for YamlSchemaVersion {
     {
         let mut s = String::deserialize(d)?;
         Ok(match s.as_str() {
-            V1 => YamlSchemaVersion::V1,
+            LEGACY => YamlSchemaVersion::Legacy,
             V2 => YamlSchemaVersion::V2,
             _ => {
                 s.truncate(8);
@@ -262,7 +262,7 @@ impl<'de> serde::Deserialize<'de> for YamlSchemaVersion {
 impl fmt::Display for YamlSchemaVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let val = match self {
-            YamlSchemaVersion::V1 => V1,
+            YamlSchemaVersion::Legacy => LEGACY,
             YamlSchemaVersion::V2 => V2,
             YamlSchemaVersion::Invalid(text) => text.as_str(),
         };
@@ -279,29 +279,29 @@ pub enum ConfigError {
 }
 
 /// A type intended to carry a "ConfigFile" as well as the schema version it was constructed
-/// from. (This info is preserved for backwards compatibility so that v1 schemas can be output
+/// from. (This info is preserved for backwards compatibility so that legacy schemas can be output
 /// by the datadog-static-analyzer-server.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum WithVersion<V1, V2> {
-    V1(V1),
+pub enum WithVersion<L, V2> {
+    Legacy(L),
     V2(V2),
 }
 
 /// Parses a YAML configuration for any schema.
 pub fn parse_any_schema_yaml(
     config_contents: &str,
-) -> Result<WithVersion<file_v1::YamlConfigFile, file_v2::YamlConfigFile>, ConfigError> {
+) -> Result<WithVersion<file_legacy::YamlConfigFile, file_v2::YamlConfigFile>, ConfigError> {
     #[derive(Debug, serde::Deserialize)]
     #[serde(rename_all = "kebab-case")]
     struct Version {
         schema_version: Option<YamlSchemaVersion>,
     }
     let v: Version = serde_yaml::from_str(config_contents).map_err(ConfigError::Parse)?;
-    let schema_version = v.schema_version.unwrap_or(YamlSchemaVersion::V1);
+    let schema_version = v.schema_version.unwrap_or(YamlSchemaVersion::Legacy);
 
     match schema_version {
-        YamlSchemaVersion::V1 => file_v1::parse_yaml(config_contents)
-            .map(WithVersion::V1)
+        YamlSchemaVersion::Legacy => file_legacy::parse_yaml(config_contents)
+            .map(WithVersion::Legacy)
             .map_err(ConfigError::Parse),
         YamlSchemaVersion::V2 => file_v2::parse_yaml(config_contents)
             .map(WithVersion::V2)
@@ -321,7 +321,7 @@ mod tests {
     #[test]
     fn yaml_schema_version_deserialize() {
         let version = serde_yaml::from_str::<YamlSchemaVersion>("v1").unwrap();
-        assert_eq!(version, YamlSchemaVersion::V1);
+        assert_eq!(version, YamlSchemaVersion::Legacy);
         let version = serde_yaml::from_str::<YamlSchemaVersion>("v2").unwrap();
         assert_eq!(version, YamlSchemaVersion::V2);
         let version = serde_yaml::from_str::<YamlSchemaVersion>("v9").unwrap();
@@ -331,9 +331,9 @@ mod tests {
     }
 
     #[test]
-    fn parse_any_v1_v2() {
+    fn parse_any_legacy_v2() {
         // language=yaml
-        let v1 = "\
+        let legacy = "\
 schema-version: v1
 rulesets:
   - java-security
@@ -350,10 +350,11 @@ use-default-rulesets: false
 use-rulesets:
   - java-security
 ";
-        for (config_contents, expected_variant) in [(v1, "v1"), (schemaless, "v1"), (v2, "v2")] {
+        for (config_contents, expected_variant) in [(legacy, "v1"), (schemaless, "v1"), (v2, "v2")]
+        {
             let parsed = parse_any_schema_yaml(config_contents).unwrap();
             match expected_variant {
-                "v1" => assert!(matches!(parsed, WithVersion::V1(_))),
+                "v1" => assert!(matches!(parsed, WithVersion::Legacy(_))),
                 "v2" => assert!(matches!(parsed, WithVersion::V2(_))),
                 // (If this triggers, you need to add a match arm from a &str to the new version, e.g "v2.1" to WithVersion::V2_1)
                 _ => panic!("broken test setup: unknown schema `{expected_variant}`"),
