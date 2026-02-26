@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/versions/v1.0/schema.json",
+  "title": "Datadog Code Security Configuration v1.0",
+  "type": "object",
+  "required": ["schema-version"],
+  "additionalProperties": false,
+  "properties": {
+    "schema-version": {
+      "type": "string",
+      "const": "v1.0"
+    },
+    "sast": {
+      "$ref": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/sast/v1.0/schema.json"
+    },
+    "secrets": {
+      "$ref": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/secrets/v1.0/schema.json"
+    },
+    "iac": {
+      "$ref": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/iac/v1.0/schema.json"
+    },
+    "sca": {
+      "$ref": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/sca/v1.0/schema.json"
+    },
+    "iast": {
+      "$ref": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/iast/v1.0/schema.json"
+    }
+  }
+}
