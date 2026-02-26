@@ -54,7 +54,7 @@ pub fn get_config(
         .map(|c| parse_any_schema_yaml(c))
         .transpose()?;
     let local_config: Option<file_v2::ConfigFile> = local_yaml.map(|v| match v {
-        WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
+        WithVersion::Legacy(legacy) => file_v2::YamlConfigFile::from(legacy).into(),
         WithVersion::V2(v2) => v2.into(),
     });
 
@@ -105,7 +105,7 @@ pub fn get_config(
         return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
     let remote_config: file_v2::ConfigFile = match remote_yaml {
-        WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
+        WithVersion::Legacy(legacy) => file_v2::YamlConfigFile::from(legacy).into(),
         WithVersion::V2(v2) => v2.into(),
     };
 

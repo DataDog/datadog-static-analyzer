@@ -17,7 +17,7 @@ use crate::config::common::{
 };
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
-/// Parses a v1 YAML configuration specification
+/// Parses a legacy YAML configuration specification
 pub(crate) fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, serde_yaml::Error> {
     serde_yaml::from_str(config_contents)
 }
@@ -32,7 +32,7 @@ pub fn config_file_to_yaml(cfg: &ConfigFile) -> anyhow::Result<String> {
 #[serde(rename_all = "kebab-case")]
 pub struct YamlConfigFile {
     #[serde(default)]
-    schema_version: V1,
+    schema_version: Legacy,
     pub(crate) rulesets: YamlRulesetList,
     #[serde(flatten)]
     pub(crate) paths: YamlPathConfig,
@@ -90,7 +90,7 @@ impl From<YamlConfigFile> for ConfigFile {
 impl From<ConfigFile> for YamlConfigFile {
     fn from(value: ConfigFile) -> Self {
         YamlConfigFile {
-            schema_version: V1::V1,
+            schema_version: Legacy::V1,
             rulesets: value.rulesets.into(),
             paths: value.paths.into(),
             ignore_paths: None,
@@ -104,7 +104,7 @@ impl From<ConfigFile> for YamlConfigFile {
 // YAML-serializable schema version.
 // It only contains the expected value for this parser.
 #[derive(Serialize, Deserialize, Default)]
-enum V1 {
+enum Legacy {
     #[serde(rename = "v1")]
     #[default]
     V1,

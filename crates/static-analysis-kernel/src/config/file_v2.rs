@@ -5,8 +5,8 @@
 use crate::config::common::{
     PathConfig, PathPattern, RuleConfig, RulesetConfig, YamlSchemaVersion,
 };
-use crate::config::file_v1;
-use crate::config::file_v1::{AnyAsString, UniqueKeyMap};
+use crate::config::file_legacy;
+use crate::config::file_legacy::{AnyAsString, UniqueKeyMap};
 use crate::model::rule::RuleSeverity;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -126,11 +126,11 @@ pub struct YamlRuleConfig {
     #[serde(flatten)]
     pub path_config: YamlPathConfig,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) arguments: Option<UniqueKeyMap<file_v1::YamlBySubtree<AnyAsString>>>,
+    pub(crate) arguments: Option<UniqueKeyMap<file_legacy::YamlBySubtree<AnyAsString>>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) severity: Option<file_v1::YamlBySubtree<RuleSeverity>>,
+    pub(crate) severity: Option<file_legacy::YamlBySubtree<RuleSeverity>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) category: Option<file_v1::YamlRuleCategory>,
+    pub(crate) category: Option<file_legacy::YamlRuleCategory>,
 }
 
 impl From<YamlRuleConfig> for RuleConfig {
@@ -144,7 +144,7 @@ impl From<YamlRuleConfig> for RuleConfig {
                 .into_iter()
                 .map(|(k, v)| (k, v.into()))
                 .collect(),
-            severity: value.severity.map(file_v1::YamlBySubtree::into),
+            severity: value.severity.map(file_legacy::YamlBySubtree::into),
             category: value.category.map(|c| c.0),
         }
     }
@@ -348,7 +348,7 @@ ruleset-configs:
     #[test]
     fn parse_config_only_v2() {
         let err = parse_yaml("schema-version: v1\n").unwrap_err();
-        assert!(matches!(err, ParseError::WrongSchema(v) if v == YamlSchemaVersion::V1));
+        assert!(matches!(err, ParseError::WrongSchema(v) if v == YamlSchemaVersion::Legacy));
         let err = parse_yaml("schema-version: v9\n").unwrap_err();
         assert!(
             matches!(err, ParseError::WrongSchema(v) if v == YamlSchemaVersion::Invalid("v9".to_string()))
