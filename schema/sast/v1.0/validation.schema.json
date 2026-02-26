@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/sast/v1.0/validation.schema.json",
+  "title": "Datadog SAST Configuration Validation",
+  "description": "Validation for v1.x",
+  "type": "object",
+  "required": ["schema-version"],
+  "additionalProperties": false,
+  "properties": {
+    "schema-version": {
+      "type": "string",
+      "pattern": "^v1\\.\\d+$"
+    },
+    "sast": {
+      "$ref": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/sast/v1.0/schema.json"
+    },
+    "secrets": {},
+    "iac": {},
+    "sca": {},
+    "iast": {}
+  }
+}

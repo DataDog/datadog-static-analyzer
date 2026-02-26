@@ -1,26 +1,17 @@
 all: test
 
-test: test-schema-valid test-schema-invalid test-legacy-valid test-legacy-invalid test-v2-valid test-v2-invalid
+test: test-v1.0-schema-valid test-v1.0-schema-invalid test-legacy-valid test-legacy-invalid
 
-examples-valid = $(1)/examples/valid/*.yml
-examples-invalid = $(1)/examples/invalid/*.yml
+test-v1.0-schema-valid:
+	npx --yes ajv-cli@5.0.0 test --spec=draft2020 -s sast/v1.0/validation.schema.json -r sast/v1.0/schema.json -d "tests/v1.0/valid/*.yml" --valid
 
-test-schema-valid:
-	npx --yes ajv-cli@5.0.0 test -s schema.json -r legacy/schema.json -d "$(call examples-valid,legacy)" --valid
-
-test-schema-invalid:
-	npx --yes ajv-cli@5.0.0 test -s schema.json -r legacy/schema.json -d "$(call examples-invalid,legacy)" --invalid
+test-v1.0-schema-invalid:
+	npx --yes ajv-cli@5.0.0 test --spec=draft2020 -s sast/v1.0/validation.schema.json -r sast/v1.0/schema.json -d "tests/v1.0/invalid/*.yml" --invalid
 
 test-legacy-valid:
-	npx --yes ajv-cli@5.0.0 test -s legacy/schema.json -d "$(call examples-valid,legacy)" --valid
+	npx --yes ajv-cli@5.0.0 test -s legacy/schema.json -d "legacy/examples/valid/*.yml" --valid
 
 test-legacy-invalid:
-	npx --yes ajv-cli@5.0.0 test -s legacy/schema.json -d "$(call examples-invalid,legacy)" --invalid
+	npx --yes ajv-cli@5.0.0 test -s legacy/schema.json -d "legacy/examples/invalid/*.yml" --invalid
 
-test-v2-valid:
-	npx --yes ajv-cli@5.0.0 test -s v2/schema.json -d "$(call examples-valid,v2)" --valid
-
-test-v2-invalid:
-	npx --yes ajv-cli@5.0.0 test -s v2/schema.json -d "$(call examples-invalid,v2)" --invalid
-
-.PHONY: test test-schema-valid test-schema-invalid test-legacy-valid test-legacy-invalid test-v2-valid test-v2-invalid
+.PHONY: test test-v1.0-schema-valid test-v1.0-schema-invalid test-legacy-valid test-legacy-invalid

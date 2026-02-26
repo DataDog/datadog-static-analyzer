@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/DataDog/schema/main/code-security/sast/v1.0/schema.json",
+  "title": "Datadog SAST Configuration",
+  "type": "object",
+  "properties": {
+    "use-default-rulesets": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable Datadog's default rulesets. Defaults to true."
+    },
+    "use-rulesets": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "List of rulesets to enable (in addition to defaults, if use-default-rulesets is true)."
+    },
+    "ignore-rulesets": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "List of rulesets to disable. Takes precedence over default rulesets and those listed in use-rulesets."
+    },
+    "ruleset-configs": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/rulesetConfig"
+      },
+      "description": "Per-ruleset configurations"
+    },
+    "global-config": {
+      "$ref": "#/$defs/globalConfig",
+      "description": "Global settings for the static analyzer."
+    }
+  },
+  "required": [],
+  "additionalProperties": false,
+  "$defs": {
+    "globalConfig": {
+      "type": "object",
+      "properties": {
+        "only-paths": {
+          "$ref": "#/$defs/pathList"
+        },
+        "ignore-paths": {
+          "$ref": "#/$defs/pathList"
+        },
+        "use-gitignore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use .gitignore to exclude files. Defaults to true."
+        },
+        "ignore-generated-files": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ignore generated files. Defaults to true."
+        },
+        "max-file-size-kb": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "rulesetConfig": {
+      "type": "object",
+      "properties": {
+        "only-paths": {
+          "$ref": "#/$defs/pathList",
+          "description": "Paths to analyze for this ruleset."
+        },
+        "ignore-paths": {
+          "$ref": "#/$defs/pathList",
+          "description": "Paths to exclude for this ruleset."
+        },
+        "rule-configs": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ruleConfig"
+          },
+          "description": "Per-rule configurations within this ruleset."
+        }
+      },
+      "additionalProperties": false
+    },
+    "ruleConfig": {
+      "type": "object",
+      "properties": {
+        "only-paths": {
+          "$ref": "#/$defs/pathList"
+        },
+        "ignore-paths": {
+          "$ref": "#/$defs/pathList"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/argumentValue"
+          }
+        },
+        "severity": {
+          "$ref": "#/$defs/severityValue"
+        },
+        "category": {
+          "enum": [
+            "BEST_PRACTICES",
+            "CODE_STYLE",
+            "ERROR_PRONE",
+            "PERFORMANCE",
+            "SECURITY"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "pathList": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "description": "List of file paths or glob patterns."
+    },
+    "argumentValue": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/singularArgumentValue"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/singularArgumentValue"
+          }
+        }
+      ],
+      "description": "Argument value (singular or by-path)."
+    },
+    "singularArgumentValue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number",
+          "$comment": "will be internally coerced to string"
+        },
+        {
+          "type": "boolean",
+          "$comment": "will be internally coerced to string"
+        }
+      ]
+    },
+    "severityValue": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/singularSeverityValue"
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/singularSeverityValue"
+          }
+        }
+      ]
+    },
+    "singularSeverityValue": {
+      "enum": [
+        "ERROR",
+        "WARNING",
+        "NOTICE",
+        "NONE"
+      ]
+    }
+  }
+}
