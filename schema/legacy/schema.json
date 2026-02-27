@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://raw.githubusercontent.com/DataDog/datadog-static-analyzer/schema/v1/schema.json",
-  "title": "Datadog Static Analyzer Configuration v1",
+  "$id": "https://raw.githubusercontent.com/DataDog/datadog-static-analyzer/schema/legacy/schema.json",
+  "title": "Datadog Static Analyzer Legacy Configuration v1",
   "type": "object",
   "properties": {
     "schema-version": {
