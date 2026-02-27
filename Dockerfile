@@ -48,6 +48,10 @@ RUN . /rust_env.sh && \
 
 FROM node:24-bookworm-slim
 
+RUN apt-get update && apt-get install -y ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN npm install -g @datadog/datadog-ci@^4 --no-audit --no-fund --progress=false --no-update-notifier --loglevel=error && \
     datadog-ci --version
 
