@@ -580,7 +580,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     // Location of the configuration file examples that accompany the schema.
-    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/v1/examples";
+    const CFG_FILE_EXAMPLES_DIR: &str = "../../schema/legacy/examples";
 
     /// Shorthand function to deserialize a string into a [`ConfigFile`].
     fn parse_config_file(config_contents: &str) -> anyhow::Result<ConfigFile> {

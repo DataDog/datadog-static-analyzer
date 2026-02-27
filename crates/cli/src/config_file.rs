@@ -1,4 +1,4 @@
-use crate::constants::DATADOG_CONFIG_FILE_WITHOUT_EXTENSION;
+use crate::constants::LEGACY_CONFIG_FILE_WITHOUT_EXTENSION;
 use crate::datadog_utils::DatadogApiError::InvalidPermission;
 use crate::datadog_utils::{
     get_remote_configuration, print_permission_warning, should_use_datadog_backend,
@@ -19,7 +19,7 @@ pub fn read_config_file(base_path: &str) -> anyhow::Result<Option<String>> {
 
     for ext in EXTENSIONS {
         let config_path =
-            Path::new(base_path).join(format!("{DATADOG_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
+            Path::new(base_path).join(format!("{LEGACY_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
         match std::fs::read_to_string(config_path) {
             Ok(contents) => {
                 return if !contents.is_empty() {

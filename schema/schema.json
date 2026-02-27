@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/DataDog/datadog-static-analyzer/schema/schema.json",
-  "title": "Datadog Static Analyzer Configuration Versions [v1]",
+  "title": "Datadog Static Analyzer Configuration Versions [Legacy v1]",
   "oneOf": [
     {
       "allOf": [
@@ -25,7 +25,7 @@
           ]
         },
         {
-          "$ref": "https://raw.githubusercontent.com/DataDog/datadog-static-analyzer/schema/v1/schema.json"
+          "$ref": "https://raw.githubusercontent.com/DataDog/datadog-static-analyzer/schema/legacy/schema.json"
         }
       ]
     }
