@@ -22,7 +22,9 @@ impl From<&MatchStatus> for SecretValidationStatus {
             MatchStatus::NotChecked => SecretValidationStatus::NotValidated,
             MatchStatus::Valid => SecretValidationStatus::Valid,
             MatchStatus::Invalid => SecretValidationStatus::Invalid,
-            MatchStatus::Error(code, message) => SecretValidationStatus::ValidationError(*code, message.clone()),
+            MatchStatus::Error(code, message) => {
+                SecretValidationStatus::ValidationError(*code, message.clone())
+            }
             MatchStatus::NotAvailable => SecretValidationStatus::NotAvailable,
         }
     }

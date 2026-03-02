@@ -139,21 +139,27 @@ impl SarifViolation {
     fn get_properties(&self) -> Vec<String> {
         if let Secret(_, validation_status) = &self {
             let mut additional_properties = vec![];
-            
+
             let status_value = match validation_status {
                 SecretValidationStatus::NotValidated => "NOT_VALIDATED",
                 SecretValidationStatus::Valid => "VALID",
                 SecretValidationStatus::Invalid => "INVALID",
                 SecretValidationStatus::ValidationError(code, message) => {
                     if let Some(error_code) = code {
-                        additional_properties.push(format!("DATADOG_SECRET_VALIDATION_ERROR_CODE:{}", error_code));
+                        additional_properties.push(format!(
+                            "DATADOG_SECRET_VALIDATION_ERROR_CODE:{}",
+                            error_code
+                        ));
                     }
-                    additional_properties.push(format!("DATADOG_SECRET_VALIDATION_ERROR_MESSAGE:{}", message));
+                    additional_properties.push(format!(
+                        "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE:{}",
+                        message
+                    ));
                     "VALIDATION_ERROR"
                 }
                 SecretValidationStatus::NotAvailable => "NOT_AVAILABLE",
             };
-            
+
             let mut properties = vec![format!("DATADOG_SECRET_VALIDATION_STATUS:{}", status_value)];
             properties.extend(additional_properties);
             properties
@@ -1605,7 +1611,10 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
-                validation_status: SecretValidationStatus::ValidationError(Some(400), "Invalid token".to_string()),
+                validation_status: SecretValidationStatus::ValidationError(
+                    Some(400),
+                    "Invalid token".to_string(),
+                ),
             }],
         }];
 
@@ -1689,7 +1698,10 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
-                validation_status: SecretValidationStatus::ValidationError(None, "Connection timeout".to_string()),
+                validation_status: SecretValidationStatus::ValidationError(
+                    None,
+                    "Connection timeout".to_string(),
+                ),
             }],
         }];
 
