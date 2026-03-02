@@ -11,7 +11,7 @@ jobs:
     name: Datadog SBOM Generation and Upload
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
     - uses: ./.github/actions/set-up-rust
     - name: cargo install sbom
       run: cargo install --version 0.8.4 cargo-sbom
@@ -23,7 +23,7 @@ jobs:
         cargo sbom --cargo-package static-analysis-server --output-format cyclone_dx_json_1_4 > static-analysis-server.json
     - name: Generate SBOM and Upload
       id: software-composition-analysis
-      uses: DataDog/datadog-sca-github-action@main
+      uses: DataDog/datadog-sca-github-action@2cc1486ee1b07318ba608b86e40d124efa76ddb5 # main
       with:
         dd_api_key: ${{ secrets.DD_API_KEY }}
         dd_app_key: ${{ secrets.DD_APP_KEY }}
