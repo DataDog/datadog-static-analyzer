@@ -277,8 +277,9 @@ fn main() -> Result<()> {
             exit(EXIT_CODE_INVALID_CONFIGURATION)
         }
     };
+    let sast_config = configuration_file.as_ref().and_then(|cfg| cfg.sast());
 
-    if configuration_file.is_none() && use_debug {
+    if sast_config.is_none() && use_debug {
         eprintln!("INFO: no configuration detected locally or remotely")
     }
 
@@ -292,7 +293,7 @@ fn main() -> Result<()> {
     let mut fetched_rulesets = Vec::<&str>::new();
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
-    if let Some(conf) = &configuration_file {
+    if let Some(conf) = sast_config {
         ignore_gitignore = conf
             .global_config
             .as_ref()
@@ -341,15 +342,16 @@ fn main() -> Result<()> {
     if static_analysis_enabled {
         // if there is no config file, we take the default rules from our APIs.
         if rules_file.is_none() {
-            if configuration_file.is_none() {
-                println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
+            if sast_config.is_none() {
+                println!("WARNING: no SAST configuration detected, getting the default rules from the Datadog API");
                 println!("Check the following resources to configure your rules:");
                 println!(
                     " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
                 );
                 println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             }
-            let should_fetch = !matches!(&configuration_file, Some(config) if config.use_default_rulesets == Some(false));
+
+            let should_fetch = sast_config.is_none_or(|c| c.use_default_rulesets != Some(false));
             if should_fetch {
                 let rulesets_from_api =
                     get_all_default_rulesets(use_staging, use_debug, &fetched_rulesets)
