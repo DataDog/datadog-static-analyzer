@@ -16,7 +16,7 @@ jobs:
       is-production: ${{ steps.set-var.outputs.is-production }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
@@ -79,14 +79,14 @@ jobs:
           git config --global --add safe.directory $GITHUB_WORKSPACE
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - uses: ./.github/actions/set-up-rust
         with:
           target: ${{ matrix.target }}
 
       - name: Install cross-compilation tools
-        uses: taiki-e/setup-cross-toolchain-action@v1
+        uses: taiki-e/setup-cross-toolchain-action@b8d1a322a6009a2b7220f53996695778eef89b41 # v1
         with:
           target: ${{ matrix.target }}
 
@@ -121,7 +121,7 @@ jobs:
           move *.zip ..\..\..\
 
       - name: Upload assets
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ${{ matrix.target }}
           path: |
@@ -146,12 +146,12 @@ jobs:
       contents: write
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           fetch-depth: 0
 
       - name: Download build artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: artifacts
 
