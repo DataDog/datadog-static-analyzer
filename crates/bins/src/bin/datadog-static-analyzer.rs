@@ -529,7 +529,7 @@ fn main() -> Result<()> {
     }
 
     // This must be called _after_ `initialize_v8` (otherwise, PKU-related segfaults on Linux will occur).
-    // Stack size is set explicitly to 8MB for the dd-sds scanner's regex matching depth.
+    // Stack size is set explicitly to 64MB for the dd-sds scanner's regex matching depth.
     rayon::ThreadPoolBuilder::new()
         .num_threads(configuration.get_num_threads())
         .stack_size(64 * 1024 * 1024)
