@@ -1,10 +1,12 @@
 pub static LEGACY_CONFIG_FILE_WITHOUT_EXTENSION: &str = "static-analysis.datadog";
+pub static CS_CONFIG_FILE_WITHOUT_EXTENSION: &str = "code-security.datadog";
 
 pub static DATADOG_HEADER_APP_KEY: &str = "dd-application-key";
 pub static DATADOG_HEADER_API_KEY: &str = "dd-api-key";
 pub static DATADOG_HEADER_JWT_TOKEN: &str = "dd-auth-jwt";
 pub static HEADER_CONTENT_TYPE: &str = "Content-Type";
 pub static HEADER_CONTENT_TYPE_APPLICATION_JSON: &str = "application/json";
+pub static QUERY_PARAM_SCHEMA_VERSION: &str = "schema_version";
 pub static SARIF_PROPERTY_DATADOG_FINGERPRINT: &str = "DATADOG_FINGERPRINT";
 pub static SARIF_PROPERTY_SHA: &str = "SHA";
 pub static DEFAULT_MAX_CPUS: usize = 8;
