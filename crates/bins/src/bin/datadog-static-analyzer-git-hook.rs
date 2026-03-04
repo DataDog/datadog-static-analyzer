@@ -231,16 +231,13 @@ fn main() -> Result<()> {
     };
     let directory_to_analyze_option = matches.opt_str("r");
 
-    if directory_to_analyze_option.is_none() {
+    let Some(directory_to_analyze) = directory_to_analyze_option.map(PathBuf::from) else {
         eprintln!("no directory passed, specify a directory with option -i");
         print_usage(&program, opts);
         exit(EXIT_CODE_NO_DIRECTORY)
-    }
+    };
 
-    let directory_to_analyze = directory_to_analyze_option.unwrap();
-    let directory_path = std::path::Path::new(&directory_to_analyze);
-
-    if !directory_path.is_dir() {
+    if !directory_to_analyze.is_dir() {
         eprintln!("directory to analyze is not correct");
         exit(EXIT_CODE_INVALID_DIRECTORY)
     }
@@ -254,7 +251,7 @@ fn main() -> Result<()> {
         exit(EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS)
     }
 
-    let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
+    let configuration_file_and_method = get_config(&directory_to_analyze, use_debug);
 
     let (configuration_file, configuration_method): (
         Option<file_v1::ConfigFile>,
@@ -267,7 +264,8 @@ fn main() -> Result<()> {
         Err(err) => {
             eprintln!(
                 "Error reading configuration file from {}:\n  {}",
-                directory_to_analyze, err
+                directory_to_analyze.display(),
+                err
             );
             exit(EXIT_CODE_INVALID_CONFIGURATION)
         }
@@ -354,7 +352,7 @@ fn main() -> Result<()> {
 
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
-        match read_files_from_gitignore(directory_to_analyze.as_str()) {
+        match read_files_from_gitignore(&directory_to_analyze) {
             Ok(paths_from_gitignore) => {
                 path_config
                     .ignore
@@ -367,7 +365,7 @@ fn main() -> Result<()> {
         }
     }
 
-    let files_in_repository = get_files(directory_to_analyze.as_str(), vec![], &path_config)
+    let files_in_repository = get_files(&directory_to_analyze, vec![], &path_config)
         .expect("unable to get the list of files to analyze");
 
     let num_cores_requested = matches
@@ -385,7 +383,7 @@ fn main() -> Result<()> {
         use_debug,
         configuration_method,
         ignore_gitignore,
-        source_directory: directory_to_analyze.clone(),
+        source_directory: directory_to_analyze.to_string_lossy().to_string(),
         source_subdirectories: vec![],
         path_config,
         rules_file: None,
@@ -486,7 +484,7 @@ fn main() -> Result<()> {
 
     let changed_files: Vec<PathBuf> = modifications
         .keys()
-        .map(|f| directory_path.join(f))
+        .map(|f| directory_to_analyze.join(f))
         .collect();
 
     if configuration.use_debug {

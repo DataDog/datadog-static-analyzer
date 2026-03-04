@@ -242,26 +242,23 @@ fn main() -> Result<()> {
 
     let rules_file = matches.opt_str("r");
 
-    if directory_to_analyze_option.is_none() {
+    let Some(directory_to_analyze) = directory_to_analyze_option.map(PathBuf::from) else {
         eprintln!("no directory passed, specify a directory with option -i");
         print_usage(&program, opts);
         exit(EXIT_CODE_NO_DIRECTORY)
-    }
+    };
 
-    let directory_to_analyze = directory_to_analyze_option.unwrap();
-    let directory_path = std::path::Path::new(&directory_to_analyze);
-
-    if !directory_path.is_dir() {
+    if !directory_to_analyze.is_dir() {
         eprintln!("directory to analyze is not correct");
         exit(EXIT_CODE_INVALID_DIRECTORY)
     }
 
-    if !are_subdirectories_safe(directory_path, &subdirectories_to_analyze) {
+    if !are_subdirectories_safe(&directory_to_analyze, &subdirectories_to_analyze) {
         eprintln!("sub-directories are not safe and point outside of the repository");
         exit(EXIT_CODE_UNSAFE_SUBDIRECTORIES)
     }
 
-    let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
+    let configuration_file_and_method = get_config(&directory_to_analyze, use_debug);
 
     let (configuration_file, configuration_method): (
         Option<file_v1::ConfigFile>,
@@ -274,7 +271,8 @@ fn main() -> Result<()> {
         Err(err) => {
             eprintln!(
                 "Error reading configuration file from {}:\n  {}",
-                directory_to_analyze, err
+                directory_to_analyze.display(),
+                err
             );
             exit(EXIT_CODE_INVALID_CONFIGURATION)
         }
@@ -382,7 +380,7 @@ fn main() -> Result<()> {
 
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
-        match read_files_from_gitignore(directory_to_analyze.as_str()) {
+        match read_files_from_gitignore(&directory_to_analyze) {
             Ok(paths_from_gitignore) => {
                 path_config
                     .ignore
@@ -403,7 +401,7 @@ fn main() -> Result<()> {
     let languages = get_languages_for_rules(&rules);
 
     let files_in_repository = get_files(
-        directory_to_analyze.as_str(),
+        &directory_to_analyze,
         subdirectories_to_analyze.clone(),
         &path_config,
     )
@@ -424,7 +422,7 @@ fn main() -> Result<()> {
         use_debug,
         configuration_method,
         ignore_gitignore,
-        source_directory: directory_to_analyze.clone(),
+        source_directory: directory_to_analyze.to_string_lossy().to_string(),
         source_subdirectories: subdirectories_to_analyze.clone(),
         path_config,
         rules_file,
@@ -537,7 +535,7 @@ fn main() -> Result<()> {
 
     // if diff-aware is enabled, we filter the files and keep only the files we want to analyze from diff-aware
     let files_to_analyze = if let Some(dap) = &diff_aware_parameters {
-        filter_files_by_diff_aware_info(&files_filtered_by_size, directory_path, dap)
+        filter_files_by_diff_aware_info(&files_filtered_by_size, &directory_to_analyze, dap)
     } else {
         files_filtered_by_size
     };
