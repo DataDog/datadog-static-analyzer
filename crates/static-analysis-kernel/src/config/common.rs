@@ -221,13 +221,25 @@ where
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum YamlSchemaVersion {
     Legacy,
-    V2,
+    /// A major and minor version. For example "v1.4" would be represented as `MajorMinor((1, 4))`
+    MajorMinor((u8, u8)),
     /// Input that isn't recognized as a supported schema version.
     Invalid(String),
 }
 
 const LEGACY: &str = "v1";
-const V2: &str = "v2";
+const PREFIX: &str = "v";
+
+/// Parses a string starting with "v" into a major and minor version.
+fn parse_version(s: &str) -> Result<(u8, u8), &'static str> {
+    let rest = s.strip_prefix(PREFIX).ok_or(r#"missing "v" prefix"#)?;
+
+    let (left, right) = rest.split_once(".").ok_or(r#"missing "." separator"#)?;
+
+    let major = left.parse::<u8>().map_err(|_| "invalid major version")?;
+    let minor = right.parse::<u8>().map_err(|_| "invalid minor version")?;
+    Ok((major, minor))
+}
 
 impl serde::Serialize for YamlSchemaVersion {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
@@ -236,7 +248,9 @@ impl serde::Serialize for YamlSchemaVersion {
     {
         match self {
             YamlSchemaVersion::Legacy => serializer.serialize_str(LEGACY),
-            YamlSchemaVersion::V2 => serializer.serialize_str(V2),
+            YamlSchemaVersion::MajorMinor((major, minor)) => {
+                serializer.serialize_str(&format!("{PREFIX}{major}.{minor}"))
+            }
             YamlSchemaVersion::Invalid(s) => serializer.serialize_str(s),
         }
     }
@@ -248,10 +262,13 @@ impl<'de> serde::Deserialize<'de> for YamlSchemaVersion {
         D: serde::Deserializer<'de>,
     {
         let mut s = String::deserialize(d)?;
-        Ok(match s.as_str() {
-            LEGACY => YamlSchemaVersion::Legacy,
-            V2 => YamlSchemaVersion::V2,
-            _ => {
+        if s == LEGACY {
+            return Ok(YamlSchemaVersion::Legacy);
+        }
+
+        Ok(match parse_version(&s) {
+            Ok((major, minor)) => YamlSchemaVersion::MajorMinor((major, minor)),
+            Err(_) => {
                 s.truncate(8);
                 YamlSchemaVersion::Invalid(s)
             }
@@ -261,12 +278,11 @@ impl<'de> serde::Deserialize<'de> for YamlSchemaVersion {
 
 impl fmt::Display for YamlSchemaVersion {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let val = match self {
-            YamlSchemaVersion::Legacy => LEGACY,
-            YamlSchemaVersion::V2 => V2,
-            YamlSchemaVersion::Invalid(text) => text.as_str(),
-        };
-        write!(f, "{val}")
+        match self {
+            YamlSchemaVersion::Legacy => write!(f, "{LEGACY}"),
+            YamlSchemaVersion::MajorMinor((major, minor)) => write!(f, "{PREFIX}{major}.{minor}"),
+            YamlSchemaVersion::Invalid(text) => write!(f, "{text}"),
+        }
     }
 }
 
@@ -303,13 +319,18 @@ pub fn parse_any_schema_yaml(
         YamlSchemaVersion::Legacy => file_legacy::parse_yaml(config_contents)
             .map(WithVersion::Legacy)
             .map_err(ConfigError::Parse),
-        YamlSchemaVersion::V2 => file_v1::parse_yaml(config_contents)
-            .map(WithVersion::CodeSecurity)
-            .map_err(|err| match err {
-                file_v1::ParseError::Parse(inner) => ConfigError::Parse(inner),
-                // Match arm is `YamlSchemaVersion::V2`, so this is impossible.
-                file_v1::ParseError::WrongSchema(_) => unreachable!(),
-            }),
+        YamlSchemaVersion::MajorMinor((1, _)) => {
+            file_v1::parse_yaml(config_contents)
+                .map(WithVersion::CodeSecurity)
+                .map_err(|err| match err {
+                    file_v1::ParseError::Parse(inner) => ConfigError::Parse(inner),
+                    // This is in a branch where major == 1, so this is impossible.
+                    file_v1::ParseError::WrongSchema(_) => unreachable!(),
+                })
+        }
+        YamlSchemaVersion::MajorMinor((major, _)) => {
+            Err(ConfigError::UnsupportedSchema(format!("v{major}.x")))
+        }
         YamlSchemaVersion::Invalid(content) => Err(ConfigError::UnsupportedSchema(content)),
     }
 }
@@ -322,8 +343,10 @@ mod tests {
     fn yaml_schema_version_deserialize() {
         let version = serde_yaml::from_str::<YamlSchemaVersion>("v1").unwrap();
         assert_eq!(version, YamlSchemaVersion::Legacy);
-        let version = serde_yaml::from_str::<YamlSchemaVersion>("v2").unwrap();
-        assert_eq!(version, YamlSchemaVersion::V2);
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v1.0").unwrap();
+        assert_eq!(version, YamlSchemaVersion::MajorMinor((1, 0)));
+        let version = serde_yaml::from_str::<YamlSchemaVersion>("v3.2").unwrap();
+        assert_eq!(version, YamlSchemaVersion::MajorMinor((3, 2)));
         let version = serde_yaml::from_str::<YamlSchemaVersion>("v9").unwrap();
         assert_eq!(version, YamlSchemaVersion::Invalid("v9".to_string()));
         let version = serde_yaml::from_str::<YamlSchemaVersion>("truncation test").unwrap();
@@ -331,7 +354,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_any_legacy_v2() {
+    fn parse_any_legacy_v1_0() {
         // language=yaml
         let legacy = "\
 schema-version: v1
@@ -344,19 +367,21 @@ rulesets:
   - java-security
 ";
         // language=yaml
-        let v2 = "\
-schema-version: v2
-use-default-rulesets: false
-use-rulesets:
-  - java-security
+        let v1_0 = "\
+schema-version: v1.0
+sast:
+  use-default-rulesets: false
+  use-rulesets:
+    - java-security
 ";
-        for (config_contents, expected_variant) in [(legacy, "v1"), (schemaless, "v1"), (v2, "v2")]
+        for (config_contents, expected_variant) in
+            [(legacy, "v1"), (schemaless, "v1"), (v1_0, "v1.0")]
         {
             let parsed = parse_any_schema_yaml(config_contents).unwrap();
             match expected_variant {
                 "v1" => assert!(matches!(parsed, WithVersion::Legacy(_))),
-                "v2" => assert!(matches!(parsed, WithVersion::CodeSecurity(_))),
-                // (If this triggers, you need to add a match arm from a &str to the new version, e.g "v2.1" to WithVersion::V2_1)
+                "v1.0" => assert!(matches!(parsed, WithVersion::CodeSecurity(_))),
+                // (If this triggers, you need to add a match arm from a &str to the new version, e.g "v1.1" to WithVersion::V1_1)
                 _ => panic!("broken test setup: unknown schema `{expected_variant}`"),
             }
         }
@@ -375,13 +400,13 @@ schema-version: v9
         let invalid_syntax_before_schema = format!(
             "\
 {invalid_yaml}
-schema-version: v2
+schema-version: v1.0
 "
         );
 
         let invalid_syntax_after_schema = format!(
             "\
-schema-version: v2
+schema-version: v1.0
 {invalid_yaml}
 "
         );

@@ -30,7 +30,7 @@ impl From<file_legacy::YamlConfigFile> for file_v1::YamlConfigFile {
                 only_paths: value.paths.only,
                 ignore_paths: (!combined_ignores.is_empty()).then_some(combined_ignores),
             },
-            // v2 `use_gitignore` defaults to true and is logically equivalent to !(legacy `ignore_gitignore`).
+            // v1.0 `use_gitignore` defaults to true and is logically equivalent to !(legacy `ignore_gitignore`).
             // Thus, it should only be Some if the legacy `ignore_gitignore` is non-default (i.e. "false").
             //
             // Thus, only set to Some if legacy `ignore_gitignore` is true.
@@ -39,9 +39,8 @@ impl From<file_legacy::YamlConfigFile> for file_v1::YamlConfigFile {
             max_file_size_kb: value.max_file_size_kb,
         };
 
-        Self {
-            schema_version: YamlSchemaVersion::V2,
-            // (Going from legacy -> v2 always implies an explicit disabling of default rulesets)
+        let sast_minor0 = file_v1::YamlSastConfigMinor0 {
+            // (Going from legacy -> v1.0 always implies an explicit disabling of default rulesets)
             use_default_rulesets: Some(false),
             use_rulesets: (!use_rulesets.is_empty()).then_some(use_rulesets),
             ignore_rulesets: None,
@@ -50,6 +49,15 @@ impl From<file_legacy::YamlConfigFile> for file_v1::YamlConfigFile {
             ruleset_configs: (!ruleset_configs.is_empty()).then_some(UniqueKeyMap(ruleset_configs)),
             global_config: (global_config != file_v1::YamlGlobalConfig::default())
                 .then_some(global_config),
+        };
+
+        Self {
+            schema_version: YamlSchemaVersion::MajorMinor((1, 0)),
+            sast: Some(file_v1::YamlSastConfig::Minor0(sast_minor0)),
+            secrets: None,
+            iac: None,
+            sca: None,
+            iast: None,
         }
     }
 }
@@ -111,8 +119,8 @@ rulesets:
         )
     }
 
-    /// Shorthand to deserialize a valid legacy config string into a v2 YamlConfigFile
-    fn to_v2(cfg: impl AsRef<str>) -> file_v1::YamlConfigFile {
+    /// Shorthand to deserialize a valid legacy config string into a v1.0 YamlConfigFile
+    fn to_v1_0(cfg: impl AsRef<str>) -> file_v1::YamlConfigFile {
         serde_yaml::from_str::<file_legacy::YamlConfigFile>(cfg.as_ref())
             .unwrap()
             .into()
@@ -182,46 +190,48 @@ rulesets:
     }
 
     /// Baseline conversion:
-    /// * `schema-version` is always v2
-    /// * `use-default-rulesets` is always false.
+    /// * `schema-version` is always v1.0
+    /// * sast `use-default-rulesets` is always false.
     #[test]
     fn baseline() {
-        let cfg = to_v2(legacy_template(""));
-        assert_eq!(cfg.schema_version, YamlSchemaVersion::V2);
-        assert_eq!(cfg.use_default_rulesets, Some(false));
+        let cfg = to_v1_0(legacy_template(""));
+        assert_eq!(cfg.schema_version, YamlSchemaVersion::MajorMinor((1, 0)));
+        assert_eq!(cfg.sast0().use_default_rulesets, Some(false));
     }
 
-    /// Legacy `ignore` and `ignore-paths` are concatenated, if present.
+    /// legacy `ignore` and `ignore-paths` are concatenated, if present.
     #[test]
     fn ignore_paths_concat() {
-        let cfg = to_v2(legacy_template(""));
-        assert!(cfg.global_config.is_none());
+        let cfg = to_v1_0(legacy_template(""));
+        assert!(cfg.sast0().global_config.is_none());
 
-        let cfg = to_v2(legacy_template(
+        let cfg = to_v1_0(legacy_template(
             // language=yaml
             "
 ignore:
   - src/a
 ",
         ));
+        let global_config = cfg.sast0().global_config.clone().unwrap();
         assert_eq!(
-            cfg.global_config.unwrap().path_config.ignore_paths.unwrap(),
+            global_config.path_config.ignore_paths.unwrap(),
             vec!["src/a"]
         );
 
-        let cfg = to_v2(legacy_template(
+        let cfg = to_v1_0(legacy_template(
             // language=yaml
             "
 ignore-paths:
   - src/b
 ",
         ));
+        let global_config = cfg.sast0().global_config.clone().unwrap();
         assert_eq!(
-            cfg.global_config.unwrap().path_config.ignore_paths.unwrap(),
+            global_config.path_config.ignore_paths.unwrap(),
             vec!["src/b"]
         );
 
-        let cfg = to_v2(legacy_template(
+        let cfg = to_v1_0(legacy_template(
             // language=yaml
             "
 ignore:
@@ -230,41 +240,43 @@ ignore-paths:
   - src/b
 ",
         ));
+        let global_config = cfg.sast0().global_config.clone().unwrap();
         assert_eq!(
-            cfg.global_config.unwrap().path_config.ignore_paths.unwrap(),
+            global_config.path_config.ignore_paths.unwrap(),
             vec!["src/a", "src/b"]
         );
     }
 
-    /// v2 `use-gitignore` is only present if legacy `ignore-gitignore` was true.
+    /// v1.0 `use-gitignore` is only present if legacy `ignore-gitignore` was true.
     #[test]
     fn gitignore_semantics() {
-        let cfg = to_v2(legacy_template(""));
-        assert!(cfg.global_config.is_none());
+        let cfg = to_v1_0(legacy_template(""));
+        assert!(cfg.sast0().global_config.is_none());
 
-        let cfg = to_v2(legacy_template(
+        let cfg = to_v1_0(legacy_template(
             // language=yaml
             "
 ignore-gitignore: false
 ",
         ));
-        assert!(cfg.global_config.is_none());
+        assert!(cfg.sast0().global_config.is_none());
 
-        let cfg = to_v2(legacy_template(
+        let cfg = to_v1_0(legacy_template(
             // language=yaml
             "
 ignore-gitignore: true
 ",
         ));
-        assert_eq!(cfg.global_config.unwrap().use_gitignore, Some(false));
+        let global_config = cfg.sast0().global_config.clone().unwrap();
+        assert_eq!(global_config.use_gitignore, Some(false));
     }
 
     #[test]
     fn global_config() {
-        let cfg = to_v2(legacy_template(""));
-        assert!(cfg.global_config.is_none());
+        let cfg = to_v1_0(legacy_template(""));
+        assert!(cfg.sast0().global_config.is_none());
 
-        let cfg = to_v2(legacy_template(
+        let cfg = to_v1_0(legacy_template(
             // language=yaml
             "
 only:
@@ -275,20 +287,23 @@ ignore-generated-files: true
 max-file-size-kb: 500
 ",
         ));
-        let global_config = cfg.global_config.unwrap();
-        assert_eq!(global_config.path_config.only_paths.unwrap(), vec!["src/a"]);
+        let global_config = cfg.sast0().global_config.as_ref().unwrap();
         assert_eq!(
-            global_config.path_config.ignore_paths.unwrap(),
-            vec!["src/a/z"]
+            global_config.path_config.only_paths.as_ref().unwrap(),
+            &vec!["src/a"]
+        );
+        assert_eq!(
+            global_config.path_config.ignore_paths.as_ref().unwrap(),
+            &vec!["src/a/z"]
         );
         assert_eq!(global_config.ignore_generated_files, Some(true));
         assert_eq!(global_config.max_file_size_kb, Some(500));
     }
 
-    /// v2 `use-rulesets` and `ruleset-configs` are constructed correctly
+    /// v1.0 `use-rulesets` and `ruleset-configs` are constructed correctly
     #[test]
     fn ruleset_configs_use_rulesets_split() {
-        let cfg = to_v2(
+        let cfg = to_v1_0(
             // language=yaml
             "
 schema-version: v1
@@ -297,13 +312,14 @@ rulesets:
   - python-security
 ",
         );
-        assert_eq!(
-            cfg.use_rulesets.unwrap(),
-            vec!["java-security", "python-security"]
-        );
-        assert!(cfg.ruleset_configs.is_none());
 
-        let cfg = to_v2(
+        assert_eq!(
+            cfg.sast0().use_rulesets.as_ref().unwrap(),
+            &vec!["java-security", "python-security"]
+        );
+        assert!(cfg.sast0().ruleset_configs.is_none());
+
+        let cfg = to_v1_0(
             // language=yaml
             "
 schema-version: v1
@@ -314,12 +330,12 @@ rulesets:
 ",
         );
         assert_eq!(
-            cfg.use_rulesets.unwrap(),
-            vec!["java-security", "python-security"]
+            cfg.sast0().use_rulesets.as_ref().unwrap(),
+            &vec!["java-security", "python-security"]
         );
-        assert!(cfg.ruleset_configs.is_none());
+        assert!(cfg.sast0().ruleset_configs.is_none());
 
-        let cfg = to_v2(
+        let cfg = to_v1_0(
             // language=yaml
             "
 schema-version: v1
@@ -331,12 +347,12 @@ rulesets:
 ",
         );
         assert_eq!(
-            cfg.use_rulesets.unwrap(),
-            vec!["java-security", "python-security"]
+            cfg.sast0().use_rulesets.as_ref().unwrap(),
+            &vec!["java-security", "python-security"]
         );
         assert_eq!(
-            cfg.ruleset_configs.unwrap().0,
-            IndexMap::from([(
+            &cfg.sast0().ruleset_configs.as_ref().unwrap().0,
+            &IndexMap::from([(
                 "python-security".to_string(),
                 file_v1::YamlRulesetConfig {
                     path_config: file_v1::YamlPathConfig {

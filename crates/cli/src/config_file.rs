@@ -55,7 +55,7 @@ pub fn get_config(
         .transpose()?;
     let local_config: Option<file_v1::ConfigFile> = local_yaml.map(|v| match v {
         WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
-        WithVersion::CodeSecurity(v2) => v2.into(),
+        WithVersion::CodeSecurity(v1) => v1.into(),
     });
 
     if !should_use_datadog_backend() {
@@ -106,7 +106,7 @@ pub fn get_config(
     };
     let remote_config: file_v1::ConfigFile = match remote_yaml {
         WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
-        WithVersion::CodeSecurity(v2) => v2.into(),
+        WithVersion::CodeSecurity(v1) => v1.into(),
     };
 
     let config_method = if local_config.is_some() {
