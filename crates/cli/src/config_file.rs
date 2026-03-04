@@ -1,4 +1,4 @@
-use crate::constants::LEGACY_CONFIG_FILE_WITHOUT_EXTENSION;
+use crate::constants::{CS_CONFIG_FILE_WITHOUT_EXTENSION, LEGACY_CONFIG_FILE_WITHOUT_EXTENSION};
 use crate::datadog_utils::DatadogApiError::InvalidPermission;
 use crate::datadog_utils::{
     get_remote_configuration, print_permission_warning, should_use_datadog_backend,
@@ -31,13 +31,21 @@ fn read_config_file(base_path: &Path, base_name: &str) -> anyhow::Result<Option<
 
 fn get_local_config(base_path: &Path) -> anyhow::Result<Option<(file_v1::ConfigFile, String)>> {
     let mut local_config: Option<(file_v1::ConfigFile, String)> = None;
-    if let Some(contents) = read_config_file(base_path, LEGACY_CONFIG_FILE_WITHOUT_EXTENSION)? {
-        if contents.trim().is_empty() {
-            return Err(anyhow!("the config file is empty"));
+    // Code Security config
+    if let Some(contents) = read_config_file(base_path, CS_CONFIG_FILE_WITHOUT_EXTENSION)? {
+        let parsed = file_v1::parse_yaml(&contents)?;
+        local_config = Some((parsed.into(), contents));
+    }
+    // Legacy fallback
+    if local_config.is_none() {
+        if let Some(contents) = read_config_file(base_path, LEGACY_CONFIG_FILE_WITHOUT_EXTENSION)? {
+            if contents.trim().is_empty() {
+                return Err(anyhow!("the config file is empty"));
+            }
+            let parsed = file_legacy::parse_yaml(&contents)?;
+            let as_v1 = file_v1::YamlConfigFile::from(parsed);
+            local_config = Some((as_v1.into(), contents));
         }
-        let parsed = file_legacy::parse_yaml(&contents)?;
-        let as_v1 = file_v1::YamlConfigFile::from(parsed);
-        local_config = Some((as_v1.into(), contents));
     }
     Ok(local_config)
 }
@@ -108,7 +116,9 @@ pub fn get_config(
 #[cfg(test)]
 mod tests {
     use crate::config_file::get_local_config;
-    use crate::constants::LEGACY_CONFIG_FILE_WITHOUT_EXTENSION;
+    use crate::constants::{
+        CS_CONFIG_FILE_WITHOUT_EXTENSION, LEGACY_CONFIG_FILE_WITHOUT_EXTENSION,
+    };
     use std::fs;
     use tempfile::TempDir;
 
@@ -118,6 +128,13 @@ mod tests {
     const LEGACY: &str = "\
 rulesets:
   - java-best-practices
+";
+    // language=yaml
+    const V1: &str = "\
+schema-version: v1.0
+sast:
+  use-rulesets:
+    - go-security
 ";
 
     #[test]
@@ -140,5 +157,43 @@ rulesets:
                 &["java-best-practices"]
             );
         }
+    }
+
+    #[test]
+    fn config_file_v1() {
+        for ext in EXTENSIONS {
+            let test_dir = TempDir::new().unwrap();
+
+            let cfg = get_local_config(test_dir.path()).unwrap();
+            assert!(cfg.is_none());
+
+            let file_path = test_dir
+                .path()
+                .join(format!("{CS_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
+            fs::write(&file_path, V1).unwrap();
+
+            let (cfg, contents) = get_local_config(test_dir.path()).unwrap().unwrap();
+            assert_eq!(contents, V1);
+            assert_eq!(
+                cfg.sast().unwrap().explicit_rulesets().collect::<Vec<_>>(),
+                &["go-security"]
+            );
+        }
+    }
+
+    /// Code Security config, if present, is used before a legacy config.
+    #[test]
+    fn config_file_precedence() {
+        let test_dir = TempDir::new().unwrap();
+        for (content, prefix) in [
+            (LEGACY, LEGACY_CONFIG_FILE_WITHOUT_EXTENSION),
+            (V1, CS_CONFIG_FILE_WITHOUT_EXTENSION),
+        ] {
+            let file_path = test_dir.path().join(format!("{prefix}.yaml"));
+            fs::write(&file_path, content).unwrap();
+        }
+        let (_, contents) = get_local_config(test_dir.path()).unwrap().unwrap();
+
+        assert_eq!(contents, V1);
     }
 }
