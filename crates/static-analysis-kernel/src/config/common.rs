@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-use crate::config::{file_legacy, file_v2};
+use crate::config::{file_legacy, file_v1};
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use common::model::diff_aware::DiffAware;
 use globset::{GlobBuilder, GlobMatcher};
@@ -282,15 +282,15 @@ pub enum ConfigError {
 /// from. (This info is preserved for backwards compatibility so that legacy schemas can be output
 /// by the datadog-static-analyzer-server.
 #[derive(Debug, Clone, Eq, PartialEq)]
-pub enum WithVersion<L, V2> {
+pub enum WithVersion<L, CS> {
     Legacy(L),
-    V2(V2),
+    CodeSecurity(CS),
 }
 
 /// Parses a YAML configuration for any schema.
 pub fn parse_any_schema_yaml(
     config_contents: &str,
-) -> Result<WithVersion<file_legacy::YamlConfigFile, file_v2::YamlConfigFile>, ConfigError> {
+) -> Result<WithVersion<file_legacy::YamlConfigFile, file_v1::YamlConfigFile>, ConfigError> {
     #[derive(Debug, serde::Deserialize)]
     #[serde(rename_all = "kebab-case")]
     struct Version {
@@ -303,12 +303,12 @@ pub fn parse_any_schema_yaml(
         YamlSchemaVersion::Legacy => file_legacy::parse_yaml(config_contents)
             .map(WithVersion::Legacy)
             .map_err(ConfigError::Parse),
-        YamlSchemaVersion::V2 => file_v2::parse_yaml(config_contents)
-            .map(WithVersion::V2)
+        YamlSchemaVersion::V2 => file_v1::parse_yaml(config_contents)
+            .map(WithVersion::CodeSecurity)
             .map_err(|err| match err {
-                file_v2::ParseError::Parse(inner) => ConfigError::Parse(inner),
+                file_v1::ParseError::Parse(inner) => ConfigError::Parse(inner),
                 // Match arm is `YamlSchemaVersion::V2`, so this is impossible.
-                file_v2::ParseError::WrongSchema(_) => unreachable!(),
+                file_v1::ParseError::WrongSchema(_) => unreachable!(),
             }),
         YamlSchemaVersion::Invalid(content) => Err(ConfigError::UnsupportedSchema(content)),
     }
@@ -355,7 +355,7 @@ use-rulesets:
             let parsed = parse_any_schema_yaml(config_contents).unwrap();
             match expected_variant {
                 "v1" => assert!(matches!(parsed, WithVersion::Legacy(_))),
-                "v2" => assert!(matches!(parsed, WithVersion::V2(_))),
+                "v2" => assert!(matches!(parsed, WithVersion::CodeSecurity(_))),
                 // (If this triggers, you need to add a match arm from a &str to the new version, e.g "v2.1" to WithVersion::V2_1)
                 _ => panic!("broken test setup: unknown schema `{expected_variant}`"),
             }
