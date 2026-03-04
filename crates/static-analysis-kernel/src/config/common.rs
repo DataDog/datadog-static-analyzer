@@ -304,6 +304,11 @@ pub enum WithVersion<L, CS> {
 }
 
 /// Parses a YAML configuration for any schema.
+///
+/// In general, you should only use this if you don't know ahead of time what schema to expect.
+/// Otherwise, for
+/// * Code Security v1.x: Use [`file_v1::parse_yaml`]
+/// * Legacy: Use [`file_legacy::parse_yaml`]
 pub fn parse_any_schema_yaml(
     config_contents: &str,
 ) -> Result<WithVersion<file_legacy::YamlConfigFile, file_v1::YamlConfigFile>, ConfigError> {

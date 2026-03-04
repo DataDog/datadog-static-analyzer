@@ -1,5 +1,6 @@
 use std::env;
 
+use crate::constants::QUERY_PARAM_SCHEMA_VERSION;
 use crate::datadog_utils::DatadogApiError::{
     CouldNotParseJson, CouldNotParseResponse, CouldNotQuery, ErrorResponse, InvalidPermission,
     MissingVariable, RulesetNotFound,
@@ -368,7 +369,9 @@ pub fn get_remote_configuration(
     };
 
     let path = "config/client";
-    let req = make_request(RequestMethod::Post, path, false, true)?.json(&request_payload);
+    let req = make_request(RequestMethod::Post, path, false, true)?
+        .query(&[(QUERY_PARAM_SCHEMA_VERSION, "v1")])
+        .json(&request_payload);
     let server_response = perform_request(req, path, debug)?;
     parse_response(server_response).map(|d: ConfigResponse| d.data.attributes.config_base64)
 }
