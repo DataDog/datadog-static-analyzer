@@ -4,10 +4,10 @@
 
 use crate::config::common::YamlSchemaVersion;
 use crate::config::file_legacy::UniqueKeyMap;
-use crate::config::{file_legacy, file_v2};
+use crate::config::{file_legacy, file_v1};
 use indexmap::IndexMap;
 
-impl From<file_legacy::YamlConfigFile> for file_v2::YamlConfigFile {
+impl From<file_legacy::YamlConfigFile> for file_v1::YamlConfigFile {
     fn from(value: file_legacy::YamlConfigFile) -> Self {
         let mut combined_ignores = value.paths.ignore;
         if let Some(paths) = value.ignore_paths {
@@ -15,18 +15,18 @@ impl From<file_legacy::YamlConfigFile> for file_v2::YamlConfigFile {
         }
 
         let mut use_rulesets = Vec::<String>::with_capacity(value.rulesets.0.len());
-        let mut ruleset_configs = IndexMap::<String, file_v2::YamlRulesetConfig>::new();
+        let mut ruleset_configs = IndexMap::<String, file_v1::YamlRulesetConfig>::new();
 
         for legacy_ruleset_cfg in value.rulesets.0 {
-            let ruleset_cfg: file_v2::YamlRulesetConfig = legacy_ruleset_cfg.cfg.into();
-            if ruleset_cfg != file_v2::YamlRulesetConfig::default() {
+            let ruleset_cfg: file_v1::YamlRulesetConfig = legacy_ruleset_cfg.cfg.into();
+            if ruleset_cfg != file_v1::YamlRulesetConfig::default() {
                 let _ = ruleset_configs.insert(legacy_ruleset_cfg.name.clone(), ruleset_cfg);
             }
             use_rulesets.push(legacy_ruleset_cfg.name);
         }
 
-        let global_config = file_v2::YamlGlobalConfig {
-            path_config: file_v2::YamlPathConfig {
+        let global_config = file_v1::YamlGlobalConfig {
+            path_config: file_v1::YamlPathConfig {
                 only_paths: value.paths.only,
                 ignore_paths: (!combined_ignores.is_empty()).then_some(combined_ignores),
             },
@@ -48,13 +48,13 @@ impl From<file_legacy::YamlConfigFile> for file_v2::YamlConfigFile {
             // (ruleset_configs came from file_legacy::YamlRulesetList, which enforces key uniqueness, so
             // we can manually construct UniqueKeyMap without validation).
             ruleset_configs: (!ruleset_configs.is_empty()).then_some(UniqueKeyMap(ruleset_configs)),
-            global_config: (global_config != file_v2::YamlGlobalConfig::default())
+            global_config: (global_config != file_v1::YamlGlobalConfig::default())
                 .then_some(global_config),
         }
     }
 }
 
-impl From<file_legacy::YamlPathConfig> for file_v2::YamlPathConfig {
+impl From<file_legacy::YamlPathConfig> for file_v1::YamlPathConfig {
     fn from(value: file_legacy::YamlPathConfig) -> Self {
         Self {
             only_paths: value.only,
@@ -63,7 +63,7 @@ impl From<file_legacy::YamlPathConfig> for file_v2::YamlPathConfig {
     }
 }
 
-impl From<file_legacy::YamlRuleConfig> for file_v2::YamlRuleConfig {
+impl From<file_legacy::YamlRuleConfig> for file_v1::YamlRuleConfig {
     fn from(value: file_legacy::YamlRuleConfig) -> Self {
         Self {
             path_config: value.paths.into(),
@@ -74,7 +74,7 @@ impl From<file_legacy::YamlRuleConfig> for file_v2::YamlRuleConfig {
     }
 }
 
-impl From<file_legacy::YamlRulesetConfig> for file_v2::YamlRulesetConfig {
+impl From<file_legacy::YamlRulesetConfig> for file_v1::YamlRulesetConfig {
     fn from(value: file_legacy::YamlRulesetConfig) -> Self {
         Self {
             path_config: value.paths.into(),
@@ -95,7 +95,7 @@ impl From<file_legacy::YamlRulesetConfig> for file_v2::YamlRulesetConfig {
 #[cfg(test)]
 mod tests {
     use crate::config::common::YamlSchemaVersion;
-    use crate::config::{file_legacy, file_v2};
+    use crate::config::{file_legacy, file_v1};
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use indexmap::IndexMap;
 
@@ -112,7 +112,7 @@ rulesets:
     }
 
     /// Shorthand to deserialize a valid legacy config string into a v2 YamlConfigFile
-    fn to_v2(cfg: impl AsRef<str>) -> file_v2::YamlConfigFile {
+    fn to_v2(cfg: impl AsRef<str>) -> file_v1::YamlConfigFile {
         serde_yaml::from_str::<file_legacy::YamlConfigFile>(cfg.as_ref())
             .unwrap()
             .into()
@@ -120,19 +120,19 @@ rulesets:
 
     #[test]
     fn yaml_path_config_from() {
-        let v2 = file_v2::YamlPathConfig::from(file_legacy::YamlPathConfig {
+        let v2 = file_v1::YamlPathConfig::from(file_legacy::YamlPathConfig {
             only: Some(vec!["src/a".to_string()]),
             ignore: vec!["src/a/z".to_string()],
         });
         assert_eq!(
             v2,
-            file_v2::YamlPathConfig {
+            file_v1::YamlPathConfig {
                 only_paths: Some(vec!["src/a".to_string()]),
                 ignore_paths: Some(vec!["src/a/z".to_string()]),
             }
         );
         // Empty vec is translated to None.
-        let v2 = file_v2::YamlPathConfig::from(file_legacy::YamlPathConfig {
+        let v2 = file_v1::YamlPathConfig::from(file_legacy::YamlPathConfig {
             only: Some(vec!["src/a".to_string()]),
             ignore: vec![],
         });
@@ -150,7 +150,7 @@ rulesets:
             ("src/a".to_string(), RuleSeverity::Error)
         ]));
         let category = file_legacy::YamlRuleCategory(RuleCategory::Security);
-        let v2 = file_v2::YamlRuleConfig::from(file_legacy::YamlRuleConfig {
+        let v2 = file_v1::YamlRuleConfig::from(file_legacy::YamlRuleConfig {
             paths: Default::default(),
             arguments: argument_map.clone(),
             severity: Some(severity_map.clone()),
@@ -162,7 +162,7 @@ rulesets:
 
         // Empty map is translated to None.
         let argument_map = file_legacy::UniqueKeyMap(IndexMap::default());
-        let v2 = file_v2::YamlRuleConfig::from(file_legacy::YamlRuleConfig {
+        let v2 = file_v1::YamlRuleConfig::from(file_legacy::YamlRuleConfig {
             paths: Default::default(),
             arguments: argument_map,
             severity: None,
@@ -174,7 +174,7 @@ rulesets:
     #[test]
     fn yaml_ruleset_config_from() {
         // Empty map is translated to None.
-        let v2 = file_v2::YamlRulesetConfig::from(file_legacy::YamlRulesetConfig {
+        let v2 = file_v1::YamlRulesetConfig::from(file_legacy::YamlRulesetConfig {
             paths: Default::default(),
             rules: file_legacy::UniqueKeyMap(IndexMap::default()),
         });
@@ -338,8 +338,8 @@ rulesets:
             cfg.ruleset_configs.unwrap().0,
             IndexMap::from([(
                 "python-security".to_string(),
-                file_v2::YamlRulesetConfig {
-                    path_config: file_v2::YamlPathConfig {
+                file_v1::YamlRulesetConfig {
+                    path_config: file_v1::YamlPathConfig {
                         only_paths: Some(vec!["src/a".to_string()]),
                         ignore_paths: None,
                     },
