@@ -1,5 +1,5 @@
 use crate::config::common::{BySubtree, SplitPath};
-use crate::config::file_v2;
+use crate::config::file_v1;
 use crate::model::rule::{RuleCategory, RuleSeverity};
 use std::collections::HashMap;
 
@@ -12,7 +12,7 @@ pub struct RuleOverrides {
 
 impl RuleOverrides {
     // Reads the overrides from the configuration file.
-    pub fn from_config_file(cfg: &file_v2::ConfigFile) -> Self {
+    pub fn from_config_file(cfg: &file_v1::ConfigFile) -> Self {
         let mut severities = HashMap::<String, BySubtree<RuleSeverity>>::new();
         let mut categories = HashMap::<String, RuleCategory>::new();
 

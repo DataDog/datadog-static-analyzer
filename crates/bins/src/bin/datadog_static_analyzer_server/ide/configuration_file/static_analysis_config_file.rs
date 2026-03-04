@@ -7,7 +7,7 @@ use kernel::config::common::{
     WithVersion,
 };
 use kernel::config::file_legacy::config_file_to_yaml;
-use kernel::config::{file_legacy, file_v2};
+use kernel::config::{file_legacy, file_v1};
 use kernel::utils::decode_base64_string;
 use std::{borrow::Cow, fmt::Debug};
 use tracing::instrument;
@@ -16,7 +16,7 @@ const WILDCARD_IGNORE: &str = "**";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticAnalysisConfigFile {
-    config_file: WithVersion<file_legacy::ConfigFile, file_v2::YamlConfigFile>,
+    config_file: WithVersion<file_legacy::ConfigFile, file_v1::YamlConfigFile>,
     original_content: Option<String>,
 }
 
@@ -58,7 +58,7 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
         })?;
         let config_file = match parsed {
             WithVersion::Legacy(yaml) => WithVersion::Legacy(file_legacy::ConfigFile::from(yaml)),
-            WithVersion::V2(yaml) => WithVersion::V2(yaml),
+            WithVersion::CodeSecurity(yaml) => WithVersion::CodeSecurity(yaml),
         };
         Ok(Self {
             config_file,
@@ -172,7 +172,7 @@ impl StaticAnalysisConfigFile {
                     );
                 }
             }
-            WithVersion::V2(config) => {
+            WithVersion::CodeSecurity(config) => {
                 // (All logic for this is translated from the Legacy match arm)
                 let map = config.ruleset_configs.get_or_insert_default();
                 let ruleset_config = map.0.entry(ruleset_name.to_string()).or_default();
@@ -247,7 +247,7 @@ impl StaticAnalysisConfigFile {
                     }
                 }
             }
-            WithVersion::V2(config) => {
+            WithVersion::CodeSecurity(config) => {
                 if rulesets.is_empty() {
                     return;
                 }
@@ -293,7 +293,7 @@ impl StaticAnalysisConfigFile {
         };
         match parsed.config_file {
             WithVersion::Legacy(config) => config.rulesets.iter().map(|rs| rs.0.clone()).collect(),
-            WithVersion::V2(config) => config.use_rulesets.clone().unwrap_or_default(),
+            WithVersion::CodeSecurity(config) => config.use_rulesets.clone().unwrap_or_default(),
         }
     }
 
@@ -303,7 +303,7 @@ impl StaticAnalysisConfigFile {
             WithVersion::Legacy(config) => {
                 config.paths.only.is_none() && config.paths.ignore.is_empty()
             }
-            WithVersion::V2(config) => {
+            WithVersion::CodeSecurity(config) => {
                 config.global_config.is_none()
                     || config.global_config.as_ref().is_some_and(|c| {
                         c.path_config.ignore_paths.is_none() && c.path_config.only_paths.is_none()
@@ -338,7 +338,7 @@ impl StaticAnalysisConfigFile {
                     })
                     .join("\n")
             }
-            WithVersion::V2(config) => serde_yaml::to_string(&config)?,
+            WithVersion::CodeSecurity(config) => serde_yaml::to_string(&config)?,
         };
         // reconcile and format
         // NOTE: if this fails, we're going to return the content

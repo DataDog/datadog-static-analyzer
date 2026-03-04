@@ -193,7 +193,7 @@ pub(crate) fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, ParseE
 mod tests {
     use crate::config::common;
     use crate::config::common::YamlSchemaVersion;
-    use crate::config::file_v2::{parse_yaml, ConfigFile, GlobalConfig, ParseError};
+    use crate::config::file_v1::{parse_yaml, ConfigFile, GlobalConfig, ParseError};
     use crate::model::rule::RuleCategory;
     use indexmap::IndexMap;
 

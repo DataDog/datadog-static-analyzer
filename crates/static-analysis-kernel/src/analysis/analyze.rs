@@ -397,7 +397,7 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::tree_sitter::get_query;
     use crate::config::common::{parse_any_schema_yaml, WithVersion};
-    use crate::config::file_v2;
+    use crate::config::file_v1;
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use crate::rule_config::RuleConfigProvider;
@@ -1170,7 +1170,7 @@ function visit(node, filename, code) {
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
         };
 
-        let local_config: file_v2::ConfigFile = parse_any_schema_yaml(
+        let local_config: file_v1::ConfigFile = parse_any_schema_yaml(
             // language=yaml
             r#"
 rulesets:
@@ -1183,8 +1183,8 @@ rulesets:
         "#,
         )
         .map(|v| match v {
-            WithVersion::Legacy(legacy) => file_v2::YamlConfigFile::from(legacy).into(),
-            WithVersion::V2(v2) => v2.into(),
+            WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
+            WithVersion::CodeSecurity(v2) => v2.into(),
         })
         .unwrap();
 
@@ -1298,7 +1298,7 @@ function visit(node, filename, code) {
             timeout: None,
         };
 
-        let local_config: file_v2::ConfigFile = parse_any_schema_yaml(
+        let local_config: file_v1::ConfigFile = parse_any_schema_yaml(
             // language=yaml
             r#"
 rulesets:
@@ -1314,8 +1314,8 @@ rulesets:
         "#,
         )
         .map(|v| match v {
-            WithVersion::Legacy(legacy) => file_v2::YamlConfigFile::from(legacy).into(),
-            WithVersion::V2(v2) => v2.into(),
+            WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
+            WithVersion::CodeSecurity(v2) => v2.into(),
         })
         .unwrap();
 

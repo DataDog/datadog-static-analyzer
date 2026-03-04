@@ -6,7 +6,7 @@ use crate::datadog_utils::{
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context};
 use kernel::config::common::{parse_any_schema_yaml, ConfigMethod, WithVersion};
-use kernel::config::file_v2;
+use kernel::config::file_v1;
 use kernel::utils::{decode_base64_string, encode_base64_string};
 use std::path::Path;
 
@@ -47,15 +47,15 @@ pub fn read_config_file(base_path: &str) -> anyhow::Result<Option<String>> {
 pub fn get_config(
     path: &str,
     debug: bool,
-) -> anyhow::Result<Option<(file_v2::ConfigFile, ConfigMethod)>> {
+) -> anyhow::Result<Option<(file_v1::ConfigFile, ConfigMethod)>> {
     let local_file_contents = read_config_file(path)?;
     let local_yaml = local_file_contents
         .as_ref()
         .map(|c| parse_any_schema_yaml(c))
         .transpose()?;
-    let local_config: Option<file_v2::ConfigFile> = local_yaml.map(|v| match v {
-        WithVersion::Legacy(legacy) => file_v2::YamlConfigFile::from(legacy).into(),
-        WithVersion::V2(v2) => v2.into(),
+    let local_config: Option<file_v1::ConfigFile> = local_yaml.map(|v| match v {
+        WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
+        WithVersion::CodeSecurity(v2) => v2.into(),
     });
 
     if !should_use_datadog_backend() {
@@ -104,9 +104,9 @@ pub fn get_config(
     let Ok(remote_yaml) = res else {
         return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
-    let remote_config: file_v2::ConfigFile = match remote_yaml {
-        WithVersion::Legacy(legacy) => file_v2::YamlConfigFile::from(legacy).into(),
-        WithVersion::V2(v2) => v2.into(),
+    let remote_config: file_v1::ConfigFile = match remote_yaml {
+        WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
+        WithVersion::CodeSecurity(v2) => v2.into(),
     };
 
     let config_method = if local_config.is_some() {
