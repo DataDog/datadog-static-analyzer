@@ -13,8 +13,12 @@ REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone --depth=1 https://github.com/muh-nee/sast-files-encoding.git "${REPO_DIR}"
 
-echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
-echo " - python-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo "schema-version: v1.0
+sast:
+  use-default-rulesets: false
+  use-rulesets:
+    - python-security
+" > "${REPO_DIR}/code-security.datadog.yaml"
 
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif
 
