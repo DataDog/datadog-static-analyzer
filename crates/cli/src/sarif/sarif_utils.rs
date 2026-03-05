@@ -144,17 +144,31 @@ impl SarifViolation {
                 SecretValidationStatus::NotValidated => "NOT_VALIDATED",
                 SecretValidationStatus::Valid => "VALID",
                 SecretValidationStatus::Invalid => "INVALID",
-                SecretValidationStatus::ValidationError(code, message) => {
-                    if let Some(error_code) = code {
+                SecretValidationStatus::ValidationError(error_infos) => {
+                    if !error_infos.is_empty() {
+                        // Add count of validation errors
                         additional_properties.push(format!(
-                            "DATADOG_SECRET_VALIDATION_ERROR_CODE:{}",
-                            error_code
+                            "DATADOG_SECRET_VALIDATION_ERROR_COUNT:{}",
+                            error_infos.len()
                         ));
+
+                        // Add indexed error details for all errors
+                        for (index, error_info) in error_infos.iter().enumerate() {
+                            additional_properties.push(format!(
+                                "DATADOG_SECRET_VALIDATION_ERROR_TYPE.{}:{}",
+                                index,
+                                error_info.error_type.as_str()
+                            ));
+                            additional_properties.push(format!(
+                                "DATADOG_SECRET_VALIDATION_ERROR_CODE.{}:{}",
+                                index, error_info.status_code
+                            ));
+                            additional_properties.push(format!(
+                                "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.{}:{}",
+                                index, error_info.message
+                            ));
+                        }
                     }
-                    additional_properties.push(format!(
-                        "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE:{}",
-                        message
-                    ));
                     "VALIDATION_ERROR"
                 }
                 SecretValidationStatus::NotAvailable => "NOT_AVAILABLE",
@@ -191,7 +205,7 @@ impl SarifRuleResult {
                         SecretValidationStatus::NotValidated => RuleSeverity::Notice,
                         SecretValidationStatus::Valid => RuleSeverity::Error,
                         SecretValidationStatus::Invalid => RuleSeverity::None,
-                        SecretValidationStatus::ValidationError(_, _) => RuleSeverity::Warning,
+                        SecretValidationStatus::ValidationError(_) => RuleSeverity::Warning,
                         SecretValidationStatus::NotAvailable => RuleSeverity::Error,
                     };
 
@@ -1611,10 +1625,13 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
-                validation_status: SecretValidationStatus::ValidationError(
-                    Some(400),
-                    "Invalid token".to_string(),
-                ),
+                validation_status: SecretValidationStatus::ValidationError(vec![
+                    secrets::model::secret_result::ValidationErrorInfo {
+                        error_type: secrets::model::secret_result::ValidationErrorType::HttpError,
+                        status_code: 400,
+                        message: "Invalid token".to_string(),
+                    },
+                ]),
             }],
         }];
 
@@ -1650,8 +1667,10 @@ mod tests {
                     "tags": [
                       "DATADOG_CATEGORY:SECURITY",
                       "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR",
-                      "DATADOG_SECRET_VALIDATION_ERROR_CODE:400",
-                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE:Invalid token"
+                      "DATADOG_SECRET_VALIDATION_ERROR_COUNT:1",
+                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.0:HttpError",
+                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.0:400",
+                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.0:Invalid token"
                     ]
                   }
                 }
@@ -1698,10 +1717,14 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
-                validation_status: SecretValidationStatus::ValidationError(
-                    None,
-                    "Connection timeout".to_string(),
-                ),
+                validation_status: SecretValidationStatus::ValidationError(vec![
+                    secrets::model::secret_result::ValidationErrorInfo {
+                        error_type:
+                            secrets::model::secret_result::ValidationErrorType::UnknownResponseType,
+                        status_code: 0, // Using 0 as placeholder when no status code is available
+                        message: "Connection timeout".to_string(),
+                    },
+                ]),
             }],
         }];
 
@@ -1737,7 +1760,10 @@ mod tests {
                     "tags": [
                       "DATADOG_CATEGORY:SECURITY",
                       "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR",
-                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE:Connection timeout"
+                      "DATADOG_SECRET_VALIDATION_ERROR_COUNT:1",
+                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.0:UnknownResponseType",
+                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.0:0",
+                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.0:Connection timeout"
                     ]
                   }
                 }
@@ -2095,5 +2121,114 @@ mod tests {
             artifact_tags[1].0 == NON_TEST_FILE_PATH
                 && !has_tag(artifact_tags[1].1, CLASSIFICATION_TEST_FILE)
         );
+    }
+
+    #[test]
+    fn test_generate_secret_validation_multiple_errors() {
+        let rule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        };
+
+        let secret_results = vec![SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: "myfile.py".to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 2, col: 2 },
+                validation_status: SecretValidationStatus::ValidationError(vec![
+                    secrets::model::secret_result::ValidationErrorInfo {
+                        error_type: secrets::model::secret_result::ValidationErrorType::HttpError,
+                        status_code: 400,
+                        message: "Invalid token".to_string(),
+                    },
+                    secrets::model::secret_result::ValidationErrorInfo {
+                        error_type: secrets::model::secret_result::ValidationErrorType::HttpError,
+                        status_code: 401,
+                        message: "Unauthorized access".to_string(),
+                    },
+                    secrets::model::secret_result::ValidationErrorInfo {
+                        error_type:
+                            secrets::model::secret_result::ValidationErrorType::UnknownResponseType,
+                        status_code: 0, // Test error without status code
+                        message: "Connection timeout".to_string(),
+                    },
+                ]),
+            }],
+        }];
+
+        let sarif_secret_results = secret_results
+            .into_iter()
+            .map(SarifRuleResult::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(anyhow::Error::msg)
+            .expect("getting results");
+
+        let sarif_report = generate_sarif_report(
+            &[rule.into()],
+            &sarif_secret_results,
+            &"mydir".to_string(),
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 0,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        let expected_subset = serde_json::json!(
+        {
+          "runs": [
+            {
+              "results": [
+                {
+                  "properties": {
+                    "tags": [
+                      "DATADOG_CATEGORY:SECURITY",
+                      "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR",
+                      "DATADOG_SECRET_VALIDATION_ERROR_COUNT:3",
+                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.0:HttpError",
+                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.0:400",
+                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.0:Invalid token",
+                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.1:HttpError",
+                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.1:401",
+                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.1:Unauthorized access",
+                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.2:UnknownResponseType",
+                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.2:0",
+                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.2:Connection timeout"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        }
+                );
+
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+        assert_json_include!(
+            actual: sarif_json,
+            expected: expected_subset,
+        );
+
+        // validate the schema
+        assert!(validate_data(&sarif_json));
     }
 }
