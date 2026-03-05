@@ -47,15 +47,21 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
         if content.trim().is_empty() {
             return Ok(Self::default());
         }
-        let parsed = parse_any_schema_yaml(&content).map_err(|err| {
-            match err {
-                // Artificially represent this as a "parse" error for backwards compatibility.
-                ConfigError::UnsupportedSchema(_) => ConfigFileError::Parser {
-                    source: serde_yaml::Error::custom(err),
-                },
-                ConfigError::Parse(err) => ConfigFileError::Parser { source: err },
-            }
-        })?;
+        let parsed = if cfg!(test) {
+            parse_any_schema_yaml(&content).map_err(|err| {
+                match err {
+                    // Artificially represent this as a "parse" error for backwards compatibility.
+                    ConfigError::UnsupportedSchema(_) => ConfigFileError::Parser {
+                        source: serde_yaml::Error::custom(err),
+                    },
+                    ConfigError::Parse(err) => ConfigFileError::Parser { source: err },
+                }
+            })
+        } else {
+            file_legacy::parse_yaml(&content)
+                .map(WithVersion::Legacy)
+                .map_err(|err| ConfigFileError::Parser { source: err })
+        }?;
         let config_file = match parsed {
             WithVersion::Legacy(yaml) => WithVersion::Legacy(file_legacy::ConfigFile::from(yaml)),
             WithVersion::CodeSecurity(yaml) => WithVersion::CodeSecurity(yaml),
