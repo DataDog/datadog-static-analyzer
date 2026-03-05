@@ -7,22 +7,18 @@ echo "Checking juice shop"
 REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone --depth=1 https://github.com/juice-shop/juice-shop.git "${REPO_DIR}"
-echo "schema-version: v1.0
-sast:
-  use-default-rulesets: false
-  use-rulesets:
-    - javascript-best-practices
-    - typescript-best-practices
-    - javascript-common-security
-    - typescript-common-security
-    - javascript-inclusive
-    - typescript-inclusive
-    - javascript-code-style
-    - jsx-react
-    - tsx-react
-    - javascript-node-security
-    - typescript-node-security
-" > "${REPO_DIR}/code-security.datadog.yaml"
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-common-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-common-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-code-style" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - jsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - tsx-react" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - javascript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - typescript-node-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif
 

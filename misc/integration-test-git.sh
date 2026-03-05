@@ -15,12 +15,8 @@ export REPO_DIR
 git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}" \
      && git -C "${REPO_DIR}" checkout 37874bd2fcb1d39a9ce4a614e6a07826e04d0cb1 -q
 
-echo "schema-version: v1.0
-sast:
-  use-default-rulesets: false
-  use-rulesets:
-    - python-security
-" > "${REPO_DIR}/code-security.datadog.yaml"
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-security" >> "${REPO_DIR}/static-analysis.datadog.yml"
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif -g
 if [ $? -ne 0 ]; then
   echo "fail to analyze rosie-tests"

@@ -16,7 +16,7 @@ git clone https://github.com/juli1/rosie-tests.git "${REPO_DIR}" \
 
 SARIF_FILENAME="results.json"
 
-rm -f "${REPO_DIR}"/{static-analysis,code-security}.datadog.y{a,}ml
+rm -f "${REPO_DIR}/static-analysis.datadog.yml"
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/${SARIF_FILENAME}" -f sarif
 
 sarif_ruleset_count=$(jq '[.runs[0].tool.driver.rules[].id | split("/") | .[0]] | unique | length' "${REPO_DIR}/${SARIF_FILENAME}") \

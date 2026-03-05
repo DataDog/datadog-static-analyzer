@@ -9,13 +9,9 @@ REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone --depth=1 https://github.com/stuart-lab/signac.git "${REPO_DIR}"
 
-echo "schema-version: v1.0
-sast:
-  use-default-rulesets: false
-  use-rulesets:
-    - r-code-style
-    - r-inclusive
-" > "${REPO_DIR}/code-security.datadog.yaml"
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - r-code-style" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - r-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
 
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif
 

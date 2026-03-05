@@ -17,15 +17,11 @@ SHA1=$(cd $REPO_DIR && git rev-parse HEAD)
 
 ## Creating a new branch and adding a new file with a secret
 (cd "${REPO_DIR}" && git checkout -b new-branch)
-echo "schema-version: v1.0
-sast:
-  use-default-rulesets: false
-  use-rulesets:
-    - python-code-style
-" > "${REPO_DIR}/code-security.datadog.yaml"
+echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
+echo " - python-code-style" >> "${REPO_DIR}/static-analysis.datadog.yml"
 echo "aws_access_key_id AKIAIOSFODNN7EXAMPLE" > "${REPO_DIR}/foobar"
 (cd "${REPO_DIR}" && git add foobar)
-(cd "${REPO_DIR}" && git add code-security.datadog.yaml)
+(cd "${REPO_DIR}" && git add static-analysis.datadog.yml)
 (cd "${REPO_DIR}" && git commit -a -m"add foobar")
 SHA2=$(cd $REPO_DIR && git rev-parse HEAD)
 
