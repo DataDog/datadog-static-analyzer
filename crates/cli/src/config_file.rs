@@ -55,7 +55,7 @@ pub fn get_config(
         .transpose()?;
     let local_config: Option<file_v1::ConfigFile> = local_yaml.map(|v| match v {
         WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
-        WithVersion::CodeSecurity(v2) => v2.into(),
+        WithVersion::CodeSecurity(v1) => v1.into(),
     });
 
     if !should_use_datadog_backend() {
@@ -95,7 +95,7 @@ pub fn get_config(
     let text = decode_base64_string(remote_config_base64)
         .context("error when decoding base64 remote config")?;
 
-    let res = parse_any_schema_yaml(&text).inspect_err(|err| {
+    let res = file_v1::parse_yaml(&text).inspect_err(|err| {
         if debug {
             eprintln!("Error when parsing remote config: {err:?}");
             eprintln!("Proceeding with local config");
@@ -104,10 +104,7 @@ pub fn get_config(
     let Ok(remote_yaml) = res else {
         return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
-    let remote_config: file_v1::ConfigFile = match remote_yaml {
-        WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
-        WithVersion::CodeSecurity(v2) => v2.into(),
-    };
+    let remote_config: file_v1::ConfigFile = remote_yaml.into();
 
     let config_method = if local_config.is_some() {
         ConfigMethod::RemoteConfigurationWithFile
