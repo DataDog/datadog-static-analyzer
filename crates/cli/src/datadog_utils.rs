@@ -76,12 +76,12 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
 
 // Get all the rules from different rulesets from Datadog
 pub fn get_rules_from_rulesets(
-    rulesets_name: &[String],
+    rulesets_name: &[&str],
     use_staging: bool,
     debug: bool,
 ) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = Vec::new();
-    for ruleset_name in rulesets_name {
+    for &ruleset_name in rulesets_name {
         rules.extend(get_ruleset(ruleset_name, use_staging, debug)?.into_rules());
     }
     Ok(rules)

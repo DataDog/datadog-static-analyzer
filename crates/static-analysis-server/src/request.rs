@@ -44,6 +44,7 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
     // If the file is excluded by the global configuration, stop early.
     if configuration
         .as_ref()
+        .and_then(|c| c.sast())
         .and_then(|c| c.global_config.as_ref())
         .and_then(|g| g.paths.as_ref())
         .is_some_and(|pc| !pc.allows_file(&request.filename))
