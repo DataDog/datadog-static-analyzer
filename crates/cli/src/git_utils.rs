@@ -2,7 +2,7 @@ use anyhow::anyhow;
 use git2::{Diff, DiffLineType, DiffOptions, Oid, Repository};
 use std::collections::HashMap;
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::constants::{GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH, GIT_HEAD};
 
@@ -104,8 +104,8 @@ fn get_changed_files(diff: &Diff) -> anyhow::Result<HashMap<PathBuf, Vec<u32>>> 
     Ok(res)
 }
 
-pub fn get_repository_url(path: &str) -> anyhow::Result<String> {
-    let repository_opt = Repository::open(path);
+pub fn get_repository_url(repo_dir: &Path) -> anyhow::Result<String> {
+    let repository_opt = Repository::open(repo_dir);
     match repository_opt {
         Ok(repository) => Ok(repository
             .find_remote(ORIGIN)?

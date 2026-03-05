@@ -19,6 +19,7 @@ use crate::{
 };
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
+use kernel::utils::encode_base64_string;
 use reqwest::blocking::{RequestBuilder, Response};
 use secrets::model::secret_rule::SecretRule;
 use thiserror::Error;
@@ -353,7 +354,7 @@ pub fn get_diff_aware_information(
 /// Get remote configuration from the Datadog backend
 pub fn get_remote_configuration(
     repository_url: String,
-    config_base64: Option<String>,
+    config: Option<String>,
     debug: bool,
 ) -> Result<String> {
     let request_payload = ConfigRequest {
@@ -361,7 +362,7 @@ pub fn get_remote_configuration(
             request_type: "config".to_string(),
             attributes: ConfigRequestDataAttributes {
                 repository: repository_url.clone(),
-                config_base64: config_base64.clone(),
+                config_base64: config.map(encode_base64_string),
             },
         },
     };
