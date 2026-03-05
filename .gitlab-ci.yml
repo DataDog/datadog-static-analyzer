@@ -42,6 +42,7 @@ test-and-build-arm64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
     DD_SITE: datadoghq.com
+    CARGO_HUSKY_DONT_INSTALL_HOOKS: "true"
   tags:
     - arch:arm64
 
@@ -66,6 +67,7 @@ test-and-build-amd64:
     - python3 misc/test-rules.py -c $PWD/target/release/datadog-static-analyzer -s $PWD/target/release/datadog-static-analyzer-server -l python
   variables:
     DD_SITE: datadoghq.com
+    CARGO_HUSKY_DONT_INSTALL_HOOKS: "true"
   tags:
     - arch:amd64
 
