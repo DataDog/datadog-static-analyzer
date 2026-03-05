@@ -26,7 +26,7 @@ pub enum ParseError {
 pub struct YamlConfigFile {
     pub(crate) schema_version: YamlSchemaVersion,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) sast: Option<YamlSastConfig>,
+    pub sast: Option<YamlSastConfig>,
     // Unparsed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) secrets: Option<serde_yaml::Value>,
@@ -88,7 +88,7 @@ impl From<YamlConfigFile> for ConfigFile {
 /// SAST configuration for v1.0-v1.x (until schema changes)
 /// This represents the initial SAST schema. When SAST adds/changes fields in a future
 /// minor version, a new YamlSastConfigMinorN struct should be created.
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
 pub struct YamlSastConfigMinor0 {
@@ -109,6 +109,82 @@ pub struct YamlSastConfigMinor0 {
 pub enum YamlSastConfig {
     /// SAST schema used from v1.0+
     Minor0(YamlSastConfigMinor0),
+}
+
+impl Default for YamlSastConfig {
+    fn default() -> Self {
+        // This should always be the latest minor version implemented
+        Self::Minor0(Default::default())
+    }
+}
+
+const WILDCARD_IGNORE: &str = "**";
+
+impl YamlSastConfig {
+    /// Adds an ignore for the provided rule, returning true if it was added, or false if already ignored.
+    pub fn add_rule_ignore(&mut self, rule_id: impl AsRef<str>) -> Result<bool, &'static str> {
+        let rule_config = match self {
+            YamlSastConfig::Minor0(cfg) => {
+                let Some((ruleset_name, rule_name)) = rule_id.as_ref().split_once('/') else {
+                    return Err("invalid rule_id");
+                };
+                let map = cfg.ruleset_configs.get_or_insert_default();
+                let ruleset_config = map.0.entry(ruleset_name.to_string()).or_default();
+                ruleset_config
+                    .rule_configs
+                    .get_or_insert_default()
+                    .0
+                    .entry(rule_name.to_string())
+                    .or_default()
+            }
+        };
+        let has_ignore = rule_config
+            .path_config
+            .ignore_paths
+            .as_ref()
+            .is_some_and(|paths| paths.iter().any(|s| s == WILDCARD_IGNORE));
+
+        Ok(if has_ignore {
+            false
+        } else {
+            rule_config.path_config.ignore_paths = Some(vec!["**".to_string()]);
+            true
+        })
+    }
+
+    /// Adds the listed rulesets to the `use-rulesets` array, returning true if at least one was inserted.
+    pub fn add_rulesets(&mut self, rulesets: &[impl AsRef<str>]) -> bool {
+        if rulesets.is_empty() {
+            return false;
+        }
+        let list = match self {
+            YamlSastConfig::Minor0(cfg) => cfg
+                .use_rulesets
+                .get_or_insert_with(|| Vec::with_capacity(rulesets.len())),
+        };
+        let mut did_insert = false;
+        for ruleset_name in rulesets {
+            if !list.iter().any(|name| ruleset_name.as_ref() == name) {
+                list.push(ruleset_name.as_ref().to_string());
+                did_insert = true;
+            }
+        }
+        did_insert
+    }
+
+    /// Returns a reference the `use-rulesets` list.
+    pub fn use_rulesets(&self) -> Option<&[String]> {
+        match self {
+            YamlSastConfig::Minor0(cfg) => cfg.use_rulesets.as_deref(),
+        }
+    }
+
+    /// Returns a reference to the `global-config`.
+    pub fn global_config(&self) -> Option<&YamlGlobalConfig> {
+        match self {
+            YamlSastConfig::Minor0(cfg) => cfg.global_config.as_ref(),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for YamlSastConfig {
@@ -444,9 +520,27 @@ surely-this-is-not-in-the-schema: ...right?
 #[cfg(test)]
 mod sast_tests {
     use crate::config::common;
-    use crate::config::file_v1::{parse_yaml, ConfigFile, GlobalConfig, ParseError, SastConfig};
+    use crate::config::file_v1::{
+        parse_yaml, ConfigFile, GlobalConfig, ParseError, SastConfig, YamlRuleConfig,
+        YamlSastConfig, YamlSastConfigMinor0,
+    };
     use crate::model::rule::RuleCategory;
     use indexmap::IndexMap;
+
+    /// Helper function to extract a mutable reference to the config for the rule_id provided.
+    #[rustfmt::skip]
+    fn minor0_rule_cfg<'a>(
+        sast: &'a mut YamlSastConfig,
+        rule_id: &str,
+    ) -> Option<&'a mut YamlRuleConfig> {
+        let (ruleset_name, rule_name) = rule_id.split_once("/")?;
+        let YamlSastConfig::Minor0(ref mut minor0) = sast;
+        minor0
+            .ruleset_configs.as_mut()?.0
+            .get_mut(ruleset_name)?
+            .rule_configs.as_mut()?.0
+            .get_mut(rule_name)
+    }
 
     /// Present fields with "empty" values are deserialized as `Some`.
     #[test]
@@ -574,5 +668,59 @@ sast:
             let err = parse_yaml(config).unwrap_err();
             assert!(matches!(err, ParseError::Parse(e) if e.to_string().contains(err_msg)));
         }
+    }
+
+    #[rustfmt::skip]
+    #[test]
+    fn ignore_rule() {
+        let ruleset_name = "java-security";
+        let rule_name = "sql-injection";
+        let rule_id = format!("{ruleset_name}/{rule_name}");
+
+        let mut sast = YamlSastConfig::Minor0(YamlSastConfigMinor0::default());
+        assert!(matches!(sast.add_rule_ignore(ruleset_name), Err(e) if e == "invalid rule_id"));
+        let res = sast.add_rule_ignore(&rule_id);
+        assert_eq!(res, Ok(true));
+
+        assert_eq!(
+            minor0_rule_cfg(&mut sast, &rule_id).unwrap().path_config.ignore_paths.as_ref().unwrap(),
+            &["**"][..]
+        );
+        let res = sast.add_rule_ignore(&rule_id);
+        assert_eq!(res, Ok(false));
+
+        minor0_rule_cfg(&mut sast, &rule_id).unwrap().path_config
+            .ignore_paths.as_mut().unwrap()
+            .push("other/path".to_string());
+        // Checks for vec item, not vec equality
+        let res = sast.add_rule_ignore(&rule_id);
+        assert_eq!(res, Ok(false));
+        assert_eq!(
+            minor0_rule_cfg(&mut sast, &rule_id).unwrap().path_config.ignore_paths.as_ref().unwrap(),
+            &["**", "other/path"][..]
+        );
+    }
+
+    /// The `use-rulesets` vec isn't instantiated unless at least one ruleset is passed in.
+    #[test]
+    fn add_rulesets_empty() {
+        let mut sast = YamlSastConfig::Minor0(YamlSastConfigMinor0::default());
+
+        assert!(sast.use_rulesets().is_none());
+        sast.add_rulesets(&[] as &[&str]);
+        assert!(sast.use_rulesets().is_none());
+    }
+
+    /// Adding works, and no duplicates are added.
+    #[test]
+    fn add_rulesets_but_no_duplicates() {
+        let minor0 = YamlSastConfigMinor0 {
+            use_rulesets: Some(vec!["existing-rs".to_string()]),
+            ..Default::default()
+        };
+        let mut sast = YamlSastConfig::Minor0(minor0);
+
+        sast.add_rulesets(&["new-rs", "existing-rs", "new-rs"]);
+        assert_eq!(sast.use_rulesets().unwrap(), &["existing-rs", "new-rs"][..]);
     }
 }
