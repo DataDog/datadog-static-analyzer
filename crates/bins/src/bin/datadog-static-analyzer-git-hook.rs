@@ -442,7 +442,6 @@ fn main() -> Result<()> {
     // Stack size is set explicitly to 64MB for the dd-sds scanner's regex matching depth.
     rayon::ThreadPoolBuilder::new()
         .num_threads(configuration.get_num_threads())
-        .stack_size(64 * 1024 * 1024)
         .build_global()?;
 
     let files_filtered_by_size = filter_files_by_size(&files_in_repository, &configuration);

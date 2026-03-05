@@ -24,7 +24,6 @@ async fn main() {
     // Stack size is set explicitly to 64MB for the dd-sds scanner's regex matching depth.
     let rayon_pool = rayon::ThreadPoolBuilder::new()
         .num_threads(0)
-        .stack_size(64 * 1024 * 1024)
         .build()
         .expect("rayon pool should be buildable");
     RAYON_POOL
