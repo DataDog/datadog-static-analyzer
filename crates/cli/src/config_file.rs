@@ -94,7 +94,11 @@ pub fn get_config(
     let text = decode_base64_string(remote_config_base64)
         .context("error when decoding base64 remote config")?;
 
-    let res = file_v1::parse_yaml(&text).inspect_err(|err| {
+    ////////
+    use kernel::config::common::{parse_any_schema_yaml, WithVersion};
+    // (There is temporary support for the backend returning a legacy schema -- this will be converted to
+    // `file_v1::parse_yaml` in a future minor version)
+    let res = parse_any_schema_yaml(&text).inspect_err(|err| {
         if debug {
             eprintln!("Error when parsing remote config: {err:?}");
             eprintln!("Proceeding with local config");
@@ -103,7 +107,10 @@ pub fn get_config(
     let Ok(remote_yaml) = res else {
         return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
-    let remote_config: file_v1::ConfigFile = remote_yaml.into();
+    let remote_config: file_v1::ConfigFile = match remote_yaml {
+        WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
+        WithVersion::CodeSecurity(v1) => v1.into(),
+    };
 
     let config_method = if local_config.is_some() {
         ConfigMethod::RemoteConfigurationWithFile
