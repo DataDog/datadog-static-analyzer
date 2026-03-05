@@ -19,8 +19,8 @@ impl RuleConfigProvider {
     pub fn from_config(cfg: &file_v1::ConfigFile) -> RuleConfigProvider {
         RuleConfigProvider {
             path_restrictions: cfg
-                .ruleset_configs
-                .as_ref()
+                .sast()
+                .and_then(|sast| sast.ruleset_configs.as_ref())
                 .map(PathRestrictions::from_ruleset_configs)
                 .unwrap_or_default(),
             argument_provider: ArgumentProvider::from(cfg),
