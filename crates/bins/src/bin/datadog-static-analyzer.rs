@@ -529,9 +529,14 @@ fn main() -> Result<()> {
     }
 
     // This must be called _after_ `initialize_v8` (otherwise, PKU-related segfaults on Linux will occur).
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(configuration.get_num_threads())
-        .build_global()?;
+    // When secrets scanning is enabled, set the stack size to 64MB to accommodate the dd-sds
+    // scanner's regex matching depth.
+    let mut thread_pool_builder =
+        rayon::ThreadPoolBuilder::new().num_threads(configuration.get_num_threads());
+    if secrets_enabled {
+        thread_pool_builder = thread_pool_builder.stack_size(64 * 1024 * 1024);
+    }
+    thread_pool_builder.build_global()?;
 
     let files_filtered_by_size = filter_files_by_size(&files_in_repository, &configuration);
 
