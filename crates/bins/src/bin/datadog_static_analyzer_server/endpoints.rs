@@ -185,7 +185,7 @@ fn process_secret_scan_request(
         let rules: Vec<secrets::model::secret_rule::SecretRule> = request
             .rules
             .iter()
-            .map(|r| serde_json::from_value(r.clone()))
+            .map(|r| serde_json::from_str(r.get()))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Failed to parse rules: {}", e))?;
         let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug)?;

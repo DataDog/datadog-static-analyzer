@@ -36,7 +36,7 @@ impl SecretScannerCache {
     /// any lock to avoid blocking concurrent readers.
     pub fn get_or_build(
         &self,
-        raw_rules: &[serde_json::Value],
+        raw_rules: &[Box<serde_json::value::RawValue>],
         use_debug: bool,
     ) -> Result<(Arc<Scanner>, Arc<Vec<SecretRule>>), String> {
         let hash = Self::compute_rules_hash(raw_rules);
@@ -54,7 +54,7 @@ impl SecretScannerCache {
         // Slow path: cache miss - build scanner WITHOUT holding any lock
         let rules: Vec<SecretRule> = raw_rules
             .iter()
-            .map(|r| serde_json::from_value(r.clone()))
+            .map(|r| serde_json::from_str(r.get()))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| format!("Failed to parse rules: {}", e))?;
         let scanner = build_sds_scanner(&rules, use_debug)?;
@@ -75,14 +75,12 @@ impl SecretScannerCache {
     }
 
     /// Compute a hash of the raw JSON rules to use as a cache key.
-    /// Since `serde_json::Value` doesn't implement `Hash`, we serialize each rule
-    /// to a string and hash that.
-    fn compute_rules_hash(raw_rules: &[serde_json::Value]) -> u64 {
+    /// Hashes the raw JSON bytes directly, avoiding deserialization.
+    fn compute_rules_hash(raw_rules: &[Box<serde_json::value::RawValue>]) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         raw_rules.len().hash(&mut hasher);
         for rule in raw_rules {
-            let s = serde_json::to_string(rule).unwrap_or_default();
-            s.hash(&mut hasher);
+            rule.get().hash(&mut hasher);
         }
         hasher.finish()
     }
@@ -91,22 +89,13 @@ impl SecretScannerCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
-    fn sample_rules_json() -> Vec<serde_json::Value> {
-        vec![json!({
-            "id": "test-rule",
-            "sds_id": "sds-123",
-            "name": "Test Rule",
-            "description": "A test rule",
-            "pattern": "FOO(BAR|BAZ)",
-            "priority": "medium",
-            "default_included_keywords": [],
-            "default_excluded_keywords": [],
-            "look_ahead_character_count": 30,
-            "validators": [],
-            "pattern_capture_groups": []
-        })]
+    fn raw(json: &str) -> Box<serde_json::value::RawValue> {
+        serde_json::value::RawValue::from_string(json.to_owned()).unwrap()
+    }
+
+    fn sample_rules_json() -> Vec<Box<serde_json::value::RawValue>> {
+        vec![raw(r#"{"id":"test-rule","sds_id":"sds-123","name":"Test Rule","description":"A test rule","pattern":"FOO(BAR|BAZ)","priority":"medium","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#)]
     }
 
     #[test]
@@ -133,19 +122,7 @@ mod tests {
         let (scanner1, _) = cache.get_or_build(&rules1, false).unwrap();
 
         // Different rules should cause a cache miss
-        let rules2 = vec![json!({
-            "id": "other-rule",
-            "sds_id": "sds-456",
-            "name": "Other Rule",
-            "description": "Another test rule",
-            "pattern": "SECRET_[A-Z]+",
-            "priority": "high",
-            "default_included_keywords": [],
-            "default_excluded_keywords": [],
-            "look_ahead_character_count": 30,
-            "validators": [],
-            "pattern_capture_groups": []
-        })];
+        let rules2 = vec![raw(r#"{"id":"other-rule","sds_id":"sds-456","name":"Other Rule","description":"Another test rule","pattern":"SECRET_[A-Z]+","priority":"high","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#)];
 
         let (scanner2, parsed_rules2) = cache.get_or_build(&rules2, false).unwrap();
         assert!(!Arc::ptr_eq(&scanner1, &scanner2));
@@ -163,19 +140,7 @@ mod tests {
     #[test]
     fn test_compute_rules_hash_different_for_different_rules() {
         let rules1 = sample_rules_json();
-        let rules2 = vec![json!({
-            "id": "different",
-            "sds_id": "sds-999",
-            "name": "Different",
-            "description": "Different",
-            "pattern": "DIFFERENT",
-            "priority": "low",
-            "default_included_keywords": [],
-            "default_excluded_keywords": [],
-            "look_ahead_character_count": 30,
-            "validators": [],
-            "pattern_capture_groups": []
-        })];
+        let rules2 = vec![raw(r#"{"id":"different","sds_id":"sds-999","name":"Different","description":"Different","pattern":"DIFFERENT","priority":"low","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#)];
         let hash1 = SecretScannerCache::compute_rules_hash(&rules1);
         let hash2 = SecretScannerCache::compute_rules_hash(&rules2);
         assert_ne!(hash1, hash2);
