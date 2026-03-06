@@ -35,16 +35,16 @@ jobs:
       DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: ${{ vars.DD_SITE }}
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           ref: main
 
       # This can be changed to the `set-up-rust` composite action after it lands on main.
       - name: Set up Rust
-        uses: actions-rust-lang/setup-rust-toolchain@11df97af8e8102fd60b60a77dfbf58d40cd843b8
+        uses: actions-rust-lang/setup-rust-toolchain@a0b538fa0b742a6aa35d6e2c169b4bd06d225a98
 
       - name: Checkout test repositories
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: ${{ matrix.repo.org }}/${{ matrix.repo.name }}
           path: ${{ matrix.repo.org }}/${{ matrix.repo.name }}
@@ -82,14 +82,14 @@ jobs:
         run: node ./.github/scripts/check-regressions.js ${{ matrix.repo.org }}/${{ matrix.repo.name }} result-pre.json result-post.json
 
       - name: Upload unique changes from before
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         if: steps.regression.outputs.diff1files != ''
         with:
           name: failures-before-${{ matrix.repo.org }}-${{ matrix.repo.name }}
           path: ${{ steps.regression.outputs.diff1files }}
 
       - name: Upload unique changes from after
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         if: steps.regression.outputs.diff2files != ''
         with:
           name: failures-after-${{ matrix.repo.org }}-${{ matrix.repo.name }}
