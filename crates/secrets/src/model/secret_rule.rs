@@ -6,9 +6,11 @@ use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
 use common::model::diff_aware::DiffAware;
 use dd_sds::SecondaryValidator;
 use dd_sds::{
-    AwsConfig, AwsType, CustomHttpConfig, HttpMethod, HttpStatusCodeRange,
-    JwtClaimsValidatorConfig, MatchAction, MatchValidationType, ProximityKeywordsConfig,
-    RegexRuleConfig, RootRuleConfig,
+    AwsConfig, AwsType, BodyMatcher, CustomHttpConfig, CustomHttpConfigV2, HttpCallConfig,
+    HttpMethod, HttpRequestConfig, HttpResponseConfig, HttpStatusCodeRange,
+    JwtClaimsValidatorConfig, MatchAction, MatchPairingConfig, MatchValidationType,
+    PairedValidatorConfig, ProximityKeywordsConfig, RegexRuleConfig, ResponseCondition,
+    ResponseConditionType, RootRuleConfig, StatusCodeMatcher, TemplatedMatchString,
 };
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -103,6 +105,7 @@ pub enum SecretRuleMatchValidation {
     AwsSecret,
     AwsSession,
     CustomHttp(SecretRuleMatchValidationHttp),
+    CustomHttpV2(SecretRuleMatchValidationHttpV2),
 }
 
 impl TryFrom<&SecretRuleMatchValidation> for MatchValidationType {
@@ -144,6 +147,143 @@ impl TryFrom<&SecretRuleMatchValidation> for MatchValidationType {
                     timeout_seconds: custom_http.timeout_seconds.unwrap() as u32,
                 }))
             }
+            SecretRuleMatchValidation::CustomHttpV2(custom_http_v2) => {
+                // Convert match pairing config
+                let match_pairing =
+                    custom_http_v2
+                        .match_pairing
+                        .as_ref()
+                        .map(|mp| MatchPairingConfig {
+                            kind: mp.kind.clone(),
+                            parameters: mp.parameters.clone(),
+                        });
+
+                // Convert HTTP calls
+                let calls: Vec<HttpCallConfig> = custom_http_v2
+                    .calls
+                    .iter()
+                    .map(|call| {
+                        // Convert request config
+                        let timeout_seconds = call.request.timeout_seconds.unwrap_or(3);
+                        let request = HttpRequestConfig {
+                            endpoint: TemplatedMatchString(call.request.endpoint.clone()),
+                            method: call.request.method.into(),
+                            hosts: call
+                                .request
+                                .hosts
+                                .iter()
+                                .map(|h| TemplatedMatchString(h.clone()))
+                                .collect(),
+                            headers: call
+                                .request
+                                .headers
+                                .iter()
+                                .map(|(k, v)| (k.clone(), TemplatedMatchString(v.clone())))
+                                .collect(),
+                            body: call
+                                .request
+                                .body
+                                .as_ref()
+                                .map(|body| TemplatedMatchString(body.clone())),
+                            timeout: std::time::Duration::from_secs(timeout_seconds),
+                        };
+
+                        // Convert response config
+                        let conditions: Vec<ResponseCondition> = call
+                            .response
+                            .conditions
+                            .iter()
+                            .map(|cond| {
+                                // Convert status code matcher
+                                let status_code =
+                                    cond.status_code.as_ref().map(|matcher| match matcher {
+                                        SecretRuleStatusCodeMatcher::Single { single } => {
+                                            StatusCodeMatcher::Single(*single)
+                                        }
+                                        SecretRuleStatusCodeMatcher::List { list } => {
+                                            StatusCodeMatcher::List(list.clone())
+                                        }
+                                        SecretRuleStatusCodeMatcher::Range { range } => {
+                                            StatusCodeMatcher::Range {
+                                                start: range.start,
+                                                end: range.end,
+                                            }
+                                        }
+                                    });
+
+                                // Convert raw body matcher
+                                let raw_body =
+                                    cond.raw_body.as_ref().map(|matcher| match matcher {
+                                        SecretRuleBodyMatcher::ExactMatch { exact_match } => {
+                                            BodyMatcher::ExactMatch(exact_match.clone())
+                                        }
+                                        SecretRuleBodyMatcher::Regex { regex } => {
+                                            BodyMatcher::Regex(regex.clone())
+                                        }
+                                        SecretRuleBodyMatcher::Present { .. } => {
+                                            BodyMatcher::Present
+                                        }
+                                    });
+
+                                // Convert body matchers
+                                let body = cond.body.as_ref().map(|body_map| {
+                                    body_map
+                                        .iter()
+                                        .map(|(k, v)| {
+                                            let matcher = match v {
+                                                SecretRuleBodyMatcher::ExactMatch {
+                                                    exact_match,
+                                                } => BodyMatcher::ExactMatch(exact_match.clone()),
+                                                SecretRuleBodyMatcher::Regex { regex } => {
+                                                    BodyMatcher::Regex(regex.clone())
+                                                }
+                                                SecretRuleBodyMatcher::Present { .. } => {
+                                                    BodyMatcher::Present
+                                                }
+                                            };
+                                            (k.clone(), matcher)
+                                        })
+                                        .collect()
+                                });
+
+                                ResponseCondition {
+                                    condition_type: match cond.condition_type {
+                                        SecretRuleResponseConditionType::Valid => {
+                                            ResponseConditionType::Valid
+                                        }
+                                        SecretRuleResponseConditionType::Invalid => {
+                                            ResponseConditionType::Invalid
+                                        }
+                                    },
+                                    status_code,
+                                    raw_body,
+                                    body,
+                                }
+                            })
+                            .collect();
+
+                        let response = HttpResponseConfig { conditions };
+
+                        HttpCallConfig { request, response }
+                    })
+                    .collect();
+
+                // Convert provides
+                let provides: Vec<PairedValidatorConfig> = custom_http_v2
+                    .provides
+                    .iter()
+                    .map(|p| PairedValidatorConfig {
+                        kind: p.kind.clone(),
+                        name: p.name.clone(),
+                    })
+                    .collect();
+
+                Ok(MatchValidationType::CustomHttpV2(CustomHttpConfigV2 {
+                    match_pairing,
+                    calls,
+                    provides: Some(provides),
+                }))
+            }
         }
     }
 }
@@ -157,6 +297,97 @@ pub struct SecretRuleMatchValidationHttp {
     pub timeout_seconds: Option<u64>,
     pub valid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
     pub invalid_http_status_code: Vec<SecretRuleMatchValidationHttpCode>,
+}
+
+// V2 Structs for Online Validation V2
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleMatchValidationHttpV2 {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub match_pairing: Option<SecretRuleMatchPairingConfig>,
+    pub calls: Vec<SecretRuleHttpCallConfig>,
+    pub provides: Vec<SecretRulePairedValidatorConfig>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleMatchPairingConfig {
+    pub kind: String,
+    pub parameters: BTreeMap<String, String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleHttpCallConfig {
+    pub request: SecretRuleHttpRequestConfig,
+    pub response: SecretRuleHttpResponseConfig,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleHttpRequestConfig {
+    pub endpoint: String,
+    #[serde(default = "default_http_method_v2")]
+    pub method: SecretRuleMatchValidationHttpMethod,
+    #[serde(default)]
+    pub hosts: Vec<String>,
+    #[serde(default)]
+    pub headers: BTreeMap<String, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timeout_seconds: Option<u64>,
+}
+
+fn default_http_method_v2() -> SecretRuleMatchValidationHttpMethod {
+    SecretRuleMatchValidationHttpMethod::Get
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleHttpResponseConfig {
+    pub conditions: Vec<SecretRuleResponseCondition>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleResponseCondition {
+    pub condition_type: SecretRuleResponseConditionType,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status_code: Option<SecretRuleStatusCodeMatcher>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_body: Option<SecretRuleBodyMatcher>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<BTreeMap<String, SecretRuleBodyMatcher>>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Copy)]
+pub enum SecretRuleResponseConditionType {
+    Valid,
+    Invalid,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[serde(untagged)]
+pub enum SecretRuleStatusCodeMatcher {
+    Single { single: u16 },
+    List { list: Vec<u16> },
+    Range { range: SecretRuleStatusCodeRange },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRuleStatusCodeRange {
+    pub start: u16,
+    pub end: u16,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+#[serde(untagged)]
+pub enum SecretRuleBodyMatcher {
+    ExactMatch { exact_match: String },
+    Regex { regex: String },
+    Present { present: bool },
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
+pub struct SecretRulePairedValidatorConfig {
+    pub kind: String,
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -403,5 +634,275 @@ mod tests {
 
         // Validates that convert_to_sds_ruleconfig doesn't panic and returns a valid config.
         let _config = rule.convert_to_sds_ruleconfig(false);
+    }
+
+    #[test]
+    fn test_custom_http_v2_conversion() {
+        // Test that CustomHttpV2 config can be properly converted to dd-sds types
+        let http_v2_config = SecretRuleMatchValidationHttpV2 {
+            match_pairing: Some(SecretRuleMatchPairingConfig {
+                kind: "test_vendor".to_string(),
+                parameters: {
+                    let mut params = BTreeMap::new();
+                    params.insert("client_id".to_string(), "$CLIENT_ID".to_string());
+                    params
+                },
+            }),
+            calls: vec![SecretRuleHttpCallConfig {
+                request: SecretRuleHttpRequestConfig {
+                    endpoint: "https://api.example.com/validate?secret=$MATCH".to_string(),
+                    method: SecretRuleMatchValidationHttpMethod::Post,
+                    hosts: vec!["us1".to_string(), "eu1".to_string()],
+                    headers: {
+                        let mut headers = BTreeMap::new();
+                        headers.insert(
+                            "Authorization".to_string(),
+                            "Bearer %base64($CLIENT_ID:$MATCH)".to_string(),
+                        );
+                        headers
+                    },
+                    body: Some(r#"{"token": "$MATCH"}"#.to_string()),
+                    timeout_seconds: Some(5),
+                },
+                response: SecretRuleHttpResponseConfig {
+                    conditions: vec![
+                        SecretRuleResponseCondition {
+                            condition_type: SecretRuleResponseConditionType::Valid,
+                            status_code: Some(SecretRuleStatusCodeMatcher::Single { single: 200 }),
+                            raw_body: None,
+                            body: None,
+                        },
+                        SecretRuleResponseCondition {
+                            condition_type: SecretRuleResponseConditionType::Invalid,
+                            status_code: Some(SecretRuleStatusCodeMatcher::Range {
+                                range: SecretRuleStatusCodeRange {
+                                    start: 400,
+                                    end: 500,
+                                },
+                            }),
+                            raw_body: Some(SecretRuleBodyMatcher::Regex {
+                                regex: "^error.*".to_string(),
+                            }),
+                            body: None,
+                        },
+                    ],
+                },
+            }],
+            provides: vec![
+                SecretRulePairedValidatorConfig {
+                    kind: "datadog".to_string(),
+                    name: "api_key".to_string(),
+                },
+                SecretRulePairedValidatorConfig {
+                    kind: "datadog".to_string(),
+                    name: "app_key".to_string(),
+                },
+            ],
+        };
+
+        let validation = SecretRuleMatchValidation::CustomHttpV2(http_v2_config);
+
+        // Convert to dd-sds MatchValidationType
+        let result: Result<MatchValidationType, &str> = (&validation).try_into();
+        assert!(result.is_ok());
+
+        if let Ok(MatchValidationType::CustomHttpV2(config)) = result {
+            // Verify match pairing
+            assert!(config.match_pairing.is_some());
+            let pairing = config.match_pairing.unwrap();
+            assert_eq!(pairing.kind, "test_vendor");
+            assert_eq!(pairing.parameters.len(), 1);
+
+            // Verify calls
+            assert_eq!(config.calls.len(), 1);
+            let call = &config.calls[0];
+
+            // Verify request
+            assert_eq!(call.request.method, HttpMethod::Post);
+            assert_eq!(call.request.hosts.len(), 2);
+            assert_eq!(call.request.headers.len(), 1);
+            assert!(call.request.body.is_some());
+
+            // Verify response conditions
+            assert_eq!(call.response.conditions.len(), 2);
+            assert_eq!(
+                call.response.conditions[0].condition_type,
+                ResponseConditionType::Valid
+            );
+            assert_eq!(
+                call.response.conditions[1].condition_type,
+                ResponseConditionType::Invalid
+            );
+
+            // Verify provides
+            assert!(config.provides.is_some());
+            let provides = config.provides.unwrap();
+            assert_eq!(provides.len(), 2);
+            assert_eq!(provides[0].kind, "datadog");
+            assert_eq!(provides[0].name, "api_key");
+            assert_eq!(provides[1].kind, "datadog");
+            assert_eq!(provides[1].name, "app_key");
+        } else {
+            panic!("Expected CustomHttpV2 variant");
+        }
+    }
+
+    #[test]
+    fn test_deserialize_custom_http_v2() {
+        let json = r#"{
+  "match_pairing":{
+    "kind":"datadog",
+    "parameters":{
+      "api_key":"$API_KEY",
+      "app_key":"$APP_KEY"
+    }
+  },
+  "calls":[
+    {
+      "request":{
+        "endpoint":"https://generativelanguage.googleapis.com/v1beta/models/*:countTokens?key=$API_KEY",
+        "method":"POST",
+        "headers":{
+          "User-Agent":"Datadog Match Validator",
+          "api-key":"$MATCH"
+        },
+        "timeout_seconds":3
+      },
+      "response":{
+        "conditions":[
+          {
+            "condition_type":"Valid",
+            "status_code":{
+              "single":400
+            },
+            "body":{
+              "@type":{
+                "exact_match":"type.googleapis.com/google.rpc.BadRequest"
+              }
+            }
+          },
+          {
+            "condition_type":"Valid",
+            "status_code":{
+              "single":403
+            },
+            "body":{
+              "status":{
+                "exact_match":"PERMISSION_DENIED"
+              }
+            }
+          },
+          {
+            "condition_type":"Invalid",
+            "status_code":{
+              "single":400
+            },
+            "body":{
+              "message":{
+                "exact_match":"API key not valid. Please pass a valid API key."
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "provides":[
+    {
+      "kind":"datadog",
+      "name":"api_key"
+    },
+    {
+      "kind":"datadog",
+      "name":"app_key"
+    }
+  ]
+}
+"#;
+        let secret_rule_match_validation_http_v2: SecretRuleMatchValidationHttpV2 =
+            serde_json::from_str(json).unwrap();
+
+        // Assert contents
+        let mut parameters = BTreeMap::new();
+        parameters.insert("api_key".to_string(), "$API_KEY".to_string());
+        parameters.insert("app_key".to_string(), "$APP_KEY".to_string());
+
+        let mut headers = BTreeMap::new();
+        headers.insert(
+            "User-Agent".to_string(),
+            "Datadog Match Validator".to_string(),
+        );
+        headers.insert("api-key".to_string(), "$MATCH".to_string());
+
+        let mut body0 = BTreeMap::new();
+        body0.insert(
+            "@type".to_string(),
+            SecretRuleBodyMatcher::ExactMatch {
+                exact_match: "type.googleapis.com/google.rpc.BadRequest".to_string(),
+            },
+        );
+        let mut body1 = BTreeMap::new();
+        body1.insert(
+            "status".to_string(),
+            SecretRuleBodyMatcher::ExactMatch {
+                exact_match: "PERMISSION_DENIED".to_string(),
+            },
+        );
+        let mut body2 = BTreeMap::new();
+        body2.insert(
+            "message".to_string(),
+            SecretRuleBodyMatcher::ExactMatch {
+                exact_match: "API key not valid. Please pass a valid API key.".to_string(),
+            },
+        );
+
+        assert_eq!(secret_rule_match_validation_http_v2, SecretRuleMatchValidationHttpV2 {
+            match_pairing: Some(SecretRuleMatchPairingConfig {
+                kind: "datadog".to_string(),
+                parameters,
+            }),
+            calls: vec![SecretRuleHttpCallConfig {
+                request: SecretRuleHttpRequestConfig {
+                    endpoint: "https://generativelanguage.googleapis.com/v1beta/models/*:countTokens?key=$API_KEY".to_string(),
+                    method: SecretRuleMatchValidationHttpMethod::Post,
+                    hosts: vec![],
+                    headers,
+                    body: None,
+                    timeout_seconds: Some(3),
+                },
+                response: SecretRuleHttpResponseConfig {
+                    conditions: vec![
+                        SecretRuleResponseCondition {
+                            condition_type: SecretRuleResponseConditionType::Valid,
+                            status_code: Some(SecretRuleStatusCodeMatcher::Single { single: 400 }),
+                            raw_body: None,
+                            body: Some(body0),
+                        },
+                        SecretRuleResponseCondition {
+                            condition_type: SecretRuleResponseConditionType::Valid,
+                            status_code: Some(SecretRuleStatusCodeMatcher::Single { single: 403 }),
+                            raw_body: None,
+                            body: Some(body1),
+                        },
+                        SecretRuleResponseCondition {
+                            condition_type: SecretRuleResponseConditionType::Invalid,
+                            status_code: Some(SecretRuleStatusCodeMatcher::Single { single: 400 }),
+                            raw_body: None,
+                            body: Some(body2),
+                        },
+                    ],
+                },
+            }],
+            provides: vec![
+                SecretRulePairedValidatorConfig {
+                    kind: "datadog".to_string(),
+                    name: "api_key".to_string(),
+                },
+                SecretRulePairedValidatorConfig {
+                    kind: "datadog".to_string(),
+                    name: "app_key".to_string(),
+                },
+            ],
+        });
     }
 }

@@ -4,7 +4,8 @@ use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
 use secrets::model::secret_rule::{
     SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttp,
-    SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod, SecretRuleValidator,
+    SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod,
+    SecretRuleMatchValidationHttpV2, SecretRulePairedValidatorConfig, SecretRuleValidator,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -375,6 +376,10 @@ pub struct SecretRuleApiAttributes {
     pub validators: Option<Vec<String>>,
     pub validators_v2: Option<Vec<SecretRuleApiValidator>>,
     pub match_validation: Option<SecretRuleApiMatchValidation>,
+    /// CustomHttpV2 active checker — sent as a standalone field with no `type` discriminator.
+    pub match_validation_v2: Option<SecretRuleMatchValidationHttpV2>,
+    /// PairedValidator active checker — sent as a standalone field with no `type` discriminator.
+    pub paired_validator_config: Option<SecretRulePairedValidatorConfig>,
     pub pattern_capture_groups: Option<Vec<String>>,
 }
 
@@ -390,65 +395,36 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
     type Error = &'static str;
 
     fn try_from(val: SecretRuleApiType) -> Result<Self, Self::Error> {
-        if let Some(match_validation) = val.attributes.match_validation {
-            match <SecretRuleApiMatchValidation as TryInto<SecretRuleMatchValidation>>::try_into(
-                match_validation,
-            ) {
-                Ok(validation) => Ok(SecretRule {
-                    id: val.id,
-                    name: val.attributes.name,
-                    description: val.attributes.description,
-                    pattern: val.attributes.pattern,
-                    default_included_keywords: val
-                        .attributes
-                        .default_included_keywords
-                        .unwrap_or_default(),
-                    default_excluded_keywords: val
-                        .attributes
-                        .default_excluded_keywords
-                        .unwrap_or_default(),
-                    look_ahead_character_count: val.attributes.look_ahead_character_count,
-                    priority: val.attributes.priority.as_str().try_into()?,
-                    validators: val.attributes.validators,
-                    validators_v2: val
-                        .attributes
-                        .validators_v2
-                        .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
-                    match_validation: Some(validation),
-                    sds_id: val.attributes.sds_id,
-                    pattern_capture_groups: val
-                        .attributes
-                        .pattern_capture_groups
-                        .unwrap_or_default(),
-                }),
-                Err(s) => Err(s),
-            }
-        } else {
-            Ok(SecretRule {
-                id: val.id,
-                sds_id: val.attributes.sds_id,
-                name: val.attributes.name,
-                description: val.attributes.description,
-                pattern: val.attributes.pattern,
-                priority: val.attributes.priority.as_str().try_into()?,
-                default_included_keywords: val
-                    .attributes
-                    .default_included_keywords
-                    .unwrap_or_default(),
-                default_excluded_keywords: val
-                    .attributes
-                    .default_excluded_keywords
-                    .unwrap_or_default(),
-                look_ahead_character_count: val.attributes.look_ahead_character_count,
-                validators: val.attributes.validators,
-                validators_v2: val
-                    .attributes
-                    .validators_v2
-                    .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
-                match_validation: None,
-                pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
-            })
-        }
+        // Prefer v2 active checkers over the legacy match_validation field.
+        let match_validation: Option<SecretRuleMatchValidation> =
+            if let Some(mv2) = val.attributes.match_validation_v2 {
+                Some(SecretRuleMatchValidation::CustomHttpV2(mv2))
+            } else if let Some(mv) = val.attributes.match_validation {
+                Some(<SecretRuleApiMatchValidation as TryInto<
+                    SecretRuleMatchValidation,
+                >>::try_into(mv)?)
+            } else {
+                None
+            };
+
+        Ok(SecretRule {
+            id: val.id,
+            sds_id: val.attributes.sds_id,
+            name: val.attributes.name,
+            description: val.attributes.description,
+            pattern: val.attributes.pattern,
+            priority: val.attributes.priority.as_str().try_into()?,
+            default_included_keywords: val.attributes.default_included_keywords.unwrap_or_default(),
+            default_excluded_keywords: val.attributes.default_excluded_keywords.unwrap_or_default(),
+            look_ahead_character_count: val.attributes.look_ahead_character_count,
+            validators: val.attributes.validators,
+            validators_v2: val
+                .attributes
+                .validators_v2
+                .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
+            match_validation,
+            pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
+        })
     }
 }
 
@@ -600,6 +576,8 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                match_validation_v2: None,
+                paired_validator_config: None,
                 pattern_capture_groups: None,
             },
         };
@@ -635,6 +613,8 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                match_validation_v2: None,
+                paired_validator_config: None,
                 pattern_capture_groups: None,
             },
         };
@@ -669,6 +649,8 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                match_validation_v2: None,
+                paired_validator_config: None,
                 pattern_capture_groups: None,
             },
         };
@@ -709,6 +691,8 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                match_validation_v2: None,
+                paired_validator_config: None,
                 pattern_capture_groups: None,
             },
         };
@@ -749,6 +733,8 @@ mod tests {
                     valid_http_status_code: None,
                     invalid_http_status_code: None,
                 }),
+                match_validation_v2: None,
+                paired_validator_config: None,
                 pattern_capture_groups: None,
             },
         };
@@ -862,5 +848,149 @@ mod tests {
 
         // Check pattern capture group is empty
         assert!(github_rule.pattern_capture_groups.is_empty());
+    }
+
+    #[test]
+    fn convert_secrets_rules_with_match_validation_v2_custom_http() {
+        let json_data = json!({
+            "data": [
+                {
+                    "id": "secrets/example-rule",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "description": "test",
+                        "name": "Example Rule",
+                        "pattern": "\\bsecret\\b",
+                        "priority": "high",
+                        "sds_id": "some-sds-id",
+                        "match_validation_v2": {
+                            "type": "CustomHttpV2",
+                            "calls": [
+                                {
+                                    "request": {
+                                        "endpoint": "https://api.example.com/validate?secret=$MATCH",
+                                        "method": "POST",
+                                        "hosts": ["us1"],
+                                        "headers": {}
+                                    },
+                                    "response": {
+                                        "conditions": [
+                                            {"condition_type": "Valid", "status_code": {"single": 200}}
+                                        ]
+                                    }
+                                }
+                            ],
+                            "provides": [],
+                        }
+                    }
+                }
+            ]
+        });
+
+        let api_response: StaticAnalysisSecretsAPIResponse =
+            serde_json::from_value(json_data).expect("Failed to deserialize JSON");
+        let rule: SecretRule = api_response.data[0]
+            .clone()
+            .try_into()
+            .expect("Failed to convert rule");
+
+        assert_eq!(rule.id, "secrets/example-rule");
+        assert!(matches!(
+            rule.match_validation,
+            Some(SecretRuleMatchValidation::CustomHttpV2(_))
+        ));
+    }
+
+    #[test]
+    fn convert_secrets_rules_with_paired_validator_config() {
+        // paired_validator_config is part of match_validation_v2
+        let json_data = json!({
+            "data": [
+                {
+                    "id": "secrets/paired-rule",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "description": "test",
+                        "name": "Paired Rule",
+                        "pattern": "\\bsecret\\b",
+                        "priority": "medium",
+                        "sds_id": "some-sds-id",
+                        "match_validation_v2": {
+                            "provides": [
+                                {
+                                    "kind": "some_vendor",
+                                    "name": "client_id"
+                                }
+                            ],
+                            "calls": [],
+                        },
+                    }
+                }
+            ]
+        });
+
+        let api_response: StaticAnalysisSecretsAPIResponse =
+            serde_json::from_value(json_data).expect("Failed to deserialize JSON");
+        let rule: SecretRule = api_response.data[0]
+            .clone()
+            .try_into()
+            .expect("Failed to convert rule");
+
+        assert_eq!(rule.id, "secrets/paired-rule");
+        assert!(matches!(
+            rule.match_validation,
+            Some(SecretRuleMatchValidation::CustomHttpV2(_))
+        ));
+        if let Some(SecretRuleMatchValidation::CustomHttpV2(config)) = rule.match_validation {
+            assert_eq!(config.provides[0].kind, "some_vendor");
+            assert_eq!(config.provides[0].name, "client_id");
+        } else {
+            panic!("Expected CustomHttpV2 variant");
+        }
+    }
+
+    #[test]
+    fn match_validation_v2_takes_priority_over_v1() {
+        // When both match_validation (v1) and paired_validator_config (v2) are present, v2 wins.
+        let json_data = json!({
+            "data": [
+                {
+                    "id": "secrets/priority-rule",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "description": "test",
+                        "name": "Priority Rule",
+                        "pattern": "\\bsecret\\b",
+                        "priority": "medium",
+                        "sds_id": "some-sds-id",
+                        "match_validation": {
+                            "type": "AwsSecret"
+                        },
+                        "match_validation_v2": {
+                            "provides": [
+                                {
+                                    "kind": "some_vendor",
+                                    "name": "client_id"
+                                }
+                            ],
+                            "calls": [],
+                        }
+                    }
+                }
+            ]
+        });
+
+        let api_response: StaticAnalysisSecretsAPIResponse =
+            serde_json::from_value(json_data).expect("Failed to deserialize JSON");
+        let rule: SecretRule = api_response.data[0]
+            .clone()
+            .try_into()
+            .expect("Failed to convert rule");
+
+        // v2 (PairedValidator) should win over v1 (AwsSecret)
+        assert!(matches!(
+            rule.match_validation,
+            Some(SecretRuleMatchValidation::CustomHttpV2(_))
+        ));
     }
 }
