@@ -136,49 +136,42 @@ impl SarifViolation {
         }
     }
 
-    fn get_properties(&self) -> Vec<String> {
+    fn get_tags(&self) -> Vec<String> {
         if let Secret(_, validation_status) = &self {
-            let mut additional_properties = vec![];
-
             let status_value = match validation_status {
                 SecretValidationStatus::NotValidated => "NOT_VALIDATED",
                 SecretValidationStatus::Valid => "VALID",
                 SecretValidationStatus::Invalid => "INVALID",
-                SecretValidationStatus::ValidationError(error_infos) => {
-                    if !error_infos.is_empty() {
-                        // Add count of validation errors
-                        additional_properties.push(format!(
-                            "DATADOG_SECRET_VALIDATION_ERROR_COUNT:{}",
-                            error_infos.len()
-                        ));
-
-                        // Add indexed error details for all errors
-                        for (index, error_info) in error_infos.iter().enumerate() {
-                            additional_properties.push(format!(
-                                "DATADOG_SECRET_VALIDATION_ERROR_TYPE.{}:{}",
-                                index,
-                                error_info.error_type.as_str()
-                            ));
-                            additional_properties.push(format!(
-                                "DATADOG_SECRET_VALIDATION_ERROR_CODE.{}:{}",
-                                index, error_info.status_code
-                            ));
-                            additional_properties.push(format!(
-                                "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.{}:{}",
-                                index, error_info.message
-                            ));
-                        }
-                    }
-                    "VALIDATION_ERROR"
-                }
+                SecretValidationStatus::ValidationError(_) => "VALIDATION_ERROR",
                 SecretValidationStatus::NotAvailable => "NOT_AVAILABLE",
             };
 
-            let mut properties = vec![format!("DATADOG_SECRET_VALIDATION_STATUS:{}", status_value)];
-            properties.extend(additional_properties);
-            properties
+            vec![format!("DATADOG_SECRET_VALIDATION_STATUS:{}", status_value)]
         } else {
             vec![]
+        }
+    }
+
+    fn get_validation_errors_data(&self) -> Option<serde_json::Value> {
+        if let Secret(_, validation_status) = &self {
+            match validation_status {
+                SecretValidationStatus::ValidationError(error_infos) if !error_infos.is_empty() => {
+                    let errors: Vec<serde_json::Value> = error_infos
+                        .iter()
+                        .map(|error_info| {
+                            serde_json::json!({
+                                "type": error_info.error_type.as_str(),
+                                "statusCode": error_info.status_code,
+                                "message": error_info.message
+                            })
+                        })
+                        .collect();
+                    Some(serde_json::Value::Array(errors))
+                }
+                _ => None,
+            }
+        } else {
+            None
         }
     }
 }
@@ -795,12 +788,23 @@ fn generate_results(
                                 .build()
                                 .unwrap(),
                         )
-                        .properties(
-                            PropertyBagBuilder::default()
-                                .tags([tags.clone(), sarif_violation.get_properties()].concat())
+                        .properties({
+                            let mut properties = PropertyBagBuilder::default()
+                                .tags([tags.clone(), sarif_violation.get_tags()].concat())
                                 .build()
-                                .unwrap(),
-                        )
+                                .unwrap();
+
+                            let validation_errors_data =
+                                sarif_violation.get_validation_errors_data();
+                            if let Some(errors_data) = validation_errors_data {
+                                properties.additional_properties.insert(
+                                    "datadogSecretValidationErrors".to_string(),
+                                    errors_data,
+                                );
+                            }
+
+                            properties
+                        })
                         .partial_fingerprints(partial_fingerprints);
                     if let Some(taint_code_flow) = taint_code_flow {
                         sarif_result.code_flows(&[taint_code_flow]);
@@ -1666,11 +1670,14 @@ mod tests {
                   "properties": {
                     "tags": [
                       "DATADOG_CATEGORY:SECURITY",
-                      "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR",
-                      "DATADOG_SECRET_VALIDATION_ERROR_COUNT:1",
-                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.0:HttpError",
-                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.0:400",
-                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.0:Invalid token"
+                      "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"
+                    ],
+                    "datadogSecretValidationErrors": [
+                      {
+                        "type": "HttpError",
+                        "statusCode": 400,
+                        "message": "Invalid token"
+                      }
                     ]
                   }
                 }
@@ -1759,11 +1766,14 @@ mod tests {
                   "properties": {
                     "tags": [
                       "DATADOG_CATEGORY:SECURITY",
-                      "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR",
-                      "DATADOG_SECRET_VALIDATION_ERROR_COUNT:1",
-                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.0:UnknownResponseType",
-                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.0:0",
-                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.0:Connection timeout"
+                      "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"
+                    ],
+                    "datadogSecretValidationErrors": [
+                      {
+                        "type": "UnknownResponseType",
+                        "statusCode": 0,
+                        "message": "Connection timeout"
+                      }
                     ]
                   }
                 }
@@ -2202,17 +2212,24 @@ mod tests {
                   "properties": {
                     "tags": [
                       "DATADOG_CATEGORY:SECURITY",
-                      "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR",
-                      "DATADOG_SECRET_VALIDATION_ERROR_COUNT:3",
-                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.0:HttpError",
-                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.0:400",
-                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.0:Invalid token",
-                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.1:HttpError",
-                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.1:401",
-                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.1:Unauthorized access",
-                      "DATADOG_SECRET_VALIDATION_ERROR_TYPE.2:UnknownResponseType",
-                      "DATADOG_SECRET_VALIDATION_ERROR_CODE.2:0",
-                      "DATADOG_SECRET_VALIDATION_ERROR_MESSAGE.2:Connection timeout"
+                      "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR"
+                    ],
+                    "datadogSecretValidationErrors": [
+                      {
+                        "type": "HttpError",
+                        "statusCode": 400,
+                        "message": "Invalid token"
+                      },
+                      {
+                        "type": "HttpError",
+                        "statusCode": 401,
+                        "message": "Unauthorized access"
+                      },
+                      {
+                        "type": "UnknownResponseType",
+                        "statusCode": 0,
+                        "message": "Connection timeout"
+                      }
                     ]
                   }
                 }
