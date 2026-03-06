@@ -60,14 +60,14 @@ terminal-emoji = "0.4.1"
 getopts = "0.2.23"
 indicatif = "0.18.0"
 rayon = "1.11.0"
-rocket = { version = "=0.5.0", features = ["json"] }
+rocket = { version = "=0.5.1", features = ["json"] }
 tracing-subscriber = { version = "0.3", features = [
   "fmt",
   "env-filter",
   "json",
 ] }
 tracing-appender = "0.2"
-pretty_yaml = "0.5"
+pretty_yaml = "0.6"
 
 
 # For linux and macos, we need the vendored ssl

@@ -26,19 +26,19 @@ codegen-units = 256
 
 [workspace.dependencies]
 anyhow = "1"
-base64 = "0.21.2"
+base64 = "0.22.0"
 dashmap = "6.1.0"
 git2 = "0.19.0"
 indexmap = { version = "2.11", features = ["serde"] }
 itertools = "0.14.0"
-derive_builder = "0.12"
+derive_builder = "0.20"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1.0"
-serde-sarif = "0.4"
+serde-sarif = "0.8"
 serde_yaml = "0.9.21"
 sha2 = "0.10.9"
 num_cpus = "1.17.0"
 thiserror = "2.0.16"
 tracing = "0.1.40"
 uuid = { version = "1.18.0", features = ["v4"] }
-tree-sitter = "0.24.7"
+tree-sitter = "0.26.0"
