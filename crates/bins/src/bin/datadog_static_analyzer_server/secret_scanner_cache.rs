@@ -95,7 +95,9 @@ mod tests {
     }
 
     fn sample_rules_json() -> Vec<Box<serde_json::value::RawValue>> {
-        vec![raw(r#"{"id":"test-rule","sds_id":"sds-123","name":"Test Rule","description":"A test rule","pattern":"FOO(BAR|BAZ)","priority":"medium","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#)]
+        vec![raw(
+            r#"{"id":"test-rule","sds_id":"sds-123","name":"Test Rule","description":"A test rule","pattern":"FOO(BAR|BAZ)","priority":"medium","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#,
+        )]
     }
 
     #[test]
@@ -122,7 +124,9 @@ mod tests {
         let (scanner1, _) = cache.get_or_build(&rules1, false).unwrap();
 
         // Different rules should cause a cache miss
-        let rules2 = vec![raw(r#"{"id":"other-rule","sds_id":"sds-456","name":"Other Rule","description":"Another test rule","pattern":"SECRET_[A-Z]+","priority":"high","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#)];
+        let rules2 = vec![raw(
+            r#"{"id":"other-rule","sds_id":"sds-456","name":"Other Rule","description":"Another test rule","pattern":"SECRET_[A-Z]+","priority":"high","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#,
+        )];
 
         let (scanner2, parsed_rules2) = cache.get_or_build(&rules2, false).unwrap();
         assert!(!Arc::ptr_eq(&scanner1, &scanner2));
@@ -140,7 +144,9 @@ mod tests {
     #[test]
     fn test_compute_rules_hash_different_for_different_rules() {
         let rules1 = sample_rules_json();
-        let rules2 = vec![raw(r#"{"id":"different","sds_id":"sds-999","name":"Different","description":"Different","pattern":"DIFFERENT","priority":"low","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#)];
+        let rules2 = vec![raw(
+            r#"{"id":"different","sds_id":"sds-999","name":"Different","description":"Different","pattern":"DIFFERENT","priority":"low","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#,
+        )];
         let hash1 = SecretScannerCache::compute_rules_hash(&rules1);
         let hash2 = SecretScannerCache::compute_rules_hash(&rules2);
         assert_ne!(hash1, hash2);
