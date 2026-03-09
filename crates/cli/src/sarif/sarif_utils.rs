@@ -18,9 +18,7 @@ use kernel::model::{
 };
 use path_slash::PathExt;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-use secrets::model::secret_result::{
-    SecretResult, SecretValidationStatus, ValidationErrorInfo, ValidationErrorType,
-};
+use secrets::model::secret_result::{SecretResult, SecretValidationStatus, ValidationErrorInfo};
 use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
@@ -968,7 +966,7 @@ mod tests {
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
-    use secrets::model::secret_result::SecretResultMatch;
+    use secrets::model::secret_result::{SecretResultMatch, ValidationErrorType};
     use secrets::model::secret_rule::RulePriority;
     use serde_json::{from_str, Value};
     use valico::json_schema;
