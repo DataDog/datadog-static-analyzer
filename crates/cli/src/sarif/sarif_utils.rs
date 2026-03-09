@@ -18,7 +18,9 @@ use kernel::model::{
 };
 use path_slash::PathExt;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-use secrets::model::secret_result::{SecretResult, SecretValidationStatus, ValidationErrorInfo};
+use secrets::model::secret_result::{
+    SecretResult, SecretValidationStatus, ValidationErrorInfo, ValidationErrorType,
+};
 use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
