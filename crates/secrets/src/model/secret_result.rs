@@ -95,3 +95,45 @@ impl ValidationErrorType {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json;
+
+    #[test]
+    fn test_serialize_validation_error_info() {
+        let error_info = ValidationErrorInfo {
+            error_type: ValidationErrorType::HttpError,
+            status_code: 400,
+            message: "Invalid token".to_string(),
+        };
+
+        let expected = serde_json::json!({
+            "type": "HttpError",
+            "statusCode": 400,
+            "message": "Invalid token"
+        });
+
+        let actual = serde_json::to_value(&error_info).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn test_deserialize_validation_error_info() {
+        let json = serde_json::json!({
+            "type": "HttpError",
+            "statusCode": 401,
+            "message": "Unauthorized access"
+        });
+
+        let expected = ValidationErrorInfo {
+            error_type: ValidationErrorType::HttpError,
+            status_code: 401,
+            message: "Unauthorized access".to_string(),
+        };
+
+        let actual: ValidationErrorInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(actual, expected);
+    }
+}
