@@ -49,11 +49,15 @@ git clone https://github.com/OWASP-Benchmark/BenchmarkJava.git
 
 ### Step 3: Configure the analyzer
 
-Create a `static-analysis.datadog.yml` file in the root of the BenchmarkJava repo. Put the following contents in the file:
+Create a `code-security.datadog.yaml` file in the root of the BenchmarkJava repo. Put the following contents in the file:
 
 ```
-rulesets:
-  - java-security
+schema-version: v1.0
+
+sast:
+  use-default-rulesets: false
+  use-rulesets:
+    - java-security
 ```
 
 This ensures we will only produce findings with a CWE.
