@@ -73,7 +73,9 @@ pub struct SecretResult {
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ValidationErrorInfo {
+    #[serde(rename = "type")]
     pub error_type: ValidationErrorType,
     pub status_code: u16,
     pub message: String,
