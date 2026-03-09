@@ -1,0 +1,4 @@
+schema-version: v1.0
+
+sast:
+  some-field-not-defined-in-the-schema: true

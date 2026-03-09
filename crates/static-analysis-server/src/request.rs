@@ -8,8 +8,8 @@ use crate::model::violation::ServerViolation;
 use common::analysis_options::AnalysisOptions;
 use kernel::analysis::analyze::analyze_with;
 use kernel::analysis::ddsa_lib::JsRuntime;
-use kernel::config::common::{parse_any_schema_yaml, parse_only_v1_yaml, WithVersion};
-use kernel::config::file_v2;
+use kernel::config::common::{parse_any_schema_yaml, WithVersion};
+use kernel::config::file_v1;
 use kernel::model::rule::RuleInternal;
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
@@ -29,19 +29,14 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
     let configuration = if let Some(config_b64) = request.configuration_base64 {
         let config =
             decode_base64_string(config_b64).map_err(|_| ERROR_CONFIGURATION_NOT_BASE64)?;
-        let parsed = if cfg!(test) {
-            parse_any_schema_yaml(&config)
-        } else {
-            parse_only_v1_yaml(&config)
-        };
-        let v2_yaml = parsed
+        let v2_yaml = parse_any_schema_yaml(&config)
             .map(|v| match v {
-                WithVersion::V1(yaml) => file_v2::YamlConfigFile::from(yaml),
-                WithVersion::V2(yaml) => yaml,
+                WithVersion::Legacy(yaml) => file_v1::YamlConfigFile::from(yaml),
+                WithVersion::CodeSecurity(yaml) => yaml,
             })
             .map_err(|_| ERROR_COULD_NOT_PARSE_CONFIGURATION)?;
 
-        Some(file_v2::ConfigFile::from(v2_yaml))
+        Some(file_v1::ConfigFile::from(v2_yaml))
     } else {
         None
     };

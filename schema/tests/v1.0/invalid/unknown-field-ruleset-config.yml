@@ -1,0 +1,7 @@
+schema-version: v1.0
+
+sast:
+  ruleset-configs:
+    java-security:
+      some-field-not-defined-in-the-schema: true
+  

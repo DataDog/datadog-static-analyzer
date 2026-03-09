@@ -1,14 +1,12 @@
-use crate::constants::DATADOG_CONFIG_FILE_WITHOUT_EXTENSION;
+use crate::constants::LEGACY_CONFIG_FILE_WITHOUT_EXTENSION;
 use crate::datadog_utils::DatadogApiError::InvalidPermission;
 use crate::datadog_utils::{
     get_remote_configuration, print_permission_warning, should_use_datadog_backend,
 };
 use crate::git_utils::get_repository_url;
 use anyhow::{anyhow, Context};
-use kernel::config::common::{
-    parse_any_schema_yaml, parse_only_v1_yaml, ConfigMethod, WithVersion,
-};
-use kernel::config::file_v2;
+use kernel::config::common::{parse_any_schema_yaml, ConfigMethod, WithVersion};
+use kernel::config::file_v1;
 use kernel::utils::{decode_base64_string, encode_base64_string};
 use std::path::Path;
 
@@ -21,7 +19,7 @@ pub fn read_config_file(base_path: &str) -> anyhow::Result<Option<String>> {
 
     for ext in EXTENSIONS {
         let config_path =
-            Path::new(base_path).join(format!("{DATADOG_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
+            Path::new(base_path).join(format!("{LEGACY_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
         match std::fs::read_to_string(config_path) {
             Ok(contents) => {
                 return if !contents.is_empty() {
@@ -49,21 +47,15 @@ pub fn read_config_file(base_path: &str) -> anyhow::Result<Option<String>> {
 pub fn get_config(
     path: &str,
     debug: bool,
-) -> anyhow::Result<Option<(file_v2::ConfigFile, ConfigMethod)>> {
+) -> anyhow::Result<Option<(file_v1::ConfigFile, ConfigMethod)>> {
     let local_file_contents = read_config_file(path)?;
     let local_yaml = local_file_contents
         .as_ref()
-        .map(|c| {
-            if cfg!(test) {
-                parse_any_schema_yaml(c)
-            } else {
-                parse_only_v1_yaml(c)
-            }
-        })
+        .map(|c| parse_any_schema_yaml(c))
         .transpose()?;
-    let local_config: Option<file_v2::ConfigFile> = local_yaml.map(|v| match v {
-        WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
-        WithVersion::V2(v2) => v2.into(),
+    let local_config: Option<file_v1::ConfigFile> = local_yaml.map(|v| match v {
+        WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
+        WithVersion::CodeSecurity(v2) => v2.into(),
     });
 
     if !should_use_datadog_backend() {
@@ -112,9 +104,9 @@ pub fn get_config(
     let Ok(remote_yaml) = res else {
         return Ok(local_config.map(|c| (c, ConfigMethod::File)));
     };
-    let remote_config: file_v2::ConfigFile = match remote_yaml {
-        WithVersion::V1(v1) => file_v2::YamlConfigFile::from(v1).into(),
-        WithVersion::V2(v2) => v2.into(),
+    let remote_config: file_v1::ConfigFile = match remote_yaml {
+        WithVersion::Legacy(legacy) => file_v1::YamlConfigFile::from(legacy).into(),
+        WithVersion::CodeSecurity(v2) => v2.into(),
     };
 
     let config_method = if local_config.is_some() {
