@@ -43,23 +43,23 @@ the solution to your problem.
 
 ### Advanced Usage
 
-You can choose the rules to use to scan your repository by creating a `static-analysis.datadog.yml` file.
+You can choose the rules to use to scan your repository by creating a `code-security.datadog.yaml` file.
 
 First, make sure you follow the [documentation](https://docs.datadoghq.com/code_analysis/static_analysis)
-and create a `static-analysis.datadog.yml` file at the root of your project with the rulesets you want to use.
-
-All the rules can be found on the [Datadog documentation](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/). Your `static-analysis.datadog.yml` may only contain rulesets available from the [Datadog documentation](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/)
+and create a `code-security.datadog.yaml` file at the root of your project with the rulesets you want to use.
 
 Example of YAML file
 
 ```yaml
-schema-version: v1
-rulesets:
-  - python-code-style
-  - python-best-practices
-  - python-inclusive
-ignore:
-  - tests
+schema-version: v1.0
+sast:
+  use-rulesets:
+    - python-code-style
+    - python-best-practices
+    - python-inclusive
+  global-config:
+    ignore-paths:
+      - src/experiments
 ```
 
 ### CI/CD Integration
@@ -74,15 +74,15 @@ If you use it in your own CI/CD pipeline, you can integrate the tool directly: s
 ### IntelliJ JetBrains products
 
 The [Datadog IntelliJ extension](https://plugins.jetbrains.com/plugin/19495-datadog) allows you to use the static analyzer directly from all JetBrains products.
-Create a `static-analysis.datadog.yml` file, download the extension and you can start using it. You can see below an example of a suggestion to add a timeout
-when fetching data with Python with the requests module.
+Create a configuration file ([reference here](misc/legacy_config.md)), download the extension, and you can start using it.
+You can see below an example of a suggestion to add a timeout when fetching data with Python with the requests module.
 
 ![Datadog Static Analysis JetBrains](misc/imgs/jetbrains.gif)
 
 ### VS Code
 
 The [Datadog VS Code extension](https://marketplace.visualstudio.com/items?itemName=Datadog.datadog-vscode) allows you to use the static analyzer directly from VS Code.
-Create a `static-analysis.datadog.yml` file, download the extension and you can start using it.
+Create a configuration file ([reference here](misc/legacy_config.md)), download the extension, and you can start using it.
 
 ![Datadog Static Analysis JetBrains](misc/imgs/vscode.gif)
 
@@ -117,10 +117,6 @@ curl -L -O https://www.github.com/DataDog/datadog-static-analyzer/releases/lates
 datadog-static-analyzer -i <directory> -o <output-file>
 ```
 
-For the tool to work, you must have a `<directory>/static-analysis.datadog.yml` file that defines the configuration of the analyzer. This file will indicate the rules you will use for your project.
-
-You can get more information about the configuration on [Datadog documentation](https://docs.datadoghq.com/security/code_security/static_analysis/setup).
-
 ### Mac OS X users
 
 If you installed via Homebrew (`brew install datadog-static-analyzer`), you can skip this section.
@@ -151,141 +147,165 @@ Set the following variables to configure an analysis:
 
 ## Configuration file
 
-The static analyzer can be configured using a `static-analysis.datadog.yml` file
-at the root directory of the repository. This is a YAML file with the following entries:
+The static analyzer can be configured using a `code-security.datadog.yaml` file at the root directory of the repository. 
+The file must begin with `schema-version: v1.0` and should have a `sast` object specifying the configuration.
 
-- `rulesets`: (required) a list with all the rulesets to use for this repository (see [Datadog Documentation](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/) for a full list). The elements of this list must be strings or maps containing a configuration for a ruleset (described below.)
-- `ignore`: (optional) a list of path prefixes and glob patterns to ignore. A file that matches any of its entries will not be analyzed.
-- `only`: (optional) a list of path prefixes and glob patterns to analyze. If `only` is specified, only files that match one of its entries will be analyzed.
-- `ignore-gitignore`: (optional) by default, any entries found in the `.gitignore` file are added to the `ignore` list. If the `ignore-gitignore` option is true, the `.gitignore` file is not read.
-- `max-file-size-kb`: (optional) files larger than this size, in kilobytes, will be ignored. The default value is 200 kB.
-- `schema-version`: (optional) the version of the schema that this configuration file follows. If specified, it must be `v1`.
+```yaml
+schema-version: v1.0
+sast:
+  # ... configuration goes here
+```
 
-The entries of the `rulesets` list must be strings that contain the name of a ruleset to enable, or a map that contains the configuration for a ruleset. This map contains the following fields:
+The **sast object** has the following optional fields:
 
-- the first field (required) gives the ruleset name as its key, with an empty value.
-- `ignore`: (optional) a list of path prefixes and glob patterns to ignore _for this ruleset_. Rules in this ruleset will not be evaluated for any files that match any of the entries in the `ignore` list.
-- `only`: (optional) a list of path prefixes and glob patterns to analyze _for this ruleset_. If `only` is specified, rules in this ruleset will only be evaluated for files that match one of the entries.
-- `rules`: (optional) a map of rule configurations. Rules not specified in this map will still be evaluated, but with their default configuration.
+| Field | Description |
+|---|---|
+| `use-default-rulesets` | (default: `true`) If `true`, Datadog's default list of rulesets is enabled. |
+| `use-rulesets` | A list of ruleset names to enable ([custom rulesets](https://docs.datadoghq.com/security/code_security/static_analysis/custom_rules/tutorial/) or [official Datadog rulesets](https://docs.datadoghq.com/security/code_security/static_analysis/static_analysis_rules/)). Enabled in addition to the default rulesets if `use-default-rulesets` is `true`. |
+| `ignore-rulesets` | A list of ruleset names to disable. Takes precedence over both `use-rulesets` and `use-default-rulesets`. |
+| `ruleset-configs` | A map from ruleset name to a ruleset configuration object. A ruleset does not need to appear in `use-rulesets` to have a configuration here. |
+| `global-config` | A global configuration object with repository-wide settings. |
 
-The map in the `rules` field uses the rule's name as its key, and the values are maps with the following fields:
+A **ruleset configuration** object has the following optional fields:
 
-- `ignore` (optional) a list of path prefixes and glob patterns to ignore _for this rule_. This rule will not be evaluated for any files that match any of the entries in the `ignore` list.
-- `only`: (optional) a list of path prefixes and glob patterns to analyze _for this rule_. If `only` is specified, this rule will only be evaluated for files that match one of the entries.
-- `severity`: (optional) if provided, override the severity of violations produced by this rule. The valid severities are `ERROR`, `WARNING`, `NOTICE`, and `NONE`.
-- `category`: (optional) if provided, override this rule's category. The valid categories are `BEST_PRACTICES`, `CODE_STYLE`, `ERROR_PRONE`, `PERFORMANCE`, and `SECURITY`.
-- `arguments`: (optional) a map of values for the rule's arguments.
+| Field | Description |
+|---|---|
+| `only-paths` | A list of path prefixes and glob patterns. If specified, rules in this ruleset will only be evaluated for files that match one of the entries. |
+| `ignore-paths` | A list of path prefixes and glob patterns. Rules in this ruleset will not be evaluated for any files that match any of the entries. |
+| `rule-configs` | A map from rule name to a rule configuration object. |
 
-The map in the `arguments` field uses an argument's name as its key, and the values are either strings or maps:
+A **rule configuration** object has the following optional fields:
 
-- if you want to set a value for the whole repository, you can specify it as a string;
-- if you want to set different values for different subtrees in the repository, you can specify them as a map from a subtree prefix to the value that the argument will have within that subtree. See the example for more details.
+| Field | Description |
+|---|---|
+| `only-paths` | A list of path prefixes and glob patterns. If specified, this rule will only be evaluated for files that match one of the entries. |
+| `ignore-paths` | A list of path prefixes and glob patterns. This rule will not be evaluated for any files that match any of the entries. |
+| `severity` | Overrides the severity of violations produced by this rule. Valid values are `ERROR`, `WARNING`, `NOTICE`, and `NONE`. |
+| `category` | Overrides this rule's category. Valid values are `BEST_PRACTICES`, `CODE_STYLE`, `ERROR_PRONE`, `PERFORMANCE`, and `SECURITY`. |
+| `arguments` | A map of values for the rule's arguments. |
+
+For `severity` and `arguments` values, you can either specify a single value that applies to the whole repository, or
+a map from path prefix to value to use different values in different subtrees. The longest matching prefix applies.
+Use `/` as a catch-all default.
+
+The **global configuration** object has the following optional fields:
+
+| Field | Description |
+|---|---|
+| `only-paths` | A list of path prefixes and glob patterns. If specified, only files that match one of the entries will be analyzed. |
+| `ignore-paths` | A list of path prefixes and glob patterns. Files that match any of the entries will not be analyzed. |
+| `use-gitignore` | (default: `true`) If `true`, the entries from the `.gitignore` file are appended to the `ignore-paths` list. |
+| `ignore-generated-files` | (default: `true`) If `true`, a list of glob patterns for commonly-generated files is appended to the `ignore-paths` list. |
+| `max-file-size-kb` | (default: `200`) Files larger than this size, in kilobytes, will be ignored. |
 
 An annotated example of a configuration file:
 
 ```yaml
-# This is a legacy "v1" configuration file.
-schema-version: v1
-# The list of rulesets to enable for this repository.
-rulesets:
-  # Enable the `python-inclusive` ruleset with the default configuration.
-  - python-inclusive
-  # Enable the `python-best-practices` ruleset with a custom configuration.
-  - python-best-practices:
-    # Do not apply any of the rules in this ruleset to files that match `src/**/*.generated.py`.
-    ignore:
-      - src/**/*.generated.py
-    rules:
-      # Special configuration for the `python-best-practices/no-generic-exception` rule.
-      no-generic-exception:
-        # Treat violations of this rule as errors (normally "notice").
-        severity: ERROR
-        # Classify violations of this rule under the "code style" category.
-        category: CODE_STYLE
-        # Only apply this rule to files under the `src/new-code` subtree.
-        only:
-          - src/new-code
-  # Enable the `python-code-style ruleset` with a custom configuration.
-  - python-code-style:
-    rules:
-      max-function-lines:
-        # Set arguments for the `python-code-style/max-function-lines` rule.
-        arguments:
-          # Set the `max-lines` argument to 150 in the whole repository.
-          max-lines: 150
-      max-class-lines:
-        # Set arguments for the `python-code-style/max-class-lines` rule.
-        arguments:
-          # Set different values for the `max-lines` argument in different subtrees.
-          max-lines:
-            # Set the `max-lines` argument to 100 by default
-            /: 100
-            # Set the `max-lines` argument to 75 under the `src/new-code` subtree.
-            src/new-code: 75
-# Analyze only files in the `src` and `imported` subtrees.
-only:
-  - src
-  - imported
-# Do not analyze any files in the `src/tests` subtree.
-ignore:
-  - src/tests
-# Do not add the content of the `.gitignore` file to the `ignore` list.
-ignore-gitignore: true
-# Do not analyze files larger than 100 kB.
-max-file-size-kb: 100
+schema-version: v1.0
+sast:
+  # Always ensure the following rulesets are run (in addition to the Datadog defaults).
+  use-rulesets:
+    - python-inclusive
+    - my-custom-python-rules
+  # Never use the following rulesets (even if they are in the Datadog defaults).
+  ignore-rulesets:
+    - python-pandas
+  ruleset-configs:
+    # Configuration for the `python-best-practices` ruleset.
+    python-best-practices:
+      # Do not apply any of the rules in this ruleset to files that match `**/*_model.py`.
+      ignore-paths:
+        - "**/*_model.py"
+      rule-configs:
+        # Special configuration for the `python-best-practices/no-generic-exception` rule.
+        no-generic-exception:
+          # Treat violations of this rule as errors.
+          severity: ERROR
+          # Classify violations of this rule under the "code style" category.
+          category: CODE_STYLE
+          # Only apply this rule to files under the `src/new-code` subtree.
+          only-paths:
+            - src/new-code
+    # Configuration for the `python-code-style` ruleset.
+    python-code-style:
+      rule-configs:
+        max-function-lines:
+          # Set arguments for the `python-code-style/max-function-lines` rule.
+          arguments:
+            # Set the `max-lines` argument to 150 in the whole repository.
+            max-lines: 150
+        max-class-lines:
+          # Set arguments for the `python-code-style/max-class-lines` rule.
+          arguments:
+            # Set different values for the `max-lines` argument in different subtrees.
+            max-lines:
+              # 100 lines by default.
+              /: 100
+              # 75 lines under the `src/new-code` subtree.
+              src/new-code: 75
+  # Repository-wide settings.
+  global-config:
+    # Analyze only files in the `src` and `imported` subtrees.
+    only-paths:
+      - src
+      - imported
+    # Do not analyze any files in the `src/third_party` subtree.
+    ignore-paths:
+      - src/third_party
+    # Do not analyze files larger than 100 kB.
+    max-file-size-kb: 100
 ```
 
 Another example that shows every option being used:
 
 ```yaml
-schema-version: v1
-rulesets:
-  - python-best-practices
-  - python-code-style:
-    ignore:
-      - src/generated
-      - src/**/*_test.py
-    only:
+schema-version: v1.0
+sast:
+  use-default-rulesets: false
+  use-rulesets:
+    - python-code-style
+  ignore-rulesets:
+    - python-pandas
+  ruleset-configs:
+    python-code-style:
+      ignore-paths:
+        - src/third_party
+        - src/**/*_test.py
+      only-paths:
+        - src
+        - imported/**/new/**
+      rule-configs:
+        max-function-lines:
+          severity: WARNING
+          category: PERFORMANCE
+          ignore-paths:
+            - src/new-code
+            - src/new/*_gen.py
+          only-paths:
+            - src/new
+            - src/**/new-code/**
+          arguments:
+            max-lines: 150
+            min-lines:
+              /: 10
+              src/new-code: 0
+  global-config:
+    ignore-paths:
+      - dist
+      - lib/**/*.py
+    only-paths:
       - src
-      - imported/**/new/**
-    rules:
-      max-function-lines:
-        severity: WARNING
-        category: PERFORMANCE
-        ignore:
-          - src/new-code
-          - src/new/*.gen.py
-        only:
-          - src/new
-          - src/**/new-code/**
-        arguments:
-          max-lines: 150
-          min-lines:
-            /: 10
-            src/new-code: 0
-ignore:
-  - dist
-  - lib/**/*.py
-only:
-  - src
-  - imported/**/*.py
-ignore-gitignore: true
-max-file-size-kb: 256
+      - imported/**/*.py
+    use-gitignore: false
+    ignore-generated-files: false
+    max-file-size-kb: 256
 ```
 
 ## Configuration file schema
 
-There is a JSON Schema definition for the `static-analysis.datadog.yml` in the `schema/legacy` subdirectory.
+You can use the included JSON schema definition to check the syntax of your configuration file:
 
-You can use it to check the syntax of your configuration file:
-
-1. Execute `npx --yes ajv-cli@5.0.0 validate -s schema/legacy/schema.json -r 'schema/legacy/examples/*/*.json' -d path/to/your/static-analysis.datadog.yml`
-
-There are some examples of valid and invalid configuration files in the [`schema/legacy/examples/valid`](schema/legacy/examples/valid)
-and [`schema/legacy/examples/invalid`](schema/legacy/examples/invalid) subdirectories, respectively. If you make changes to the JSON
-Schema, you can test them against our examples:
-
-1. Execute `make -C schema`
+1. Execute `npx --yes ajv-cli@5.0.0 --spec=draft2020 validate -s schema/sast/v1.0/validation.schema.json -r schema/sast/v1.0/schema.json -d path/to/your/code-security.datadog.yaml`
 
 ## Diff-Aware Scanning
 
