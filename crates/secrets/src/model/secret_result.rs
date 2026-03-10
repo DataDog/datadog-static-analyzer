@@ -50,6 +50,7 @@ impl From<&MatchStatus> for SecretValidationStatus {
                 SecretValidationStatus::ValidationError(error_infos)
             }
             MatchStatus::NotAvailable => SecretValidationStatus::NotAvailable,
+            // TODO: do we want to create a dedicated status for this?
             MatchStatus::MissingDependentMatch => SecretValidationStatus::NotValidated,
         }
     }
