@@ -18,7 +18,7 @@ use kernel::model::{
 };
 use path_slash::PathExt;
 use percent_encoding::{utf8_percent_encode, AsciiSet, CONTROLS};
-use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
+use secrets::model::secret_result::{SecretResult, SecretValidationStatus, ValidationErrorInfo};
 use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
@@ -136,19 +136,27 @@ impl SarifViolation {
         }
     }
 
-    fn get_properties(&self) -> Vec<String> {
+    fn get_tags(&self) -> Vec<String> {
         if let Secret(_, validation_status) = &self {
-            let status = match validation_status {
+            let status_value = match validation_status {
                 SecretValidationStatus::NotValidated => "NOT_VALIDATED",
                 SecretValidationStatus::Valid => "VALID",
                 SecretValidationStatus::Invalid => "INVALID",
-                SecretValidationStatus::ValidationError => "VALIDATION_ERROR",
+                SecretValidationStatus::ValidationError(_) => "VALIDATION_ERROR",
                 SecretValidationStatus::NotAvailable => "NOT_AVAILABLE",
             };
-            vec![format!("DATADOG_SECRET_VALIDATION_STATUS:{}", status).to_string()]
+
+            vec![format!("DATADOG_SECRET_VALIDATION_STATUS:{}", status_value)]
         } else {
             vec![]
         }
+    }
+
+    fn get_validation_errors_data(&self) -> Option<&[ValidationErrorInfo]> {
+        let Secret(_, SecretValidationStatus::ValidationError(error_infos)) = &self else {
+            return None;
+        };
+        (!error_infos.is_empty()).then_some(error_infos.as_slice())
     }
 }
 
@@ -174,7 +182,7 @@ impl SarifRuleResult {
                         SecretValidationStatus::NotValidated => RuleSeverity::Notice,
                         SecretValidationStatus::Valid => RuleSeverity::Error,
                         SecretValidationStatus::Invalid => RuleSeverity::None,
-                        SecretValidationStatus::ValidationError => RuleSeverity::Warning,
+                        SecretValidationStatus::ValidationError(_) => RuleSeverity::Warning,
                         SecretValidationStatus::NotAvailable => RuleSeverity::Error,
                     };
 
@@ -188,7 +196,7 @@ impl SarifRuleResult {
                             fixes: vec![],
                             taint_flow: None,
                         },
-                        r.validation_status,
+                        r.validation_status.clone(),
                     )
                 })
                 .collect::<Vec<SarifViolation>>(),
@@ -764,12 +772,24 @@ fn generate_results(
                                 .build()
                                 .unwrap(),
                         )
-                        .properties(
-                            PropertyBagBuilder::default()
-                                .tags([tags.clone(), sarif_violation.get_properties()].concat())
+                        .properties({
+                            let mut properties = PropertyBagBuilder::default()
+                                .tags([tags.clone(), sarif_violation.get_tags()].concat())
                                 .build()
-                                .unwrap(),
-                        )
+                                .unwrap();
+
+                            let validation_errors_data =
+                                sarif_violation.get_validation_errors_data();
+                            if let Some(errors_data) = validation_errors_data {
+                                let json_array = serde_json::to_value(errors_data)?;
+                                properties.additional_properties.insert(
+                                    "datadogSecretValidationErrors".to_string(),
+                                    json_array,
+                                );
+                            }
+
+                            properties
+                        })
                         .partial_fingerprints(partial_fingerprints);
                     if let Some(taint_code_flow) = taint_code_flow {
                         sarif_result.code_flows(&[taint_code_flow]);
@@ -946,7 +966,7 @@ mod tests {
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
-    use secrets::model::secret_result::SecretResultMatch;
+    use secrets::model::secret_result::{SecretResultMatch, ValidationErrorType};
     use secrets::model::secret_rule::RulePriority;
     use serde_json::{from_str, Value};
     use valico::json_schema;
@@ -1453,7 +1473,6 @@ mod tests {
             (SecretValidationStatus::NotValidated, "DATADOG_SECRET_VALIDATION_STATUS:NOT_VALIDATED", "warning"),
             (SecretValidationStatus::Valid, "DATADOG_SECRET_VALIDATION_STATUS:VALID", "warning"),
             (SecretValidationStatus::Invalid, "DATADOG_SECRET_VALIDATION_STATUS:INVALID", "warning"),
-            (SecretValidationStatus::ValidationError, "DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR", "warning"),
             (SecretValidationStatus::NotAvailable, "DATADOG_SECRET_VALIDATION_STATUS:NOT_AVAILABLE", "warning"),
         ];
 
@@ -1566,6 +1585,180 @@ mod tests {
             // validate the schema
             assert!(validate_data(&sarif_json));
         }
+    }
+
+    #[test]
+    fn test_generate_secret_validation_error_with_code() {
+        let rule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        };
+
+        let secret_results = vec![SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: "myfile.py".to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 2, col: 2 },
+                validation_status: SecretValidationStatus::ValidationError(vec![
+                    ValidationErrorInfo {
+                        error_type: ValidationErrorType::HttpError,
+                        status_code: 400,
+                        message: "Invalid token".to_string(),
+                    },
+                ]),
+            }],
+        }];
+
+        let sarif_secret_results = secret_results
+            .into_iter()
+            .map(SarifRuleResult::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(anyhow::Error::msg)
+            .expect("getting results");
+
+        let sarif_report = generate_sarif_report(
+            &[rule.into()],
+            &sarif_secret_results,
+            &"mydir".to_string(),
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        // Test the actual data structures
+        let result = &sarif_report.runs[0].results.as_ref().unwrap()[0];
+        let properties = result.properties.as_ref().unwrap();
+
+        // Check tags
+        let tags = properties.tags.as_ref().unwrap();
+        assert!(tags.contains(&"DATADOG_CATEGORY:SECURITY".to_string()));
+        assert!(tags.contains(&"DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR".to_string()));
+
+        // Check validation errors data
+        let json_value = properties
+            .additional_properties
+            .get("datadogSecretValidationErrors")
+            .unwrap();
+        let parsed: Vec<ValidationErrorInfo> = serde_json::from_value(json_value.clone()).unwrap();
+
+        let expected_errors = vec![ValidationErrorInfo {
+            error_type: ValidationErrorType::HttpError,
+            status_code: 400,
+            message: "Invalid token".to_string(),
+        }];
+        assert_eq!(parsed, expected_errors);
+
+        // validate the schema
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+        assert!(validate_data(&sarif_json));
+    }
+
+    #[test]
+    fn test_generate_secret_validation_error_without_code() {
+        let rule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        };
+
+        let secret_results = vec![SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: "myfile.py".to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 2, col: 2 },
+                validation_status: SecretValidationStatus::ValidationError(vec![
+                    ValidationErrorInfo {
+                        error_type: ValidationErrorType::UnknownResponseType,
+                        status_code: 0, // Using 0 as placeholder when no status code is available
+                        message: "Connection timeout".to_string(),
+                    },
+                ]),
+            }],
+        }];
+
+        let sarif_secret_results = secret_results
+            .into_iter()
+            .map(SarifRuleResult::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(anyhow::Error::msg)
+            .expect("getting results");
+
+        let sarif_report = generate_sarif_report(
+            &[rule.into()],
+            &sarif_secret_results,
+            &"mydir".to_string(),
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        // Test the actual data structures
+        let result = &sarif_report.runs[0].results.as_ref().unwrap()[0];
+        let properties = result.properties.as_ref().unwrap();
+
+        // Check tags
+        let tags = properties.tags.as_ref().unwrap();
+        assert!(tags.contains(&"DATADOG_CATEGORY:SECURITY".to_string()));
+        assert!(tags.contains(&"DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR".to_string()));
+
+        // Check validation errors data
+        let json_value = properties
+            .additional_properties
+            .get("datadogSecretValidationErrors")
+            .unwrap();
+        let parsed: Vec<ValidationErrorInfo> = serde_json::from_value(json_value.clone()).unwrap();
+
+        let expected_errors = vec![ValidationErrorInfo {
+            error_type: ValidationErrorType::UnknownResponseType,
+            status_code: 0,
+            message: "Connection timeout".to_string(),
+        }];
+        assert_eq!(parsed, expected_errors);
+
+        // validate the schema
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+        assert!(validate_data(&sarif_json));
     }
 
     #[test]
@@ -1906,5 +2099,114 @@ mod tests {
             artifact_tags[1].0 == NON_TEST_FILE_PATH
                 && !has_tag(artifact_tags[1].1, CLASSIFICATION_TEST_FILE)
         );
+    }
+
+    #[test]
+    fn test_generate_secret_validation_multiple_errors() {
+        let rule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        };
+
+        let secret_results = vec![SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: "myfile.py".to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 2, col: 2 },
+                validation_status: SecretValidationStatus::ValidationError(vec![
+                    ValidationErrorInfo {
+                        error_type: ValidationErrorType::HttpError,
+                        status_code: 400,
+                        message: "Invalid token".to_string(),
+                    },
+                    ValidationErrorInfo {
+                        error_type: ValidationErrorType::HttpError,
+                        status_code: 401,
+                        message: "Unauthorized access".to_string(),
+                    },
+                    ValidationErrorInfo {
+                        error_type: ValidationErrorType::UnknownResponseType,
+                        status_code: 0, // Test error without status code
+                        message: "Connection timeout".to_string(),
+                    },
+                ]),
+            }],
+        }];
+
+        let sarif_secret_results = secret_results
+            .into_iter()
+            .map(SarifRuleResult::try_from)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(anyhow::Error::msg)
+            .expect("getting results");
+
+        let sarif_report = generate_sarif_report(
+            &[rule.into()],
+            &sarif_secret_results,
+            &"mydir".to_string(),
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 0,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        // Test the actual data structures
+        let result = &sarif_report.runs[0].results.as_ref().unwrap()[0];
+        let properties = result.properties.as_ref().unwrap();
+
+        // Check tags
+        let tags = properties.tags.as_ref().unwrap();
+        assert!(tags.contains(&"DATADOG_CATEGORY:SECURITY".to_string()));
+        assert!(tags.contains(&"DATADOG_SECRET_VALIDATION_STATUS:VALIDATION_ERROR".to_string()));
+
+        // Check validation errors data
+        let json_value = properties
+            .additional_properties
+            .get("datadogSecretValidationErrors")
+            .unwrap();
+        let parsed: Vec<ValidationErrorInfo> = serde_json::from_value(json_value.clone()).unwrap();
+
+        let expected_errors = vec![
+            ValidationErrorInfo {
+                error_type: ValidationErrorType::HttpError,
+                status_code: 400,
+                message: "Invalid token".to_string(),
+            },
+            ValidationErrorInfo {
+                error_type: ValidationErrorType::HttpError,
+                status_code: 401,
+                message: "Unauthorized access".to_string(),
+            },
+            ValidationErrorInfo {
+                error_type: ValidationErrorType::UnknownResponseType,
+                status_code: 0,
+                message: "Connection timeout".to_string(),
+            },
+        ];
+        assert_eq!(parsed, expected_errors);
+
+        // validate the schema
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+        assert!(validate_data(&sarif_json));
     }
 }
