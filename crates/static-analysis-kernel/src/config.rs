@@ -4,5 +4,5 @@
 
 pub mod common;
 mod conversion;
+pub mod file_legacy;
 pub mod file_v1;
-pub mod file_v2;

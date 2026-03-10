@@ -1,0 +1,5 @@
+schema-version: v1.0
+
+sast:
+  global-config:
+    some-field-not-defined-in-the-schema: true

@@ -184,7 +184,7 @@ The map in the `arguments` field uses an argument's name as its key, and the val
 An annotated example of a configuration file:
 
 ```yaml
-# This is a "v1" configuration file.
+# This is a legacy "v1" configuration file.
 schema-version: v1
 # The list of rulesets to enable for this repository.
 rulesets:
@@ -275,14 +275,14 @@ max-file-size-kb: 256
 
 ## Configuration file schema
 
-There is a JSON Schema definition for the `static-analysis.datadog.yml` in the `schema` subdirectory.
+There is a JSON Schema definition for the `static-analysis.datadog.yml` in the `schema/legacy` subdirectory.
 
 You can use it to check the syntax of your configuration file:
 
-1. Execute `npx --yes ajv-cli@5.0.0 validate -s schema/schema.json -r 'schema/*/*.json' -d path/to/your/static-analysis.datadog.yml`
+1. Execute `npx --yes ajv-cli@5.0.0 validate -s schema/legacy/schema.json -r 'schema/legacy/examples/*/*.json' -d path/to/your/static-analysis.datadog.yml`
 
-There are some examples of valid and invalid configuration files in the [`schema/v1/examples/valid`](schema/v1/examples/valid)
-and [`schema/v1/examples/invalid`](schema/v1/examples/invalid) subdirectories, respectively. If you make changes to the JSON
+There are some examples of valid and invalid configuration files in the [`schema/legacy/examples/valid`](schema/legacy/examples/valid)
+and [`schema/legacy/examples/invalid`](schema/legacy/examples/invalid) subdirectories, respectively. If you make changes to the JSON
 Schema, you can test them against our examples:
 
 1. Execute `make -C schema`

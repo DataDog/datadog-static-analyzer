@@ -35,7 +35,7 @@ use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Plat
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::classifiers::ArtifactClassification;
 use kernel::config::common::{ConfigMethod, PathConfig};
-use kernel::config::file_v2;
+use kernel::config::file_v1;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleSeverity};
@@ -264,7 +264,7 @@ fn main() -> Result<()> {
     let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
 
     let (configuration_file, configuration_method): (
-        Option<file_v2::ConfigFile>,
+        Option<file_v1::ConfigFile>,
         Option<ConfigMethod>,
     ) = match configuration_file_and_method {
         Ok(cfg) => match cfg {

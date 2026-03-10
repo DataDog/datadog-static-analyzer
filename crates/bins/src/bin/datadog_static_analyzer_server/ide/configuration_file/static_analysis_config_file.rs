@@ -3,11 +3,11 @@ use super::error::ConfigFileError;
 use indexmap::IndexMap;
 use itertools::Itertools;
 use kernel::config::common::{
-    parse_any_schema_yaml, parse_only_v1_yaml, ConfigError, PathConfig, PathPattern, RuleConfig,
-    RulesetConfig, WithVersion,
+    parse_any_schema_yaml, ConfigError, PathConfig, PathPattern, RuleConfig, RulesetConfig,
+    WithVersion,
 };
-use kernel::config::file_v1::config_file_to_yaml;
-use kernel::config::{file_v1, file_v2};
+use kernel::config::file_legacy::config_file_to_yaml;
+use kernel::config::{file_legacy, file_v1};
 use kernel::utils::decode_base64_string;
 use std::{borrow::Cow, fmt::Debug};
 use tracing::instrument;
@@ -16,23 +16,23 @@ const WILDCARD_IGNORE: &str = "**";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticAnalysisConfigFile {
-    config_file: WithVersion<file_v1::ConfigFile, file_v2::YamlConfigFile>,
+    config_file: WithVersion<file_legacy::ConfigFile, file_v1::YamlConfigFile>,
     original_content: Option<String>,
 }
 
 impl Default for StaticAnalysisConfigFile {
     fn default() -> Self {
         Self {
-            config_file: WithVersion::V1(Default::default()),
+            config_file: WithVersion::Legacy(Default::default()),
             original_content: None,
         }
     }
 }
 
-impl From<file_v1::ConfigFile> for StaticAnalysisConfigFile {
-    fn from(value: file_v1::ConfigFile) -> Self {
+impl From<file_legacy::ConfigFile> for StaticAnalysisConfigFile {
+    fn from(value: file_legacy::ConfigFile) -> Self {
         Self {
-            config_file: WithVersion::V1(value),
+            config_file: WithVersion::Legacy(value),
             original_content: None,
         }
     }
@@ -47,12 +47,7 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
         if content.trim().is_empty() {
             return Ok(Self::default());
         }
-        let parsed = if cfg!(test) {
-            parse_any_schema_yaml(&content)
-        } else {
-            parse_only_v1_yaml(&content)
-        };
-        let parsed = parsed.map_err(|err| {
+        let parsed = parse_any_schema_yaml(&content).map_err(|err| {
             match err {
                 // Artificially represent this as a "parse" error for backwards compatibility.
                 ConfigError::UnsupportedSchema(_) => ConfigFileError::Parser {
@@ -62,8 +57,8 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
             }
         })?;
         let config_file = match parsed {
-            WithVersion::V1(yaml) => WithVersion::V1(file_v1::ConfigFile::from(yaml)),
-            WithVersion::V2(yaml) => WithVersion::V2(yaml),
+            WithVersion::Legacy(yaml) => WithVersion::Legacy(file_legacy::ConfigFile::from(yaml)),
+            WithVersion::CodeSecurity(yaml) => WithVersion::CodeSecurity(yaml),
         };
         Ok(Self {
             config_file,
@@ -150,7 +145,7 @@ impl StaticAnalysisConfigFile {
             return;
         };
         match &mut self.config_file {
-            WithVersion::V1(config) => {
+            WithVersion::Legacy(config) => {
                 // the ruleset may exist and contain other rules so we
                 // can't update it blindly
                 if let Some(existing_ruleset) = config.rulesets.get_mut(ruleset_name) {
@@ -177,8 +172,8 @@ impl StaticAnalysisConfigFile {
                     );
                 }
             }
-            WithVersion::V2(config) => {
-                // (All logic for this is translated from the V1 match arm)
+            WithVersion::CodeSecurity(config) => {
+                // (All logic for this is translated from the Legacy match arm)
                 let map = config.ruleset_configs.get_or_insert_default();
                 let ruleset_config = map.0.entry(ruleset_name.to_string()).or_default();
                 let rule_config = ruleset_config
@@ -243,7 +238,7 @@ impl StaticAnalysisConfigFile {
     #[instrument(skip(self))]
     pub fn add_rulesets(&mut self, rulesets: &[impl AsRef<str> + Debug]) {
         match &mut self.config_file {
-            WithVersion::V1(config) => {
+            WithVersion::Legacy(config) => {
                 for ruleset in rulesets {
                     if !config.rulesets.contains_key(ruleset.as_ref()) {
                         config
@@ -252,7 +247,7 @@ impl StaticAnalysisConfigFile {
                     }
                 }
             }
-            WithVersion::V2(config) => {
+            WithVersion::CodeSecurity(config) => {
                 if rulesets.is_empty() {
                     return;
                 }
@@ -297,18 +292,18 @@ impl StaticAnalysisConfigFile {
             }
         };
         match parsed.config_file {
-            WithVersion::V1(config) => config.rulesets.iter().map(|rs| rs.0.clone()).collect(),
-            WithVersion::V2(config) => config.use_rulesets.clone().unwrap_or_default(),
+            WithVersion::Legacy(config) => config.rulesets.iter().map(|rs| rs.0.clone()).collect(),
+            WithVersion::CodeSecurity(config) => config.use_rulesets.clone().unwrap_or_default(),
         }
     }
 
     #[instrument(skip(self))]
     pub fn is_onboarding_allowed(&self) -> bool {
         match &self.config_file {
-            WithVersion::V1(config) => {
+            WithVersion::Legacy(config) => {
                 config.paths.only.is_none() && config.paths.ignore.is_empty()
             }
-            WithVersion::V2(config) => {
+            WithVersion::CodeSecurity(config) => {
                 config.global_config.is_none()
                     || config.global_config.as_ref().is_some_and(|c| {
                         c.path_config.ignore_paths.is_none() && c.path_config.only_paths.is_none()
@@ -330,7 +325,7 @@ impl StaticAnalysisConfigFile {
     #[instrument(skip(self))]
     pub fn to_string(&self) -> Result<String, ConfigFileError> {
         let yaml = match &self.config_file {
-            WithVersion::V1(config) => {
+            WithVersion::Legacy(config) => {
                 let str = config_file_to_yaml(config)?;
                 // fix null maps, note that str will not have comments and it will be using the default serde format.
                 str.lines()
@@ -343,7 +338,7 @@ impl StaticAnalysisConfigFile {
                     })
                     .join("\n")
             }
-            WithVersion::V2(config) => serde_yaml::to_string(&config)?,
+            WithVersion::CodeSecurity(config) => serde_yaml::to_string(&config)?,
         };
         // reconcile and format
         // NOTE: if this fails, we're going to return the content
@@ -486,14 +481,14 @@ rulesets:
         #[test]
         fn it_works_simple() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-security
 - java-1
 ";
             // language=yaml
-            let v1_expected = r"
+            let legacy_expected = r"
 schema-version: v1
 rulesets:
   - java-security
@@ -520,7 +515,7 @@ use-rulesets:
   - ruleset2
   - a-ruleset3
 ";
-            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+            for (yaml, expected) in [(legacy, legacy_expected), (v2, v2_expected)] {
                 let config = StaticAnalysisConfigFile::with_added_rulesets(
                     &["ruleset1", "ruleset2", "a-ruleset3"],
                     Some(to_encoded_content(yaml)),
@@ -534,13 +529,13 @@ use-rulesets:
         #[test]
         fn add_no_duplicate_rulesets() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-security
 ";
             // language=yaml
-            let v1_expected = r"
+            let legacy_expected = r"
 schema-version: v1
 rulesets:
   - java-security
@@ -560,7 +555,7 @@ use-rulesets:
   - java-security
   - new-ruleset
 ";
-            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+            for (yaml, expected) in [(legacy, legacy_expected), (v2, v2_expected)] {
                 let config = StaticAnalysisConfigFile::with_added_rulesets(
                     &["new-ruleset", "new-ruleset"],
                     Some(to_encoded_content(yaml)),
@@ -662,14 +657,14 @@ rulesets:
         #[test]
         fn it_works_with_non_previously_existing_ruleset() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-1
 - java-security
 ";
             // language=yaml
-            let v1_expected = r#"
+            let legacy_expected = r#"
 schema-version: v1
 rulesets:
   - java-1
@@ -719,7 +714,7 @@ ruleset-configs:
 "#;
 
             for (yaml, expected) in [
-                (v1, v1_expected),
+                (legacy, legacy_expected),
                 (v2_with_rs_configs, v2_with_rs_configs_expected),
                 (v2_without_rs_configs, v2_without_rs_configs_expected),
             ] {
@@ -736,7 +731,7 @@ ruleset-configs:
         #[test]
         fn it_works_with_a_previously_existing_ruleset() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-1
@@ -744,7 +739,7 @@ rulesets:
 - ruleset1
 ";
             // language=yaml
-            let v1_expected = r#"
+            let legacy_expected = r#"
 schema-version: v1
 rulesets:
   - java-1
@@ -773,7 +768,7 @@ ruleset-configs:
           - "**"
 "#;
 
-            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+            for (yaml, expected) in [(legacy, legacy_expected), (v2, v2_expected)] {
                 let config = StaticAnalysisConfigFile::with_ignored_rule(
                     "ruleset1/rule1".into(),
                     to_encoded_content(yaml),
@@ -790,7 +785,7 @@ ruleset-configs:
         #[test]
         fn it_works_with_a_previously_existing_ruleset_with_same_rule_path_config() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-1
@@ -802,7 +797,7 @@ rulesets:
       - foo/bar
 ";
             // language=yaml
-            let v1_expected = r#"
+            let legacy_expected = r#"
 schema-version: v1
 rulesets:
   - java-1
@@ -839,7 +834,7 @@ ruleset-configs:
           - "**"
 "#;
 
-            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+            for (yaml, expected) in [(legacy, legacy_expected), (v2, v2_expected)] {
                 let config = StaticAnalysisConfigFile::with_ignored_rule(
                     "ruleset1/rule1".into(),
                     to_encoded_content(yaml),
@@ -913,7 +908,7 @@ rulesets:
         #[test]
         fn it_keeps_existing_properties_when_ignoring_other_rules() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-security
@@ -924,7 +919,7 @@ rulesets:
       severity: ERROR
 ";
             // language=yaml
-            let v1_expected = r#"
+            let legacy_expected = r#"
 schema-version: v1
 rulesets:
   - java-security
@@ -960,7 +955,7 @@ ruleset-configs:
           - "**"
 "#;
 
-            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+            for (yaml, expected) in [(legacy, legacy_expected), (v2, v2_expected)] {
                 let config = StaticAnalysisConfigFile::with_ignored_rule(
                     "ruleset1/rule1".into(),
                     to_encoded_content(yaml),
@@ -974,7 +969,7 @@ ruleset-configs:
         #[test]
         fn it_keeps_existing_properties_when_ignoring_same_rule() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-security
@@ -985,7 +980,7 @@ rulesets:
       severity: ERROR
 ";
             // language=yaml
-            let v1_expected = r#"
+            let legacy_expected = r#"
 schema-version: v1
 rulesets:
   - java-security
@@ -1019,7 +1014,7 @@ ruleset-configs:
         severity: ERROR
 "#;
 
-            for (yaml, expected) in [(v1, v1_expected), (v2, v2_expected)] {
+            for (yaml, expected) in [(legacy, legacy_expected), (v2, v2_expected)] {
                 let config = StaticAnalysisConfigFile::with_ignored_rule(
                     "ruleset1/rule2".into(),
                     to_encoded_content(yaml),
@@ -1039,7 +1034,7 @@ ruleset-configs:
         #[test]
         fn it_should_return_false_for_top_level_ignore_only() {
             // language=yaml
-            let v1_only = r"#
+            let legacy_only = r"#
 schema-version: v1
 rulesets:
     - java-security
@@ -1048,7 +1043,7 @@ only:
     - domains/project1
 ";
             // language=yaml
-            let v1_ignore = r"
+            let legacy_ignore = r"
 schema-version: v1
 rulesets:
     - java-security
@@ -1057,7 +1052,7 @@ ignore:
     - domains/project1
 ";
             // language=yaml
-            let v1_both = r"
+            let legacy_both = r"
 schema-version: v1
 rulesets:
     - java-security
@@ -1091,7 +1086,14 @@ global-config:
     - domains/project1/abc
 ";
 
-            for yaml in [v1_only, v1_ignore, v1_both, v2_only, v2_ignore, v2_both] {
+            for yaml in [
+                legacy_only,
+                legacy_ignore,
+                legacy_both,
+                v2_only,
+                v2_ignore,
+                v2_both,
+            ] {
                 let config = StaticAnalysisConfigFile::try_from(to_encoded_content(yaml)).unwrap();
                 assert!(!config.is_onboarding_allowed())
             }
@@ -1100,7 +1102,7 @@ global-config:
         #[test]
         fn it_should_return_true_if_ignore_and_only_at_top_level_are_not_present() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
     - java-security
@@ -1118,7 +1120,7 @@ global-config:
   use-gitignore: true
 ";
 
-            for yaml in [v1, v2_no_global, v2_with_global] {
+            for yaml in [legacy, v2_no_global, v2_with_global] {
                 let config = StaticAnalysisConfigFile::try_from(to_encoded_content(yaml)).unwrap();
                 assert!(config.is_onboarding_allowed())
             }
@@ -1127,7 +1129,7 @@ global-config:
         #[test]
         fn it_should_return_true_with_nested_paths() {
             // language=yaml
-            let v1 = r"
+            let legacy = r"
 schema-version: v1
 rulesets:
     - java-security
@@ -1144,7 +1146,7 @@ ruleset-configs:
       - domains/project1
 ";
 
-            for yaml in [v1, v2] {
+            for yaml in [legacy, v2] {
                 let config = StaticAnalysisConfigFile::try_from(to_encoded_content(yaml)).unwrap();
                 assert!(config.is_onboarding_allowed())
             }

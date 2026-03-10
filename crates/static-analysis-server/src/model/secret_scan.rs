@@ -2,10 +2,10 @@ use secrets::model::secret_result::SecretResult;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SecretScanRequest<T = serde_json::Value> {
+pub struct SecretScanRequest {
     pub filename: String,
     pub data: String,
-    pub rules: Vec<T>,
+    pub rules: Vec<Box<serde_json::value::RawValue>>,
     #[serde(default)]
     pub use_debug: bool,
 }

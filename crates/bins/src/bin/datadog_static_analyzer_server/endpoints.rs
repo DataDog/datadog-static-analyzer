@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
 use crate::datadog_static_analyzer_server::rule_cache::cached_analysis_request;
-use crate::{RAYON_POOL, RULE_CACHE, V8_PLATFORM};
+use crate::{RAYON_POOL, RULE_CACHE, SECRET_SCANNER_CACHE, V8_PLATFORM};
 use kernel::analysis::ddsa_lib::JsRuntime;
 use rocket::{
     fs::NamedFile,
@@ -153,7 +153,10 @@ async fn analyze(
     .unwrap()
 }
 
-fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretResult>, String> {
+fn process_secret_scan_request(
+    request: SecretScanRequest,
+    cache: Option<&super::secret_scanner_cache::SecretScannerCache>,
+) -> Result<Vec<SecretResult>, String> {
     // Maximum number of rules per request to prevent excessive CPU usage.
     const MAX_RULES_COUNT: usize = 1000;
 
@@ -174,16 +177,20 @@ fn process_secret_scan_request(request: SecretScanRequest) -> Result<Vec<SecretR
         return Err("Invalid filename: path traversal detected".to_string());
     }
 
-    // Deserialize rules from JSON
-    let rules: Vec<secrets::model::secret_rule::SecretRule> = request
-        .rules
-        .iter()
-        .map(|r| serde_json::from_value(r.clone()))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("Failed to parse rules: {}", e))?;
-
-    // Build the scanner with the provided rules
-    let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug)?;
+    // Get scanner + parsed rules (from cache or fresh build)
+    let (scanner, rules) = if let Some(cache) = cache {
+        cache.get_or_build(&request.rules, request.use_debug)?
+    } else {
+        // No cache - build from scratch
+        let rules: Vec<secrets::model::secret_rule::SecretRule> = request
+            .rules
+            .iter()
+            .map(|r| serde_json::from_str(r.get()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to parse rules: {}", e))?;
+        let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug)?;
+        (std::sync::Arc::new(scanner), std::sync::Arc::new(rules))
+    };
 
     // Configure analysis options
     let options = common::analysis_options::AnalysisOptions {
@@ -210,10 +217,11 @@ async fn scan_secrets(span: TraceSpan, request: Json<SecretScanRequest>) -> Valu
 
     rocket::tokio::task::spawn_blocking(move || {
         let request = request.into_inner();
-        let (rule_responses, errors) = match process_secret_scan_request(request) {
-            Ok(resp) => (resp, vec![]),
-            Err(err) => (vec![], vec![err]),
-        };
+        let (rule_responses, errors) =
+            match process_secret_scan_request(request, SECRET_SCANNER_CACHE.get()) {
+                Ok(resp) => (resp, vec![]),
+                Err(err) => (vec![], vec![err]),
+            };
 
         json!(SecretScanResponse {
             rule_responses,

@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::datadog_static_analyzer_server::rule_cache::RuleCache;
+use crate::datadog_static_analyzer_server::secret_scanner_cache::SecretScannerCache;
 use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use std::sync::OnceLock;
 
@@ -11,6 +12,7 @@ mod datadog_static_analyzer_server;
 pub(crate) static V8_PLATFORM: OnceLock<V8Platform<Initialized>> = OnceLock::new();
 pub(crate) static RAYON_POOL: OnceLock<rayon::ThreadPool> = OnceLock::new();
 pub(crate) static RULE_CACHE: OnceLock<RuleCache> = OnceLock::new();
+pub(crate) static SECRET_SCANNER_CACHE: OnceLock<SecretScannerCache> = OnceLock::new();
 
 #[rocket::main]
 async fn main() {
@@ -28,6 +30,10 @@ async fn main() {
         .expect("rayon pool should be buildable");
     RAYON_POOL
         .set(rayon_pool)
+        .expect("cell should have been unset");
+
+    SECRET_SCANNER_CACHE
+        .set(SecretScannerCache::new())
         .expect("cell should have been unset");
 
     datadog_static_analyzer_server::start().await;
