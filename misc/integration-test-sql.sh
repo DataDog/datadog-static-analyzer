@@ -9,9 +9,13 @@ REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone --depth=1 https://github.com/SparkhoundSQL/sql-server-toolbox.git "${REPO_DIR}"
 
-echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
-echo " - sql-code-style" >> "${REPO_DIR}/static-analysis.datadog.yml"
-echo " - sql-inclusive" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo "schema-version: v1.0
+sast:
+  use-default-rulesets: false
+  use-rulesets:
+    - sql-code-style
+    - sql-inclusive
+" > "${REPO_DIR}/code-security.datadog.yaml"
 
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results2.json" -f sarif
 

@@ -9,8 +9,8 @@ REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone --depth=1 https://github.com/muh-nee/secrets-tests.git "${REPO_DIR}"
 
-# Test without the static-analysis.datadog.yml file
-rm -f "${REPO_DIR}/static-analysis.datadog.yml"
+# Test without a local config file
+rm -f "${REPO_DIR}"/{static-analysis,code-security}.datadog.y{a,}ml
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results1.json" -f sarif --enable-secrets true --enable-static-analysis false
 
 if [ $? -ne 0 ]; then

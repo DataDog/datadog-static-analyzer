@@ -139,7 +139,7 @@ pub fn get_language_for_file(path: &Path) -> Option<Language> {
 // or empty.
 // We ignore pattern that start with # (comments) or contains ! (cause repositories
 // not being included and totally skipped).
-pub fn read_files_from_gitignore_internal(path: &PathBuf) -> Result<Vec<String>> {
+pub fn read_files_from_gitignore_internal(path: &Path) -> Result<Vec<String>> {
     if path.exists() {
         let file = File::open(path)?;
         let reader = BufReader::new(file);
@@ -155,8 +155,8 @@ pub fn read_files_from_gitignore_internal(path: &PathBuf) -> Result<Vec<String>>
     Ok(vec![])
 }
 
-pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> {
-    let gitignore_path = Path::new(source_directory).join(".gitignore");
+pub fn read_files_from_gitignore(source_directory: &Path) -> Result<Vec<String>> {
+    let gitignore_path = source_directory.join(".gitignore");
     read_files_from_gitignore_internal(&gitignore_path)
 }
 
@@ -164,30 +164,26 @@ pub fn read_files_from_gitignore(source_directory: &str) -> Result<Vec<String>> 
 /// to analyze recursively and gets all the files.
 /// if passed, subdirectories_to_analyze are subdirectories within the directory.
 pub fn get_files(
-    directory: &str,
+    directory: &Path,
     subdirectories_to_analyze: Vec<String>,
     path_config: &PathConfig,
 ) -> Result<Vec<PathBuf>> {
     let mut files_to_return: Vec<PathBuf> = vec![];
 
     // This is the directory that contains the .git files, we do not need to keep them.
-    let git_directory = format!("{}/.git", &directory);
+    let git_directory = directory.join(".git");
 
-    let directories_to_walk: Vec<String> = if !subdirectories_to_analyze.is_empty() {
+    let directories_to_walk: Vec<PathBuf> = if !subdirectories_to_analyze.is_empty() {
         subdirectories_to_analyze
             .iter()
-            .map(|p| {
-                let sd_str = p.as_str();
-                let p = Path::new(directory).join(sd_str);
-                p.as_os_str().to_str().unwrap().to_string()
-            })
+            .map(|p| directory.join(p))
             .collect()
     } else {
-        vec![directory.to_string()]
+        vec![directory.to_path_buf()]
     };
 
     for directory_to_walk in directories_to_walk {
-        for entry in WalkDir::new(directory_to_walk.as_str())
+        for entry in WalkDir::new(directory_to_walk)
             .follow_links(false)
             .follow_root_links(true)
         {
@@ -199,9 +195,8 @@ pub fn get_files(
             // attempt to add a symlink outside the repo and read content outside of the
             // repo with a custom rule.
             let mut should_include = entry.is_file() && !entry.is_symlink();
-            let path_buf = entry.to_path_buf();
 
-            let relative_path_str = path_buf
+            let relative_path_str = entry
                 .strip_prefix(directory)
                 .ok()
                 .and_then(|p| p.to_str())
@@ -211,7 +206,7 @@ pub fn get_files(
             should_include = should_include && path_config.allows_file(relative_path_str);
 
             // do not include the git directory.
-            if entry.starts_with(git_directory.as_str()) {
+            if entry.starts_with(&git_directory) {
                 should_include = false;
             }
 
@@ -667,8 +662,8 @@ mod tests {
             }
         }
 
-        fn base_path(&self) -> String {
-            self.dir.path().display().to_string()
+        fn base_path(&self) -> &Path {
+            self.dir.path()
         }
 
         fn add_file(&self, path: &str) {
@@ -789,7 +784,7 @@ mod tests {
 
         // first, we get the list of files without any path to ignore
         let files = get_files(
-            current_path.display().to_string().as_str(),
+            &current_path,
             vec![subdirectory.into_os_string().into_string().unwrap()],
             &PathConfig::default(),
         );
@@ -830,11 +825,7 @@ mod tests {
     fn test_filter_files_for_language_suffix() {
         let current_path = std::env::current_dir().unwrap();
 
-        let files = get_files(
-            current_path.display().to_string().as_str(),
-            vec![],
-            &PathConfig::default(),
-        );
+        let files = get_files(&current_path, vec![], &PathConfig::default());
         assert!(files.is_ok());
         let files = &files.unwrap();
         assert_eq!(

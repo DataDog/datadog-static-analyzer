@@ -16,14 +16,16 @@ impl RuleOverrides {
         let mut severities = HashMap::<String, BySubtree<RuleSeverity>>::new();
         let mut categories = HashMap::<String, RuleCategory>::new();
 
-        if let Some(ruleset_configs) = &cfg.ruleset_configs {
-            for (ruleset_name, cfg) in ruleset_configs {
-                for (rule_name, rule) in &cfg.rules {
-                    if let Some(sev) = &rule.severity {
-                        severities.insert(format!("{ruleset_name}/{rule_name}"), sev.clone());
-                    }
-                    if let Some(cat) = rule.category {
-                        categories.insert(format!("{ruleset_name}/{rule_name}"), cat);
+        if let Some(sast_config) = cfg.sast() {
+            if let Some(ruleset_configs) = &sast_config.ruleset_configs {
+                for (ruleset_name, cfg) in ruleset_configs {
+                    for (rule_name, rule) in &cfg.rules {
+                        if let Some(sev) = &rule.severity {
+                            severities.insert(format!("{ruleset_name}/{rule_name}"), sev.clone());
+                        }
+                        if let Some(cat) = rule.category {
+                            categories.insert(format!("{ruleset_name}/{rule_name}"), cat);
+                        }
                     }
                 }
             }

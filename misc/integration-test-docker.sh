@@ -9,8 +9,12 @@ REPO_DIR=$(mktemp -d)
 export REPO_DIR
 git clone --depth=1 https://github.com/juli1/dd-sa-dockerfile.git "${REPO_DIR}"
 
-echo "rulesets:"> "${REPO_DIR}/static-analysis.datadog.yml"
-echo " - docker-best-practices" >> "${REPO_DIR}/static-analysis.datadog.yml"
+echo "schema-version: v1.0
+sast:
+  use-default-rulesets: false
+  use-rulesets:
+    - docker-best-practices
+" > "${REPO_DIR}/code-security.datadog.yaml"
 
 ./target/release-dev/datadog-static-analyzer --directory "${REPO_DIR}" -o "${REPO_DIR}/results.json" -f sarif
 

@@ -52,18 +52,20 @@ impl ArgumentProvider {
 
     pub fn from(config: &file_v1::ConfigFile) -> Self {
         let mut provider = ArgumentProvider::new();
-        if let Some(rulesets) = &config.ruleset_configs {
-            for (ruleset_name, ruleset_cfg) in rulesets {
-                for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
-                    let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
-                    for (arg_name, arg_values) in &rule_cfg.arguments {
-                        for (prefix, value) in arg_values.iter() {
-                            provider.add_argument(
-                                &rule_name,
-                                &prefix.into_iter().cloned().collect(),
-                                arg_name,
-                                value,
-                            );
+        if let Some(sast_config) = config.sast() {
+            if let Some(rulesets) = &sast_config.ruleset_configs {
+                for (ruleset_name, ruleset_cfg) in rulesets {
+                    for (rule_shortname, rule_cfg) in &ruleset_cfg.rules {
+                        let rule_name = format!("{}/{}", ruleset_name, rule_shortname);
+                        for (arg_name, arg_values) in &rule_cfg.arguments {
+                            for (prefix, value) in arg_values.iter() {
+                                provider.add_argument(
+                                    &rule_name,
+                                    &prefix.into_iter().cloned().collect(),
+                                    arg_name,
+                                    value,
+                                );
+                            }
                         }
                     }
                 }
