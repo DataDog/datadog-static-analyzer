@@ -1,5 +1,6 @@
 use std::env;
 
+use crate::constants::QUERY_PARAM_SCHEMA_VERSION;
 use crate::datadog_utils::DatadogApiError::{
     CouldNotParseJson, CouldNotParseResponse, CouldNotQuery, ErrorResponse, InvalidPermission,
     MissingVariable, RulesetNotFound,
@@ -19,6 +20,7 @@ use crate::{
 };
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
+use kernel::utils::encode_base64_string;
 use reqwest::blocking::{RequestBuilder, Response};
 use secrets::model::secret_rule::SecretRule;
 use thiserror::Error;
@@ -76,12 +78,12 @@ pub fn get_secrets_rules(use_staging: bool) -> Result<Vec<SecretRule>> {
 
 // Get all the rules from different rulesets from Datadog
 pub fn get_rules_from_rulesets(
-    rulesets_name: &[String],
+    rulesets_name: &[&str],
     use_staging: bool,
     debug: bool,
 ) -> Result<Vec<Rule>> {
     let mut rules: Vec<Rule> = Vec::new();
-    for ruleset_name in rulesets_name {
+    for &ruleset_name in rulesets_name {
         rules.extend(get_ruleset(ruleset_name, use_staging, debug)?.into_rules());
     }
     Ok(rules)
@@ -353,7 +355,7 @@ pub fn get_diff_aware_information(
 /// Get remote configuration from the Datadog backend
 pub fn get_remote_configuration(
     repository_url: String,
-    config_base64: Option<String>,
+    config: Option<String>,
     debug: bool,
 ) -> Result<String> {
     let request_payload = ConfigRequest {
@@ -361,13 +363,15 @@ pub fn get_remote_configuration(
             request_type: "config".to_string(),
             attributes: ConfigRequestDataAttributes {
                 repository: repository_url.clone(),
-                config_base64: config_base64.clone(),
+                config_base64: config.map(encode_base64_string),
             },
         },
     };
 
     let path = "config/client";
-    let req = make_request(RequestMethod::Post, path, false, true)?.json(&request_payload);
+    let req = make_request(RequestMethod::Post, path, false, true)?
+        .query(&[(QUERY_PARAM_SCHEMA_VERSION, "v1")])
+        .json(&request_payload);
     let server_response = perform_request(req, path, debug)?;
     parse_response(server_response).map(|d: ConfigResponse| d.data.attributes.config_base64)
 }

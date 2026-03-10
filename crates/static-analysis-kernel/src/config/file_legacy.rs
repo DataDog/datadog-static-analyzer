@@ -18,7 +18,7 @@ use crate::config::common::{
 use crate::model::rule::{RuleCategory, RuleSeverity};
 
 /// Parses a legacy YAML configuration specification
-pub(crate) fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, serde_yaml::Error> {
+pub fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, serde_yaml::Error> {
     serde_yaml::from_str(config_contents)
 }
 

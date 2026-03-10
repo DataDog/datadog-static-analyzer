@@ -242,26 +242,23 @@ fn main() -> Result<()> {
 
     let rules_file = matches.opt_str("r");
 
-    if directory_to_analyze_option.is_none() {
+    let Some(directory_to_analyze) = directory_to_analyze_option.map(PathBuf::from) else {
         eprintln!("no directory passed, specify a directory with option -i");
         print_usage(&program, opts);
         exit(EXIT_CODE_NO_DIRECTORY)
-    }
+    };
 
-    let directory_to_analyze = directory_to_analyze_option.unwrap();
-    let directory_path = std::path::Path::new(&directory_to_analyze);
-
-    if !directory_path.is_dir() {
+    if !directory_to_analyze.is_dir() {
         eprintln!("directory to analyze is not correct");
         exit(EXIT_CODE_INVALID_DIRECTORY)
     }
 
-    if !are_subdirectories_safe(directory_path, &subdirectories_to_analyze) {
+    if !are_subdirectories_safe(&directory_to_analyze, &subdirectories_to_analyze) {
         eprintln!("sub-directories are not safe and point outside of the repository");
         exit(EXIT_CODE_UNSAFE_SUBDIRECTORIES)
     }
 
-    let configuration_file_and_method = get_config(directory_to_analyze.as_str(), use_debug);
+    let configuration_file_and_method = get_config(&directory_to_analyze, use_debug);
 
     let (configuration_file, configuration_method): (
         Option<file_v1::ConfigFile>,
@@ -274,13 +271,15 @@ fn main() -> Result<()> {
         Err(err) => {
             eprintln!(
                 "Error reading configuration file from {}:\n  {}",
-                directory_to_analyze, err
+                directory_to_analyze.display(),
+                err
             );
             exit(EXIT_CODE_INVALID_CONFIGURATION)
         }
     };
+    let sast_config = configuration_file.as_ref().and_then(|cfg| cfg.sast());
 
-    if configuration_file.is_none() && use_debug {
+    if sast_config.is_none() && use_debug {
         eprintln!("INFO: no configuration detected locally or remotely")
     }
 
@@ -290,11 +289,11 @@ fn main() -> Result<()> {
         .unwrap_or_default();
     let mut rules: Vec<Rule> = Vec::new();
 
-    // A list of rulesets that were fetched due to being specifically listed in a ConfigFile::use_rulesets list.
-    let mut fetched_rulesets = Vec::<&str>::new();
+    // Rulesets to exclude when fetching default rulesets
+    let mut excluded_rulesets = Vec::<&str>::new();
     // if there is a configuration file, we load the rules from it. But it means
     // we cannot have the rule parameter given.
-    if let Some(conf) = &configuration_file {
+    if let Some(conf) = sast_config {
         ignore_gitignore = conf
             .global_config
             .as_ref()
@@ -306,20 +305,18 @@ fn main() -> Result<()> {
         }
 
         if static_analysis_enabled {
-            if let Some(rulesets) = &conf.use_rulesets {
-                let rules_from_api = get_rules_from_rulesets(rulesets, use_staging, use_debug)
-                    .inspect_err(|e| {
-                        if let DatadogApiError::RulesetNotFound(rs) = e {
-                            eprintln!("Error: ruleset {rs} not found");
-                            exit(EXIT_CODE_RULESET_NOT_FOUND);
-                        }
-                    })
-                    .context("error when reading rules from API")?;
-                rules.extend(rules_from_api);
-                for r in rulesets {
-                    fetched_rulesets.push(r.as_str());
-                }
-            }
+            let explicit_rs = conf.explicit_rulesets().collect::<Vec<_>>();
+            let rules_from_api = get_rules_from_rulesets(&explicit_rs, use_staging, use_debug)
+                .inspect_err(|e| {
+                    if let DatadogApiError::RulesetNotFound(rs) = e {
+                        eprintln!("Error: ruleset {rs} not found");
+                        exit(EXIT_CODE_RULESET_NOT_FOUND);
+                    }
+                })
+                .context("error when reading rules from API")?;
+            rules.extend(rules_from_api);
+            excluded_rulesets.extend(explicit_rs);
+            excluded_rulesets.extend(conf.ignore_rulesets.iter().map(String::as_str));
         }
         // copy the only and ignore paths from the configuration file
         if let Some(pc) = conf.global_config.as_ref().and_then(|g| g.paths.as_ref()) {
@@ -343,18 +340,19 @@ fn main() -> Result<()> {
     if static_analysis_enabled {
         // if there is no config file, we take the default rules from our APIs.
         if rules_file.is_none() {
-            if configuration_file.is_none() {
-                println!("WARNING: no configuration file detected, getting the default rules from the Datadog API");
+            if sast_config.is_none() {
+                println!("WARNING: no SAST configuration detected, getting the default rules from the Datadog API");
                 println!("Check the following resources to configure your rules:");
                 println!(
                     " - Datadog documentation: https://docs.datadoghq.com/code_analysis/static_analysis"
                 );
                 println!(" - Static analyzer repository on GitHub: https://github.com/DataDog/datadog-static-analyzer");
             }
-            let should_fetch = !matches!(&configuration_file, Some(config) if config.use_default_rulesets == Some(false));
+
+            let should_fetch = sast_config.is_none_or(|c| c.use_default_rulesets != Some(false));
             if should_fetch {
                 let rulesets_from_api =
-                    get_all_default_rulesets(use_staging, use_debug, &fetched_rulesets)
+                    get_all_default_rulesets(use_staging, use_debug, &excluded_rulesets)
                         .context("cannot get default rules")?;
                 rules.extend(rulesets_from_api.into_iter().flat_map(|rs| rs.into_rules()));
             }
@@ -382,7 +380,7 @@ fn main() -> Result<()> {
 
     // ignore all directories that are in gitignore
     if !ignore_gitignore {
-        match read_files_from_gitignore(directory_to_analyze.as_str()) {
+        match read_files_from_gitignore(&directory_to_analyze) {
             Ok(paths_from_gitignore) => {
                 path_config
                     .ignore
@@ -403,7 +401,7 @@ fn main() -> Result<()> {
     let languages = get_languages_for_rules(&rules);
 
     let files_in_repository = get_files(
-        directory_to_analyze.as_str(),
+        &directory_to_analyze,
         subdirectories_to_analyze.clone(),
         &path_config,
     )
@@ -424,7 +422,7 @@ fn main() -> Result<()> {
         use_debug,
         configuration_method,
         ignore_gitignore,
-        source_directory: directory_to_analyze.clone(),
+        source_directory: directory_to_analyze.to_string_lossy().to_string(),
         source_subdirectories: subdirectories_to_analyze.clone(),
         path_config,
         rules_file,
@@ -542,7 +540,7 @@ fn main() -> Result<()> {
 
     // if diff-aware is enabled, we filter the files and keep only the files we want to analyze from diff-aware
     let files_to_analyze = if let Some(dap) = &diff_aware_parameters {
-        filter_files_by_diff_aware_info(&files_filtered_by_size, directory_path, dap)
+        filter_files_by_diff_aware_info(&files_filtered_by_size, &directory_to_analyze, dap)
     } else {
         files_filtered_by_size
     };
