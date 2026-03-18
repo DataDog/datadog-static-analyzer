@@ -38,4 +38,7 @@ pub struct Violation {
     pub fixes: Vec<Fix>,
     /// An ordered list of regions representing a flow from start to finish.
     pub taint_flow: Option<Vec<Region>>,
+    /// Whether this violation was suppressed by an inline comment (e.g. `no-dd-sa`).
+    #[builder(default)]
+    pub is_suppressed: bool,
 }

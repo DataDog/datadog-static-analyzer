@@ -219,10 +219,10 @@ where
                     let console_output = (!console_lines.is_empty() && analysis_option.log_output)
                         .then_some(console_lines.join("\n"));
 
-                    violations.retain(|v| {
+                    violations.iter_mut().for_each(|v| {
                         let base_ignored =
                             lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line);
-                        // Additionally, ignore the entire flow if any of the individual regions should be ignored.
+                        // Additionally, suppress the entire flow if any of the individual regions should be ignored.
                         let flow_ignored = v
                             .taint_flow
                             .as_ref()
@@ -233,7 +233,9 @@ where
                                 })
                             })
                             .unwrap_or(false);
-                        !(base_ignored || flow_ignored)
+                        if base_ignored || flow_ignored {
+                            v.is_suppressed = true;
+                        }
                     });
                     violations.iter_mut().for_each(|violation| {
                         if let Some(severity) = rule_config.get_severity(&rule.name) {
@@ -736,7 +738,8 @@ def foo(arg1):
         );
         assert_eq!(1, results.len());
         let result = results.get(0).unwrap();
-        assert!(result.violations.is_empty());
+        assert_eq!(1, result.violations.len());
+        assert!(result.violations[0].is_suppressed);
     }
 
     #[test]
@@ -793,8 +796,14 @@ def foo2(arg1):
         );
         assert_eq!(1, results.len());
         let result = results.get(0).unwrap();
-        assert_eq!(1, result.violations.iter().len());
-        assert_eq!(14, result.violations[0].start.line);
+        assert_eq!(3, result.violations.len());
+        // The violation for myruleset/myrule2 (not suppressed) should be at line 14
+        let non_suppressed: Vec<_> = result.violations.iter().filter(|v| !v.is_suppressed).collect();
+        assert_eq!(1, non_suppressed.len());
+        assert_eq!(14, non_suppressed[0].start.line);
+        // The other two should be suppressed
+        let suppressed: Vec<_> = result.violations.iter().filter(|v| v.is_suppressed).collect();
+        assert_eq!(2, suppressed.len());
     }
 
     #[test]

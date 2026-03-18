@@ -84,6 +84,7 @@ mod tests {
                     category: RuleCategory::Performance,
                     fixes: vec![],
                     taint_flow: None,
+                    is_suppressed: false,
                 }],
                 errors: vec![],
                 execution_error: None,
