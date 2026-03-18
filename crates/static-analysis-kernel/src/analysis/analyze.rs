@@ -798,11 +798,19 @@ def foo2(arg1):
         let result = results.get(0).unwrap();
         assert_eq!(3, result.violations.len());
         // The violation for myruleset/myrule2 (not suppressed) should be at line 14
-        let non_suppressed: Vec<_> = result.violations.iter().filter(|v| !v.is_suppressed).collect();
+        let non_suppressed: Vec<_> = result
+            .violations
+            .iter()
+            .filter(|v| !v.is_suppressed)
+            .collect();
         assert_eq!(1, non_suppressed.len());
         assert_eq!(14, non_suppressed[0].start.line);
         // The other two should be suppressed
-        let suppressed: Vec<_> = result.violations.iter().filter(|v| v.is_suppressed).collect();
+        let suppressed: Vec<_> = result
+            .violations
+            .iter()
+            .filter(|v| v.is_suppressed)
+            .collect();
         assert_eq!(2, suppressed.len());
     }
 
