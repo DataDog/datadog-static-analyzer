@@ -942,8 +942,9 @@ mod tests {
             Some(SecretRuleMatchValidation::CustomHttpV2(_))
         ));
         if let Some(SecretRuleMatchValidation::CustomHttpV2(config)) = rule.match_validation {
-            assert_eq!(config.provides[0].kind, "some_vendor");
-            assert_eq!(config.provides[0].name, "client_id");
+            let provides = config.provides.expect("expected paired validator config");
+            assert_eq!(provides[0].kind, "some_vendor");
+            assert_eq!(provides[0].name, "client_id");
         } else {
             panic!("Expected CustomHttpV2 variant");
         }
