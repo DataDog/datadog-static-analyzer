@@ -15,24 +15,19 @@ pub fn print_violations_table(rule_results: &[RuleResult]) {
         "rule", "filename", "location", "category", "severity", "message"
     ]);
     for rule_result in rule_results {
-        if !rule_result.violations.is_empty() {
-            for violation in &rule_result.violations {
-                let position = format!(
-                    "{}:{}-{}:{}",
-                    violation.start.line,
-                    violation.start.col,
-                    violation.end.line,
-                    violation.end.col
-                );
-                table.add_row(row![
-                    rule_result.rule_name,
-                    rule_result.filename,
-                    position,
-                    violation.category.to_string(),
-                    violation.severity.to_string(),
-                    violation.message
-                ]);
-            }
+        for violation in rule_result.violations.iter().filter(|v| !v.is_suppressed) {
+            let position = format!(
+                "{}:{}-{}:{}",
+                violation.start.line, violation.start.col, violation.end.line, violation.end.col
+            );
+            table.add_row(row![
+                rule_result.rule_name,
+                rule_result.filename,
+                position,
+                violation.category.to_string(),
+                violation.severity.to_string(),
+                violation.message
+            ]);
         }
     }
     table.printstd();

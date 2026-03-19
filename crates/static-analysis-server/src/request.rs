@@ -116,7 +116,12 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
         .iter()
         .map(|rr| RuleResponse {
             identifier: rr.rule_name.clone(),
-            violations: rr.violations.iter().map(ServerViolation::from).collect(),
+            violations: rr
+                .violations
+                .iter()
+                .filter(|v| !v.is_suppressed)
+                .map(ServerViolation::from)
+                .collect(),
             errors: rr.errors.clone(),
             execution_error: rr.execution_error.clone(),
             output: rr.output.clone(),

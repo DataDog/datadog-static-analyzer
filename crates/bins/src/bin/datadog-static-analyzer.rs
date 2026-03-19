@@ -579,7 +579,7 @@ fn main() -> Result<()> {
 
         let nb_violations: u32 = rules_results
             .iter()
-            .map(|x| x.violations.len() as u32)
+            .map(|x| x.violations.iter().filter(|v| !v.is_suppressed).count() as u32)
             .sum();
 
         let static_analysis_metadata = &execution_result.metadata;
@@ -695,6 +695,7 @@ fn main() -> Result<()> {
         && count_violations_by_severities(
             &static_analysis_rule_results,
             &fail_any_violation_severities,
+            true,
         ) > 0;
 
     let value = match configuration.output_format {

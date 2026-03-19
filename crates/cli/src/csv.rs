@@ -21,7 +21,7 @@ pub fn generate_csv_results(
     .expect("csv serialization without issue");
 
     for r in rule_results {
-        for v in &r.violations {
+        for v in r.violations.iter().filter(|v| !v.is_suppressed) {
             wtr.write_record(&[
                 r.filename.to_string(),
                 r.rule_name.to_string(),
