@@ -24,7 +24,7 @@ use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
     LocationBuilder, MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder,
     Replacement, ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif,
-    SarifBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
+    SarifBuilder, SuppressionBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
 use crate::file_utils::get_fingerprint_for_violation;
@@ -195,6 +195,7 @@ impl SarifRuleResult {
                             category: RuleCategory::Security,
                             fixes: vec![],
                             taint_flow: None,
+                            is_suppressed: false,
                         },
                         r.validation_status.clone(),
                     )
@@ -794,6 +795,15 @@ fn generate_results(
                     if let Some(taint_code_flow) = taint_code_flow {
                         sarif_result.code_flows(&[taint_code_flow]);
                     };
+                    if violation.is_suppressed {
+                        let suppression = SuppressionBuilder::default()
+                            .kind(serde_json::Value::String("inSource".to_string()))
+                            .justification(
+                                "Suppressed by inline comment (no-dd-sa / datadog-disable)",
+                            )
+                            .build()?;
+                        sarif_result.suppressions(vec![suppression]);
+                    }
                     Ok(sarif_result.build()?)
                 })
         })
@@ -990,6 +1000,7 @@ mod tests {
             category: RuleCategory::BestPractices,
             fixes: vec![],
             taint_flow: None,
+            is_suppressed: false,
         }));
 
         // good location in the violation location and no fixes
@@ -1001,6 +1012,7 @@ mod tests {
             category: RuleCategory::BestPractices,
             fixes: vec![],
             taint_flow: None,
+            is_suppressed: false,
         }));
 
         // bad location in the fixes location
@@ -1020,6 +1032,7 @@ mod tests {
                 }]
             }],
             taint_flow: None,
+            is_suppressed: false,
         }));
 
         // good location everywhere
@@ -1039,6 +1052,7 @@ mod tests {
                 }]
             }],
             taint_flow: None,
+            is_suppressed: false,
         }));
     }
 
@@ -1106,6 +1120,7 @@ mod tests {
             category: RuleCategory::Security,
             fixes: vec![],
             taint_flow: Some(vec![region0, region1, region2]),
+            is_suppressed: false,
         };
 
         let rule_result_single_region = RuleResultBuilder::default()
@@ -1941,6 +1956,7 @@ mod tests {
                     category: RuleCategory::BestPractices,
                     fixes: vec![],
                     taint_flow: None,
+                    is_suppressed: false,
                 };
                 let rr = RuleResult {
                     rule_name: format!("rule-{idx}"),
@@ -2033,6 +2049,7 @@ mod tests {
             category: RuleCategory::BestPractices,
             fixes: vec![],
             taint_flow: None,
+            is_suppressed: false,
         };
         let rule_results = [TEST_FILE_PATH, NON_TEST_FILE_PATH]
             .into_iter()
