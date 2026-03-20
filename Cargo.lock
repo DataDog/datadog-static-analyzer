@@ -833,7 +833,7 @@ dependencies = [
  "serde_with",
  "slab",
  "slotmap",
- "strum",
+ "strum 0.25.0",
  "thiserror 1.0.69",
  "tokio",
 ]
@@ -928,7 +928,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "stringcase",
- "strum",
+ "strum 0.25.0",
  "strum_macros 0.25.3",
  "syn 2.0.117",
  "thiserror 2.0.18",
@@ -3532,7 +3532,7 @@ dependencies = [
  "lazy_static",
  "serde",
  "serde_json",
- "strum",
+ "strum 0.25.0",
 ]
 
 [[package]]
@@ -3597,22 +3597,22 @@ dependencies = [
 
 [[package]]
 name = "serde-sarif"
-version = "0.4.2"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d878dc2c454b118932f9e8aef2a228ec99dcac000d6204a0061d9b2ef322304"
+checksum = "a053c46f18a8043570d4e32fefc4c6377f82bf29ec310a33e93f273048e3b0be"
 dependencies = [
  "anyhow",
- "derive_builder",
  "prettyplease",
  "proc-macro2",
  "quote",
  "schemafy_lib",
  "serde",
  "serde_json",
- "strum",
- "strum_macros 0.24.3",
+ "strum 0.27.2",
+ "strum_macros 0.27.2",
  "syn 2.0.117",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
+ "typed-builder",
 ]
 
 [[package]]
@@ -3979,17 +3979,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "strum_macros"
-version = "0.24.3"
+name = "strum"
+version = "0.27.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e385be0d24f186b4ce2f9982191e7101bb737312ad61c1f2f984f34bcf85d59"
-dependencies = [
- "heck 0.4.1",
- "proc-macro2",
- "quote",
- "rustversion",
- "syn 1.0.109",
-]
+checksum = "af23d6f6c1a224baef9d3f61e287d2761385a5b88fdab4eb4c6f11aeb54c4bcf"
 
 [[package]]
 name = "strum_macros"
@@ -4001,6 +3994,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "rustversion",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "strum_macros"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7695ce3845ea4b33927c055a39dc438a45b059f7c1b3d91d38d10355fb8cbca7"
+dependencies = [
+ "heck 0.5.0",
+ "proc-macro2",
+ "quote",
  "syn 2.0.117",
 ]
 
@@ -4522,6 +4527,26 @@ name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
+
+[[package]]
+name = "typed-builder"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fef81aec2ca29576f9f6ae8755108640d0a86dd3161b2e8bca6cfa554e98f77d"
+dependencies = [
+ "typed-builder-macro",
+]
+
+[[package]]
+name = "typed-builder-macro"
+version = "0.21.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ecb9ecf7799210407c14a8cfdfe0173365780968dc57973ed082211958e0b18"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
 
 [[package]]
 name = "typenum"
