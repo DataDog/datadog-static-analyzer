@@ -8,6 +8,7 @@ Secret detection relies on Datadog SDS.
 
 ## Code Structure
 
+- `crates/bin` contains all the binaries
 - `crates/cli` contains all code for the command-line features (creating CSV, manipulating files, etc)
 - `crates/common` contains all code common to the CLI and the server
 - `crates/secrets` contains the code specific to the secrets scanning product
@@ -18,8 +19,9 @@ Secret detection relies on Datadog SDS.
 
 1. Always add a test when adding code.
 2. NEVER write table tests.
-3. Always run the format checker `cargo fmt -- --check`
-4. Always run clippy `cargo clippy -- -D warnings`
+3. Always run tests (e.g. `cargo test`)
+4. Always run the format checker `cargo fmt -- --check`
+5. Always run clippy `cargo clippy -- -D warnings`
 
 ## How to release a new version?
 
