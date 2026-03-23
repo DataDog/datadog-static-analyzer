@@ -17,11 +17,10 @@ Secret detection relies on Datadog SDS.
 
 ## Testing
 
-1. Always add a test when adding code.
-2. NEVER write table tests.
-3. Always run tests (e.g. `cargo test`)
-4. Always run the format checker `cargo fmt -- --check`
-5. Always run clippy `cargo clippy -- -D warnings`
+1. NEVER write table tests.
+2. Always run tests (e.g. `cargo test`)
+3. Always run the format checker `cargo fmt -- --check`
+4. Always run clippy `cargo clippy -- -D warnings`
 
 ## How to release a new version?
 
