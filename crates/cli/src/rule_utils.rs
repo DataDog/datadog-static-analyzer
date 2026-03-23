@@ -28,6 +28,7 @@ pub fn get_languages_for_rules(rules: &[Rule]) -> Vec<Language> {
 pub fn count_violations_by_severities(
     rule_results: &[RuleResult],
     severities: &[RuleSeverity],
+    ignore_suppressed: bool,
 ) -> usize {
     rule_results
         .iter()
@@ -35,7 +36,10 @@ pub fn count_violations_by_severities(
             result
                 .violations
                 .iter()
-                .filter(|violation| severities.contains(&violation.severity))
+                .filter(|violation| {
+                    severities.contains(&violation.severity)
+                        && !(ignore_suppressed && violation.is_suppressed)
+                })
                 .count()
         })
         .sum()
@@ -67,6 +71,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
         violations: secret_result
             .matches
             .iter()
+            .filter(|v| !v.is_suppressed)
             .map(|v| Violation {
                 start: v.start,
                 end: v.end,
@@ -75,6 +80,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
                 category: RuleCategory::Security,
                 fixes: vec![],
                 taint_flow: None,
+                is_suppressed: v.is_suppressed,
             })
             .collect(),
     }
@@ -156,6 +162,7 @@ mod tests {
                     category: RuleCategory::Performance,
                     fixes: vec![],
                     taint_flow: None,
+                    is_suppressed: false,
                 },
                 Violation {
                     start: Position { line: 10, col: 12 },
@@ -165,6 +172,7 @@ mod tests {
                     category: RuleCategory::Performance,
                     fixes: vec![],
                     taint_flow: None,
+                    is_suppressed: false,
                 },
                 Violation {
                     start: Position { line: 10, col: 12 },
@@ -174,6 +182,7 @@ mod tests {
                     category: RuleCategory::Performance,
                     fixes: vec![],
                     taint_flow: None,
+                    is_suppressed: false,
                 },
             ],
             errors: vec![],
@@ -186,19 +195,66 @@ mod tests {
 
         let rule_results = [rr];
         assert_eq!(
-            count_violations_by_severities(&rule_results, &[RuleSeverity::Error]),
+            count_violations_by_severities(&rule_results, &[RuleSeverity::Error], false),
             1
         );
         assert_eq!(
-            count_violations_by_severities(&rule_results, &[RuleSeverity::Notice]),
+            count_violations_by_severities(&rule_results, &[RuleSeverity::Notice], false),
             2
         );
         assert_eq!(
             count_violations_by_severities(
                 &rule_results,
-                &[RuleSeverity::Notice, RuleSeverity::Error]
+                &[RuleSeverity::Notice, RuleSeverity::Error],
+                false,
             ),
             3
+        );
+    }
+
+    #[test]
+    fn test_count_violations_by_severities_ignore_suppressed() {
+        let rr = RuleResult {
+            rule_name: "myrule".to_string(),
+            filename: "file.py".to_string(),
+            violations: vec![
+                Violation {
+                    start: Position { line: 10, col: 12 },
+                    end: Position { line: 12, col: 10 },
+                    message: "message".to_string(),
+                    severity: RuleSeverity::Error,
+                    category: RuleCategory::Performance,
+                    fixes: vec![],
+                    taint_flow: None,
+                    is_suppressed: false,
+                },
+                Violation {
+                    start: Position { line: 20, col: 1 },
+                    end: Position { line: 20, col: 5 },
+                    message: "suppressed".to_string(),
+                    severity: RuleSeverity::Error,
+                    category: RuleCategory::Performance,
+                    fixes: vec![],
+                    taint_flow: None,
+                    is_suppressed: true,
+                },
+            ],
+            errors: vec![],
+            execution_error: None,
+            output: None,
+            execution_time_ms: 0,
+            parsing_time_ms: 0,
+            query_node_time_ms: 0,
+        };
+
+        let rule_results = [rr];
+        assert_eq!(
+            count_violations_by_severities(&rule_results, &[RuleSeverity::Error], false),
+            2
+        );
+        assert_eq!(
+            count_violations_by_severities(&rule_results, &[RuleSeverity::Error], true),
+            1
         );
     }
 

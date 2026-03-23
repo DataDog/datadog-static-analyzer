@@ -207,6 +207,19 @@ fn process_secret_scan_request(
         &options,
     );
 
+    // Filter out suppressed matches and drop results with no remaining matches
+    let results = results
+        .into_iter()
+        .filter_map(|mut r| {
+            r.matches.retain(|m| !m.is_suppressed);
+            if r.matches.is_empty() {
+                None
+            } else {
+                Some(r)
+            }
+        })
+        .collect();
+
     Ok(results)
 }
 

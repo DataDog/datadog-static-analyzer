@@ -34,6 +34,7 @@ jobs:
           - { file: './misc/integration-test-default-config.sh', gha_alias: 'Default Config' }
           - { file: './misc/integration-test-secrets.sh', gha_alias: 'Secrets' }
           - { file: './misc/integration-test-config-file.sh', gha_alias: 'Config File' }
+          - { file: './misc/integration-test-suppression.sh', gha_alias: 'Suppression' }
     name: Run integration test - ${{ matrix.scripts.gha_alias }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

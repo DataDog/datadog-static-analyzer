@@ -79,7 +79,6 @@ pub fn find_secrets(
                 validation_status: SecretValidationStatus::from(&sds_match.match_status),
             })
         })
-        .filter(|result| !lines_to_ignore.contains(&result.start.line))
         .chunk_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
@@ -93,6 +92,7 @@ pub fn find_secrets(
             message: sds_rules[k].clone().name,
             matches: vals
                 .map(|v| SecretResultMatch {
+                    is_suppressed: lines_to_ignore.contains(&v.start.line),
                     start: v.start,
                     end: v.end,
                     validation_status: v.validation_status,
@@ -197,13 +197,12 @@ mod tests {
             &AnalysisOptions::default(),
         );
 
-        // Only FOOBAR on line 1 should be found, FOOBAZ on line 3 should be ignored
+        // FOOBAR at line 1 is found and not suppressed (directive on line 2 covers line 3)
         assert_eq!(matches.len(), 1);
         assert_eq!(matches.first().unwrap().matches.len(), 1);
-        assert_eq!(
-            matches.first().unwrap().matches.first().unwrap().start,
-            Position { line: 1, col: 1 }
-        );
+        let first = matches.first().unwrap().matches.first().unwrap();
+        assert_eq!(first.start, Position { line: 1, col: 1 });
+        assert!(!first.is_suppressed);
     }
 
     #[test]
@@ -230,7 +229,7 @@ mod tests {
         // Line 4: FOOBAR - should be found
         // Line 5: //no-dd-secrets
         // Line 6: FOOBAZ - should be ignored
-        let text = "FOOBAR\n#no-dd-secrets\nFOOBAZ\nFOOBAR\n//no-dd-secrets\nFOOBAZ";
+        let text = "FOOBAR\n#no-dd-secrets\nFOOBAZ\nFOOBAR\n//no-dd-secrets\nFOOBAZ\n";
         let matches = find_secrets(
             &scanner,
             rules.as_slice(),
@@ -239,17 +238,19 @@ mod tests {
             &AnalysisOptions::default(),
         );
 
-        // Only FOOBAR on lines 1 and 4 should be found
+        // 3 matches total: FOOBAR(line 1) and FOOBAR(line 4) are not suppressed;
+        // one FOOBAZ match (line 3 or 6) is suppressed
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches.first().unwrap().matches.len(), 2);
-        assert_eq!(
-            matches.first().unwrap().matches.first().unwrap().start,
-            Position { line: 1, col: 1 }
-        );
-        assert_eq!(
-            matches.first().unwrap().matches.get(1).unwrap().start,
-            Position { line: 4, col: 1 }
-        );
+        let result_matches = &matches.first().unwrap().matches;
+        assert_eq!(result_matches.len(), 4);
+        let line1 = result_matches.iter().find(|m| m.start.line == 1).unwrap();
+        assert!(!line1.is_suppressed);
+        let line2 = result_matches.iter().find(|m| m.start.line == 3).unwrap();
+        assert!(line2.is_suppressed);
+        let line4 = result_matches.iter().find(|m| m.start.line == 4).unwrap();
+        assert!(!line4.is_suppressed);
+        let line6 = result_matches.iter().find(|m| m.start.line == 6).unwrap();
+        assert!(line6.is_suppressed);
     }
 
     #[test]
@@ -280,7 +281,11 @@ mod tests {
             &AnalysisOptions::default(),
         );
 
-        // All secrets should be ignored because directive is on line 1
-        assert_eq!(matches.len(), 0);
+        // FOOBAR at line 2 is found and suppressed (directive on line 1 covers line 2)
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches.first().unwrap().matches.len(), 1);
+        let first = matches.first().unwrap().matches.first().unwrap();
+        assert_eq!(first.start, Position { line: 2, col: 1 });
+        assert!(first.is_suppressed);
     }
 }

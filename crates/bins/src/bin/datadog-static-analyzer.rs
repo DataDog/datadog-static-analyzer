@@ -38,7 +38,7 @@ use kernel::config::common::{ConfigMethod, PathConfig};
 use kernel::config::file_v1;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
-use kernel::model::rule::{Rule, RuleSeverity};
+use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use secrets::model::secret_result::SecretValidationStatus;
 use secrets::secret_files::should_ignore_file_for_secret;
@@ -579,7 +579,7 @@ fn main() -> Result<()> {
 
         let nb_violations: u32 = rules_results
             .iter()
-            .map(|x| x.violations.len() as u32)
+            .map(|x| x.violations.iter().filter(|v| !v.is_suppressed).count() as u32)
             .sum();
 
         let static_analysis_metadata = &execution_result.metadata;
@@ -695,6 +695,7 @@ fn main() -> Result<()> {
         && count_violations_by_severities(
             &static_analysis_rule_results,
             &fail_any_violation_severities,
+            true,
         ) > 0;
 
     let value = match configuration.output_format {
@@ -702,14 +703,25 @@ fn main() -> Result<()> {
             csv::generate_csv_results(&static_analysis_rule_results, &secrets_violations)
         }
         OutputFormat::Json => {
-            let combined_results = [
-                secrets_violations
-                    .iter()
-                    .map(convert_secret_result_to_rule_result)
-                    .collect(),
-                static_analysis_rule_results,
-            ]
-            .concat();
+            // make sure suppressed results are not included
+            let filtered_static: Vec<RuleResult> = static_analysis_rule_results
+                .clone()
+                .into_iter()
+                .map(|mut r| {
+                    r.violations.retain(|v| !v.is_suppressed);
+                    r
+                })
+                .collect();
+            let filtered_secrets: Vec<RuleResult> = secrets_violations
+                .clone()
+                .iter()
+                .map(convert_secret_result_to_rule_result)
+                .map(|mut r| {
+                    r.violations.retain(|v| !v.is_suppressed);
+                    r
+                })
+                .collect();
+            let combined_results = [filtered_secrets, filtered_static].concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => generate_sarif_file(
