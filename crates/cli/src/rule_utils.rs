@@ -80,7 +80,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
                 category: RuleCategory::Security,
                 fixes: vec![],
                 taint_flow: None,
-                is_suppressed: false,
+                is_suppressed: v.is_suppressed,
             })
             .collect(),
     }

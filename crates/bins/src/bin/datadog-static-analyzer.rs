@@ -714,6 +714,10 @@ fn main() -> Result<()> {
             let filtered_secrets: Vec<RuleResult> = secrets_violations
                 .iter()
                 .map(convert_secret_result_to_rule_result)
+                .map(|mut r| {
+                    r.violations.retain(|v| !v.is_suppressed);
+                    r
+                })
                 .collect();
             let combined_results = [filtered_secrets, filtered_static].concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
