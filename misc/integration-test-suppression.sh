@@ -122,5 +122,41 @@ if [ $? -eq 0 ]; then
 fi
 echo "PASS: --fail-on-any-violation exits non-zero when there are non-suppressed violations"
 
+# ── Secrets: SARIF suppression ────────────────────────────────────────────────
+
+SECRETS_DIR=$(mktemp -d)
+cp "${WORK_DIR}/code-security.datadog.yaml" "${SECRETS_DIR}/"
+
+cat > "${SECRETS_DIR}/secrets-test.sh" <<'EOF'
+export DD_SITE=datad0g.com
+export DD_APP_KEY=woiejfwoeij
+#no-dd-secrets
+export DD_API_KEY=2ad38d7abc128d87720af72f1eb7b174
+EOF
+
+SECRETS_SARIF="${SECRETS_DIR}/results.sarif"
+
+"${ANALYZER}" --directory "${SECRETS_DIR}" -o "${SECRETS_SARIF}" -f sarif --enable-secrets true
+if [ $? -ne 0 ]; then
+  echo "FAIL: analyzer exited with non-zero status during secrets SARIF export"
+  exit 1
+fi
+
+# DD_API_KEY on line 4 must appear in SARIF with a suppressions property
+suppressed_secret=$(jq '[.runs[0].results[] | select(.suppressions != null and (.suppressions | length) > 0) | select(.locations[0].physicalLocation.region.startLine == 4)] | length' "${SECRETS_SARIF}")
+if [ "${suppressed_secret}" -lt 1 ]; then
+  echo "FAIL: expected suppressed secret on line 4 to appear in SARIF with suppressions property, got ${suppressed_secret}"
+  exit 1
+fi
+echo "PASS: suppressed secret (line 4) is present in SARIF with suppressions property"
+
+# DD_API_KEY on line 4 must NOT appear as a non-suppressed result
+unsuppressed_secret_line4=$(jq '[.runs[0].results[] | select(.suppressions == null or (.suppressions | length) == 0) | select(.locations[0].physicalLocation.region.startLine == 4)] | length' "${SECRETS_SARIF}")
+if [ "${unsuppressed_secret_line4}" -ne 0 ]; then
+  echo "FAIL: suppressed secret on line 4 should not appear as non-suppressed in SARIF, got ${unsuppressed_secret_line4}"
+  exit 1
+fi
+echo "PASS: suppressed secret (line 4) does not appear as non-suppressed in SARIF"
+
 echo "All tests passed"
 exit 0
