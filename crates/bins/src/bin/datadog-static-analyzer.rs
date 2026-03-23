@@ -705,6 +705,7 @@ fn main() -> Result<()> {
         OutputFormat::Json => {
             // make sure suppressed results are not included
             let filtered_static: Vec<RuleResult> = static_analysis_rule_results
+                .clone()
                 .into_iter()
                 .map(|mut r| {
                     r.violations.retain(|v| !v.is_suppressed);
@@ -712,6 +713,7 @@ fn main() -> Result<()> {
                 })
                 .collect();
             let filtered_secrets: Vec<RuleResult> = secrets_violations
+                .clone()
                 .iter()
                 .map(convert_secret_result_to_rule_result)
                 .map(|mut r| {
