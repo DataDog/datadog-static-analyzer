@@ -796,12 +796,7 @@ fn generate_results(
                         sarif_result.code_flows(&[taint_code_flow]);
                     };
                     if violation.is_suppressed {
-                        let suppression = SuppressionBuilder::default()
-                            .kind(serde_json::Value::String("inSource".to_string()))
-                            .justification(
-                                "Suppressed by inline comment (no-dd-sa / datadog-disable)",
-                            )
-                            .build()?;
+                        let suppression = SuppressionBuilder::default().kind("inSource").build()?;
                         sarif_result.suppressions(vec![suppression]);
                     }
                     Ok(sarif_result.build()?)
