@@ -703,7 +703,7 @@ fn main() -> Result<()> {
             csv::generate_csv_results(&static_analysis_rule_results, &secrets_violations)
         }
         OutputFormat::Json => {
-            // make sure suppressed results are not includd
+            // make sure suppressed results are not included
             let filtered_static: Vec<RuleResult> = static_analysis_rule_results
                 .into_iter()
                 .map(|mut r| {
