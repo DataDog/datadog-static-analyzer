@@ -71,6 +71,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
         violations: secret_result
             .matches
             .iter()
+            .filter(|v| !v.is_suppressed)
             .map(|v| Violation {
                 start: v.start,
                 end: v.end,

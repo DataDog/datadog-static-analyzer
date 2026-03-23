@@ -195,7 +195,7 @@ impl SarifRuleResult {
                             category: RuleCategory::Security,
                             fixes: vec![],
                             taint_flow: None,
-                            is_suppressed: false,
+                            is_suppressed: r.is_suppressed,
                         },
                         r.validation_status.clone(),
                     )
@@ -1497,6 +1497,7 @@ mod tests {
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 2, col: 2 },
                     validation_status: case.0,
+                    is_suppressed: false,
                 }],
             }];
 
@@ -1631,6 +1632,7 @@ mod tests {
                         message: "Invalid token".to_string(),
                     },
                 ]),
+                is_suppressed: false,
             }],
         }];
 
@@ -1718,6 +1720,7 @@ mod tests {
                         message: "Connection timeout".to_string(),
                     },
                 ]),
+                is_suppressed: false,
             }],
         }];
 
@@ -1810,6 +1813,7 @@ mod tests {
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 1, col: 5 },
                     validation_status: SecretValidationStatus::Valid,
+                    is_suppressed: false,
                 }],
             }];
             let sarif_secret_results = secret_results
@@ -2157,6 +2161,7 @@ mod tests {
                         message: "Connection timeout".to_string(),
                     },
                 ]),
+                is_suppressed: false,
             }],
         }];
 

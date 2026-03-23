@@ -38,7 +38,7 @@ pub fn generate_csv_results(
     }
 
     for r in secrets_results {
-        for v in &r.matches {
+        for v in r.matches.iter().filter(|v| !v.is_suppressed) {
             wtr.write_record(&[
                 r.filename.to_string(),
                 r.rule_name.to_string(),
