@@ -269,19 +269,20 @@ impl TryFrom<&SecretRuleMatchValidation> for MatchValidationType {
                     .collect();
 
                 // Convert provides
-                let provides: Vec<PairedValidatorConfig> = custom_http_v2
-                    .provides
-                    .iter()
-                    .map(|p| PairedValidatorConfig {
-                        kind: p.kind.clone(),
-                        name: p.name.clone(),
-                    })
-                    .collect();
+                let provides = custom_http_v2.provides.as_ref().map(|provides| {
+                    provides
+                        .iter()
+                        .map(|p| PairedValidatorConfig {
+                            kind: p.kind.clone(),
+                            name: p.name.clone(),
+                        })
+                        .collect()
+                });
 
                 Ok(MatchValidationType::CustomHttpV2(CustomHttpConfigV2 {
                     match_pairing,
                     calls,
-                    provides: Some(provides),
+                    provides,
                 }))
             }
         }
@@ -306,7 +307,8 @@ pub struct SecretRuleMatchValidationHttpV2 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub match_pairing: Option<SecretRuleMatchPairingConfig>,
     pub calls: Vec<SecretRuleHttpCallConfig>,
-    pub provides: Vec<SecretRulePairedValidatorConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provides: Option<Vec<SecretRulePairedValidatorConfig>>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -688,7 +690,7 @@ mod tests {
                     ],
                 },
             }],
-            provides: vec![
+            provides: Some(vec![
                 SecretRulePairedValidatorConfig {
                     kind: "datadog".to_string(),
                     name: "api_key".to_string(),
@@ -697,7 +699,7 @@ mod tests {
                     kind: "datadog".to_string(),
                     name: "app_key".to_string(),
                 },
-            ],
+            ]),
         };
 
         let validation = SecretRuleMatchValidation::CustomHttpV2(http_v2_config);
@@ -893,7 +895,7 @@ mod tests {
                     ],
                 },
             }],
-            provides: vec![
+            provides: Some(vec![
                 SecretRulePairedValidatorConfig {
                     kind: "datadog".to_string(),
                     name: "api_key".to_string(),
@@ -902,7 +904,7 @@ mod tests {
                     kind: "datadog".to_string(),
                     name: "app_key".to_string(),
                 },
-            ],
+            ]),
         });
     }
 }

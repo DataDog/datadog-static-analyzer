@@ -10,7 +10,7 @@ ensure that your bug report is complete with all required information.
 ### What to send with your report
 
 When sending a bug report, make sure to include
- - your `static-analysis.datadog.yml` file
+ - your `code-security.datadog.yaml` file (or `static-analysis.datadog.yml`)
  - the output of the tool (e.g. CLI) when running either locally or in your CI/CD pipeline
  - the SARIF file being produced (if any and available)
  - the URL of your repository (even if private, it helps to troubleshoot)
@@ -22,7 +22,7 @@ If you are experiencing performance issues, enable the flag `--performance-stati
 running the tool from the command line.
 
 When sending the report, make sure to include:
- - your `static-analysis.datadog.yml`
+ - your `code-security.datadog.yaml` file (or `static-analysis.datadog.yml`)
  - the output of the tool
  - the URL of your repository
 
