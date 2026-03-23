@@ -1,11 +1,10 @@
 ## Overview
 
-This project is the Datadog Static Analyzer and Secret detection. It is used to find patterns
-and code violations in code or find secrets.
+This project is Datadog's static analyzer and secret detection tool, used to find code patterns, detect violations, and identify secrets.
 
 The static code analysis part relies heavily on tree-sitter.
 
-Secrets detection relies on Datadog SDS.
+Secret detection relies on Datadog SDS.
 
 ## Code Structure
 
