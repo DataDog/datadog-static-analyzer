@@ -38,7 +38,7 @@ use kernel::config::common::{ConfigMethod, PathConfig};
 use kernel::config::file_v1;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
-use kernel::model::rule::{Rule, RuleSeverity};
+use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use secrets::model::secret_result::SecretValidationStatus;
 use secrets::secret_files::should_ignore_file_for_secret;
@@ -703,14 +703,19 @@ fn main() -> Result<()> {
             csv::generate_csv_results(&static_analysis_rule_results, &secrets_violations)
         }
         OutputFormat::Json => {
-            let combined_results = [
-                secrets_violations
-                    .iter()
-                    .map(convert_secret_result_to_rule_result)
-                    .collect(),
-                static_analysis_rule_results,
-            ]
-            .concat();
+            // make sure suppressed results are not includd
+            let filtered_static: Vec<RuleResult> = static_analysis_rule_results
+                .into_iter()
+                .map(|mut r| {
+                    r.violations.retain(|v| !v.is_suppressed);
+                    r
+                })
+                .collect();
+            let filtered_secrets: Vec<RuleResult> = secrets_violations
+                .iter()
+                .map(convert_secret_result_to_rule_result)
+                .collect();
+            let combined_results = [filtered_secrets, filtered_static].concat();
             serde_json::to_string(&combined_results).expect("error when getting the JSON report")
         }
         OutputFormat::Sarif => generate_sarif_file(
