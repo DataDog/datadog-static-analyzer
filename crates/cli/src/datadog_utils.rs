@@ -30,6 +30,7 @@ const STAGING_DATADOG_BASENAME: &str = "https://api.datad0g.com";
 const DEFAULT_DATADOG_BASENAME: &str = "https://api.datadoghq.com";
 
 const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
+    "BASH",
     "CSHARP",
     "DOCKERFILE",
     "GO",
