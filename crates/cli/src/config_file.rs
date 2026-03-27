@@ -4,7 +4,7 @@ use crate::datadog_utils::{
     get_remote_configuration, print_permission_warning, should_use_datadog_backend,
 };
 use crate::git_utils::get_repository_url;
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use kernel::config::common::ConfigMethod;
 use kernel::config::{file_legacy, file_v1};
 use kernel::utils::decode_base64_string;
@@ -33,18 +33,19 @@ fn get_local_config(base_path: &Path) -> anyhow::Result<Option<(file_v1::ConfigF
     let mut local_config: Option<(file_v1::ConfigFile, String)> = None;
     // Code Security config
     if let Some(contents) = read_config_file(base_path, CS_CONFIG_FILE_WITHOUT_EXTENSION)? {
-        let parsed = file_v1::parse_yaml(&contents)?;
-        local_config = Some((parsed.into(), contents));
+        if contents.chars().any(|c| !c.is_whitespace()) {
+            let parsed = file_v1::parse_yaml(&contents)?;
+            local_config = Some((parsed.into(), contents));
+        }
     }
     // Legacy fallback
     if local_config.is_none() {
         if let Some(contents) = read_config_file(base_path, LEGACY_CONFIG_FILE_WITHOUT_EXTENSION)? {
-            if contents.trim().is_empty() {
-                return Err(anyhow!("the config file is empty"));
+            if contents.chars().any(|c| !c.is_whitespace()) {
+                let parsed = file_legacy::parse_yaml(&contents)?;
+                let as_v1 = file_v1::YamlConfigFile::from(parsed);
+                local_config = Some((as_v1.into(), contents));
             }
-            let parsed = file_legacy::parse_yaml(&contents)?;
-            let as_v1 = file_v1::YamlConfigFile::from(parsed);
-            local_config = Some((as_v1.into(), contents));
         }
     }
     Ok(local_config)
@@ -202,5 +203,21 @@ sast:
         let (_, contents) = get_local_config(test_dir.path()).unwrap().unwrap();
 
         assert_eq!(contents, V1);
+    }
+
+    /// An empty configuration file is ignored.
+    #[test]
+    fn empty_config_file() {
+        for prefix in [
+            LEGACY_CONFIG_FILE_WITHOUT_EXTENSION,
+            CS_CONFIG_FILE_WITHOUT_EXTENSION,
+        ] {
+            for content in ["", "\n  \t \r\n "] {
+                let test_dir = TempDir::new().unwrap();
+                let file_path = test_dir.path().join(format!("{prefix}.yaml"));
+                fs::write(&file_path, content).unwrap();
+                assert!(get_local_config(test_dir.path()).unwrap().is_none());
+            }
+        }
     }
 }
