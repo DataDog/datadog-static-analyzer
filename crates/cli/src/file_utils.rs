@@ -196,14 +196,13 @@ pub fn get_files(
             // repo with a custom rule.
             let mut should_include = entry.is_file() && !entry.is_symlink();
 
-            let relative_path_str = entry
-                .strip_prefix(directory)
-                .ok()
-                .and_then(|p| p.to_str())
+            let relative_path = entry.strip_prefix(directory).ok();
+            let relative_path_str = relative_path
+                .map(|p| p.to_string_lossy())
                 .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
 
             // check if the path is allowed by the configuration.
-            should_include = should_include && path_config.allows_file(relative_path_str);
+            should_include = should_include && path_config.allows_file(&relative_path_str);
 
             // do not include the git directory.
             if entry.starts_with(&git_directory) {
@@ -793,6 +792,23 @@ mod tests {
         );
 
         assert_eq!(2, files.unwrap().len());
+    }
+
+    #[test]
+    fn get_files_with_utf8_directory() {
+        let test_dir = TestDir::new();
+        test_dir.add_file("café/main.rs");
+        test_dir.add_file("日本語/lib.rs");
+        test_dir.add_file("naïve-approach/test.rs");
+
+        let base_path = test_dir.base_path();
+        let files = get_files(base_path, vec![], &PathConfig::default()).unwrap();
+
+        assert_contains_files!(
+            base_path,
+            files,
+            ["café/main.rs", "日本語/lib.rs", "naïve-approach/test.rs"]
+        );
     }
 
     // check that we have the correct number of extensions for each language we support.
