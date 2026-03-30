@@ -913,6 +913,23 @@ mod tests {
         );
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn get_files_non_utf8_path() {
+        let tmp = TestDir::new();
+
+        let valid_path = tmp.base_path().join("valid.js");
+        fs::File::create(&valid_path).unwrap();
+        // (0xFF isn't a valid UTF-8 byte)
+        let invalid_path = tmp
+            .base_path()
+            .join(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(b"\xFF.js"));
+        fs::File::create(&invalid_path).unwrap();
+
+        let files = get_files(tmp.base_path(), vec![], &PathConfig::default()).unwrap();
+        assert_eq!(files, vec![valid_path]);
+    }
+
     #[test]
     fn test_get_language_for_file() {
         // extension Java
