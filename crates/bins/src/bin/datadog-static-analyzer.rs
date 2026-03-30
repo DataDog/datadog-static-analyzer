@@ -405,7 +405,7 @@ fn main() -> Result<()> {
         subdirectories_to_analyze.clone(),
         &path_config,
     )
-    .expect("unable to get the list of files to analyze");
+    .context("unable to get the list of files to analyze")?;
 
     let num_cores_requested = matches
         .opt_str("c")
