@@ -196,14 +196,12 @@ pub fn get_files(
             // repo with a custom rule.
             let mut should_include = entry.is_file() && !entry.is_symlink();
 
-            let relative_path_str = entry
-                .strip_prefix(directory)
-                .ok()
-                .and_then(|p| p.to_str())
-                .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
+            let Ok(Some(rel_path_str)) = entry.strip_prefix(directory).map(|p| p.to_str()) else {
+                continue;
+            };
 
             // check if the path is allowed by the configuration.
-            should_include = should_include && path_config.allows_file(relative_path_str);
+            should_include = should_include && path_config.allows_file(rel_path_str);
 
             // do not include the git directory.
             if entry.starts_with(&git_directory) {
