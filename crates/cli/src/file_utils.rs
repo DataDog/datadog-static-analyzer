@@ -333,19 +333,16 @@ pub fn filter_files_by_diff_aware_info(
     directory_path: &Path,
     diff_aware_info: &DiffAwareData,
 ) -> Vec<PathBuf> {
-    let files_to_scan: HashSet<&str> =
-        HashSet::from_iter(diff_aware_info.files.iter().map(|f| f.as_str()));
+    let files_to_scan: HashSet<&Path> =
+        HashSet::from_iter(diff_aware_info.files.iter().map(Path::new));
 
     files
         .iter()
-        .filter(|f| {
-            let p = f
-                .strip_prefix(directory_path)
-                .unwrap()
-                .to_str()
-                .expect("path contains non-Unicode characters");
-
-            files_to_scan.contains(p)
+        .filter(|file_path| {
+            let Ok(rel_path) = file_path.strip_prefix(directory_path) else {
+                return false;
+            };
+            files_to_scan.contains(rel_path)
         })
         .cloned()
         .collect()
