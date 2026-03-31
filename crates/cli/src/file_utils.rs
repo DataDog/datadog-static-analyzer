@@ -196,14 +196,12 @@ pub fn get_files(
             // repo with a custom rule.
             let mut should_include = entry.is_file() && !entry.is_symlink();
 
-            let relative_path_str = entry
-                .strip_prefix(directory)
-                .ok()
-                .and_then(|p| p.to_str())
-                .ok_or_else(|| anyhow::Error::msg("should get the path"))?;
+            let Ok(Some(rel_path_str)) = entry.strip_prefix(directory).map(|p| p.to_str()) else {
+                continue;
+            };
 
             // check if the path is allowed by the configuration.
-            should_include = should_include && path_config.allows_file(relative_path_str);
+            should_include = should_include && path_config.allows_file(rel_path_str);
 
             // do not include the git directory.
             if entry.starts_with(&git_directory) {
@@ -335,19 +333,16 @@ pub fn filter_files_by_diff_aware_info(
     directory_path: &Path,
     diff_aware_info: &DiffAwareData,
 ) -> Vec<PathBuf> {
-    let files_to_scan: HashSet<&str> =
-        HashSet::from_iter(diff_aware_info.files.iter().map(|f| f.as_str()));
+    let files_to_scan: HashSet<&Path> =
+        HashSet::from_iter(diff_aware_info.files.iter().map(Path::new));
 
     files
         .iter()
-        .filter(|f| {
-            let p = f
-                .strip_prefix(directory_path)
-                .unwrap()
-                .to_str()
-                .expect("path contains non-Unicode characters");
-
-            files_to_scan.contains(p)
+        .filter(|file_path| {
+            let Ok(rel_path) = file_path.strip_prefix(directory_path) else {
+                return false;
+            };
+            files_to_scan.contains(rel_path)
         })
         .cloned()
         .collect()
@@ -916,6 +911,23 @@ mod tests {
             )
             .len()
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn get_files_non_utf8_path() {
+        let tmp = TestDir::new();
+
+        let valid_path = tmp.base_path().join("valid.js");
+        fs::File::create(&valid_path).unwrap();
+        // (0xFF isn't a valid UTF-8 byte)
+        let invalid_path = tmp
+            .base_path()
+            .join(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(b"\xFF.js"));
+        fs::File::create(&invalid_path).unwrap();
+
+        let files = get_files(tmp.base_path(), vec![], &PathConfig::default()).unwrap();
+        assert_eq!(files, vec![valid_path]);
     }
 
     #[test]
