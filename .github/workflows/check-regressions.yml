@@ -110,3 +110,4 @@ jobs:
       - name: Fail
         if: steps.regression.outputs.diff1files != '' || steps.regression.outputs.diff2files != ''
         run: exit 1
+
