@@ -1004,6 +1004,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
 
         // good location in the violation location and no fixes
@@ -1016,6 +1017,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
 
         // bad location in the fixes location
@@ -1036,6 +1038,7 @@ mod tests {
             }],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
 
         // good location everywhere
@@ -1056,6 +1059,7 @@ mod tests {
             }],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
     }
 
@@ -1124,6 +1128,7 @@ mod tests {
             fixes: vec![],
             taint_flow: Some(vec![region0, region1, region2]),
             is_suppressed: false,
+            method_name: None,
         };
 
         let rule_result_single_region = RuleResultBuilder::default()
@@ -1964,6 +1969,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    method_name: None,
                 };
                 let rr = RuleResult {
                     rule_name: format!("rule-{idx}"),
@@ -2057,6 +2063,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         };
         let rule_results = [TEST_FILE_PATH, NON_TEST_FILE_PATH]
             .into_iter()
