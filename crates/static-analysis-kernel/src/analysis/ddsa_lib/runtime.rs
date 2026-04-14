@@ -1169,8 +1169,7 @@ function visit(captures) {
 }
 "#;
         let violations =
-            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None)
-                .unwrap();
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].method_name, Some("myFunction".to_string()));
     }
@@ -1190,8 +1189,7 @@ function visit(captures) {
 }
 "#;
         let violations =
-            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None)
-                .unwrap();
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].method_name, None);
     }
@@ -1211,8 +1209,7 @@ function visit(captures) {
 }
 "#;
         let violations =
-            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None)
-                .unwrap();
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].method_name, Some("customName".to_string()));
     }

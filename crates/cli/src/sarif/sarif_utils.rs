@@ -655,12 +655,10 @@ fn generate_results(
                             .build()?,
                     );
                     if let Some(ref method) = violation.method_name {
-                        location_builder.logical_locations(vec![
-                            LogicalLocationBuilder::default()
-                                .name(method.clone())
-                                .kind("function".to_string())
-                                .build()?,
-                        ]);
+                        location_builder.logical_locations(vec![LogicalLocationBuilder::default()
+                            .name(method.clone())
+                            .kind("function".to_string())
+                            .build()?]);
                     }
                     let location = location_builder.build()?;
 
