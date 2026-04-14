@@ -1154,6 +1154,69 @@ function visit(captures) {
         assert_eq!(*violation, expected);
     }
 
+    /// When a `Violation` is created with a `TreeSitterNode` that is inside a function,
+    /// `method_name` is automatically set to the enclosing function's name.
+    #[test]
+    fn violation_method_name_populated_when_node_inside_function() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = "function myFunction() { const secretKey = 'abc'; }";
+        let filename = "test.js";
+        let ts_query = r#"((identifier) @cap (#eq? @cap "secretKey"))"#;
+        let rule = r#"
+function visit(captures) {
+    const node = captures.get("cap");
+    addError(Violation.new("found it", node));
+}
+"#;
+        let violations =
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None)
+                .unwrap();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].method_name, Some("myFunction".to_string()));
+    }
+
+    /// When a `Violation` is created with a `TreeSitterNode` that is at the top level (not inside
+    /// any function), `method_name` is `None` because there is no enclosing function to detect.
+    #[test]
+    fn violation_method_name_none_when_node_at_top_level() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = "const secretKey = 'abc';";
+        let filename = "test.js";
+        let ts_query = r#"((identifier) @cap (#eq? @cap "secretKey"))"#;
+        let rule = r#"
+function visit(captures) {
+    const node = captures.get("cap");
+    addError(Violation.new("found it", node));
+}
+"#;
+        let violations =
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None)
+                .unwrap();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].method_name, None);
+    }
+
+    /// `withMethodName` sets `method_name` regardless of whether the node is inside a function,
+    /// allowing a rule to provide a custom value.
+    #[test]
+    fn violation_method_name_overridden_by_with_method_name() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = "const secretKey = 'abc';";
+        let filename = "test.js";
+        let ts_query = r#"((identifier) @cap (#eq? @cap "secretKey"))"#;
+        let rule = r#"
+function visit(captures) {
+    const node = captures.get("cap");
+    addError(Violation.new("found it", node).withMethodName("customName"));
+}
+"#;
+        let violations =
+            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None)
+                .unwrap();
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].method_name, Some("customName".to_string()));
+    }
+
     /// Tests that a rule can define variables before the visit function and have them accessible.
     #[test]
     fn execute_rule_internal_init_order() {
