@@ -10,6 +10,29 @@ import {TreeSitterFieldChildNode} from "ext:ddsa_lib/ts_node";
 const { op_digraph_adjacency_list_to_dot, op_ts_node_named_children, op_ts_node_parent } = Deno.core.ops;
 
 /**
+ * The set of tree-sitter node types that represent a function or method declaration,
+ * used by {@link DDSA#getEnclosingFunctionName} to identify enclosing scopes.
+ */
+const FUNCTION_NODE_TYPES = new Set([
+    // Java, C#, Kotlin
+    "method_declaration",
+    "constructor_declaration",
+    // Python
+    "function_definition",
+    // JavaScript / TypeScript
+    "function_declaration",
+    "method_definition",
+    "function_expression",
+    // Go: function_declaration and method_declaration (listed above) cover named functions and methods.
+    // Ruby
+    "method",
+    "singleton_method",
+    // Generic / other languages
+    "function",
+    "function_item",
+]);
+
+/**
  * The main entrypoint to the ddsa JavaScript runtime's API.
  */
 export class DDSA {
@@ -118,26 +141,6 @@ export class DDSA {
      * ```
      */
     getEnclosingFunctionName(node) {
-        const FUNCTION_NODE_TYPES = new Set([
-            // Java, C#, Kotlin
-            "method_declaration",
-            "constructor_declaration",
-            // Python
-            "function_definition",
-            // JavaScript / TypeScript
-            "function_declaration",
-            "method_definition",
-            "function_expression",
-            // Go
-            "function_literal",
-            // Ruby
-            "method",
-            "singleton_method",
-            // Generic / other languages
-            "function",
-            "function_item",
-        ]);
-
         const fnNode = ddsa.findAncestor(node, n => FUNCTION_NODE_TYPES.has(n.cstType));
         if (fnNode === undefined) {
             return undefined;
