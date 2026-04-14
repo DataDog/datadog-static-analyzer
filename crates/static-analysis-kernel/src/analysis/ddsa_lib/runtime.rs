@@ -200,6 +200,24 @@ impl JsRuntime {
         let violations = js_violations
             .into_iter()
             .map(|v| v.into_violation(rule.severity, rule.category))
+            .map(|mut v| {
+                // Taint-flow rules use `new Violation(message, taintedFlow)`, where the
+                // `TaintFlow` carries `TreeSitterNode`s and method_name is auto-populated
+                // by the JS runtime.  Pattern-matching rules use the older
+                // `buildError(line, col, …)` API, which only stores numeric coordinates
+                // and never sets method_name.  For those cases we fall back to a
+                // tree-sitter walk here in Rust so that both rule styles produce
+                // consistent output.
+                if v.method_name.is_none() {
+                    v.method_name = find_enclosing_function_name(
+                        source_tree,
+                        source_text.as_bytes(),
+                        v.start.line,
+                        v.start.col,
+                    );
+                }
+                v
+            })
             .collect::<Vec<_>>();
 
         let timing = ExecutionTimingCompat {
@@ -608,6 +626,69 @@ impl JsConsole {
     /// Removes all lines from the `JsConsole`, returning them as an iterator.
     pub fn drain(&mut self) -> impl Iterator<Item = String> + '_ {
         self.0.drain(..)
+    }
+}
+
+/// Tree-sitter node kinds that represent a function or method declaration.
+/// Mirrors the `FUNCTION_NODE_TYPES` constant in `ddsa.js`.
+const FUNCTION_NODE_TYPES: &[&str] = &[
+    // Java, C#, Kotlin
+    "method_declaration",
+    "constructor_declaration",
+    // Python
+    "function_definition",
+    // JavaScript / TypeScript
+    "function_declaration",
+    "method_definition",
+    "function_expression",
+    // Ruby
+    "method",
+    "singleton_method",
+    // Generic / other languages
+    "function",
+    "function_item",
+];
+
+/// Returns the name of the function or method that encloses the position
+/// (`start_line`, `start_col`, both 1-based) in `tree`.
+///
+/// This is the Rust counterpart of `DDSA.getEnclosingFunctionName` in `ddsa.js`.
+/// It exists because pattern-matching rules use the older `buildError(line, col, …)`
+/// API, which discards the originating `TreeSitterNode` and therefore never
+/// triggers the JS-side auto-population of `method_name`.  Taint-flow rules pass
+/// a `TaintFlow` (which carries nodes) so they get `method_name` from JS without
+/// needing this fallback.
+fn find_enclosing_function_name(
+    tree: &tree_sitter::Tree,
+    source_text: &[u8],
+    start_line: u32,
+    start_col: u32,
+) -> Option<String> {
+    let point = tree_sitter::Point {
+        row: start_line.saturating_sub(1) as usize,
+        column: start_col.saturating_sub(1) as usize,
+    };
+
+    let mut node = tree
+        .root_node()
+        .named_descendant_for_point_range(point, point)?;
+
+    loop {
+        if FUNCTION_NODE_TYPES.contains(&node.kind()) {
+            // Walk ALL children (named and unnamed) to find the "name" field.
+            let mut cursor = node.walk();
+            for (i, child) in node.children(&mut cursor).enumerate() {
+                if node.field_name_for_child(i as u32) == Some("name") {
+                    return child.utf8_text(source_text).ok().map(str::to_owned);
+                }
+            }
+            // Anonymous function — no "name" field.
+            return None;
+        }
+        match node.parent() {
+            Some(parent) => node = parent,
+            None => return None,
+        }
     }
 }
 
@@ -1212,6 +1293,79 @@ function visit(captures) {
             shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].method_name, Some("customName".to_string()));
+    }
+
+    /// Pattern-matching rules use the old `buildError(line, col, …)` API, which passes numeric
+    /// coordinates to `Violation.new` instead of a `TreeSitterNode`.  The JS auto-population is
+    /// therefore skipped, but the Rust-side fallback in `execute_rule` must fill it in.
+    #[test]
+    fn violation_method_name_populated_by_rust_fallback_for_builderror_rules() {
+        let mut rt = cfg_test_v8().new_runtime();
+        let text = r#"
+class Foo {
+    public void myMethod() {
+        String key = "secret";
+    }
+}
+"#;
+        let ts_query = r#"(string_literal) @cap"#;
+        // Simulates a pattern-matching rule that uses the old buildError API:
+        // `buildError(line, col, …)` passes numeric coordinates → no TreeSitterNode →
+        // JS auto-population skipped → Rust fallback must supply method_name.
+        let rule = r#"
+function visit(captures) {
+    const node = captures.get("cap");
+    addError(buildError(node.start.line, node.start.col,
+                        node.end.line, node.end.col,
+                        "found it"));
+}
+"#;
+        let violations = shorthand_execute_rule(
+            &mut rt,
+            Language::Java,
+            ts_query,
+            rule,
+            text,
+            None,
+        )
+        .unwrap()
+        .violations;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].method_name, Some("myMethod".to_string()));
+    }
+
+    /// Java `method_declaration` with a `throws` clause should still auto-populate `method_name`.
+    #[test]
+    fn violation_method_name_java_method_with_throws() {
+        let mut rt = cfg_test_v8().new_runtime();
+        // Reproduces the user's reported case: a Java method with a `throws` clause
+        let text = r#"
+class Foo {
+    private static byte [] getCipher(byte [] data) throws IllegalBlockSizeException, BadPaddingException {
+        String alg = "DES";
+        return null;
+    }
+}
+"#;
+        let ts_query = r#"(string_literal) @cap"#;
+        let rule = r#"
+function visit(captures) {
+    const node = captures.get("cap");
+    addError(Violation.new("found it", node));
+}
+"#;
+        let violations = shorthand_execute_rule(
+            &mut rt,
+            Language::Java,
+            ts_query,
+            rule,
+            text,
+            None,
+        )
+        .unwrap()
+        .violations;
+        assert_eq!(violations.len(), 1);
+        assert_eq!(violations[0].method_name, Some("getCipher".to_string()));
     }
 
     /// Tests that a rule can define variables before the visit function and have them accessible.
