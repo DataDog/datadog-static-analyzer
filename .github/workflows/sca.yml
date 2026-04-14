@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Datadog SBOM Generation and Upload
     permissions:
+      contents: read # Needed by actions/checkout to read repository contents
       id-token: write # Needed to federate tokens
     steps:
     - name: Get Datadog credentials
