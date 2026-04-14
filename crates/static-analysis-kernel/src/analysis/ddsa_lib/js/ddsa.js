@@ -141,7 +141,11 @@ export class DDSA {
      * ```
      */
     getEnclosingFunctionName(node) {
-        const fnNode = ddsa.findAncestor(node, n => FUNCTION_NODE_TYPES.has(n.cstType));
+        // Check node itself first: findAncestor starts from the parent, so if node is
+        // itself a function/method declaration, it would otherwise be skipped.
+        const fnNode = FUNCTION_NODE_TYPES.has(node?.cstType)
+            ? node
+            : ddsa.findAncestor(node, n => FUNCTION_NODE_TYPES.has(n.cstType));
         if (fnNode === undefined) {
             return undefined;
         }
