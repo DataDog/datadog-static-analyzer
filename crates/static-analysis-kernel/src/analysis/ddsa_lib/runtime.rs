@@ -1148,6 +1148,7 @@ function visit(captures) {
             message: "`protectedName` is a protected variable name".to_string(),
             fixes: None,
             taint_flow_regions: None,
+            method_name: None,
             _pd: PhantomData,
         };
         assert_eq!(*violation, expected);
@@ -1429,6 +1430,7 @@ function visit(query, filename, code) {
             message: "`protectedName` is a protected variable name".to_string(),
             fixes: None,
             taint_flow_regions: None,
+            method_name: None,
             _pd: PhantomData,
         };
         assert_eq!(*violation, expected);

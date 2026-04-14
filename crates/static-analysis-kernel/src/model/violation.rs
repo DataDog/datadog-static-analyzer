@@ -42,4 +42,8 @@ pub struct Violation {
     #[serde(default)]
     #[builder(default)]
     pub is_suppressed: bool,
+    /// The name of the method or function enclosing the violation, if any.
+    #[serde(default)]
+    #[builder(default)]
+    pub method_name: Option<String>,
 }

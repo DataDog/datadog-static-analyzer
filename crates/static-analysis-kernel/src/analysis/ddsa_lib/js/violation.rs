@@ -22,6 +22,7 @@ pub struct Violation<T> {
     pub fixes: Option<Vec<Fix<T>>>,
     pub base_region: CodeRegion<T>,
     pub taint_flow_regions: Option<Vec<CodeRegion<T>>>,
+    pub method_name: Option<String>,
     /// (See documentation on [`Instance`]).
     pub _pd: PhantomData<T>,
 }
@@ -55,6 +56,7 @@ impl Violation<Instance> {
             fixes,
             taint_flow,
             is_suppressed: false,
+            method_name: self.method_name,
         }
     }
 }
@@ -112,12 +114,16 @@ impl V8Converter for ViolationConverter {
                     .collect::<Result<Vec<_>, _>>()
             })
             .transpose()?;
+        let method_name =
+            get_optional_field::<v8::String>(v8_obj, "methodName", scope, "string | undefined")?
+                .map(|s| s.to_rust_string_lossy(scope));
 
         Ok(Violation {
             message,
             fixes,
             base_region,
             taint_flow_regions,
+            method_name,
             _pd: PhantomData,
         })
     }
@@ -174,6 +180,7 @@ mod tests {
             fixes: None,
             base_region: region0,
             taint_flow_regions: None,
+            method_name: None,
             _pd: PhantomData,
         };
 
@@ -204,6 +211,7 @@ Violation.new("abc", tsNode);
             fixes: None,
             base_region: region0,
             taint_flow_regions: Some(vec![region0, region1]),
+            method_name: None,
             _pd: PhantomData,
         };
         let flow_variants = &[r#"

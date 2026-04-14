@@ -196,6 +196,7 @@ impl SarifRuleResult {
                             fixes: vec![],
                             taint_flow: None,
                             is_suppressed: r.is_suppressed,
+                            method_name: None,
                         },
                         r.validation_status.clone(),
                     )
