@@ -28,8 +28,6 @@ jobs:
     permissions:
       id-token: write # Needed to federate tokens
     env:
-      DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
-      DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
       DD_SITE: ${{ vars.DD_SITE }}
     steps:
       - name: Get Datadog credentials
@@ -59,10 +57,22 @@ jobs:
           git diff --exit-code Cargo.lock || (echo "::error::Lockfile is out of date. Please run 'cargo check' and commit the updated Cargo.lock file." && exit 1)
 
       - name: Check python rulesets - part1
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
       - name: Check python rulesets - part2
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r python-django -r python-flask -r python-design
       - name: Check Java rulesets
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r java-security -r java-best-practices -r java-code-style
       - name: Check Docker rulesets
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r docker-best-practices

@@ -16,8 +16,6 @@ jobs:
     permissions:
       id-token: write # Needed to federate tokens
     env:
-      DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
-      DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
       DD_SITE: ${{ vars.DD_SITE }}
     strategy:
       matrix:
@@ -47,4 +45,7 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: ./.github/actions/set-up-rust
       - name: Execute script
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: ${{ matrix.scripts.file }}
