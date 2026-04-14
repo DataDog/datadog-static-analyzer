@@ -101,6 +101,54 @@ export class DDSA {
     }
 
     /**
+     * Returns the name of the function or method enclosing the provided node, or `undefined` if none
+     * could be found.
+     *
+     * This works across all supported languages by walking up the tree-sitter AST until a function
+     * or method declaration node is found, then extracting the value of its `name` field child.
+     *
+     * @param {TreeSitterNode | TreeSitterFieldChildNode} node
+     * @returns {string | undefined}
+     *
+     * @example
+     * ```javascript
+     * // In a rule:
+     * const v = Violation.new("message", node);
+     * v.withMethodName(ddsa.getEnclosingFunctionName(node));
+     * ```
+     */
+    getEnclosingFunctionName(node) {
+        const FUNCTION_NODE_TYPES = new Set([
+            // Java, C#, Kotlin
+            "method_declaration",
+            "constructor_declaration",
+            // Python
+            "function_definition",
+            // JavaScript / TypeScript
+            "function_declaration",
+            "method_definition",
+            "function_expression",
+            // Go
+            "function_literal",
+            // Ruby
+            "method",
+            "singleton_method",
+            // Generic / other languages
+            "function",
+            "function_item",
+        ]);
+
+        const fnNode = ddsa.findAncestor(node, n => FUNCTION_NODE_TYPES.has(n.cstType));
+        if (fnNode === undefined) {
+            return undefined;
+        }
+        const nameChild = ddsa.getChildren(fnNode).find(
+            c => c instanceof TreeSitterFieldChildNode && c.fieldName === "name"
+        );
+        return nameChild?.text;
+    }
+
+    /**
      * Returns a backwards flow analysis: a list of `TaintFlow` containing sources of the provided `sinkNode`.
      * @param {TreeSitterNode} sinkNode
      * @returns {Array<TaintFlow>}

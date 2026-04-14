@@ -147,8 +147,10 @@ mod tests {
             "message",
             "baseRegion",
             "taintFlowRegions",
+            "methodName",
             // Methods
             "addFix",
+            "withMethodName",
         ];
         assert!(js_instance_eq(Violation::CLASS_NAME, instance_exp));
         let class_expected = &["new"];
@@ -158,8 +160,8 @@ mod tests {
     #[test]
     fn variadic_violation_creation() {
         let converter = ViolationConverter::new();
-        let mut rt = cfg_test_v8().deno_core_rt();
-        let scope = &mut rt.handle_scope();
+        let mut rt = cfg_test_v8().new_runtime();
+        let scope = &mut rt.v8_handle_scope();
 
         let region0 = CodeRegion::<Instance> {
             start_line: 22,

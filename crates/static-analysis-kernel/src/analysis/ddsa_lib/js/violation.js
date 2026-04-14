@@ -47,6 +47,11 @@ export class Violation {
          * @type {Array<CodeRegion> | undefined}
          */
         this.taintFlowRegions = undefined;
+        /**
+         * The name of the method or function enclosing this violation, if any.
+         * @type {string | undefined}
+         */
+        this.methodName = undefined;
 
         if (locationArgs.length > 0) {
             const location = inferRegionVariadic(locationArgs);
@@ -55,6 +60,16 @@ export class Violation {
                 this.baseRegion = this.taintFlowRegions[0];
             } else {
                 this.baseRegion = (/** @type {CodeRegion} */ location);
+            }
+            // Auto-populate methodName: if a TreeSitterNode is passed directly, use it to find the
+            // enclosing function. For TaintFlow, use the first node in the flow.
+            if (locationArgs[0] instanceof TreeSitterNode) {
+                this.methodName = globalThis.ddsa.getEnclosingFunctionName(locationArgs[0]);
+            } else if (locationArgs[0] instanceof TaintFlow) {
+                for (const node of locationArgs[0]) {
+                    this.methodName = globalThis.ddsa.getEnclosingFunctionName(node);
+                    break;
+                }
             }
         }
     }
@@ -69,6 +84,16 @@ export class Violation {
             this.fixes = [];
         }
         this.fixes.push(fix);
+        return this;
+    }
+
+    /**
+     * Sets the name of the enclosing method or function and returns `this`.
+     * @param {string} name
+     * @returns {Violation}
+     */
+    withMethodName(name) {
+        this.methodName = name;
         return this;
     }
 
