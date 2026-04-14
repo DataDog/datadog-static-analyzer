@@ -6,6 +6,7 @@ jobs:
   coverage:
     runs-on: ubuntu-latest
     permissions:
+      contents: read # Needed by actions/checkout
       id-token: write # Needed to federate tokens
     env:
       CARGO_TERM_COLOR: always
