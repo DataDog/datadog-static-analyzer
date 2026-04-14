@@ -1320,16 +1320,10 @@ function visit(captures) {
                         "found it"));
 }
 "#;
-        let violations = shorthand_execute_rule(
-            &mut rt,
-            Language::Java,
-            ts_query,
-            rule,
-            text,
-            None,
-        )
-        .unwrap()
-        .violations;
+        let violations =
+            shorthand_execute_rule(&mut rt, Language::Java, ts_query, rule, text, None)
+                .unwrap()
+                .violations;
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].method_name, Some("myMethod".to_string()));
     }
@@ -1354,16 +1348,10 @@ function visit(captures) {
     addError(Violation.new("found it", node));
 }
 "#;
-        let violations = shorthand_execute_rule(
-            &mut rt,
-            Language::Java,
-            ts_query,
-            rule,
-            text,
-            None,
-        )
-        .unwrap()
-        .violations;
+        let violations =
+            shorthand_execute_rule(&mut rt, Language::Java, ts_query, rule, text, None)
+                .unwrap()
+                .violations;
         assert_eq!(violations.len(), 1);
         assert_eq!(violations[0].method_name, Some("getCipher".to_string()));
     }
