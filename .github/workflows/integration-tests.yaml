@@ -13,6 +13,8 @@ on:
 jobs:
   test_scripts:
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write # Needed to federate tokens
     env:
       DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
       DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}

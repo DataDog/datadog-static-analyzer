@@ -9,6 +9,8 @@ jobs:
   software-composition-analysis:
     runs-on: ubuntu-latest
     name: Datadog SBOM Generation and Upload
+    permissions:
+      id-token: write # Needed to federate tokens
     steps:
     - name: Get Datadog credentials
       id: dd-sts
