@@ -23,6 +23,7 @@ mod tests {
             "findAncestor",
             "findDescendant",
             "getParent",
+            "getEnclosingFunctionName",
             "getTaintSinks",
             "getTaintSources",
         ];
