@@ -26,6 +26,7 @@ jobs:
     name: ${{ matrix.config.gha_alias }}${{ matrix.cargo_cmd.gha_alias }}
     runs-on: ${{ matrix.config.os }}
     permissions:
+      contents: read # Needed by actions/checkout
       id-token: write # Needed to federate tokens
     env:
       DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
