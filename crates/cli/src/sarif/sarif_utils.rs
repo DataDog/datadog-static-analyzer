@@ -22,9 +22,10 @@ use secrets::model::secret_result::{SecretResult, SecretValidationStatus, Valida
 use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
-    LocationBuilder, MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder,
-    Replacement, ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif,
-    SarifBuilder, SuppressionBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
+    LocationBuilder, LogicalLocationBuilder, MessageBuilder, PhysicalLocationBuilder,
+    PropertyBagBuilder, RegionBuilder, Replacement, ReportingDescriptor, Result as SarifResult,
+    ResultBuilder, RunBuilder, Sarif, SarifBuilder, SuppressionBuilder, Tool, ToolBuilder,
+    ToolComponent, ToolComponentBuilder,
 };
 
 use crate::file_utils::get_fingerprint_for_violation;
@@ -639,21 +640,29 @@ fn generate_results(
                 .map(move |sarif_violation| {
                     let violation = sarif_violation.get_violation();
                     // if we find the rule for this violation, get the id, level and category
-                    let location = LocationBuilder::default()
-                        .physical_location(
-                            PhysicalLocationBuilder::default()
-                                .artifact_location(artifact_loc.clone())
-                                .region(
-                                    RegionBuilder::default()
-                                        .start_line(violation.start.line)
-                                        .start_column(violation.start.col)
-                                        .end_line(violation.end.line)
-                                        .end_column(violation.end.col)
-                                        .build()?,
-                                )
+                    let mut location_builder = LocationBuilder::default();
+                    location_builder.physical_location(
+                        PhysicalLocationBuilder::default()
+                            .artifact_location(artifact_loc.clone())
+                            .region(
+                                RegionBuilder::default()
+                                    .start_line(violation.start.line)
+                                    .start_column(violation.start.col)
+                                    .end_line(violation.end.line)
+                                    .end_column(violation.end.col)
+                                    .build()?,
+                            )
+                            .build()?,
+                    );
+                    if let Some(ref method) = violation.method_name {
+                        location_builder.logical_locations(vec![
+                            LogicalLocationBuilder::default()
+                                .name(method.clone())
+                                .kind("function".to_string())
                                 .build()?,
-                        )
-                        .build()?;
+                        ]);
+                    }
+                    let location = location_builder.build()?;
 
                     let fixes: Vec<sarif::Fix> = violation
                         .fixes
