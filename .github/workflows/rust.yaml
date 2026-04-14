@@ -26,10 +26,16 @@ jobs:
     name: ${{ matrix.config.gha_alias }}${{ matrix.cargo_cmd.gha_alias }}
     runs-on: ${{ matrix.config.os }}
     env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+      DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+      DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
       DD_SITE: ${{ vars.DD_SITE }}
     steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75 # v1.0.0
+        with:
+          policy: datadog-static-analyzer
+      
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
