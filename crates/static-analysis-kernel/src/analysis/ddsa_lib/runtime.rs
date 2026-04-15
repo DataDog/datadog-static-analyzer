@@ -200,6 +200,16 @@ impl JsRuntime {
         let violations = js_violations
             .into_iter()
             .map(|v| v.into_violation(rule.severity, rule.category))
+            .map(|mut v| {
+                v.method_name = analysis::languages::find_enclosing_function(
+                    source_text.as_ref(),
+                    source_tree.as_ref(),
+                    v.start.line,
+                    v.start.col,
+                    &rule.language,
+                );
+                v
+            })
             .collect::<Vec<_>>();
 
         let timing = ExecutionTimingCompat {

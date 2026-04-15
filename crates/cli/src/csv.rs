@@ -85,6 +85,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    method_name: None,
                 }],
                 errors: vec![],
                 execution_error: None,

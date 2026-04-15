@@ -452,6 +452,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         };
         let directory_string = d.into_os_string().into_string().unwrap();
         let fingerprint = get_fingerprint_for_violation(
@@ -497,6 +498,7 @@ mod tests {
             fixes: vec![],
             taint_flow: Some(vec![region0, region1]),
             is_suppressed: false,
+            method_name: None,
         };
         let fingerprint = get_fingerprint_for_violation(
             "taint_flow_rule".to_string(),
@@ -528,6 +530,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         };
         let directory_string = d.into_os_string().into_string().unwrap();
 

@@ -22,9 +22,10 @@ use secrets::model::secret_result::{SecretResult, SecretValidationStatus, Valida
 use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
-    LocationBuilder, MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder,
-    Replacement, ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif,
-    SarifBuilder, SuppressionBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
+    LocationBuilder, LogicalLocationBuilder, MessageBuilder, PhysicalLocationBuilder,
+    PropertyBagBuilder, RegionBuilder, Replacement, ReportingDescriptor, Result as SarifResult,
+    ResultBuilder, RunBuilder, Sarif, SarifBuilder, SuppressionBuilder, Tool, ToolBuilder,
+    ToolComponent, ToolComponentBuilder,
 };
 
 use crate::file_utils::get_fingerprint_for_violation;
@@ -196,6 +197,7 @@ impl SarifRuleResult {
                             fixes: vec![],
                             taint_flow: None,
                             is_suppressed: r.is_suppressed,
+                            method_name: None,
                         },
                         r.validation_status.clone(),
                     )
@@ -638,21 +640,27 @@ fn generate_results(
                 .map(move |sarif_violation| {
                     let violation = sarif_violation.get_violation();
                     // if we find the rule for this violation, get the id, level and category
-                    let location = LocationBuilder::default()
-                        .physical_location(
-                            PhysicalLocationBuilder::default()
-                                .artifact_location(artifact_loc.clone())
-                                .region(
-                                    RegionBuilder::default()
-                                        .start_line(violation.start.line)
-                                        .start_column(violation.start.col)
-                                        .end_line(violation.end.line)
-                                        .end_column(violation.end.col)
-                                        .build()?,
-                                )
-                                .build()?,
-                        )
-                        .build()?;
+                    let mut location_builder = LocationBuilder::default();
+                    location_builder.physical_location(
+                        PhysicalLocationBuilder::default()
+                            .artifact_location(artifact_loc.clone())
+                            .region(
+                                RegionBuilder::default()
+                                    .start_line(violation.start.line)
+                                    .start_column(violation.start.col)
+                                    .end_line(violation.end.line)
+                                    .end_column(violation.end.col)
+                                    .build()?,
+                            )
+                            .build()?,
+                    );
+                    if let Some(ref method) = violation.method_name {
+                        location_builder.logical_locations(vec![LogicalLocationBuilder::default()
+                            .name(method.clone())
+                            .kind("function".to_string())
+                            .build()?]);
+                    }
+                    let location = location_builder.build()?;
 
                     let fixes: Vec<sarif::Fix> = violation
                         .fixes
@@ -996,6 +1004,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
 
         // good location in the violation location and no fixes
@@ -1008,6 +1017,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
 
         // bad location in the fixes location
@@ -1028,6 +1038,7 @@ mod tests {
             }],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
 
         // good location everywhere
@@ -1048,6 +1059,7 @@ mod tests {
             }],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         }));
     }
 
@@ -1116,6 +1128,7 @@ mod tests {
             fixes: vec![],
             taint_flow: Some(vec![region0, region1, region2]),
             is_suppressed: false,
+            method_name: None,
         };
 
         let rule_result_single_region = RuleResultBuilder::default()
@@ -1956,6 +1969,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    method_name: None,
                 };
                 let rr = RuleResult {
                     rule_name: format!("rule-{idx}"),
@@ -2049,6 +2063,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            method_name: None,
         };
         let rule_results = [TEST_FILE_PATH, NON_TEST_FILE_PATH]
             .into_iter()
