@@ -9,6 +9,33 @@ pub mod javascript;
 pub mod python;
 pub mod typescript;
 
+use crate::model::common::Language;
+
+/// Returns the name of the innermost function or method enclosing the given source position
+/// for the specified language, or `None` if the position is not inside any named function or
+/// the language does not have a specific implementation.
+pub fn find_enclosing_function(
+    source_code: &str,
+    tree: &tree_sitter::Tree,
+    line: u32,
+    col: u32,
+    language: &Language,
+) -> Option<String> {
+    match language {
+        Language::Python => python::methods::find_enclosing_function(source_code, tree, line, col),
+        Language::Java => java::methods::find_enclosing_function(source_code, tree, line, col),
+        Language::Go => go::methods::find_enclosing_function(source_code, tree, line, col),
+        Language::JavaScript => {
+            javascript::methods::find_enclosing_function(source_code, tree, line, col)
+        }
+        Language::TypeScript => {
+            typescript::methods::find_enclosing_function(source_code, tree, line, col)
+        }
+        Language::Csharp => csharp::methods::find_enclosing_function(source_code, tree, line, col),
+        _ => None,
+    }
+}
+
 /// Returns the text that `node` spans.
 ///
 /// This is simply a wrapper around [`tree_sitter::Node::utf8_text`]
