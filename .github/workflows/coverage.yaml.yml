@@ -5,9 +5,17 @@ on: [pull_request, push]
 jobs:
   coverage:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # Needed by actions/checkout
+      id-token: write # Needed to federate tokens
     env:
       CARGO_TERM_COLOR: always
     steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75 # v1.0.0
+        with:
+          policy: datadog-static-analyzer
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
       - name: Install Rust
         run: rustup update stable
@@ -20,6 +28,6 @@ jobs:
           curl -L --fail "https://github.com/DataDog/datadog-ci/releases/latest/download/datadog-ci_linux-x64" --output "/usr/local/bin/datadog-ci" && chmod +x /usr/local/bin/datadog-ci
           /usr/local/bin/datadog-ci coverage upload lcov.info
         env:
-          DD_API_KEY: ${{ secrets.DD_API_KEY }}
-          DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
           DD_SITE: ${{ vars.DD_SITE }}

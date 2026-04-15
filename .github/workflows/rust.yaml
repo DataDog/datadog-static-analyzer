@@ -25,11 +25,18 @@ jobs:
             cargo_cmd: { cmd_name: fmt, args: '--check', gha_alias: "Rustfmt" }
     name: ${{ matrix.config.gha_alias }}${{ matrix.cargo_cmd.gha_alias }}
     runs-on: ${{ matrix.config.os }}
+    permissions:
+      contents: read # Needed by actions/checkout
+      id-token: write # Needed to federate tokens
     env:
-      DD_API_KEY: ${{ secrets.DD_API_KEY }}
-      DD_APP_KEY: ${{ secrets.DD_APP_KEY }}
       DD_SITE: ${{ vars.DD_SITE }}
     steps:
+      - name: Get Datadog credentials
+        id: dd-sts
+        uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75 # v1.0.0
+        with:
+          policy: datadog-static-analyzer
+      
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
@@ -51,10 +58,22 @@ jobs:
           git diff --exit-code Cargo.lock || (echo "::error::Lockfile is out of date. Please run 'cargo check' and commit the updated Cargo.lock file." && exit 1)
 
       - name: Check python rulesets - part1
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r python-best-practices -r python-security -r python-code-style -r python-inclusive
       - name: Check python rulesets - part2
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r python-django -r python-flask -r python-design
       - name: Check Java rulesets
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r java-security -r java-best-practices -r java-code-style
       - name: Check Docker rulesets
+        env:
+          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
+          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r docker-best-practices

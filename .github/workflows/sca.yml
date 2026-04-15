@@ -9,7 +9,15 @@ jobs:
   software-composition-analysis:
     runs-on: ubuntu-latest
     name: Datadog SBOM Generation and Upload
+    permissions:
+      contents: read # Needed by actions/checkout to read repository contents
+      id-token: write # Needed to federate tokens
     steps:
+    - name: Get Datadog credentials
+      id: dd-sts
+      uses: DataDog/dd-sts-action@2e8187910199bd93129520183c093e19aa585c75 # v1.0.0
+      with:
+        policy: datadog-static-analyzer
     - name: Checkout
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
     - uses: ./.github/actions/set-up-rust
@@ -25,7 +33,7 @@ jobs:
       id: software-composition-analysis
       uses: DataDog/datadog-sca-github-action@2cc1486ee1b07318ba608b86e40d124efa76ddb5 # main
       with:
-        dd_api_key: ${{ secrets.DD_API_KEY }}
-        dd_app_key: ${{ secrets.DD_APP_KEY }}
+        dd_api_key: ${{ steps.dd-sts.outputs.api_key }}
+        dd_app_key: ${{ steps.dd-sts.outputs.app_key }}
         dd_site: ${{ vars.DD_SITE }}
 
