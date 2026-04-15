@@ -14,7 +14,29 @@ use crate::model::common::Language;
 /// Returns the name of the innermost function or method enclosing the given source position
 /// for the specified language, or `None` if the position is not inside any named function or
 /// the language does not have a specific implementation.
+///
+/// This function parses the source code from scratch.
+/// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
 pub fn find_enclosing_function(
+    source_code: &str,
+    line: u32,
+    col: u32,
+    language: &Language,
+) -> Option<String> {
+    match language {
+        Language::Python => python::methods::find_enclosing_function(source_code, line, col),
+        Language::Java => java::methods::find_enclosing_function(source_code, line, col),
+        Language::Go => go::methods::find_enclosing_function(source_code, line, col),
+        Language::JavaScript => javascript::methods::find_enclosing_function(source_code, line, col),
+        Language::TypeScript => typescript::methods::find_enclosing_function(source_code, line, col),
+        Language::Csharp => csharp::methods::find_enclosing_function(source_code, line, col),
+        _ => None,
+    }
+}
+
+/// Returns the name of the innermost function or method enclosing the given source position,
+/// reusing an already-parsed tree. See [`find_enclosing_function`] for documentation.
+pub fn find_enclosing_function_with_tree(
     source_code: &str,
     tree: &tree_sitter::Tree,
     line: u32,
@@ -22,16 +44,24 @@ pub fn find_enclosing_function(
     language: &Language,
 ) -> Option<String> {
     match language {
-        Language::Python => python::methods::find_enclosing_function(source_code, tree, line, col),
-        Language::Java => java::methods::find_enclosing_function(source_code, tree, line, col),
-        Language::Go => go::methods::find_enclosing_function(source_code, tree, line, col),
+        Language::Python => {
+            python::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+        }
+        Language::Java => {
+            java::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+        }
+        Language::Go => {
+            go::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+        }
         Language::JavaScript => {
-            javascript::methods::find_enclosing_function(source_code, tree, line, col)
+            javascript::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
         }
         Language::TypeScript => {
-            typescript::methods::find_enclosing_function(source_code, tree, line, col)
+            typescript::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
         }
-        Language::Csharp => csharp::methods::find_enclosing_function(source_code, tree, line, col),
+        Language::Csharp => {
+            csharp::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+        }
         _ => None,
     }
 }

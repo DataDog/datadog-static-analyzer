@@ -201,7 +201,7 @@ impl JsRuntime {
             .into_iter()
             .map(|v| v.into_violation(rule.severity, rule.category))
             .map(|mut v| {
-                v.method_name = analysis::languages::find_enclosing_function(
+                v.method_name = analysis::languages::find_enclosing_function_with_tree(
                     source_text.as_ref(),
                     source_tree.as_ref(),
                     v.start.line,

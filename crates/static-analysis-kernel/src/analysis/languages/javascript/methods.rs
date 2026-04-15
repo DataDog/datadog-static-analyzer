@@ -3,9 +3,21 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::languages::ts_node_text;
+use crate::analysis::tree_sitter::get_tree;
+use crate::model::common::Language;
 
 /// Returns the name of the innermost function or method enclosing the given source position,
 /// or `None` if the position is not inside any named function.
+///
+/// This function parses the source code from scratch.
+/// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
+pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<String> {
+    get_tree(source_code, &Language::JavaScript)
+        .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
+}
+
+/// Returns the name of the innermost function or method enclosing the given source position.
+/// See [`find_enclosing_function`] for documentation.
 ///
 /// Handles:
 /// - `function foo() {}` → `"foo"`
@@ -14,7 +26,7 @@ use crate::analysis::languages::ts_node_text;
 /// - `const foo = () => {}` → `"foo"` (name from the variable declarator)
 /// - `const foo = function bar() {}` → `"bar"` (explicit name takes priority)
 /// - Anonymous functions and arrow functions not assigned to a variable → `None`
-pub fn find_enclosing_function(
+pub fn find_enclosing_function_with_tree(
     source_code: &str,
     tree: &tree_sitter::Tree,
     line: u32,
@@ -78,13 +90,13 @@ fn name_from_variable_declarator_parent<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::find_enclosing_function;
+    use super::{find_enclosing_function, find_enclosing_function_with_tree};
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
 
     fn find(source: &str, line: u32, col: u32) -> Option<String> {
         let tree = get_tree(source, &Language::JavaScript).unwrap();
-        find_enclosing_function(source, &tree, line, col)
+        find_enclosing_function_with_tree(source, &tree, line, col)
     }
 
     #[test]
