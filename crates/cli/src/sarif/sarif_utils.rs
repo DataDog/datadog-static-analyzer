@@ -1311,6 +1311,101 @@ mod tests {
         assert!(validate_data(&sarif_report_to_string));
     }
 
+    #[test]
+    fn test_generate_sarif_report_logical_location() {
+        let rule = RuleBuilder::default()
+            .name("my-rule".to_string())
+            .description_base64(None)
+            .language(Language::Python)
+            .checksum("abc".to_string())
+            .pattern(None)
+            .tree_sitter_query_base64(None)
+            .category(RuleCategory::BestPractices)
+            .code_base64("Zm9v".to_string())
+            .short_description_base64(None)
+            .entity_checked(None)
+            .rule_type(RuleType::TreeSitterQuery)
+            .severity(RuleSeverity::Error)
+            .cwe(None)
+            .arguments(vec![])
+            .tests(vec![])
+            .is_testing(false)
+            .documentation_url(None)
+            .build()
+            .unwrap();
+
+        let violation_with_method = Violation {
+            start: Position { line: 10, col: 1 },
+            end: Position { line: 10, col: 20 },
+            message: "some violation".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+            method_name: Some("my_method".to_string()),
+        };
+        let violation_without_method = Violation {
+            start: Position { line: 20, col: 1 },
+            end: Position { line: 20, col: 5 },
+            message: "another violation".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+            method_name: None,
+        };
+
+        let rule_result = RuleResult {
+            rule_name: "my-rule".to_string(),
+            filename: "myfile.py".to_string(),
+            violations: vec![violation_with_method, violation_without_method],
+            errors: vec![],
+            execution_error: None,
+            output: None,
+            execution_time_ms: 0,
+            parsing_time_ms: 0,
+            query_node_time_ms: 0,
+        };
+
+        let sarif_report = generate_sarif_report(
+            &[rule.into()],
+            &[rule_result.try_into().unwrap()],
+            &"mydir".to_string(),
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "abc".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 0,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+
+        // Violation with method_name: logicalLocations must be present with kind and name.
+        let logical_locations = sarif_json
+            .pointer("/runs/0/results/0/locations/0/logicalLocations")
+            .expect("logicalLocations should be present when method_name is set");
+        assert_json_include!(
+            actual: logical_locations,
+            expected: serde_json::json!([{"kind": "function", "name": "my_method"}])
+        );
+
+        // Violation without method_name: no logicalLocations key at all.
+        let no_logical_locations = sarif_json
+            .pointer("/runs/0/results/1/locations/0/logicalLocations");
+        assert!(
+            no_logical_locations.is_none(),
+            "logicalLocations should be absent when method_name is None"
+        );
+
+        assert!(validate_data(&sarif_json));
+    }
+
     // Ensure that diff-aware scanning information are correctly surfaced
     #[test]
     fn test_generate_sarif_diff_aware_scanning() {
