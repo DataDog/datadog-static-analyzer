@@ -66,6 +66,54 @@ pub fn find_enclosing_function_with_tree(
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::model::common::{Language, ALL_LANGUAGES};
+
+    // Languages with an enclosing-function implementation in this module.
+    const SUPPORTED: &[Language] = &[
+        Language::Python,
+        Language::Java,
+        Language::Go,
+        Language::JavaScript,
+        Language::TypeScript,
+        Language::Csharp,
+    ];
+
+    // Languages that intentionally have no implementation yet.
+    // When adding a new language to the analyzer, add it here (no detection) or to
+    // SUPPORTED (detection implemented) — leaving it out causes this test to fail.
+    const NOT_IMPLEMENTED: &[Language] = &[
+        Language::Dockerfile,
+        Language::Elixir,
+        Language::Json,
+        Language::Kotlin,
+        Language::Ruby,
+        Language::Rust,
+        Language::Swift,
+        Language::Terraform,
+        Language::Yaml,
+        Language::Starlark,
+        Language::Bash,
+        Language::PHP,
+        Language::Markdown,
+        Language::Apex,
+        Language::R,
+        Language::SQL,
+    ];
+
+    #[test]
+    fn all_languages_accounted_for() {
+        for lang in ALL_LANGUAGES {
+            assert!(
+                SUPPORTED.contains(lang) || NOT_IMPLEMENTED.contains(lang),
+                "{lang:?} is not listed in SUPPORTED or NOT_IMPLEMENTED — \
+                 either add enclosing-function detection for it or add it to NOT_IMPLEMENTED"
+            );
+        }
+    }
+}
+
 /// Returns the text that `node` spans.
 ///
 /// This is simply a wrapper around [`tree_sitter::Node::utf8_text`]
