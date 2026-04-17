@@ -800,7 +800,7 @@ dependencies = [
 [[package]]
 name = "dd-sds"
 version = "0.1.2"
-source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=485df55c5bfd51036386aa3bb37336ec38e828fb#485df55c5bfd51036386aa3bb37336ec38e828fb"
+source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=5ccd2861b8daca861bc8409999b46710ff9bd910#5ccd2861b8daca861bc8409999b46710ff9bd910"
 dependencies = [
  "ahash",
  "aws-sign-v4",
