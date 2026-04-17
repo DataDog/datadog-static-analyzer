@@ -4,3 +4,4 @@
 
 mod using_directives;
 pub use using_directives::*;
+pub mod methods;
