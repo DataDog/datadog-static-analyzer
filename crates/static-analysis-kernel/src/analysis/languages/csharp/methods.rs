@@ -125,7 +125,7 @@ fn extract_param_types(source_code: &str, params_node: tree_sitter::Node) -> Vec
 
 #[cfg(test)]
 mod tests {
-    use super::{find_enclosing_function, find_enclosing_function_with_tree};
+    use super::find_enclosing_function_with_tree;
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
     use crate::model::violation::EnclosingFunction;

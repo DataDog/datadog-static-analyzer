@@ -974,7 +974,7 @@ mod tests {
     use super::*;
     use assert_json_diff::{assert_json_eq, assert_json_include};
     use common::model::position::{Position, PositionBuilder, Region};
-    use kernel::model::violation::{Fix, Violation};
+    use kernel::model::violation::{EnclosingFunction, Fix, Violation};
     use kernel::model::{
         common::Language,
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},

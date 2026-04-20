@@ -96,7 +96,7 @@ fn enclosing_function_from_declarator_parent(
 
 #[cfg(test)]
 mod tests {
-    use super::{find_enclosing_function, find_enclosing_function_with_tree};
+    use super::find_enclosing_function_with_tree;
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
     use crate::model::violation::EnclosingFunction;
