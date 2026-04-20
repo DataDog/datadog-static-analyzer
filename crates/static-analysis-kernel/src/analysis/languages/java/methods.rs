@@ -9,6 +9,22 @@ use crate::analysis::tree_sitter::get_tree;
 use crate::model::common::Language;
 use crate::model::violation::EnclosingFunction;
 
+/// Per-file data that is expensive to compute and reused across violations in the same source.
+pub struct JavaFileContext {
+    package: Option<String>,
+    import_map: HashMap<String, String>,
+}
+
+impl JavaFileContext {
+    pub fn new(source_code: &str, tree: &tree_sitter::Tree) -> Self {
+        let root = tree.root_node();
+        Self {
+            package: find_package(source_code, root),
+            import_map: build_import_map(source_code, root),
+        }
+    }
+}
+
 /// Returns the enclosing method or constructor for the given source position, or `None` if the
 /// position is not inside any method.
 ///
@@ -32,11 +48,28 @@ pub fn find_enclosing_function(
 /// Types are resolved to fully qualified names using the file's import declarations.
 /// Types from `java.lang` (String, Integer, etc.) are always resolved. Types only
 /// reachable via wildcard imports are returned as simple names.
+///
+/// When called repeatedly for violations in the same file, prefer
+/// [`find_enclosing_function_with_context`] to avoid re-scanning the file for
+/// package and import declarations on every call.
 pub fn find_enclosing_function_with_tree(
     source_code: &str,
     tree: &tree_sitter::Tree,
     line: u32,
     col: u32,
+) -> Option<EnclosingFunction> {
+    let ctx = JavaFileContext::new(source_code, tree);
+    find_enclosing_function_with_context(source_code, tree, line, col, &ctx)
+}
+
+/// Like [`find_enclosing_function_with_tree`] but reuses a [`JavaFileContext`] that was
+/// precomputed once for the file, avoiding repeated scans for the package and import map.
+pub fn find_enclosing_function_with_context(
+    source_code: &str,
+    tree: &tree_sitter::Tree,
+    line: u32,
+    col: u32,
+    ctx: &JavaFileContext,
 ) -> Option<EnclosingFunction> {
     let point = tree_sitter::Point {
         row: line.saturating_sub(1) as usize,
@@ -51,7 +84,7 @@ pub fn find_enclosing_function_with_tree(
                 let name = node
                     .child_by_field_name("name")
                     .map(|n| ts_node_text(source_code, n).to_owned())?;
-                let fully_qualified_name = build_fqn(source_code, tree, node, &name);
+                let fully_qualified_name = build_fqn(source_code, ctx, node, &name);
                 return Some(EnclosingFunction {
                     name,
                     fully_qualified_name,
@@ -69,12 +102,10 @@ pub fn find_enclosing_function_with_tree(
 /// Constructors have no return type and omit the `:ReturnType` suffix.
 fn build_fqn(
     source_code: &str,
-    tree: &tree_sitter::Tree,
+    ctx: &JavaFileContext,
     method_node: tree_sitter::Node,
     method_name: &str,
 ) -> String {
-    let root = tree.root_node();
-    let package = find_package(source_code, root);
     let class_kinds = &[
         "class_declaration",
         "interface_declaration",
@@ -82,24 +113,23 @@ fn build_fqn(
     ];
     let class_name = enclosing_class_name(source_code, method_node, class_kinds);
 
-    let fqn_class = match (package.as_deref(), class_name) {
+    let fqn_class = match (ctx.package.as_deref(), class_name) {
         (Some(pkg), Some(cls)) => format!("{pkg}.{cls}"),
         (None, Some(cls)) => cls.to_string(),
         (Some(pkg), None) => pkg.to_string(),
         (None, None) => String::new(),
     };
 
-    let import_map = build_import_map(source_code, root);
-    let pkg = package.as_deref();
+    let pkg = ctx.package.as_deref();
 
     // method_declaration has a `type` field; constructor_declaration does not.
     let return_type = method_node
         .child_by_field_name("type")
-        .map(|t| resolve_type(source_code, t, &import_map, pkg));
+        .map(|t| resolve_type(source_code, t, &ctx.import_map, pkg));
 
     let param_types = method_node
         .child_by_field_name("parameters")
-        .map(|p| extract_param_types(source_code, p, &import_map, pkg))
+        .map(|p| extract_param_types(source_code, p, &ctx.import_map, pkg))
         .unwrap_or_default();
 
     let params_str = param_types.join(", ");
