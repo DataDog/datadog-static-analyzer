@@ -70,6 +70,9 @@ pub fn find_enclosing_function(
         Language::JavaScript => {
             javascript::methods::find_enclosing_function(source_code, line, col)
         }
+        Language::TypeScript => {
+            typescript::methods::find_enclosing_function(source_code, line, col)
+        }
         _ => None,
     }
 }
@@ -95,6 +98,9 @@ pub fn find_enclosing_function_with_tree(
         }
         Language::JavaScript => {
             javascript::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+        }
+        Language::TypeScript => {
+            typescript::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
         }
         _ => None,
     }
@@ -140,13 +146,13 @@ mod tests {
         Language::Go,
         Language::Python,
         Language::JavaScript,
+        Language::TypeScript,
     ];
 
     // Languages that intentionally have no implementation yet.
     // When adding a new language to the analyzer, add it here (no detection) or to
     // SUPPORTED (detection implemented) — leaving it out causes this test to fail.
     const NOT_IMPLEMENTED: &[Language] = &[
-        Language::TypeScript,
         Language::Csharp,
         Language::Dockerfile,
         Language::Elixir,
