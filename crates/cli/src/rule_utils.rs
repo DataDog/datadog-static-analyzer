@@ -81,6 +81,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
                 fixes: vec![],
                 taint_flow: None,
                 is_suppressed: v.is_suppressed,
+                enclosing_function: None,
             })
             .collect(),
     }
@@ -163,6 +164,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    enclosing_function: None,
                 },
                 Violation {
                     start: Position { line: 10, col: 12 },
@@ -173,6 +175,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    enclosing_function: None,
                 },
                 Violation {
                     start: Position { line: 10, col: 12 },
@@ -183,6 +186,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    enclosing_function: None,
                 },
             ],
             errors: vec![],
@@ -227,6 +231,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    enclosing_function: None,
                 },
                 Violation {
                     start: Position { line: 20, col: 1 },
@@ -237,6 +242,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: true,
+                    enclosing_function: None,
                 },
             ],
             errors: vec![],
