@@ -65,6 +65,7 @@ pub fn find_enclosing_function(
 ) -> Option<EnclosingFunction> {
     match language {
         Language::Java => java::methods::find_enclosing_function(source_code, line, col),
+        Language::Go => go::methods::find_enclosing_function(source_code, line, col),
         _ => None,
     }
 }
@@ -81,6 +82,9 @@ pub fn find_enclosing_function_with_tree(
     match language {
         Language::Java => {
             java::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+        }
+        Language::Go => {
+            go::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
         }
         _ => None,
     }
@@ -121,14 +125,13 @@ mod tests {
     use crate::model::common::{Language, ALL_LANGUAGES};
 
     // Languages with an enclosing-function implementation in this module.
-    const SUPPORTED: &[Language] = &[Language::Java];
+    const SUPPORTED: &[Language] = &[Language::Java, Language::Go];
 
     // Languages that intentionally have no implementation yet.
     // When adding a new language to the analyzer, add it here (no detection) or to
     // SUPPORTED (detection implemented) — leaving it out causes this test to fail.
     const NOT_IMPLEMENTED: &[Language] = &[
         Language::Python,
-        Language::Go,
         Language::JavaScript,
         Language::TypeScript,
         Language::Csharp,
