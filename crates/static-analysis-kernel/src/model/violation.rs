@@ -9,8 +9,12 @@ use serde::{Deserialize, Serialize};
 pub struct EnclosingFunction {
     /// Simple identifier (e.g. `handle`, `doSomething`).
     pub name: String,
-    /// Service-definition qualified name: `ClassName.methodName` when the function belongs to a
-    /// class or struct, or just `methodName` for top-level functions.
+    /// Language-specific fully-qualified function or method signature. The format varies by language:
+    ///
+    /// - **Java**: `package.ClassName#methodName(ParamType1, ParamType2):ReturnType`
+    /// - **Go**: `package.FunctionName` / `package.TypeName.MethodName`
+    /// - **Python / JS / TS**: `ClassName.methodName` for methods, `functionName` for top-level functions
+    /// - **C#**: `Namespace.ClassName.MethodName(ParamType1, ParamType2)`
     pub fully_qualified_name: String,
 }
 
