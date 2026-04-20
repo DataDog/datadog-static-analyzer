@@ -3,6 +3,7 @@
 mod configuration_file;
 use rocket::Route;
 
+#[allow(deprecated)]
 pub fn ide_routes() -> Vec<Route> {
     rocket::routes![
         configuration_file::endpoints::post_ignore_rule,
@@ -10,6 +11,7 @@ pub fn ide_routes() -> Vec<Route> {
         configuration_file::endpoints::post_can_onboard_v2,
         configuration_file::endpoints::get_get_rulesets,
         configuration_file::endpoints::post_get_rulesets_v2,
+        configuration_file::endpoints::post_parse_config,
         configuration_file::endpoints::post_add_rulesets,
         configuration_file::endpoints::post_add_rulesets_v2,
     ]
@@ -261,7 +263,7 @@ rulesets:
             ))
             .header(ContentType::JSON)
             .body(format!(
-                r#"{{ 
+                r#"{{
                 "configuration": "{config}"
             }}"#
             ))
@@ -271,6 +273,92 @@ rulesets:
 
         assert_eq!(response.status(), Status::Ok);
         assert_eq!(response.into_string().unwrap(), expected);
+    }
+
+    /// Legacy contract: the deprecated v1 route must return `[]` with HTTP 200
+    /// on an unparseable config instead of surfacing a 500. Older IDE clients
+    /// rely on this best-effort behavior.
+    #[test]
+    fn get_rulesets_v1_returns_empty_on_parse_error() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+        let config = encode_base64_string(PARSE_ERROR_CONFIGURATION.to_string());
+
+        let uri = uri!(super::configuration_file::endpoints::get_get_rulesets(
+            PathBuf::from(config)
+        ));
+
+        let response = client.get(uri).dispatch();
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.into_string().unwrap(), "[]");
+    }
+
+    /// Legacy contract: the deprecated v2 route must return `[]` with HTTP 200
+    /// on an unparseable config instead of surfacing a 500. Older IDE clients
+    /// rely on this best-effort behavior.
+    #[test]
+    fn get_rulesets_v2_returns_empty_on_parse_error() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+        let config = encode_base64_string(PARSE_ERROR_CONFIGURATION.to_string());
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_get_rulesets_v2
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{
+                "configuration": "{config}"
+            }}"#
+            ))
+            .dispatch();
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.into_string().unwrap(), "[]");
+    }
+
+    #[test]
+    fn parse_config_returns_sast_rulesets() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_parse_config
+            ))
+            .header(ContentType::JSON)
+            .body(
+                serde_json::json!({
+                    "configuration": NORMAL_CONFIGURATION,
+                })
+                .to_string(),
+            )
+            .dispatch();
+
+        let expected = r#"{"sast":{"rulesets":["java-1","java-security"]}}"#;
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.into_string().unwrap(), expected);
+    }
+
+    #[test]
+    fn parse_config_returns_error_on_parse_failure() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_parse_config
+            ))
+            .header(ContentType::JSON)
+            .body(
+                serde_json::json!({
+                    "configuration": PARSE_ERROR_CONFIGURATION,
+                })
+                .to_string(),
+            )
+            .dispatch();
+
+        assert_eq!(response.status(), Status::InternalServerError);
+        assert!(response.into_string().contains("Error parsing yaml file"));
     }
 
     #[test]
