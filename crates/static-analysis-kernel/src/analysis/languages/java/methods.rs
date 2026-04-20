@@ -132,7 +132,7 @@ fn build_import_map(source_code: &str, root: tree_sitter::Node) -> HashMap<Strin
         if body.starts_with("static ") || body.ends_with('*') {
             continue;
         }
-        let simple_name = body.split('.').last().unwrap_or("").to_string();
+        let simple_name = body.split('.').next_back().unwrap_or("").to_string();
         if !simple_name.is_empty() {
             map.insert(simple_name, body.to_string());
         }
