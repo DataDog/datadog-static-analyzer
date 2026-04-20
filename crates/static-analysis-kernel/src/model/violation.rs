@@ -4,6 +4,16 @@ use common::model::position::{Position, Region};
 use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
+/// The function or method that encloses a violation.
+#[derive(Deserialize, Debug, Serialize, Clone, PartialEq)]
+pub struct EnclosingFunction {
+    /// Simple identifier (e.g. `handle`, `doSomething`).
+    pub name: String,
+    /// Service-definition qualified name: `ClassName.methodName` when the function belongs to a
+    /// class or struct, or just `methodName` for top-level functions.
+    pub fully_qualified_name: String,
+}
+
 #[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub enum EditType {
     #[serde(rename = "ADD")]
@@ -42,8 +52,8 @@ pub struct Violation {
     #[serde(default)]
     #[builder(default)]
     pub is_suppressed: bool,
-    /// The name of the method or function enclosing this violation, if any.
+    /// The function or method enclosing this violation, if any.
     #[serde(default)]
     #[builder(default)]
-    pub method_name: Option<String>,
+    pub enclosing_function: Option<EnclosingFunction>,
 }

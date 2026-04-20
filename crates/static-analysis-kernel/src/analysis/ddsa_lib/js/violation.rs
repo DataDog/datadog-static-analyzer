@@ -55,7 +55,7 @@ impl Violation<Instance> {
             fixes,
             taint_flow,
             is_suppressed: false,
-            method_name: None,
+            enclosing_function: None,
         }
     }
 }

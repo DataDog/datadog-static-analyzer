@@ -2,36 +2,36 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::languages::ts_node_text;
+use crate::analysis::languages::{enclosing_class_name, ts_node_text};
 use crate::analysis::tree_sitter::get_tree;
 use crate::model::common::Language;
+use crate::model::violation::EnclosingFunction;
 
-/// Returns the name of the innermost function or method enclosing the given source position,
-/// or `None` if the position is not inside any named function.
+/// Returns the enclosing function or method for the given source position, or `None` if the
+/// position is not inside any named function.
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
-pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<String> {
+pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
     get_tree(source_code, &Language::JavaScript)
         .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
 }
 
-/// Returns the name of the innermost function or method enclosing the given source position.
+/// Returns the enclosing function or method for the given source position.
 /// See [`find_enclosing_function`] for documentation.
 ///
-/// Handles:
-/// - `function foo() {}` → `"foo"`
-/// - `class C { foo() {} }` → `"foo"`
-/// - `const foo = function() {}` → `"foo"` (name from the variable declarator)
-/// - `const foo = () => {}` → `"foo"` (name from the variable declarator)
-/// - `const foo = function bar() {}` → `"bar"` (explicit name takes priority)
-/// - Anonymous functions and arrow functions not assigned to a variable → `None`
+/// The `fullyQualifiedName` follows the JavaScript/V8 convention:
+///   - Top-level function: `functionName`
+///   - Class instance method: `ClassName.methodName`
+///   - Class static method: `ClassName.methodName`
+///   - Arrow/anonymous function assigned to a variable: `variableName`
+///   - Anonymous functions not assigned to a variable → `None`
 pub fn find_enclosing_function_with_tree(
     source_code: &str,
     tree: &tree_sitter::Tree,
     line: u32,
     col: u32,
-) -> Option<String> {
+) -> Option<EnclosingFunction> {
     let point = tree_sitter::Point {
         row: line.saturating_sub(1) as usize,
         column: col.saturating_sub(1) as usize,
@@ -42,30 +42,39 @@ pub fn find_enclosing_function_with_tree(
     loop {
         match node.kind() {
             "function_declaration" | "generator_function_declaration" => {
-                return node
+                let name = node
                     .child_by_field_name("name")
-                    .map(|n| ts_node_text(source_code, n).to_owned());
+                    .map(|n| ts_node_text(source_code, n).to_owned())?;
+                let fully_qualified_name = name.clone();
+                return Some(EnclosingFunction { name, fully_qualified_name });
             }
             "method_definition" => {
-                // Class method: `foo() {}` or `async foo() {}`
-                return node
+                let name = node
                     .child_by_field_name("name")
-                    .map(|n| ts_node_text(source_code, n).to_owned());
+                    .map(|n| ts_node_text(source_code, n).to_owned())?;
+                let class_kinds = &["class_declaration", "class_expression"];
+                let fully_qualified_name =
+                    match enclosing_class_name(source_code, node, class_kinds) {
+                        Some(cls) => format!("{cls}.{name}"),
+                        None => name.clone(),
+                    };
+                return Some(EnclosingFunction { name, fully_qualified_name });
             }
-            // tree-sitter-javascript uses "function" for both anonymous function expressions
-            // (`const f = function() {}`) and named function expressions (`const f = function g() {}`).
-            // "function_declaration" is used only for statement-level `function foo() {}`.
+            // tree-sitter-javascript uses "function" for both anonymous and named function
+            // expressions. "function_declaration" is used only for statement-level `function foo() {}`.
             "function" | "generator_function" => {
-                // Named function expression: `const x = function myName() {}`
                 if let Some(name_node) = node.child_by_field_name("name") {
-                    return Some(ts_node_text(source_code, name_node).to_owned());
+                    // Named function expression: `const x = function myName() {}`
+                    let name = ts_node_text(source_code, name_node).to_owned();
+                    let fully_qualified_name = name.clone();
+                    return Some(EnclosingFunction { name, fully_qualified_name });
                 }
                 // Anonymous function assigned to a variable: `const foo = function() {}`
-                return name_from_variable_declarator_parent(source_code, node);
+                return enclosing_function_from_declarator_parent(source_code, node);
             }
             "arrow_function" => {
                 // Arrow function assigned to a variable: `const foo = () => {}`
-                return name_from_variable_declarator_parent(source_code, node);
+                return enclosing_function_from_declarator_parent(source_code, node);
             }
             _ => {}
         }
@@ -73,16 +82,17 @@ pub fn find_enclosing_function_with_tree(
     }
 }
 
-/// If `node`'s parent is a `variable_declarator`, returns the declarator's name.
-fn name_from_variable_declarator_parent<'a>(
-    source_code: &'a str,
-    node: tree_sitter::Node<'a>,
-) -> Option<String> {
+/// If `node`'s parent is a `variable_declarator`, returns an `EnclosingFunction` whose name and
+/// `fullyQualifiedName` are taken from the declarator's variable name.
+fn enclosing_function_from_declarator_parent(
+    source_code: &str,
+    node: tree_sitter::Node,
+) -> Option<EnclosingFunction> {
     let parent = node.parent()?;
     if parent.kind() == "variable_declarator" {
-        parent
-            .child_by_field_name("name")
-            .map(|n| ts_node_text(source_code, n).to_owned())
+        let name = ts_node_text(source_code, parent.child_by_field_name("name")?).to_owned();
+        let fully_qualified_name = name.clone();
+        Some(EnclosingFunction { name, fully_qualified_name })
     } else {
         None
     }
@@ -93,10 +103,15 @@ mod tests {
     use super::{find_enclosing_function, find_enclosing_function_with_tree};
     use crate::analysis::tree_sitter::get_tree;
     use crate::model::common::Language;
+    use crate::model::violation::EnclosingFunction;
 
-    fn find(source: &str, line: u32, col: u32) -> Option<String> {
+    fn find(source: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
         let tree = get_tree(source, &Language::JavaScript).unwrap();
         find_enclosing_function_with_tree(source, &tree, line, col)
+    }
+
+    fn ef(name: &str, sig: &str) -> Option<EnclosingFunction> {
+        Some(EnclosingFunction { name: name.to_string(), fully_qualified_name: sig.to_string() })
     }
 
     #[test]
@@ -106,7 +121,7 @@ function greet() {
     const x = 1;
 }
 ";
-        assert_eq!(find(src, 2, 5), Some("greet".to_string()));
+        assert_eq!(find(src, 2, 5), ef("greet", "greet"));
     }
 
     #[test]
@@ -118,7 +133,7 @@ class MyClass {
     }
 }
 ";
-        assert_eq!(find(src, 3, 9), Some("compute".to_string()));
+        assert_eq!(find(src, 3, 9), ef("compute", "MyClass.compute"));
     }
 
     #[test]
@@ -128,7 +143,7 @@ const handleEvent = () => {
     const x = 1;
 };
 ";
-        assert_eq!(find(src, 2, 5), Some("handleEvent".to_string()));
+        assert_eq!(find(src, 2, 5), ef("handleEvent", "handleEvent"));
     }
 
     #[test]
@@ -138,7 +153,7 @@ const process = function() {
     const x = 1;
 };
 ";
-        assert_eq!(find(src, 2, 5), Some("process".to_string()));
+        assert_eq!(find(src, 2, 5), ef("process", "process"));
     }
 
     #[test]
@@ -148,7 +163,7 @@ const x = function myFn() {
     const y = 1;
 };
 ";
-        assert_eq!(find(src, 2, 5), Some("myFn".to_string()));
+        assert_eq!(find(src, 2, 5), ef("myFn", "myFn"));
     }
 
     #[test]
