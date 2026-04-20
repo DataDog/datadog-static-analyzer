@@ -25,9 +25,7 @@ pub enum LanguageFileContext {
 impl LanguageFileContext {
     pub fn new(source_code: &str, tree: &tree_sitter::Tree, language: &Language) -> Self {
         match language {
-            Language::Java => {
-                Self::Java(java::methods::JavaFileContext::new(source_code, tree))
-            }
+            Language::Java => Self::Java(java::methods::JavaFileContext::new(source_code, tree)),
             lang => Self::Other(*lang),
         }
     }
@@ -40,10 +38,16 @@ impl LanguageFileContext {
         col: u32,
     ) -> Option<EnclosingFunction> {
         match self {
-            Self::Java(ctx) => {
-                java::methods::find_enclosing_function_with_context(source_code, tree, line, col, ctx)
+            Self::Java(ctx) => java::methods::find_enclosing_function_with_context(
+                source_code,
+                tree,
+                line,
+                col,
+                ctx,
+            ),
+            Self::Other(lang) => {
+                find_enclosing_function_with_tree(source_code, tree, line, col, lang)
             }
-            Self::Other(lang) => find_enclosing_function_with_tree(source_code, tree, line, col, lang),
         }
     }
 }
