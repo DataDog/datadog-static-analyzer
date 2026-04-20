@@ -38,12 +38,32 @@ impl From<file_legacy::ConfigFile> for StaticAnalysisConfigFile {
     }
 }
 
+/// Soft deprecated, used for when older routes still pass Base64 encoded configuration file
+///
+#[derive(Debug)]
+pub struct Base64String(pub String);
+
+impl TryFrom<Base64String> for StaticAnalysisConfigFile {
+    type Error = ConfigFileError;
+
+    fn try_from(base64_str: Base64String) -> Result<Self, Self::Error> {
+        let decoded = decode_base64_string(base64_str.0)?;
+        StaticAnalysisConfigFile::try_from(decoded)
+    }
+}
+
 impl TryFrom<String> for StaticAnalysisConfigFile {
     type Error = ConfigFileError;
 
-    fn try_from(base64_str: String) -> Result<Self, Self::Error> {
+    fn try_from(content: String) -> Result<Self, Self::Error> {
+        Self::from_yaml_content(content)
+    }
+}
+
+impl StaticAnalysisConfigFile {
+    /// Parses a raw YAML configuration string (not base64-encoded) into a [`StaticAnalysisConfigFile`].
+    fn from_yaml_content(content: String) -> Result<Self, ConfigFileError> {
         use serde::de::Error;
-        let content = decode_base64_string(base64_str)?;
         if content.trim().is_empty() {
             return Ok(Self::default());
         }
@@ -104,47 +124,7 @@ impl StaticAnalysisConfigFile {
     /// # Parameters
     ///
     /// * `rule`: The rule to be ignored.
-    /// * `config_content_base64`: The base64-encoded content of the static analysis configuration file.
     ///
-    /// # Returns
-    ///
-    /// If successful, this function returns a `Result` containing a `String`. The `String` is the updated content of the static analysis configuration file with the specified rule ignored. If the `config_content_base64` is `None`. A default `StaticAnalysisConfigFile` will be used.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error of type `ConfigFileError` if:
-    ///
-    /// * The `config_content_base64` string cannot be base64-decoded.
-    /// * The decoded content cannot be parsed as a static analysis configuration file.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// let rule = "RULE_TO_IGNORE".into();
-    /// let config_content_base64 = kernel::utils::encode_base64_string("...".to_string());
-    /// let result = StaticAnalysisConfigFile::with_ignored_rule(rule, config_content_base64);
-    /// match result {
-    ///     Ok(updated_config) => println!("Updated config: {}", updated_config),
-    ///     Err(e) => eprintln!("Error: {}", e),
-    /// }
-    /// ```
-    #[instrument]
-    pub fn with_ignored_rule(
-        rule: Cow<str>,
-        config_content_base64: String,
-    ) -> Result<String, ConfigFileError> {
-        let mut config = Self::try_from(config_content_base64).map_err(|e| {
-            tracing::error!(error =?e, "Error trying to parse config file");
-            e
-        })?;
-
-        config.ignore_rule(rule);
-        config.to_string().map_err(|e| {
-            tracing::error!(error =?e, "Error trying to serializing config file");
-            e
-        })
-    }
-
     #[instrument(skip(self))]
     pub fn ignore_rule(&mut self, rule: Cow<str>) {
         let Some((ruleset_name, rule_name)) = rule.split_once('/') else {
@@ -185,55 +165,8 @@ impl StaticAnalysisConfigFile {
         }
     }
 
-    /// Adds new rulesets to the static analysis configuration file.
-    ///
-    /// # Parameters
-    ///
-    /// * `rulesets`: A slice of strings, where each string is a ruleset to be added.
-    /// * `config_content_base64`: The base64-encoded content of the static analysis configuration file. This is optional.
-    ///
-    /// # Returns
-    ///
-    /// If successful, this function returns a `Result` containing a `String`. The `String` is the updated content of the static analysis configuration file with the new rulesets added.
-    ///
-    /// # Errors
-    ///
-    /// This function will return an error of type `ConfigFileError` if:
-    ///
-    /// * The `config_content_base64` string cannot be base64-decoded.
-    /// * The decoded content cannot be parsed as a static analysis configuration file.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// let rulesets = vec!["RULESET_TO_ADD".to_string()];
-    /// let config_content_base64 = kernel::utils::encode_base64_string("...".to_string());
-    /// let result = StaticAnalysisConfigFile::with_added_rulesets(&rulesets, Some(config_content_base64));
-    /// match result {
-    ///     Ok(updated_config) => println!("Updated config: {}", updated_config),
-    ///     Err(e) => eprintln!("Error: {}", e),
-    /// }
-    /// ```
-    #[instrument]
-    pub fn with_added_rulesets(
-        rulesets: &[impl AsRef<str> + Debug],
-        config_content_base64: Option<String>,
-    ) -> Result<String, ConfigFileError> {
-        let mut config = config_content_base64.map_or(Ok(Self::default()), |content| {
-            Self::try_from(content).map_err(|e| {
-                tracing::error!(error =?e, "Error trying to parse config file");
-                e
-            })
-        })?;
-
-        config.add_rulesets(rulesets);
-        config.to_string().map_err(|e| {
-            tracing::error!(error =?e, "Error trying to serializing config file");
-            e
-        })
-    }
-
     #[instrument(skip(self))]
+    #[deprecated(note = "IDEs stopped adding new rule sets, remove when endpoint is removed")]
     pub fn add_rulesets(&mut self, rulesets: &[impl AsRef<str> + Debug]) {
         match &mut self.config_file {
             WithVersion::Legacy(config) => {
@@ -251,35 +184,10 @@ impl StaticAnalysisConfigFile {
         }
     }
 
-    /// Parses the content of a static analysis configuration file and returns the list of rulesets.
-    ///
-    /// # Parameters
-    ///
-    /// * `config_content_base64`: The base64-encoded content of the static analysis configuration file.
-    ///
-    /// # Returns
-    ///
-    /// This function returns a `Vec<String>`, where each `String` is a ruleset from the configuration file.
-    ///
-    /// # Example
-    ///
-    /// ```no_run
-    /// let config_content_base64 = kernel::utils::encode_base64_string("...".to_string());
-    /// let rulesets = StaticAnalysisConfigFile::to_rulesets(config_content_base64);
-    /// for ruleset in rulesets {
-    ///     println!("Ruleset: {}", ruleset);
-    /// }
-    /// ```
-    #[instrument]
-    pub fn to_rulesets(config_content_base64: String) -> Vec<String> {
-        let parsed = match Self::try_from(config_content_base64) {
-            Ok(config) => config,
-            Err(e) => {
-                tracing::error!(error =?e, "Error trying to parse config file");
-                return vec![];
-            }
-        };
-        match parsed.config_file {
+    /// Extracts the list of SAST rulesets from this configuration.
+    #[instrument(skip(self))]
+    pub fn sast_rulesets(&self) -> Vec<String> {
+        match &self.config_file {
             WithVersion::Legacy(config) => config.rulesets.iter().map(|rs| rs.0.clone()).collect(),
             WithVersion::CodeSecurity(config) => config
                 .sast
@@ -355,9 +263,10 @@ impl StaticAnalysisConfigFile {
 mod tests {
 
     use kernel::utils::encode_base64_string;
+    use crate::datadog_static_analyzer_server::ide::configuration_file::static_analysis_config_file::Base64String;
 
-    fn to_encoded_content(content: &'static str) -> String {
-        encode_base64_string(content.to_owned())
+    fn to_encoded_content(content: &'static str) -> Base64String {
+        Base64String(encode_base64_string(content.to_owned()))
     }
 
     mod get_rulesets {
@@ -374,7 +283,8 @@ rulesets:
 - java-1
 ",
             );
-            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
+            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+            let rulesets = config.sast_rulesets();
             assert_eq!(rulesets, vec!["java-security", "java-1"]);
         }
 
@@ -396,12 +306,13 @@ rulesets:
           - "**"
 "#,
             );
-            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
+            let config = StaticAnalysisConfigFile::try_from(content).unwrap();
+            let rulesets = config.sast_rulesets();
             assert_eq!(rulesets, vec!["java-security", "java-1", "ruleset1"]);
         }
 
         #[test]
-        fn it_returns_empty_array_if_bad_format() {
+        fn it_returns_error_if_bad_format() {
             let content = to_encoded_content(
                 r"
 schema-version: v1
@@ -418,12 +329,12 @@ rulesets:
                 - '**'
 ",
             );
-            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
-            assert!(rulesets.is_empty());
+            let err = StaticAnalysisConfigFile::try_from(content).unwrap_err();
+            assert_eq!(err.code(), 1);
         }
 
         #[test]
-        fn it_returns_empty_array_if_wrong_version() {
+        fn it_returns_error_if_wrong_version() {
             let content = to_encoded_content(
                 r"
 schema-version: v354
@@ -432,8 +343,8 @@ rulesets:
 - java-1
 ",
             );
-            let rulesets = StaticAnalysisConfigFile::to_rulesets(content);
-            assert!(rulesets.is_empty());
+            let err = StaticAnalysisConfigFile::try_from(content).unwrap_err();
+            assert_eq!(err.code(), 1);
         }
     }
 
@@ -441,13 +352,22 @@ rulesets:
         use super::super::*;
         use super::*;
 
+        #[allow(deprecated)]
+        fn add_rulesets_yaml(
+            content: Option<&'static str>,
+            rulesets: &[&'static str],
+        ) -> Result<String, ConfigFileError> {
+            let mut config = match content {
+                Some(c) => StaticAnalysisConfigFile::try_from(to_encoded_content(c))?,
+                None => StaticAnalysisConfigFile::default(),
+            };
+            config.add_rulesets(rulesets);
+            config.to_string()
+        }
+
         #[test]
         fn it_works_without_content() {
-            let config = StaticAnalysisConfigFile::with_added_rulesets(
-                &["ruleset1", "ruleset2", "a-ruleset3"],
-                None,
-            )
-            .unwrap();
+            let config = add_rulesets_yaml(None, &["ruleset1", "ruleset2", "a-ruleset3"]).unwrap();
             let expected = r"
 schema-version: v1
 rulesets:
@@ -460,11 +380,7 @@ rulesets:
 
         #[test]
         fn it_works_empty_content() {
-            let config = StaticAnalysisConfigFile::with_added_rulesets(
-                &["ruleset1"],
-                Some(to_encoded_content("\n")),
-            )
-            .unwrap();
+            let config = add_rulesets_yaml(Some("\n"), &["ruleset1"]).unwrap();
             let expected = r"
 schema-version: v1
 rulesets:
@@ -493,11 +409,8 @@ rulesets:
   - a-ruleset3
 ";
 
-            let config = StaticAnalysisConfigFile::with_added_rulesets(
-                &["ruleset1", "ruleset2", "a-ruleset3"],
-                Some(to_encoded_content(legacy)),
-            )
-            .unwrap();
+            let config =
+                add_rulesets_yaml(Some(legacy), &["ruleset1", "ruleset2", "a-ruleset3"]).unwrap();
 
             assert_eq!(config.trim(), legacy_expected.trim());
         }
@@ -518,11 +431,7 @@ rulesets:
   - new-ruleset
 ";
 
-            let config = StaticAnalysisConfigFile::with_added_rulesets(
-                &["new-ruleset", "new-ruleset"],
-                Some(to_encoded_content(legacy)),
-            )
-            .unwrap();
+            let config = add_rulesets_yaml(Some(legacy), &["new-ruleset", "new-ruleset"]).unwrap();
 
             assert_eq!(config.trim(), legacy_expected.trim());
         }
@@ -530,8 +439,7 @@ rulesets:
         #[test]
         fn it_works_complex() {
             // language=yaml
-            let content = to_encoded_content(
-                r#"
+            let content = r#"
 schema-version: v1
 rulesets:
   - java-security
@@ -544,13 +452,9 @@ rulesets:
       rule1:
         ignore:
           - "**"
-"#,
-            );
-            let config = StaticAnalysisConfigFile::with_added_rulesets(
-                &["ruleset1", "ruleset2", "a-ruleset3"],
-                Some(content),
-            )
-            .unwrap();
+"#;
+            let config =
+                add_rulesets_yaml(Some(content), &["ruleset1", "ruleset2", "a-ruleset3"]).unwrap();
 
             // language=yaml
             let expected = r#"
@@ -576,19 +480,14 @@ rulesets:
         #[test]
         fn it_fails_if_wrong_version() {
             // language=yaml
-            let content = to_encoded_content(
-                r"
+            let content = r"
 schema-version: v354
 rulesets:
 - java-security
 - java-1
-",
-            );
-            let err = StaticAnalysisConfigFile::with_added_rulesets(
-                &["ruleset1", "ruleset2", "a-ruleset3"],
-                Some(content),
-            )
-            .unwrap_err();
+";
+            let err = add_rulesets_yaml(Some(content), &["ruleset1", "ruleset2", "a-ruleset3"])
+                .unwrap_err();
 
             assert_eq!(err.code(), 1);
         }
@@ -597,6 +496,13 @@ rulesets:
     mod ignore_rules {
         use super::super::*;
         use super::*;
+
+        fn ignore_rule_yaml(content: &'static str, rule: &'static str) -> String {
+            let mut config =
+                StaticAnalysisConfigFile::try_from(to_encoded_content(content)).unwrap();
+            config.ignore_rule(rule.into());
+            config.to_string().unwrap()
+        }
 
         #[test]
         fn it_works_with_non_previously_existing_ruleset() {
@@ -620,11 +526,7 @@ rulesets:
           - "**"
 "#;
 
-            let config = StaticAnalysisConfigFile::with_ignored_rule(
-                "ruleset1/rule1".into(),
-                to_encoded_content(legacy),
-            )
-            .unwrap();
+            let config = ignore_rule_yaml(legacy, "ruleset1/rule1");
 
             assert_eq!(config.trim(), legacy_expected.trim());
         }
@@ -652,11 +554,7 @@ rulesets:
           - "**"
 "#;
 
-            let config = StaticAnalysisConfigFile::with_ignored_rule(
-                "ruleset1/rule1".into(),
-                to_encoded_content(legacy),
-            )
-            .unwrap();
+            let config = ignore_rule_yaml(legacy, "ruleset1/rule1");
 
             assert_eq!(config.trim(), legacy_expected.trim());
         }
@@ -693,11 +591,7 @@ rulesets:
           - "**"
 "#;
 
-            let config = StaticAnalysisConfigFile::with_ignored_rule(
-                "ruleset1/rule1".into(),
-                to_encoded_content(legacy),
-            )
-            .unwrap();
+            let config = ignore_rule_yaml(legacy, "ruleset1/rule1");
 
             assert_eq!(config.trim(), legacy_expected.trim());
         }
@@ -705,8 +599,7 @@ rulesets:
         #[test]
         fn it_works_with_a_previously_existing_ruleset_with_same_rule_with_paths() {
             // language=yaml
-            let content = to_encoded_content(
-                r"
+            let legacy = r"
 schema-version: v1
 rulesets:
 - java-1
@@ -716,11 +609,8 @@ rulesets:
     rule2:
       only:
       - foo/bar
-",
-            );
-            let config =
-                StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
-                    .unwrap();
+";
+            let config = ignore_rule_yaml(legacy, "ruleset1/rule1");
 
             // language=yaml
             let expected = r#"
@@ -751,8 +641,7 @@ rulesets:
 - java-1
 ",
             );
-            let err = StaticAnalysisConfigFile::with_ignored_rule("ruleset1/rule1".into(), content)
-                .unwrap_err();
+            let err = StaticAnalysisConfigFile::try_from(content).unwrap_err();
 
             assert_eq!(err.code(), 1);
         }
@@ -785,11 +674,7 @@ rulesets:
           - "**"
 "#;
 
-            let config = StaticAnalysisConfigFile::with_ignored_rule(
-                "ruleset1/rule1".into(),
-                to_encoded_content(legacy),
-            )
-            .unwrap();
+            let config = ignore_rule_yaml(legacy, "ruleset1/rule1");
 
             assert_eq!(config.trim(), legacy_expected.trim());
         }
@@ -821,11 +706,7 @@ rulesets:
         severity: ERROR
 "#;
 
-            let config = StaticAnalysisConfigFile::with_ignored_rule(
-                "ruleset1/rule2".into(),
-                to_encoded_content(legacy),
-            )
-            .unwrap();
+            let config = ignore_rule_yaml(legacy, "ruleset1/rule2");
 
             assert_eq!(config.trim(), legacy_expected.trim());
         }
@@ -971,6 +852,7 @@ sast:
     }
 
     #[test]
+    #[allow(deprecated)]
     fn it_removes_null_on_maps_only() {
         let content = to_encoded_content(
             r#"
@@ -985,11 +867,9 @@ rulesets:
         - "foo/bar: null"
 "#,
         );
-        let config = super::StaticAnalysisConfigFile::with_added_rulesets(
-            &["ruleset1", "ruleset2", "a-ruleset3"],
-            Some(content),
-        )
-        .unwrap();
+        let mut config = super::StaticAnalysisConfigFile::try_from(content).unwrap();
+        config.add_rulesets(&["ruleset1", "ruleset2", "a-ruleset3"]);
+        let config = config.to_string().unwrap();
 
         let expected = r#"
 schema-version: v1
