@@ -1404,8 +1404,8 @@ mod tests {
         );
 
         // Violation without enclosing_function: no logicalLocations key at all.
-        let no_logical_locations = sarif_json
-            .pointer("/runs/0/results/1/locations/0/logicalLocations");
+        let no_logical_locations =
+            sarif_json.pointer("/runs/0/results/1/locations/0/logicalLocations");
         assert!(
             no_logical_locations.is_none(),
             "logicalLocations should be absent when enclosing_function is None"

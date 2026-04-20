@@ -14,7 +14,11 @@ use crate::model::violation::EnclosingFunction;
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
-pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
+pub fn find_enclosing_function(
+    source_code: &str,
+    line: u32,
+    col: u32,
+) -> Option<EnclosingFunction> {
     get_tree(source_code, &Language::Java)
         .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
 }
@@ -48,7 +52,10 @@ pub fn find_enclosing_function_with_tree(
                     .child_by_field_name("name")
                     .map(|n| ts_node_text(source_code, n).to_owned())?;
                 let fully_qualified_name = build_fqn(source_code, tree, node, &name);
-                return Some(EnclosingFunction { name, fully_qualified_name });
+                return Some(EnclosingFunction {
+                    name,
+                    fully_qualified_name,
+                });
             }
             _ => {}
         }
@@ -68,9 +75,12 @@ fn build_fqn(
 ) -> String {
     let root = tree.root_node();
     let package = find_package(source_code, root);
-    let class_kinds = &["class_declaration", "interface_declaration", "enum_declaration"];
-    let class_name =
-        enclosing_class_name(source_code, method_node, class_kinds);
+    let class_kinds = &[
+        "class_declaration",
+        "interface_declaration",
+        "enum_declaration",
+    ];
+    let class_name = enclosing_class_name(source_code, method_node, class_kinds);
 
     let fqn_class = match (package.as_deref(), class_name) {
         (Some(pkg), Some(cls)) => format!("{pkg}.{cls}"),
@@ -103,10 +113,14 @@ fn build_fqn(
 /// Returns the package name declared at the top of the compilation unit, if any.
 fn find_package(source_code: &str, root: tree_sitter::Node) -> Option<String> {
     for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i) else { continue };
+        let Some(child) = root.named_child(i) else {
+            continue;
+        };
         if child.kind() == "package_declaration" {
             for j in 0..child.named_child_count() {
-                let Some(pkg_child) = child.named_child(j) else { continue };
+                let Some(pkg_child) = child.named_child(j) else {
+                    continue;
+                };
                 if matches!(pkg_child.kind(), "scoped_identifier" | "identifier") {
                     return Some(ts_node_text(source_code, pkg_child).to_owned());
                 }
@@ -121,13 +135,19 @@ fn find_package(source_code: &str, root: tree_sitter::Node) -> Option<String> {
 fn build_import_map(source_code: &str, root: tree_sitter::Node) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i) else { continue };
+        let Some(child) = root.named_child(i) else {
+            continue;
+        };
         if child.kind() != "import_declaration" {
             continue;
         }
         let text = ts_node_text(source_code, child);
         // Strip "import " prefix and ";" suffix, then trim whitespace
-        let body = text.trim_start_matches("import").trim().trim_end_matches(';').trim();
+        let body = text
+            .trim_start_matches("import")
+            .trim()
+            .trim_end_matches(';')
+            .trim();
         // Skip static and wildcard imports — they can't be resolved without a classpath
         if body.starts_with("static ") || body.ends_with('*') {
             continue;
@@ -215,7 +235,11 @@ fn resolve_type(
 
 /// Resolves a simple class name to its fully qualified form using explicit imports and
 /// the well-known `java.lang` package that is always implicitly available.
-fn resolve_class_name(name: &str, import_map: &HashMap<String, String>, _package: Option<&str>) -> String {
+fn resolve_class_name(
+    name: &str,
+    import_map: &HashMap<String, String>,
+    _package: Option<&str>,
+) -> String {
     if let Some(fqn) = import_map.get(name) {
         return fqn.clone();
     }
@@ -235,7 +259,9 @@ fn extract_param_types(
 ) -> Vec<String> {
     let mut types = vec![];
     for i in 0..params_node.named_child_count() {
-        let Some(child) = params_node.named_child(i) else { continue };
+        let Some(child) = params_node.named_child(i) else {
+            continue;
+        };
         match child.kind() {
             "formal_parameter" => {
                 if let Some(type_node) = child.child_by_field_name("type") {
@@ -304,7 +330,10 @@ mod tests {
     }
 
     fn ef(name: &str, sig: &str) -> Option<EnclosingFunction> {
-        Some(EnclosingFunction { name: name.to_string(), fully_qualified_name: sig.to_string() })
+        Some(EnclosingFunction {
+            name: name.to_string(),
+            fully_qualified_name: sig.to_string(),
+        })
     }
 
     #[test]
@@ -341,7 +370,10 @@ class Foo {
     }
 }
 ";
-        assert_eq!(find(src, 4, 9), ef("doSomething", "com.example.Foo#doSomething():void"));
+        assert_eq!(
+            find(src, 4, 9),
+            ef("doSomething", "com.example.Foo#doSomething():void")
+        );
     }
 
     #[test]
@@ -354,7 +386,10 @@ class Foo {
     }
 }
 ";
-        assert_eq!(find(src, 3, 9), ef("handle", "Foo#handle(java.lang.String):void"));
+        assert_eq!(
+            find(src, 3, 9),
+            ef("handle", "Foo#handle(java.lang.String):void")
+        );
     }
 
     #[test]

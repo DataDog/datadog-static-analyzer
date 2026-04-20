@@ -12,7 +12,11 @@ use crate::model::violation::EnclosingFunction;
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
-pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
+pub fn find_enclosing_function(
+    source_code: &str,
+    line: u32,
+    col: u32,
+) -> Option<EnclosingFunction> {
     get_tree(source_code, &Language::Python)
         .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
 }
@@ -47,7 +51,10 @@ pub fn find_enclosing_function_with_tree(
                         Some(cls) => format!("{cls}.{name}"),
                         None => name.clone(),
                     };
-                return Some(EnclosingFunction { name, fully_qualified_name });
+                return Some(EnclosingFunction {
+                    name,
+                    fully_qualified_name,
+                });
             }
             _ => {}
         }
@@ -72,7 +79,10 @@ mod tests {
     }
 
     fn ef(name: &str, sig: &str) -> Option<EnclosingFunction> {
-        Some(EnclosingFunction { name: name.to_string(), fully_qualified_name: sig.to_string() })
+        Some(EnclosingFunction {
+            name: name.to_string(),
+            fully_qualified_name: sig.to_string(),
+        })
     }
 
     #[test]

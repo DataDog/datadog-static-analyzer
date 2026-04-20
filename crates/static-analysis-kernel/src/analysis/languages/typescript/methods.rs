@@ -12,7 +12,11 @@ use crate::model::violation::EnclosingFunction;
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
-pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
+pub fn find_enclosing_function(
+    source_code: &str,
+    line: u32,
+    col: u32,
+) -> Option<EnclosingFunction> {
     get_tree(source_code, &Language::TypeScript)
         .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
 }
@@ -47,7 +51,10 @@ pub fn find_enclosing_function_with_tree(
                     .child_by_field_name("name")
                     .map(|n| ts_node_text(source_code, n).to_owned())?;
                 let fully_qualified_name = name.clone();
-                return Some(EnclosingFunction { name, fully_qualified_name });
+                return Some(EnclosingFunction {
+                    name,
+                    fully_qualified_name,
+                });
             }
             "method_definition" | "method_signature" => {
                 let name = node
@@ -59,7 +66,10 @@ pub fn find_enclosing_function_with_tree(
                         Some(cls) => format!("{cls}.{name}"),
                         None => name.clone(),
                     };
-                return Some(EnclosingFunction { name, fully_qualified_name });
+                return Some(EnclosingFunction {
+                    name,
+                    fully_qualified_name,
+                });
             }
             // tree-sitter-typescript (TSX) uses "function" for both anonymous and named function
             // expressions, same as tree-sitter-javascript.
@@ -67,7 +77,10 @@ pub fn find_enclosing_function_with_tree(
                 if let Some(name_node) = node.child_by_field_name("name") {
                     let name = ts_node_text(source_code, name_node).to_owned();
                     let fully_qualified_name = name.clone();
-                    return Some(EnclosingFunction { name, fully_qualified_name });
+                    return Some(EnclosingFunction {
+                        name,
+                        fully_qualified_name,
+                    });
                 }
                 return enclosing_function_from_declarator_parent(source_code, node);
             }
@@ -88,7 +101,10 @@ fn enclosing_function_from_declarator_parent(
     if parent.kind() == "variable_declarator" {
         let name = ts_node_text(source_code, parent.child_by_field_name("name")?).to_owned();
         let fully_qualified_name = name.clone();
-        Some(EnclosingFunction { name, fully_qualified_name })
+        Some(EnclosingFunction {
+            name,
+            fully_qualified_name,
+        })
     } else {
         None
     }
@@ -107,7 +123,10 @@ mod tests {
     }
 
     fn ef(name: &str, sig: &str) -> Option<EnclosingFunction> {
-        Some(EnclosingFunction { name: name.to_string(), fully_qualified_name: sig.to_string() })
+        Some(EnclosingFunction {
+            name: name.to_string(),
+            fully_qualified_name: sig.to_string(),
+        })
     }
 
     #[test]

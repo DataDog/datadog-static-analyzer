@@ -27,8 +27,12 @@ pub fn find_enclosing_function(
         Language::Python => python::methods::find_enclosing_function(source_code, line, col),
         Language::Java => java::methods::find_enclosing_function(source_code, line, col),
         Language::Go => go::methods::find_enclosing_function(source_code, line, col),
-        Language::JavaScript => javascript::methods::find_enclosing_function(source_code, line, col),
-        Language::TypeScript => typescript::methods::find_enclosing_function(source_code, line, col),
+        Language::JavaScript => {
+            javascript::methods::find_enclosing_function(source_code, line, col)
+        }
+        Language::TypeScript => {
+            typescript::methods::find_enclosing_function(source_code, line, col)
+        }
         Language::Csharp => csharp::methods::find_enclosing_function(source_code, line, col),
         _ => None,
     }
@@ -76,11 +80,12 @@ pub(crate) fn enclosing_class_name<'s>(
     loop {
         node = node.parent()?;
         if class_kinds.contains(&node.kind()) {
-            return node.child_by_field_name("name").map(|n| ts_node_text(source_code, n));
+            return node
+                .child_by_field_name("name")
+                .map(|n| ts_node_text(source_code, n));
         }
     }
 }
-
 
 /// Returns the text that `node` spans.
 ///

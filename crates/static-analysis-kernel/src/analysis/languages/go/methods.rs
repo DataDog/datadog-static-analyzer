@@ -12,7 +12,11 @@ use crate::model::violation::EnclosingFunction;
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
-pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
+pub fn find_enclosing_function(
+    source_code: &str,
+    line: u32,
+    col: u32,
+) -> Option<EnclosingFunction> {
     get_tree(source_code, &Language::Go)
         .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
 }
@@ -50,7 +54,10 @@ pub fn find_enclosing_function_with_tree(
                     Some(pkg) => format!("{pkg}.{name}"),
                     None => name.clone(),
                 };
-                return Some(EnclosingFunction { name, fully_qualified_name });
+                return Some(EnclosingFunction {
+                    name,
+                    fully_qualified_name,
+                });
             }
             "method_declaration" => {
                 let name = node
@@ -64,7 +71,10 @@ pub fn find_enclosing_function_with_tree(
                     (Some(pkg), None) => format!("{pkg}.{name}"),
                     (None, None) => name.clone(),
                 };
-                return Some(EnclosingFunction { name, fully_qualified_name });
+                return Some(EnclosingFunction {
+                    name,
+                    fully_qualified_name,
+                });
             }
             _ => {}
         }
@@ -75,7 +85,9 @@ pub fn find_enclosing_function_with_tree(
 /// Returns the package name declared at the top of the Go source file.
 fn find_package(source_code: &str, root: tree_sitter::Node) -> Option<String> {
     for i in 0..root.named_child_count() {
-        let Some(child) = root.named_child(i) else { continue };
+        let Some(child) = root.named_child(i) else {
+            continue;
+        };
         if child.kind() == "package_clause" {
             // package_identifier is the only named child of package_clause
             return child
@@ -93,7 +105,9 @@ fn find_package(source_code: &str, root: tree_sitter::Node) -> Option<String> {
 fn extract_receiver_type(source_code: &str, method_node: tree_sitter::Node) -> Option<String> {
     let receiver_list = method_node.child_by_field_name("receiver")?;
     for i in 0..receiver_list.named_child_count() {
-        let Some(param_decl) = receiver_list.named_child(i) else { continue };
+        let Some(param_decl) = receiver_list.named_child(i) else {
+            continue;
+        };
         if param_decl.kind() == "parameter_declaration" {
             if let Some(type_node) = param_decl.child_by_field_name("type") {
                 return match type_node.kind() {
@@ -122,7 +136,10 @@ mod tests {
     }
 
     fn ef(name: &str, sig: &str) -> Option<EnclosingFunction> {
-        Some(EnclosingFunction { name: name.to_string(), fully_qualified_name: sig.to_string() })
+        Some(EnclosingFunction {
+            name: name.to_string(),
+            fully_qualified_name: sig.to_string(),
+        })
     }
 
     #[test]

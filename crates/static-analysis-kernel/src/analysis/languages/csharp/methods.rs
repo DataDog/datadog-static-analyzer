@@ -12,7 +12,11 @@ use crate::model::violation::EnclosingFunction;
 ///
 /// This function parses the source code from scratch.
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
-pub fn find_enclosing_function(source_code: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
+pub fn find_enclosing_function(
+    source_code: &str,
+    line: u32,
+    col: u32,
+) -> Option<EnclosingFunction> {
     get_tree(source_code, &Language::Csharp)
         .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
 }
@@ -74,7 +78,10 @@ pub fn find_enclosing_function_with_tree(
                     format!("{fqn_prefix}.{name}({params_str})")
                 };
 
-                return Some(EnclosingFunction { name, fully_qualified_name });
+                return Some(EnclosingFunction {
+                    name,
+                    fully_qualified_name,
+                });
             }
             _ => {}
         }
@@ -93,7 +100,10 @@ fn find_namespace(source_code: &str, mut node: tree_sitter::Node) -> Option<Stri
             Some(p) => p,
             None => break,
         };
-        if matches!(node.kind(), "namespace_declaration" | "file_scoped_namespace_declaration") {
+        if matches!(
+            node.kind(),
+            "namespace_declaration" | "file_scoped_namespace_declaration"
+        ) {
             if let Some(name_node) = node.child_by_field_name("name") {
                 parts.push(ts_node_text(source_code, name_node).to_owned());
             }
@@ -113,7 +123,9 @@ fn find_namespace(source_code: &str, mut node: tree_sitter::Node) -> Option<Stri
 fn extract_param_types(source_code: &str, params_node: tree_sitter::Node) -> Vec<String> {
     let mut types = vec![];
     for i in 0..params_node.named_child_count() {
-        let Some(child) = params_node.named_child(i) else { continue };
+        let Some(child) = params_node.named_child(i) else {
+            continue;
+        };
         if child.kind() == "parameter" {
             if let Some(type_node) = child.child_by_field_name("type") {
                 types.push(ts_node_text(source_code, type_node).to_owned());
@@ -136,7 +148,10 @@ mod tests {
     }
 
     fn ef(name: &str, sig: &str) -> Option<EnclosingFunction> {
-        Some(EnclosingFunction { name: name.to_string(), fully_qualified_name: sig.to_string() })
+        Some(EnclosingFunction {
+            name: name.to_string(),
+            fully_qualified_name: sig.to_string(),
+        })
     }
 
     #[test]
@@ -188,7 +203,10 @@ namespace MyApp.Controllers {
     }
 }
 ";
-        assert_eq!(find(src, 4, 13), ef("DoSomething", "MyApp.Controllers.Foo.DoSomething()"));
+        assert_eq!(
+            find(src, 4, 13),
+            ef("DoSomething", "MyApp.Controllers.Foo.DoSomething()")
+        );
     }
 
     #[test]
@@ -202,7 +220,10 @@ namespace MyApp {
     }
 }
 ";
-        assert_eq!(find(src, 4, 13), ef("Handle", "MyApp.Foo.Handle(string, int)"));
+        assert_eq!(
+            find(src, 4, 13),
+            ef("Handle", "MyApp.Foo.Handle(string, int)")
+        );
     }
 
     #[test]
