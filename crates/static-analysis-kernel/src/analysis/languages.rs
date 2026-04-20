@@ -73,6 +73,7 @@ pub fn find_enclosing_function(
         Language::TypeScript => {
             typescript::methods::find_enclosing_function(source_code, line, col)
         }
+        Language::Csharp => csharp::methods::find_enclosing_function(source_code, line, col),
         _ => None,
     }
 }
@@ -101,6 +102,9 @@ pub fn find_enclosing_function_with_tree(
         }
         Language::TypeScript => {
             typescript::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+        }
+        Language::Csharp => {
+            csharp::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
         }
         _ => None,
     }
@@ -147,13 +151,13 @@ mod tests {
         Language::Python,
         Language::JavaScript,
         Language::TypeScript,
+        Language::Csharp,
     ];
 
     // Languages that intentionally have no implementation yet.
     // When adding a new language to the analyzer, add it here (no detection) or to
     // SUPPORTED (detection implemented) — leaving it out causes this test to fail.
     const NOT_IMPLEMENTED: &[Language] = &[
-        Language::Csharp,
         Language::Dockerfile,
         Language::Elixir,
         Language::Json,
