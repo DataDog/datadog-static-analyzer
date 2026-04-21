@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 use streaming_iterator::StreamingIterator;
-use tree_sitter::{CaptureQuantifier, Node};
+use tree_sitter::CaptureQuantifier;
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
@@ -68,21 +68,6 @@ pub fn get_tree(code: &str, language: &Language) -> Option<tree_sitter::Tree> {
         .set_language(&tree_sitter_language)
         .ok()?;
     tree_sitter_parser.parse(code, None)
-}
-
-// traverse from a node and return whether there is a missing node or not
-pub fn has_missing(node: &Node) -> bool {
-    if node.is_missing() {
-        return true;
-    }
-
-    for i in 0..node.child_count() {
-        if has_missing(&node.child(i).unwrap()) {
-            return true;
-        }
-    }
-
-    false
 }
 
 // build the query from tree-sitter
@@ -735,18 +720,5 @@ SELECT * FROM table WHERE column = 'value';
         assert_eq!("identifier", superclasses.ast_type);
         assert_eq!(None, superclasses.field_name);
         assert!(query_node.captures.contains_key("classname"));
-    }
-
-    #[test]
-    fn test_has_missing_detects_missing_node() {
-        // "function foo() {" is missing the closing "}" and here tree-sitter inserts a MISSING node
-        let tree = get_tree("function foo() {", &Language::JavaScript).unwrap();
-        assert!(has_missing(&tree.root_node()));
-    }
-
-    #[test]
-    fn test_has_missing_returns_false_for_valid_tree() {
-        let tree = get_tree("def foo(): pass", &Language::Python).unwrap();
-        assert!(!has_missing(&tree.root_node()));
     }
 }

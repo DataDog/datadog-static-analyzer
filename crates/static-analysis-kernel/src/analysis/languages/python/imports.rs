@@ -232,14 +232,17 @@ fn parse_import_statement<'tree, 'text: 'tree>(
         // We loop so that if creating the `Import` fails, we can try any subsequent imports within
         // this node (e.g. in a comma-separated list) to avoid prematurely yielding `None` on the iterator.
         while idx < node.named_child_count() {
-            debug_assert_eq!(node.field_name_for_named_child(idx as u32), Some("name"));
+            let field_name = node.field_name_for_named_child(idx as u32);
             let name_node = node.named_child(idx).expect("should be in-bounds");
-            let parsed = parse_field_child_node(source_code, name_node);
-
             idx += 1;
 
-            if let Ok(import) = Import::try_new(parsed.full_text, parsed.alias, None, false) {
-                return Some(import);
+            if field_name != Some("name") {
+                continue;
+            }
+            if let Some(parsed) = parse_field_child_node(source_code, name_node) {
+                if let Ok(import) = Import::try_new(parsed.full_text, parsed.alias, None, false) {
+                    return Some(import);
+                }
             }
         }
         None
@@ -254,7 +257,8 @@ fn parse_import_from_statement<'text>(
     debug_assert_eq!(node.kind(), "import_from_statement");
     let module_name_node = node.child_by_field_name("module_name").expect(FIELD_EXISTS);
     let is_relative = module_name_node.kind() == "relative_import";
-    let parsed_module = parse_field_child_node(source_code, module_name_node);
+    let parsed_module = parse_field_child_node(source_code, module_name_node)
+        .ok_or_else(|| format!("invalid node type `{}`", module_name_node.kind()))?;
     // Python syntax invariant: the module of a "from" import can't have an alias.
     debug_assert!(parsed_module.alias.is_none());
     // tree-sitter grammar invariant: a valid wildcard import must end in a `wildcard_import` node.
@@ -269,13 +273,13 @@ fn parse_import_from_statement<'text>(
         let field_children = node.children_by_field_name("name", &mut cursor);
         let entities = field_children
             .into_iter()
-            .map(|child| {
-                let parsed = parse_field_child_node(source_code, child);
+            .filter_map(|child| {
+                let parsed = parse_field_child_node(source_code, child)?;
                 // tree-sitter grammar invariant: these children represent entities, never a module.
-                Entity {
+                Some(Entity {
                     name: parsed.full_text,
                     alias: parsed.alias,
-                }
+                })
             })
             .collect::<Vec<_>>();
         ImportEntities::Specific(entities)
@@ -298,13 +302,13 @@ fn parse_future_import_statement<'text>(
     let field_children = node.children_by_field_name("name", &mut cursor);
     let entities = field_children
         .into_iter()
-        .map(|child| {
-            let parsed = parse_field_child_node(source_code, child);
+        .filter_map(|child| {
+            let parsed = parse_field_child_node(source_code, child)?;
             // tree-sitter grammar invariant: these children represent entities, never a module.
-            Entity {
+            Some(Entity {
                 name: parsed.full_text,
                 alias: parsed.alias,
-            }
+            })
         })
         .collect::<Vec<_>>();
     Import::try_new(
@@ -328,32 +332,32 @@ fn parse_future_import_statement<'text>(
 fn parse_field_child_node<'text>(
     source_code: &'text str,
     node: tree_sitter::Node,
-) -> MaybeAliased<'text> {
+) -> Option<MaybeAliased<'text>> {
     match node.kind() {
         "relative_import" => {
             // (relative_import (import_prefix) (dotted_name))
             for i in 0..node.child_count() {
                 let child = node.child(i).expect("i should be in-bounds");
                 if child.kind() == "dotted_name" {
-                    return MaybeAliased {
+                    return Some(MaybeAliased {
                         full_text: ts_node_text(source_code, child),
                         alias: None,
-                    };
+                    });
                 }
             }
             // Otherwise, this `relative_import` only contains an `import_prefix` node,
             // so return the entire node's text (which will consist of one or more "."):
-            MaybeAliased {
+            Some(MaybeAliased {
                 full_text: ts_node_text(source_code, node),
                 alias: None,
-            }
+            })
         }
         "dotted_name" => {
             // (dotted_name (identifier)+)
-            MaybeAliased {
+            Some(MaybeAliased {
                 full_text: ts_node_text(source_code, node),
                 alias: None,
-            }
+            })
         }
         "aliased_import" => {
             // (aliased_import name: (dotted_name) alias: (identifier))
@@ -363,18 +367,20 @@ fn parse_field_child_node<'text>(
             let alias_node = node.child_by_field_name("alias").expect(FIELD_EXISTS);
             debug_assert_eq!(alias_node.kind(), "identifier");
             let alias = ts_node_text(source_code, alias_node);
-            MaybeAliased {
+            Some(MaybeAliased {
                 full_text,
                 alias: Some(alias),
-            }
+            })
         }
-        other => panic!("invalid node type `{other}`"),
+        _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_imports, Entity, Import, ImportEntities};
+    use super::{parse_imports, parse_imports_with_tree, Entity, Import, ImportEntities};
+    use crate::analysis::tree_sitter::get_tree;
+    use crate::model::common::Language;
 
     /// A shorthand to build an [`Entity`] without an alias.
     pub fn ent(name: &str) -> Entity<'_> {
@@ -476,6 +482,30 @@ mod tests {
                 assert_eq!(actual_imports, vec![expected_import]);
             }
         }
+    }
+
+    #[test]
+    fn error_node_does_not_panic() {
+        let code = "import foo, + bar";
+        let tree = get_tree(code, &Language::Python).unwrap();
+        assert!(tree.root_node().has_error());
+        let imports = parse_imports_with_tree(code, &tree);
+        assert_eq!(
+            imports,
+            vec![
+                Import::try_new("foo", None, None, false).unwrap(),
+                Import::try_new("bar", None, None, false).unwrap(),
+            ]
+        );
+    }
+
+    #[test]
+    fn all_error_nodes_does_not_panic() {
+        let code = "import +, +";
+        let tree = get_tree(code, &Language::Python).unwrap();
+        assert!(tree.root_node().has_error());
+        let imports = parse_imports_with_tree(code, &tree);
+        assert!(imports.is_empty());
     }
 }
 

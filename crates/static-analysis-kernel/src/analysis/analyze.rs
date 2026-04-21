@@ -3,7 +3,7 @@ use crate::analysis::ddsa_lib::js::flow::java::{ClassGraph, FileGraph};
 use crate::analysis::ddsa_lib::runtime::ExecutionResult;
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::generated_content::{is_generated_file, is_minified_file};
-use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, has_missing, TSQuery};
+use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
 use crate::model::analysis::{
     FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
 };
@@ -183,12 +183,6 @@ where
         }
         return vec![];
     };
-
-    // skip the file if there is an error or missing node
-    if tree.root_node().has_error() || has_missing(&tree.root_node()) {
-        return vec![];
-    }
-
     let tree = Arc::new(tree);
     let cst_parsing_time = now.elapsed();
 
@@ -442,52 +436,6 @@ def foo(arg1):
             rule_config,
             analysis_option,
         )
-    }
-
-    #[test]
-    fn test_error_node_skips_file() {
-        let rule = RuleInternal {
-            name: "myrule".to_string(),
-            short_description: None,
-            description: None,
-            category: RuleCategory::CodeStyle,
-            severity: RuleSeverity::Notice,
-            language: Language::Python,
-            code: "function visit(node, filename, code) {}".to_string(),
-            tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
-        };
-        let results = analyze(
-            &Language::Python,
-            &vec![rule],
-            &Arc::from("myfile.py"),
-            &Arc::from("x = "), // incomplete assignment produces an ERROR node
-            &RuleConfig::default(),
-            &AnalysisOptions::default(),
-        );
-        assert!(results.is_empty());
-    }
-
-    #[test]
-    fn test_missing_node_skips_file() {
-        let rule = RuleInternal {
-            name: "myrule".to_string(),
-            short_description: None,
-            description: None,
-            category: RuleCategory::CodeStyle,
-            severity: RuleSeverity::Notice,
-            language: Language::JavaScript,
-            code: "function visit(node, filename, code) {}".to_string(),
-            tree_sitter_query: get_query("(identifier) @name", &Language::JavaScript).unwrap(),
-        };
-        let results = analyze(
-            &Language::JavaScript,
-            &vec![rule],
-            &Arc::from("myfile.js"),
-            &Arc::from("function foo() {"), // missing closing "}" produces a MISSING node
-            &RuleConfig::default(),
-            &AnalysisOptions::default(),
-        );
-        assert!(results.is_empty());
     }
 
     // execution time must be more than 0
@@ -864,6 +812,56 @@ def foo2(arg1):
             .filter(|v| v.is_suppressed)
             .collect();
         assert_eq!(2, suppressed.len());
+    }
+
+    #[test]
+    fn test_violation_ignore_taint_flow() {
+        // language=java
+        let text = "\
+class Test {
+    // An ignore on a taint flow region (not the base region of the violation):
+    // no-dd-sa
+    void test(String input) {
+        String a = input;
+        var b = a;
+        execute(b);
+    }
+}
+";
+        let ts_query = "\
+(argument_list (identifier) @arg)
+";
+        // language=javascript
+        let rule_code = r#"
+function visit(captures) {
+    const arg = captures.get("arg");
+    const sourceFlows = ddsa.getTaintSources(arg);
+    const v = Violation.new("flow violation", sourceFlows[0]);
+    addError(v);
+}
+"#;
+
+        let rule = RuleInternal {
+            name: "java-security/flow-rule".to_string(),
+            short_description: None,
+            description: None,
+            category: RuleCategory::Security,
+            severity: RuleSeverity::Error,
+            language: Language::Java,
+            code: rule_code.to_string(),
+            tree_sitter_query: get_query(ts_query, &Language::Java).unwrap(),
+        };
+
+        let analysis_options = AnalysisOptions::default();
+        let results = analyze(
+            &Language::Python,
+            &vec![rule],
+            &Arc::from("file.java"),
+            &Arc::from(text),
+            &RuleConfig::default(),
+            &analysis_options,
+        );
+        assert!(results[0].violations.is_empty());
     }
 
     fn assert_lines_to_ignore(code: String, language: Language, rule: &'static str) {
