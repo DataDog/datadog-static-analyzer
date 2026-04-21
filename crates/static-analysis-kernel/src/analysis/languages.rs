@@ -65,7 +65,27 @@ pub fn find_enclosing_function(
 ) -> Option<EnclosingFunction> {
     match language {
         Language::Java => java::methods::find_enclosing_function(source_code, line, col),
-        _ => None,
+        Language::Python
+        | Language::Go
+        | Language::JavaScript
+        | Language::TypeScript
+        | Language::Csharp
+        | Language::Dockerfile
+        | Language::Elixir
+        | Language::Json
+        | Language::Kotlin
+        | Language::Ruby
+        | Language::Rust
+        | Language::Swift
+        | Language::Terraform
+        | Language::Yaml
+        | Language::Starlark
+        | Language::Bash
+        | Language::PHP
+        | Language::Markdown
+        | Language::Apex
+        | Language::R
+        | Language::SQL => None,
     }
 }
 
@@ -82,7 +102,27 @@ pub fn find_enclosing_function_with_tree(
         Language::Java => {
             java::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
         }
-        _ => None,
+        Language::Python
+        | Language::Go
+        | Language::JavaScript
+        | Language::TypeScript
+        | Language::Csharp
+        | Language::Dockerfile
+        | Language::Elixir
+        | Language::Json
+        | Language::Kotlin
+        | Language::Ruby
+        | Language::Rust
+        | Language::Swift
+        | Language::Terraform
+        | Language::Yaml
+        | Language::Starlark
+        | Language::Bash
+        | Language::PHP
+        | Language::Markdown
+        | Language::Apex
+        | Language::R
+        | Language::SQL => None,
     }
 }
 
@@ -114,50 +154,4 @@ pub(crate) fn enclosing_class_name<'s>(
 pub(crate) fn ts_node_text<'text>(parsed_text: &'text str, node: tree_sitter::Node) -> &'text str {
     node.utf8_text(parsed_text.as_bytes())
         .expect("node should be from `parsed_text`'s tree")
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::model::common::{Language, ALL_LANGUAGES};
-
-    // Languages with an enclosing-function implementation in this module.
-    const SUPPORTED: &[Language] = &[Language::Java];
-
-    // Languages that intentionally have no implementation yet.
-    // When adding a new language to the analyzer, add it here (no detection) or to
-    // SUPPORTED (detection implemented) — leaving it out causes this test to fail.
-    const NOT_IMPLEMENTED: &[Language] = &[
-        Language::Python,
-        Language::Go,
-        Language::JavaScript,
-        Language::TypeScript,
-        Language::Csharp,
-        Language::Dockerfile,
-        Language::Elixir,
-        Language::Json,
-        Language::Kotlin,
-        Language::Ruby,
-        Language::Rust,
-        Language::Swift,
-        Language::Terraform,
-        Language::Yaml,
-        Language::Starlark,
-        Language::Bash,
-        Language::PHP,
-        Language::Markdown,
-        Language::Apex,
-        Language::R,
-        Language::SQL,
-    ];
-
-    #[test]
-    fn all_languages_accounted_for() {
-        for lang in ALL_LANGUAGES {
-            assert!(
-                SUPPORTED.contains(lang) || NOT_IMPLEMENTED.contains(lang),
-                "{lang:?} is not listed in SUPPORTED or NOT_IMPLEMENTED — \
-                 either add enclosing-function detection for it or add it to NOT_IMPLEMENTED"
-            );
-        }
-    }
 }
