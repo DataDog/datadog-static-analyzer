@@ -31,11 +31,14 @@ impl JavaFileContext {
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
 pub fn find_enclosing_function(
     source_code: &str,
-    line: u32,
-    col: u32,
+    start_line: u32,
+    start_col: u32,
+    end_line: u32,
+    end_col: u32,
 ) -> Option<EnclosingFunction> {
-    get_tree(source_code, &Language::Java)
-        .and_then(|tree| find_enclosing_function_with_tree(source_code, &tree, line, col))
+    get_tree(source_code, &Language::Java).and_then(|tree| {
+        find_enclosing_function_with_tree(source_code, &tree, start_line, start_col, end_line, end_col)
+    })
 }
 
 /// Returns the enclosing method or constructor for the given source position.
@@ -51,17 +54,23 @@ pub fn find_enclosing_function(
 pub fn find_enclosing_function_with_tree(
     source_code: &str,
     tree: &tree_sitter::Tree,
-    line: u32,
-    col: u32,
+    start_line: u32,
+    start_col: u32,
+    end_line: u32,
+    end_col: u32,
 ) -> Option<EnclosingFunction> {
     let ctx = JavaFileContext::new(source_code, tree);
-    let point = tree_sitter::Point {
-        row: line.saturating_sub(1) as usize,
-        column: col.saturating_sub(1) as usize,
+    let start = tree_sitter::Point {
+        row: start_line.saturating_sub(1) as usize,
+        column: start_col.saturating_sub(1) as usize,
+    };
+    let end = tree_sitter::Point {
+        row: end_line.saturating_sub(1) as usize,
+        column: end_col.saturating_sub(1) as usize,
     };
     let mut node = tree
         .root_node()
-        .named_descendant_for_point_range(point, point)?;
+        .named_descendant_for_point_range(start, end)?;
     loop {
         match node.kind() {
             "method_declaration" | "constructor_declaration" => {
@@ -334,7 +343,7 @@ mod tests {
 
     fn find(source: &str, line: u32, col: u32) -> Option<EnclosingFunction> {
         let tree = get_tree(source, &Language::Java).unwrap();
-        find_enclosing_function_with_tree(source, &tree, line, col)
+        find_enclosing_function_with_tree(source, &tree, line, col, line, col)
     }
 
     fn ef(name: &str, sig: &str) -> Option<EnclosingFunction> {

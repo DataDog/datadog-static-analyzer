@@ -206,6 +206,8 @@ impl JsRuntime {
                     source_tree.as_ref(),
                     v.start.line,
                     v.start.col,
+                    v.end.line,
+                    v.end.col,
                     &rule.language,
                 );
                 v

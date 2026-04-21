@@ -19,12 +19,14 @@ use crate::model::violation::EnclosingFunction;
 /// If you already have a parsed tree, use [`find_enclosing_function_with_tree`].
 pub fn find_enclosing_function(
     source_code: &str,
-    line: u32,
-    col: u32,
+    start_line: u32,
+    start_col: u32,
+    end_line: u32,
+    end_col: u32,
     language: &Language,
 ) -> Option<EnclosingFunction> {
     match language {
-        Language::Java => java::methods::find_enclosing_function(source_code, line, col),
+        Language::Java => java::methods::find_enclosing_function(source_code, start_line, start_col, end_line, end_col),
         Language::Python
         | Language::Go
         | Language::JavaScript
@@ -54,13 +56,15 @@ pub fn find_enclosing_function(
 pub fn find_enclosing_function_with_tree(
     source_code: &str,
     tree: &tree_sitter::Tree,
-    line: u32,
-    col: u32,
+    start_line: u32,
+    start_col: u32,
+    end_line: u32,
+    end_col: u32,
     language: &Language,
 ) -> Option<EnclosingFunction> {
     match language {
         Language::Java => {
-            java::methods::find_enclosing_function_with_tree(source_code, tree, line, col)
+            java::methods::find_enclosing_function_with_tree(source_code, tree, start_line, start_col, end_line, end_col)
         }
         Language::Python
         | Language::Go
