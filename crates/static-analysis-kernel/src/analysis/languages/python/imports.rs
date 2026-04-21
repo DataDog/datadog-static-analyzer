@@ -232,13 +232,9 @@ fn parse_import_statement<'tree, 'text: 'tree>(
         // We loop so that if creating the `Import` fails, we can try any subsequent imports within
         // this node (e.g. in a comma-separated list) to avoid prematurely yielding `None` on the iterator.
         while idx < node.named_child_count() {
-            let field_name = node.field_name_for_named_child(idx as u32);
             let name_node = node.named_child(idx).expect("should be in-bounds");
             idx += 1;
 
-            if field_name != Some("name") {
-                continue;
-            }
             if let Some(parsed) = parse_field_child_node(source_code, name_node) {
                 if let Ok(import) = Import::try_new(parsed.full_text, parsed.alias, None, false) {
                     return Some(import);
