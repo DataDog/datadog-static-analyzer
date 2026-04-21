@@ -9,14 +9,13 @@ use crate::analysis::tree_sitter::get_tree;
 use crate::model::common::Language;
 use crate::model::violation::EnclosingFunction;
 
-/// Per-file data that is expensive to compute and reused across violations in the same source.
-pub struct JavaFileContext {
+struct JavaFileContext {
     package: Option<String>,
     import_map: HashMap<String, String>,
 }
 
 impl JavaFileContext {
-    pub fn new(source_code: &str, tree: &tree_sitter::Tree) -> Self {
+    fn new(source_code: &str, tree: &tree_sitter::Tree) -> Self {
         let root = tree.root_node();
         Self {
             package: find_package(source_code, root),
@@ -49,9 +48,6 @@ pub fn find_enclosing_function(
 /// Types from `java.lang` (String, Integer, etc.) are always resolved. Types only
 /// reachable via wildcard imports are returned as simple names.
 ///
-/// When called repeatedly for violations in the same file, prefer
-/// [`find_enclosing_function_with_context`] to avoid re-scanning the file for
-/// package and import declarations on every call.
 pub fn find_enclosing_function_with_tree(
     source_code: &str,
     tree: &tree_sitter::Tree,
@@ -59,18 +55,6 @@ pub fn find_enclosing_function_with_tree(
     col: u32,
 ) -> Option<EnclosingFunction> {
     let ctx = JavaFileContext::new(source_code, tree);
-    find_enclosing_function_with_context(source_code, tree, line, col, &ctx)
-}
-
-/// Like [`find_enclosing_function_with_tree`] but reuses a [`JavaFileContext`] that was
-/// precomputed once for the file, avoiding repeated scans for the package and import map.
-pub fn find_enclosing_function_with_context(
-    source_code: &str,
-    tree: &tree_sitter::Tree,
-    line: u32,
-    col: u32,
-    ctx: &JavaFileContext,
-) -> Option<EnclosingFunction> {
     let point = tree_sitter::Point {
         row: line.saturating_sub(1) as usize,
         column: col.saturating_sub(1) as usize,
@@ -84,7 +68,7 @@ pub fn find_enclosing_function_with_context(
                 let name = node
                     .child_by_field_name("name")
                     .map(|n| ts_node_text(source_code, n).to_owned())?;
-                let fully_qualified_name = build_fqn(source_code, ctx, node, &name);
+                let fully_qualified_name = build_fqn(source_code, &ctx, node, &name);
                 return Some(EnclosingFunction {
                     name,
                     fully_qualified_name,

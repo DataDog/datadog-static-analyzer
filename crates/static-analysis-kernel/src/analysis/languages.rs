@@ -12,46 +12,6 @@ pub mod typescript;
 use crate::model::common::Language;
 use crate::model::violation::EnclosingFunction;
 
-/// Per-file context precomputed once and reused across all violations in the same source file.
-///
-/// Construct with [`LanguageFileContext::new`] before iterating over violations, then call
-/// [`LanguageFileContext::find_enclosing_function`] for each one.
-pub enum LanguageFileContext {
-    Java(java::methods::JavaFileContext),
-    /// Language has no precomputed context; falls back to the regular per-call dispatch.
-    Other(Language),
-}
-
-impl LanguageFileContext {
-    pub fn new(source_code: &str, tree: &tree_sitter::Tree, language: &Language) -> Self {
-        match language {
-            Language::Java => Self::Java(java::methods::JavaFileContext::new(source_code, tree)),
-            lang => Self::Other(*lang),
-        }
-    }
-
-    pub fn find_enclosing_function(
-        &self,
-        source_code: &str,
-        tree: &tree_sitter::Tree,
-        line: u32,
-        col: u32,
-    ) -> Option<EnclosingFunction> {
-        match self {
-            Self::Java(ctx) => java::methods::find_enclosing_function_with_context(
-                source_code,
-                tree,
-                line,
-                col,
-                ctx,
-            ),
-            Self::Other(lang) => {
-                find_enclosing_function_with_tree(source_code, tree, line, col, lang)
-            }
-        }
-    }
-}
-
 /// Returns the enclosing function for the given source position, or `None` if the position
 /// is not inside any named function or the language has no implementation.
 ///

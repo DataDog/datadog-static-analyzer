@@ -197,20 +197,16 @@ impl JsRuntime {
 
         let execution_time = now.elapsed();
 
-        let file_ctx = analysis::languages::LanguageFileContext::new(
-            source_text.as_ref(),
-            source_tree.as_ref(),
-            &rule.language,
-        );
         let violations = js_violations
             .into_iter()
             .map(|v| v.into_violation(rule.severity, rule.category))
             .map(|mut v| {
-                v.enclosing_function = file_ctx.find_enclosing_function(
+                v.enclosing_function = analysis::languages::find_enclosing_function_with_tree(
                     source_text.as_ref(),
                     source_tree.as_ref(),
                     v.start.line,
                     v.start.col,
+                    &rule.language,
                 );
                 v
             })
