@@ -42,8 +42,8 @@ pub fn find_enclosing_function(
 /// Returns the enclosing method or constructor for the given source position.
 /// See [`find_enclosing_function`] for documentation.
 ///
-/// The `fullyQualifiedName` follows the standard Java FQN format:
-///   `package.ClassName#methodName(ParamType1, ParamType2):ReturnType`
+/// The `fully_qualified_name` follows the FQMN format:
+///   `package.ClassName.methodName(ParamType1, ParamType2)`
 ///
 /// Types are resolved to fully qualified names using the file's import declarations.
 /// Types from `java.lang` (String, Integer, etc.) are always resolved. Types only
@@ -96,10 +96,8 @@ pub fn find_enclosing_function_with_context(
     }
 }
 
-/// Builds the fully qualified method name in the format:
-///   `package.ClassName#methodName(ParamType1, ParamType2):ReturnType`
-///
-/// Constructors have no return type and omit the `:ReturnType` suffix.
+/// Builds the fully qualified method name (FQMN) in the format:
+///   `package.ClassName.methodName(ParamType1, ParamType2)`
 fn build_fqn(
     source_code: &str,
     ctx: &JavaFileContext,
@@ -122,11 +120,6 @@ fn build_fqn(
 
     let pkg = ctx.package.as_deref();
 
-    // method_declaration has a `type` field; constructor_declaration does not.
-    let return_type = method_node
-        .child_by_field_name("type")
-        .map(|t| resolve_type(source_code, t, &ctx.import_map, pkg));
-
     let param_types = method_node
         .child_by_field_name("parameters")
         .map(|p| extract_param_types(source_code, p, &ctx.import_map, pkg))
@@ -134,9 +127,10 @@ fn build_fqn(
 
     let params_str = param_types.join(", ");
 
-    match return_type {
-        Some(rt) => format!("{fqn_class}#{method_name}({params_str}):{rt}"),
-        None => format!("{fqn_class}#{method_name}({params_str})"),
+    if fqn_class.is_empty() {
+        format!("{method_name}({params_str})")
+    } else {
+        format!("{fqn_class}.{method_name}({params_str})")
     }
 }
 
@@ -375,7 +369,7 @@ class Foo {
     }
 }
 ";
-        assert_eq!(find(src, 3, 9), ef("doSomething", "Foo#doSomething():void"));
+        assert_eq!(find(src, 3, 9), ef("doSomething", "Foo.doSomething()"));
     }
 
     #[test]
@@ -387,7 +381,7 @@ class Foo {
     }
 }
 ";
-        assert_eq!(find(src, 3, 9), ef("Foo", "Foo#Foo()"));
+        assert_eq!(find(src, 3, 9), ef("Foo", "Foo.Foo()"));
     }
 
     #[test]
@@ -402,7 +396,7 @@ class Foo {
 ";
         assert_eq!(
             find(src, 4, 9),
-            ef("doSomething", "com.example.Foo#doSomething():void")
+            ef("doSomething", "com.example.Foo.doSomething()")
         );
     }
 
@@ -418,7 +412,7 @@ class Foo {
 ";
         assert_eq!(
             find(src, 3, 9),
-            ef("handle", "Foo#handle(java.lang.String):void")
+            ef("handle", "Foo.handle(java.lang.String)")
         );
     }
 
@@ -437,7 +431,7 @@ class Foo {
             find(src, 4, 9),
             ef(
                 "process",
-                "Foo#process(org.springframework.web.multipart.MultipartFile, org.springframework.ui.Model):java.lang.String"
+                "Foo.process(org.springframework.web.multipart.MultipartFile, org.springframework.ui.Model)"
             )
         );
     }
@@ -458,7 +452,7 @@ class DashboardController {
             find(src, 5, 9),
             ef(
                 "processSimple",
-                "org.hdivsamples.controllers.DashboardController#processSimple(org.springframework.web.multipart.MultipartFile, org.springframework.ui.Model):java.lang.String"
+                "org.hdivsamples.controllers.DashboardController.processSimple(org.springframework.web.multipart.MultipartFile, org.springframework.ui.Model)"
             )
         );
     }
@@ -474,7 +468,7 @@ class Foo {
     }
 }
 ";
-        assert_eq!(find(src, 4, 9), ef("doSomething", "Foo#doSomething():void"));
+        assert_eq!(find(src, 4, 9), ef("doSomething", "Foo.doSomething()"));
     }
 
     #[test]
@@ -487,7 +481,7 @@ class Foo {
     }
 }
 ";
-        assert_eq!(find(src, 3, 9), ef("parse", "Foo#parse():void"));
+        assert_eq!(find(src, 3, 9), ef("parse", "Foo.parse()"));
     }
 
     #[test]
