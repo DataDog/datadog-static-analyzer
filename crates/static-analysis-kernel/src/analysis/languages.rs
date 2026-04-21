@@ -26,7 +26,13 @@ pub fn find_enclosing_function(
     language: &Language,
 ) -> Option<EnclosingFunction> {
     match language {
-        Language::Java => java::methods::find_enclosing_function(source_code, start_line, start_col, end_line, end_col),
+        Language::Java => java::methods::find_enclosing_function(
+            source_code,
+            start_line,
+            start_col,
+            end_line,
+            end_col,
+        ),
         Language::Python
         | Language::Go
         | Language::JavaScript
@@ -63,9 +69,14 @@ pub fn find_enclosing_function_with_tree(
     language: &Language,
 ) -> Option<EnclosingFunction> {
     match language {
-        Language::Java => {
-            java::methods::find_enclosing_function_with_tree(source_code, tree, start_line, start_col, end_line, end_col)
-        }
+        Language::Java => java::methods::find_enclosing_function_with_tree(
+            source_code,
+            tree,
+            start_line,
+            start_col,
+            end_line,
+            end_col,
+        ),
         Language::Python
         | Language::Go
         | Language::JavaScript

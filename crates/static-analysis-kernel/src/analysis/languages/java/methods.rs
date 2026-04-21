@@ -37,7 +37,14 @@ pub fn find_enclosing_function(
     end_col: u32,
 ) -> Option<EnclosingFunction> {
     get_tree(source_code, &Language::Java).and_then(|tree| {
-        find_enclosing_function_with_tree(source_code, &tree, start_line, start_col, end_line, end_col)
+        find_enclosing_function_with_tree(
+            source_code,
+            &tree,
+            start_line,
+            start_col,
+            end_line,
+            end_col,
+        )
     })
 }
 
