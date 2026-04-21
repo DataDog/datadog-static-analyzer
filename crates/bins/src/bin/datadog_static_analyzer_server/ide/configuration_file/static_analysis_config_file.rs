@@ -60,6 +60,31 @@ impl TryFrom<String> for StaticAnalysisConfigFile {
     }
 }
 
+/// Returns a vec representing an ignored path (via the `**` glob).
+fn create_ignored_path() -> Vec<String> {
+    vec![WILDCARD_IGNORE.to_string()]
+}
+
+fn create_ignored_pattern() -> Vec<PathPattern> {
+    create_ignored_path()
+        .into_iter()
+        .map(|path_str| PathPattern {
+            prefix: std::path::PathBuf::from(path_str),
+            glob: None,
+        })
+        .collect()
+}
+
+fn create_ignored_rule() -> RuleConfig {
+    RuleConfig {
+        paths: PathConfig {
+            ignore: create_ignored_pattern(),
+            only: None,
+        },
+        ..Default::default()
+    }
+}
+
 impl StaticAnalysisConfigFile {
     /// Parses a raw YAML configuration string (not base64-encoded) into a [`StaticAnalysisConfigFile`].
     fn from_yaml_content(content: String) -> Result<Self, ConfigFileError> {
@@ -91,34 +116,7 @@ impl StaticAnalysisConfigFile {
             original_content: Some(content),
         })
     }
-}
 
-/// Returns a vec representing an ignored path (via the `**` glob).
-fn create_ignored_path() -> Vec<String> {
-    vec![WILDCARD_IGNORE.to_string()]
-}
-
-fn create_ignored_pattern() -> Vec<PathPattern> {
-    create_ignored_path()
-        .into_iter()
-        .map(|path_str| PathPattern {
-            prefix: std::path::PathBuf::from(path_str),
-            glob: None,
-        })
-        .collect()
-}
-
-fn create_ignored_rule() -> RuleConfig {
-    RuleConfig {
-        paths: PathConfig {
-            ignore: create_ignored_pattern(),
-            only: None,
-        },
-        ..Default::default()
-    }
-}
-
-impl StaticAnalysisConfigFile {
     /// Ignores a specific rule in the static analysis configuration file.
     ///
     /// # Parameters

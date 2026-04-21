@@ -127,7 +127,7 @@ pub fn post_parse_config(
     let ParseConfigRequest { configuration } = request.into_inner();
     tracing::debug!(%configuration);
     let config = StaticAnalysisConfigFile::try_from(configuration)
-        .map_err(|e| Custom(Status::InternalServerError, e))?;
+        .map_err(|e| Custom(Status::BadRequest, e))?;
     Ok(Json(ParseConfigResponse {
         sast: SastParsedConfig {
             rulesets: config.sast_rulesets(),

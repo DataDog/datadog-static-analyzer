@@ -357,7 +357,7 @@ rulesets:
             )
             .dispatch();
 
-        assert_eq!(response.status(), Status::InternalServerError);
+        assert_eq!(response.status(), Status::BadRequest);
         assert!(response.into_string().contains("Error parsing yaml file"));
     }
 
