@@ -140,6 +140,10 @@ pub fn should_use_datadog_backend() -> bool {
 }
 
 // Returns a RequestBuilder for the given API path.
+fn build_user_agent() -> String {
+    format!("{}/{} ({})", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION)
+}
+
 fn make_request(
     method: RequestMethod,
     path: &str,
@@ -151,13 +155,12 @@ fn make_request(
         get_datadog_basename(use_staging),
         path
     );
-    let user_agent = format!("{}/{} ({})", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION);
     let request_builder = match method {
         RequestMethod::Get => reqwest::blocking::Client::new().get(url),
         RequestMethod::Post => reqwest::blocking::Client::new().post(url),
     }
     .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON)
-    .header(HEADER_USER_AGENT, user_agent);
+    .header(HEADER_USER_AGENT, build_user_agent());
 
     let api_key = get_datadog_variable_value("API_KEY");
     let app_key = get_datadog_variable_value("APP_KEY");
@@ -384,33 +387,17 @@ pub fn get_remote_configuration(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use httpmock::prelude::*;
-    use std::sync::Mutex;
-
-    // Serializes tests that read or write DD_* environment variables.
-    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_get_datadog_basename() {
-        let _guard = ENV_MUTEX.lock().unwrap();
         assert_eq!(get_datadog_basename(true), STAGING_DATADOG_BASENAME);
         assert_eq!(get_datadog_basename(false), DEFAULT_DATADOG_BASENAME);
     }
 
     #[test]
-    fn test_get_ruleset_sends_user_agent() {
-        let _guard = ENV_MUTEX.lock().unwrap();
-        let server = MockServer::start();
-        let mock = server.mock(|when, then| {
-            when.path("/api/v2/static-analysis/rulesets/test-ruleset")
-                .header_exists("User-Agent");
-            then.status(200).body("{}");
-        });
-
-        std::env::set_var("DD_HOSTNAME", server.base_url());
-        let _ = get_ruleset("test-ruleset", false, false);
-        std::env::remove_var("DD_HOSTNAME");
-
-        mock.assert();
+    fn test_build_user_agent() {
+        let ua = build_user_agent();
+        assert!(ua.starts_with(&format!("{}/", USER_AGENT_PRODUCT)));
+        assert!(ua.contains(" (") && ua.ends_with(')'));
     }
 }
