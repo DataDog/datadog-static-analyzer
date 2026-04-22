@@ -318,13 +318,8 @@ fn parse_future_import_statement<'text>(
 }
 
 /// Constructs a [`MaybeAliased`] from the provided `node`. This is intended to be used on
-/// the `name` and `module_name` field children.
-///
-/// # Panics
-/// Panics if the provided node isn't a:
-/// * `dotted_name`
-/// * `aliased_import`
-/// * `relative_import`
+/// the `name` and `module_name` field children. Returns `None` if the node isn't a
+/// `relative_import`, `dotted_name`, or an `aliased_import`.
 fn parse_field_child_node<'text>(
     source_code: &'text str,
     node: tree_sitter::Node,
@@ -481,7 +476,7 @@ mod tests {
     }
 
     #[test]
-    fn error_node_does_not_panic() {
+    fn parse_imports_error_node() {
         let code = "import foo, + bar";
         let tree = get_tree(code, &Language::Python).unwrap();
         assert!(tree.root_node().has_error());
@@ -496,7 +491,7 @@ mod tests {
     }
 
     #[test]
-    fn all_error_nodes_does_not_panic() {
+    fn parse_imports_all_error_nodes() {
         let code = "import +, +";
         let tree = get_tree(code, &Language::Python).unwrap();
         assert!(tree.root_node().has_error());
