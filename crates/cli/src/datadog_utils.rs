@@ -14,10 +14,12 @@ use crate::model::datadog_api::{
 use crate::{
     constants::{
         DATADOG_HEADER_API_KEY, DATADOG_HEADER_APP_KEY, DATADOG_HEADER_JWT_TOKEN,
-        HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON,
+        HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON, HEADER_USER_AGENT,
+        USER_AGENT_PRODUCT,
     },
     model::datadog_api::APIErrorResponse,
 };
+use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
 use kernel::utils::encode_base64_string;
@@ -149,11 +151,13 @@ fn make_request(
         get_datadog_basename(use_staging),
         path
     );
+    let user_agent = format!("{}/{} ({})", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION);
     let request_builder = match method {
         RequestMethod::Get => reqwest::blocking::Client::new().get(url),
         RequestMethod::Post => reqwest::blocking::Client::new().post(url),
     }
-    .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
+    .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON)
+    .header(HEADER_USER_AGENT, user_agent);
 
     let api_key = get_datadog_variable_value("API_KEY");
     let app_key = get_datadog_variable_value("APP_KEY");
@@ -380,10 +384,33 @@ pub fn get_remote_configuration(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use httpmock::prelude::*;
+    use std::sync::Mutex;
+
+    // Serializes tests that read or write DD_* environment variables.
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_get_datadog_basename() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         assert_eq!(get_datadog_basename(true), STAGING_DATADOG_BASENAME);
         assert_eq!(get_datadog_basename(false), DEFAULT_DATADOG_BASENAME);
+    }
+
+    #[test]
+    fn test_get_ruleset_sends_user_agent() {
+        let _guard = ENV_MUTEX.lock().unwrap();
+        let server = MockServer::start();
+        let mock = server.mock(|when, then| {
+            when.path("/api/v2/static-analysis/rulesets/test-ruleset")
+                .header_exists("User-Agent");
+            then.status(200).body("{}");
+        });
+
+        std::env::set_var("DD_HOSTNAME", server.base_url());
+        let _ = get_ruleset("test-ruleset", false, false);
+        std::env::remove_var("DD_HOSTNAME");
+
+        mock.assert();
     }
 }
