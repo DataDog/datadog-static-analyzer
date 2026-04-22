@@ -139,11 +139,11 @@ pub fn should_use_datadog_backend() -> bool {
     get_datadog_variable_value("API_KEY").is_ok() || get_datadog_variable_value("JWT_TOKEN").is_ok()
 }
 
-// Returns a RequestBuilder for the given API path.
 fn build_user_agent() -> String {
     format!("{}/{} ({})", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION)
 }
 
+// Returns a RequestBuilder for the given API path.
 fn make_request(
     method: RequestMethod,
     path: &str,
