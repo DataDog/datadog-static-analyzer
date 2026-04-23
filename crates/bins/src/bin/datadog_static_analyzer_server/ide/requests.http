@@ -1,4 +1,5 @@
-@host = http://localhost:49159
+@host = http://localhost:7777
+
 @configuration = c2NoZW1hLXZlcnNpb246IHYxCnJ1bGVzZXRzOgotIGphdmEtMQotIGphdmEtc2VjdXJpdHk=
 # schema-version: v1
 # rulesets:
@@ -10,7 +11,6 @@
 # rulesets:
 # - java-1
 # - java-security
-
 
 ### version
 GET {{host}}/version HTTP/1.1
@@ -143,6 +143,21 @@ Content-Type: application/json
 }
 
 
+### parse-config legacy
+POST {{host}}/ide/v2/config/parse HTTP/1.1
+Content-Type: application/json
+
+{
+  "configuration": "schema-version: v1\nruleaaasets:\n  - java-security\n  - java-1:\n    only:\n      - domains/project1"
+}
+
+### parse-config v1
+POST {{host}}/ide/v2/config/parse HTTP/1.1
+Content-Type: application/json
+
+{
+  "configuration": "schema-version: v1.0\nsast:\n  ruleset-configs:\n    java-1:\n      only-paths:\n        - domains/project1"
+}
 
 
 

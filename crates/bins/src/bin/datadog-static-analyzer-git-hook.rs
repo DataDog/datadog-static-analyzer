@@ -421,6 +421,7 @@ fn main() -> Result<()> {
         use_debug,
         ignore_generated_files,
         timeout,
+        ..Default::default()
     };
 
     if should_verify_checksum {

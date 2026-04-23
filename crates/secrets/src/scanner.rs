@@ -64,7 +64,9 @@ pub fn find_secrets(
         return vec![];
     }
 
-    scanner.validate_matches(&mut matches);
+    if !options.disable_validation {
+        scanner.validate_matches(&mut matches);
+    }
 
     matches
         .iter()

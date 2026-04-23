@@ -1,6 +1,7 @@
 #![allow(clippy::module_name_repetitions)]
 
 mod configuration_file;
+mod secrets;
 use rocket::Route;
 
 pub fn ide_routes() -> Vec<Route> {
@@ -12,6 +13,7 @@ pub fn ide_routes() -> Vec<Route> {
         configuration_file::endpoints::post_get_rulesets_v2,
         configuration_file::endpoints::post_add_rulesets,
         configuration_file::endpoints::post_add_rulesets_v2,
+        secrets::endpoints::post_scan_secrets,
     ]
 }
 
@@ -315,7 +317,7 @@ rulesets:
             ))
             .header(ContentType::JSON)
             .body(format!(
-                r#"{{ 
+                r#"{{
                 "rulesets": ["ruleset1", "ruleset2"],
                 "configuration": "{config}",
                 "encoded": false
