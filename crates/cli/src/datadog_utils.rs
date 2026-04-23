@@ -140,7 +140,7 @@ pub fn should_use_datadog_backend() -> bool {
 }
 
 fn build_user_agent() -> String {
-    format!("{}/{} ({})", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION)
+    format!("{}/{}-{}", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION)
 }
 
 // Returns a RequestBuilder for the given API path.
@@ -397,7 +397,7 @@ mod tests {
     #[test]
     fn test_build_user_agent() {
         let ua = build_user_agent();
-        assert!(ua.starts_with(&format!("{}/", USER_AGENT_PRODUCT)));
-        assert!(ua.contains(" (") && ua.ends_with(')'));
+        assert_eq!(ua, format!("{}/{}-{}", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION));
+        assert!(!ua.contains(' '));
     }
 }
