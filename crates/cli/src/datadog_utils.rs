@@ -397,7 +397,10 @@ mod tests {
     #[test]
     fn test_build_user_agent() {
         let ua = build_user_agent();
-        assert_eq!(ua, format!("{}/{}-{}", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION));
+        assert_eq!(
+            ua,
+            format!("{}/{}-{}", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION)
+        );
         assert!(!ua.contains(' '));
     }
 }
