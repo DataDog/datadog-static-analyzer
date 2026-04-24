@@ -256,6 +256,40 @@ mod tests {
     }
 
     #[test]
+    fn test_find_secrets_disable_validation() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
+
+        let options = AnalysisOptions {
+            disable_validation: true,
+            ..Default::default()
+        };
+        let matches = find_secrets(&scanner, rules.as_slice(), "myfile", text, &options);
+
+        assert_eq!(matches.len(), 1);
+        let result_matches = &matches.first().unwrap().matches;
+        assert_eq!(result_matches.len(), 2);
+        for m in result_matches {
+            assert_eq!(m.validation_status, SecretValidationStatus::NotAvailable);
+        }
+    }
+
+    #[test]
     fn test_find_secrets_all_ignored() {
         let rules: Vec<SecretRule> = vec![SecretRule {
             id: "secret_rule".to_string(),
