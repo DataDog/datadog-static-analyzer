@@ -101,7 +101,6 @@ pub fn find_enclosing_function_with_tree(
     }
 }
 
-
 /// Returns the text that `node` spans.
 ///
 /// This is simply a wrapper around [`tree_sitter::Node::utf8_text`]
