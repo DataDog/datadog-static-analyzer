@@ -657,7 +657,6 @@ fn generate_results(
                     if let Some(ref ef) = violation.enclosing_function {
                         location_builder.logical_locations(vec![LogicalLocationBuilder::default()
                             .name(ef.name.clone())
-                            .fully_qualified_name(ef.fully_qualified_name.clone())
                             .kind("function".to_string())
                             .build()?]);
                     }
@@ -1346,7 +1345,6 @@ mod tests {
             is_suppressed: false,
             enclosing_function: Some(EnclosingFunction {
                 name: "my_method".to_string(),
-                fully_qualified_name: "def my_method(self)".to_string(),
             }),
         };
         let violation_without_method = Violation {
@@ -1390,7 +1388,7 @@ mod tests {
 
         let sarif_json = serde_json::to_value(sarif_report).unwrap();
 
-        // Violation with enclosing_function: logicalLocations must carry name, fullyQualifiedName, and kind.
+        // Violation with enclosing_function: logicalLocations must carry name and kind.
         let logical_locations = sarif_json
             .pointer("/runs/0/results/0/locations/0/logicalLocations")
             .expect("logicalLocations should be present when enclosing_function is set");
@@ -1398,8 +1396,7 @@ mod tests {
             actual: logical_locations,
             expected: serde_json::json!([{
                 "kind": "function",
-                "name": "my_method",
-                "fullyQualifiedName": "def my_method(self)"
+                "name": "my_method"
             }])
         );
 

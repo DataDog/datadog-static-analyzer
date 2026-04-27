@@ -9,13 +9,6 @@ use serde::{Deserialize, Serialize};
 pub struct EnclosingFunction {
     /// Simple identifier (e.g. `handle`, `doSomething`).
     pub name: String,
-    /// Fully qualified method name (FQMN). The format varies by language:
-    ///
-    /// - **Java**: `package.ClassName.methodName(ParamType1, ParamType2)`
-    /// - **Go**: `package.FunctionName` / `package.TypeName.MethodName`
-    /// - **Python / JS / TS**: `ClassName.methodName` for methods, `functionName` for top-level functions
-    /// - **C#**: `Namespace.ClassName.MethodName(ParamType1, ParamType2)`
-    pub fully_qualified_name: String,
 }
 
 #[derive(Copy, Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
