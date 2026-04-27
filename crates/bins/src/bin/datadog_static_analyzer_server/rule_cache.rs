@@ -16,11 +16,6 @@ pub struct CompiledServerRule {
 }
 
 impl CompiledServerRule {
-    /// Returns a reference to the [`ServerRule`] that this cache represents.
-    pub fn inner(&self) -> &ServerRule {
-        &self.rule
-    }
-
     /// Returns a reference to the [`RuleInternal`] that this cache represents.
     pub fn as_internal(&self) -> &RuleInternal {
         &self.internal
@@ -32,23 +27,17 @@ impl CompiledServerRule {
 #[derive(Debug)]
 pub struct RuleCache(DashMap<String, Arc<CompiledServerRule>>);
 
-/// A return value from looking up or inserting a value into a [`RuleCache`]. `is_update` will be `true`
-/// if this value previously existed in the map and was updated, or `false` if either a
-/// previous value was returned or the rule name has been cached for the first time.
-#[derive(Debug)]
-pub(crate) struct CachedValue {
-    pub(crate) rule: Arc<CompiledServerRule>,
-    pub(crate) is_update: bool,
-}
-
 impl RuleCache {
     /// Returns a new `RuleCache` with a capacity of 0.
     pub fn new() -> Self {
         Self(DashMap::new())
     }
 
-    /// Returns a [`CachedValue`] for the provided [`ServerRule`], utilizing a cache under the hood.
-    pub fn get_or_insert_from(&self, server_rule: ServerRule) -> Result<CachedValue, &'static str> {
+    /// Returns the [`CompiledServerRule`] for the provided [`ServerRule`], utilizing a cache under the hood.
+    pub fn get_or_insert_from(
+        &self,
+        server_rule: ServerRule,
+    ) -> Result<Arc<CompiledServerRule>, &'static str> {
         if let Some(cached) = self.0.get(&server_rule.name) {
             // (Note that even if the cache has this rule re-written after this function returns, the caller
             // will still hold an owned reference to the original compiled rule, so there is no race).
@@ -57,10 +46,7 @@ impl RuleCache {
             // This check is necessary because the HashMap is keyed by rule name, so there
             // could be a collision if the rule is updated.
             if cached.rule == server_rule {
-                return Ok(CachedValue {
-                    rule: Arc::clone(cached.value()),
-                    is_update: false,
-                });
+                return Ok(Arc::clone(cached.value()));
             }
         }
         // If there was no cached rule (or the rule wasn't an exact match), compile and cache a new rule.
@@ -71,11 +57,8 @@ impl RuleCache {
             internal: rule_internal,
         });
         let cloned_rule = Arc::clone(&compiled);
-        let existing = self.0.insert(rule_name, compiled);
-        Ok(CachedValue {
-            rule: cloned_rule,
-            is_update: existing.is_some(),
-        })
+        self.0.insert(rule_name, compiled);
+        Ok(cloned_rule)
     }
 }
 
@@ -96,11 +79,9 @@ pub(crate) fn cached_analysis_request(
             // we know the runtime's v8::Script cache cannot change out from under us.
             // Thus, there is no potential race in the time after clearing the cache
             // but before actually executing the JavaScript rule).
-            if cached.is_update {
-                // The runtime's `v8::Script` cache is keyed only by name -- we need to manually clear it.
-                runtime.clear_rule_cache(&cached.rule.inner().name);
-            }
-            compiled_rules.push(cached.rule);
+            let internal = cached.as_internal();
+            let _ = runtime.evict_script_if_stale(&internal.name, &internal.code);
+            compiled_rules.push(cached);
         }
         let rule_internals = compiled_rules
             .iter()
@@ -120,8 +101,7 @@ pub(crate) fn cached_analysis_request(
         let mut rule_internals = Vec::with_capacity(request.rules.len());
         for server_rule in request.rules {
             let rule_internal = RuleInternal::try_from(server_rule)?;
-            // The runtime's `v8::Script` cache is keyed only by name -- we need to manually clear it.
-            runtime.clear_rule_cache(&rule_internal.name);
+            let _ = runtime.evict_script_if_stale(&rule_internal.name, &rule_internal.code);
             rule_internals.push(rule_internal);
         }
         let req_with_internal: AnalysisRequest<RuleInternal> = AnalysisRequest {
@@ -144,53 +124,53 @@ mod tests {
     use kernel::model::common::Language;
     use kernel::model::rule::{compute_sha256, RuleCategory, RuleSeverity, RuleType};
     use kernel::utils::encode_base64_string;
-    use server::model::analysis_request::{AnalysisRequest, ServerRule};
+    use server::model::analysis_request::{AnalysisRequest, AnalysisRequestOptions, ServerRule};
 
-    /// Tests that `cached_analysis_request` implements the (optional) cache properly.
-    /// When enabled, this requires:
-    /// * Updating the `RuleCache` cache
-    /// * Updating the thread-local JavaScript runtime's `v8::Script` cache
+    fn request_from(
+        rule_name: &str,
+        language: Language,
+        rule: (&str, &str),
+    ) -> AnalysisRequest<ServerRule> {
+        let file_contents = "
+def abc():
+";
+        let code_base64 = encode_base64_string(rule.0.to_string());
+        let checksum = Some(compute_sha256(code_base64.as_bytes()));
+        let ts_query_b64 = encode_base64_string(rule.1.to_string());
+        let server_rule = ServerRule {
+            name: rule_name.to_string(),
+            short_description_base64: None,
+            description_base64: None,
+            category: Some(RuleCategory::BestPractices),
+            severity: Some(RuleSeverity::Warning),
+            language,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64,
+            checksum,
+            pattern: None,
+            tree_sitter_query_base64: Some(ts_query_b64),
+            arguments: vec![],
+        };
+        AnalysisRequest {
+            filename: "file.py".to_string(),
+            language: Language::Python,
+            file_encoding: "utf-8".to_string(),
+            code_base64: encode_base64_string(file_contents.to_string()),
+            rules: vec![server_rule],
+            configuration_base64: None,
+            options: Some(AnalysisRequestOptions {
+                log_output: Some(true),
+                use_tree_sitter: None,
+            }),
+        }
+    }
+
+    /// `cached_analysis_request` operates [RuleCache] properly.
     #[test]
     fn test_cached_analysis_request() {
         const RULE_NAME: &str = "ruleset/rule-name";
         let v8 = ddsa_lib::test_utils::cfg_test_v8();
-
-        fn request_from(
-            rule_name: &str,
-            language: Language,
-            rule: (&str, &str),
-        ) -> AnalysisRequest<ServerRule> {
-            let file_contents = "
-def abc():
-";
-            let code_base64 = encode_base64_string(rule.0.to_string());
-            let checksum = Some(compute_sha256(code_base64.as_bytes()));
-            let ts_query_b64 = encode_base64_string(rule.1.to_string());
-            let server_rule = ServerRule {
-                name: rule_name.to_string(),
-                short_description_base64: None,
-                description_base64: None,
-                category: Some(RuleCategory::BestPractices),
-                severity: Some(RuleSeverity::Warning),
-                language,
-                rule_type: RuleType::TreeSitterQuery,
-                entity_checked: None,
-                code_base64,
-                checksum,
-                pattern: None,
-                tree_sitter_query_base64: Some(ts_query_b64),
-                arguments: vec![],
-            };
-            AnalysisRequest {
-                filename: "file.py".to_string(),
-                language: Language::Python,
-                file_encoding: "utf-8".to_string(),
-                code_base64: encode_base64_string(file_contents.to_string()),
-                rules: vec![server_rule],
-                configuration_base64: None,
-                options: None,
-            }
-        }
 
         let req_v1 = request_from(
             RULE_NAME,
@@ -254,5 +234,53 @@ function visit(captures) {
                 );
             }
         }
+    }
+
+    /// `cached_analysis_request` operates the v8::UnboundScript cache of JSRuntime.
+    #[test]
+    fn test_cached_analysis_request_runtime_script_cache() {
+        const RULE_NAME: &str = "ruleset/rule-name";
+        let v8 = ddsa_lib::test_utils::cfg_test_v8();
+        let cache = RuleCache::new();
+
+        let req_v1 = request_from(
+            RULE_NAME,
+            Language::Python,
+            (
+                // language=javascript
+                "function visit(captures) { console.log('rule_v1'); }",
+                "(function_definition) @func",
+            ),
+        );
+        let req_v2 = request_from(
+            RULE_NAME,
+            Language::Python,
+            (
+                // language=javascript
+                "function visit(captures) { console.log('rule_v2'); }",
+                "(function_definition) @func",
+            ),
+        );
+
+        // Test invariants:
+        // Tests equality of rule name, which triggers a cache collision.
+        assert_eq!(req_v1.rules[0].name, req_v2.rules[0].name);
+        // Tests the clearing of `v8::Script` cache
+        assert_ne!(req_v1.rules[0].code_base64, req_v2.rules[0].code_base64);
+
+        // Two runtimes to simulate two threads. Thus, there are two v8::UnboundScript caches, but the entrypoint is the same `RuleCache`
+        let mut rt_a = v8.new_runtime();
+        let mut rt_b = v8.new_runtime();
+
+        let resp = cached_analysis_request(&mut rt_a, req_v1.clone(), None, Some(&cache)).unwrap();
+        assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v1");
+
+        let resp = cached_analysis_request(&mut rt_b, req_v2.clone(), None, Some(&cache)).unwrap();
+        assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v2");
+
+        // `rt_a` still contains a v8::UnboundScript for `req_v1`.
+        // `cached_analysis_request` must correctly instruct `rt_a` to clear its cache for `RULE_NAME`.
+        let resp = cached_analysis_request(&mut rt_a, req_v2.clone(), None, Some(&cache)).unwrap();
+        assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v2");
     }
 }
