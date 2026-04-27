@@ -223,6 +223,23 @@ impl JsRuntime {
         self.rule_cache.borrow_mut().remove(rule_name).is_some()
     }
 
+    /// Drops the cached [v8::UnboundScript] for the given `rule_name` if its `rule_code` doesn't match the provided.
+    /// Returns `true` if an entry was evicted, or `false` if not.
+    ///
+    /// # Panics
+    /// Panics if the `rule_cache` has an existing borrow.
+    pub fn evict_script_if_stale(&self, rule_name: &str, rule_code: &str) -> bool {
+        let mut cache = self.rule_cache.borrow_mut();
+        let Some(entry) = cache.get(rule_name) else {
+            return false;
+        };
+        if entry.code_hash != CompiledRule::get_code_hash(rule_code) {
+            cache.remove(rule_name);
+            return true;
+        }
+        false
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn execute_rule_internal(
         &mut self,
@@ -482,6 +499,8 @@ pub struct CompiledRule {
     script: v8::Global<v8::UnboundScript>,
     /// The number of lines in the rule code before it was interpolated into the rule template.
     original_line_count: usize,
+    /// A fingerprint of the rule code (before interpolation) that produced this script.
+    code_hash: [u8; 16],
 }
 
 impl CompiledRule {
@@ -509,10 +528,18 @@ impl CompiledRule {
         );
         let script = compile_script(scope, &rule_script, Some(&origin))?;
         let original_line_count = rule_code.lines().count();
+        let code_hash = Self::get_code_hash(rule_code);
         Ok(Self {
             script,
             original_line_count,
+            code_hash,
         })
+    }
+
+    fn get_code_hash(rule_code: &str) -> [u8; 16] {
+        use sha2::Digest;
+        let digest = sha2::Sha256::digest(rule_code.as_bytes());
+        digest[..16].try_into().expect("slice len should be 16")
     }
 
     /// Mutates the provided stack trace to remove lines that reference code outside the template.
@@ -1688,5 +1715,36 @@ function visit(captures) {
             stack_trace_frames,
             vec!["    at someFunction (rule:2:5)", "    at visit (rule:6:5)"]
         );
+    }
+
+    /// [`JsRuntime::evict_script_if_stale`] removes a cached rule if the code hash doesn't match.
+    #[test]
+    fn evict_script_if_stale() {
+        const RULE_NAME: &str = "ruleset/rule-name";
+        const CODE_V1: &str = "function visit(captures) { console.log('rule_v1'); }";
+        const CODE_V2: &str = "function visit(captures) { console.log('rule_v2'); }";
+
+        let mut rt = cfg_test_v8().new_runtime();
+
+        let compiled = CompiledRule::new(&mut rt.v8_handle_scope(), CODE_V1).unwrap();
+        rt.rule_cache
+            .borrow_mut()
+            .insert(RULE_NAME.to_string(), compiled);
+        assert_eq!(
+            rt.rule_cache.borrow().get(RULE_NAME).unwrap().code_hash,
+            CompiledRule::get_code_hash(CODE_V1)
+        );
+
+        let did_evict = rt.evict_script_if_stale(RULE_NAME, CODE_V1);
+        assert!(!did_evict);
+        assert!(rt.rule_cache.borrow().contains_key(RULE_NAME));
+
+        let did_evict = rt.evict_script_if_stale("ruleset/rule-without-a-cached-script", CODE_V2);
+        assert!(!did_evict);
+        assert!(rt.rule_cache.borrow().contains_key(RULE_NAME));
+
+        let did_evict = rt.evict_script_if_stale(RULE_NAME, CODE_V2);
+        assert!(did_evict);
+        assert!(!rt.rule_cache.borrow().contains_key(RULE_NAME));
     }
 }
