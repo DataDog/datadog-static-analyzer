@@ -101,22 +101,6 @@ pub fn find_enclosing_function_with_tree(
     }
 }
 
-/// Walks up from `node` looking for an ancestor whose `kind()` is one of `class_kinds`.
-/// Returns the text of that ancestor's `name` field, or `None` if not found.
-pub(crate) fn enclosing_class_name<'s>(
-    source_code: &'s str,
-    mut node: tree_sitter::Node<'_>,
-    class_kinds: &[&str],
-) -> Option<&'s str> {
-    loop {
-        node = node.parent()?;
-        if class_kinds.contains(&node.kind()) {
-            return node
-                .child_by_field_name("name")
-                .map(|n| ts_node_text(source_code, n));
-        }
-    }
-}
 
 /// Returns the text that `node` spans.
 ///
