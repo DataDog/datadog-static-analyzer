@@ -23,7 +23,7 @@ pub fn find_enclosing_function(
     start_col: u32,
     end_line: u32,
     end_col: u32,
-    language: &Language,
+    language: Language,
 ) -> Option<EnclosingFunction> {
     match language {
         Language::Java => java::methods::find_enclosing_function(
@@ -66,7 +66,7 @@ pub fn find_enclosing_function_with_tree(
     start_col: u32,
     end_line: u32,
     end_col: u32,
-    language: &Language,
+    language: Language,
 ) -> Option<EnclosingFunction> {
     match language {
         Language::Java => java::methods::find_enclosing_function_with_tree(

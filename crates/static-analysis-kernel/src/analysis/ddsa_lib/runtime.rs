@@ -208,7 +208,7 @@ impl JsRuntime {
                     v.start.col,
                     v.end.line,
                     v.end.col,
-                    &rule.language,
+                    rule.language,
                 );
                 v
             })
