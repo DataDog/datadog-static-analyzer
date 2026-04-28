@@ -154,4 +154,20 @@ class Foo {
 ";
         assert_eq!(find(src, 2, 9), None);
     }
+
+    // Lambdas are not named, so we report the nearest enclosing named method instead.
+    // Naming individual lambdas is not implemented.
+    #[test]
+    fn inside_lambda_reports_enclosing_method() {
+        let src = "\
+class Foo {
+    public void doWork() {
+        Runnable r = () -> {
+            int x = 1;
+        };
+    }
+}
+";
+        assert_eq!(find(src, 4, 13), ef("doWork"));
+    }
 }
