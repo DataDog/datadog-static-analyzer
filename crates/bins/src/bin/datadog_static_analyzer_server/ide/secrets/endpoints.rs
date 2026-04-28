@@ -37,7 +37,7 @@ pub async fn post_scan_secrets(request: Json<ScanSecretsRequest>) -> Value {
 fn scan(request: ScanSecretsRequest) -> Result<Vec<SecretResult>, String> {
     let cache = SECRET_SCANNER_CACHE
         .get()
-        .ok_or_else(|| "Secret scanner cache not initialized".to_string())?;
+        .expect("should have been initialized");
 
     let (scanner, rules) = cache.get_or_build_with(&request.rules, request.use_debug, |raw| {
         raw.iter()
