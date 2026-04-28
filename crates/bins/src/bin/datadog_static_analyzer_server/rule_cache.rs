@@ -154,7 +154,7 @@ def abc():
         };
         AnalysisRequest {
             filename: "file.py".to_string(),
-            language: Language::Python,
+            language,
             file_encoding: "utf-8".to_string(),
             code_base64: encode_base64_string(file_contents.to_string()),
             rules: vec![server_rule],
