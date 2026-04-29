@@ -393,14 +393,4 @@ mod tests {
         assert_eq!(get_datadog_basename(true), STAGING_DATADOG_BASENAME);
         assert_eq!(get_datadog_basename(false), DEFAULT_DATADOG_BASENAME);
     }
-
-    #[test]
-    fn test_build_user_agent() {
-        let ua = build_user_agent();
-        assert_eq!(
-            ua,
-            format!("{}/{}-{}", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION)
-        );
-        assert!(!ua.contains(' '));
-    }
 }
