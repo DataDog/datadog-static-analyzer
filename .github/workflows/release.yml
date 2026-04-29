@@ -46,6 +46,9 @@ jobs:
   integration-tests:
     uses: './.github/workflows/integration-tests.yaml'
     secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
 
   verify-schema:
     uses: './.github/workflows/verify-schema.yaml'
