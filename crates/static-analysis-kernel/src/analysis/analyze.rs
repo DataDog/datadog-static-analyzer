@@ -45,7 +45,12 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         Language::JavaScript | Language::TypeScript | Language::Kotlin | Language::Apex => {
             vec!["//", "/*"]
         }
-        Language::Go | Language::Rust | Language::Csharp | Language::Java | Language::Swift => {
+        Language::Go
+        | Language::Rust
+        | Language::Csharp
+        | Language::Dart
+        | Language::Java
+        | Language::Swift => {
             vec!["//"]
         }
         Language::Json => {
