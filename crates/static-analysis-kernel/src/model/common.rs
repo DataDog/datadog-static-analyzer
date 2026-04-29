@@ -23,6 +23,8 @@ impl fmt::Display for OutputFormat {
 pub enum Language {
     #[serde(rename = "CSHARP")]
     Csharp,
+    #[serde(rename = "DART")]
+    Dart,
     #[serde(rename = "DOCKERFILE")]
     Dockerfile,
     #[serde(rename = "ELIXIR")]
@@ -67,6 +69,7 @@ pub enum Language {
 #[allow(dead_code)]
 pub static ALL_LANGUAGES: &[Language] = &[
     Language::Csharp,
+    Language::Dart,
     Language::Dockerfile,
     Language::Go,
     Language::Java,
@@ -93,6 +96,7 @@ impl fmt::Display for Language {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             Self::Csharp => "c#",
+            Self::Dart => "dart",
             Self::Dockerfile => "dockerfile",
             Self::Go => "go",
             Self::Elixir => "elixir",
