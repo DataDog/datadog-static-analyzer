@@ -1313,6 +1313,7 @@ function visit(node, filename, code) {
             use_debug: false,
             ignore_generated_files: false,
             timeout: None,
+            ..Default::default()
         };
 
         let local_config: file_v1::ConfigFile = parse_any_schema_yaml(

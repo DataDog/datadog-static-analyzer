@@ -144,7 +144,10 @@ impl TryFrom<&SecretRuleMatchValidation> for MatchValidationType {
                     request_headers: custom_http.request_headers.clone(),
                     valid_http_status_code: valid_ports,
                     invalid_http_status_code: invalid_ports,
-                    timeout_seconds: custom_http.timeout_seconds.unwrap() as u32,
+                    timeout_seconds: custom_http
+                        .timeout_seconds
+                        .ok_or("missing timeout_seconds")?
+                        as u32,
                 }))
             }
             SecretRuleMatchValidation::CustomHttpV2(custom_http_v2) => {

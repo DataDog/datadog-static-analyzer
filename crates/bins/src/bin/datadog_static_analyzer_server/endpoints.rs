@@ -177,17 +177,18 @@ fn process_secret_scan_request(
         return Err("Invalid filename: path traversal detected".to_string());
     }
 
+    let parse_rules = |raw: &[Box<serde_json::value::RawValue>]| {
+        raw.iter()
+            .map(|r| serde_json::from_str(r.get()))
+            .collect::<Result<Vec<secrets::model::secret_rule::SecretRule>, _>>()
+            .map_err(|e| format!("Failed to parse rules: {}", e))
+    };
+
     // Get scanner + parsed rules (from cache or fresh build)
     let (scanner, rules) = if let Some(cache) = cache {
-        cache.get_or_build(&request.rules, request.use_debug)?
+        cache.get_or_build_with(&request.rules, request.use_debug, parse_rules)?
     } else {
-        // No cache - build from scratch
-        let rules: Vec<secrets::model::secret_rule::SecretRule> = request
-            .rules
-            .iter()
-            .map(|r| serde_json::from_str(r.get()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Failed to parse rules: {}", e))?;
+        let rules = parse_rules(&request.rules)?;
         let scanner = secrets::scanner::build_sds_scanner(&rules, request.use_debug)?;
         (std::sync::Arc::new(scanner), std::sync::Arc::new(rules))
     };

@@ -458,6 +458,7 @@ fn main() -> Result<()> {
         use_debug,
         ignore_generated_files,
         timeout,
+        ..Default::default()
     };
 
     // check if we do a diff-aware scan
