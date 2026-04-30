@@ -22,9 +22,10 @@ use secrets::model::secret_result::{SecretResult, SecretValidationStatus, Valida
 use secrets::model::secret_rule::SecretRule;
 use serde_sarif::sarif::{
     self, Artifact, ArtifactBuilder, ArtifactChangeBuilder, ArtifactLocationBuilder, FixBuilder,
-    LocationBuilder, MessageBuilder, PhysicalLocationBuilder, PropertyBagBuilder, RegionBuilder,
-    Replacement, ReportingDescriptor, Result as SarifResult, ResultBuilder, RunBuilder, Sarif,
-    SarifBuilder, SuppressionBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
+    LocationBuilder, LogicalLocationBuilder, MessageBuilder, PhysicalLocationBuilder,
+    PropertyBagBuilder, RegionBuilder, Replacement, ReportingDescriptor, Result as SarifResult,
+    ResultBuilder, RunBuilder, Sarif, SarifBuilder, SuppressionBuilder, Tool, ToolBuilder,
+    ToolComponent, ToolComponentBuilder,
 };
 
 use crate::file_utils::get_fingerprint_for_violation;
@@ -196,6 +197,7 @@ impl SarifRuleResult {
                             fixes: vec![],
                             taint_flow: None,
                             is_suppressed: r.is_suppressed,
+                            enclosing_function: None,
                         },
                         r.validation_status.clone(),
                     )
@@ -638,21 +640,27 @@ fn generate_results(
                 .map(move |sarif_violation| {
                     let violation = sarif_violation.get_violation();
                     // if we find the rule for this violation, get the id, level and category
-                    let location = LocationBuilder::default()
-                        .physical_location(
-                            PhysicalLocationBuilder::default()
-                                .artifact_location(artifact_loc.clone())
-                                .region(
-                                    RegionBuilder::default()
-                                        .start_line(violation.start.line)
-                                        .start_column(violation.start.col)
-                                        .end_line(violation.end.line)
-                                        .end_column(violation.end.col)
-                                        .build()?,
-                                )
-                                .build()?,
-                        )
-                        .build()?;
+                    let mut location_builder = LocationBuilder::default();
+                    location_builder.physical_location(
+                        PhysicalLocationBuilder::default()
+                            .artifact_location(artifact_loc.clone())
+                            .region(
+                                RegionBuilder::default()
+                                    .start_line(violation.start.line)
+                                    .start_column(violation.start.col)
+                                    .end_line(violation.end.line)
+                                    .end_column(violation.end.col)
+                                    .build()?,
+                            )
+                            .build()?,
+                    );
+                    if let Some(ref ef) = violation.enclosing_function {
+                        location_builder.logical_locations(vec![LogicalLocationBuilder::default()
+                            .name(ef.name.clone())
+                            .kind("function".to_string())
+                            .build()?]);
+                    }
+                    let location = location_builder.build()?;
 
                     let fixes: Vec<sarif::Fix> = violation
                         .fixes
@@ -965,7 +973,7 @@ mod tests {
     use super::*;
     use assert_json_diff::{assert_json_eq, assert_json_include};
     use common::model::position::{Position, PositionBuilder, Region};
-    use kernel::model::violation::{Fix, Violation};
+    use kernel::model::violation::{EnclosingFunction, Fix, Violation};
     use kernel::model::{
         common::Language,
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
@@ -996,6 +1004,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            enclosing_function: None,
         }));
 
         // good location in the violation location and no fixes
@@ -1008,6 +1017,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            enclosing_function: None,
         }));
 
         // bad location in the fixes location
@@ -1028,6 +1038,7 @@ mod tests {
             }],
             taint_flow: None,
             is_suppressed: false,
+            enclosing_function: None,
         }));
 
         // good location everywhere
@@ -1048,6 +1059,7 @@ mod tests {
             }],
             taint_flow: None,
             is_suppressed: false,
+            enclosing_function: None,
         }));
     }
 
@@ -1116,6 +1128,7 @@ mod tests {
             fixes: vec![],
             taint_flow: Some(vec![region0, region1, region2]),
             is_suppressed: false,
+            enclosing_function: None,
         };
 
         let rule_result_single_region = RuleResultBuilder::default()
@@ -1296,6 +1309,106 @@ mod tests {
 
         // validate the schema
         assert!(validate_data(&sarif_report_to_string));
+    }
+
+    #[test]
+    fn test_generate_sarif_report_logical_location() {
+        let rule = RuleBuilder::default()
+            .name("my-rule".to_string())
+            .description_base64(None)
+            .language(Language::Python)
+            .checksum("abc".to_string())
+            .pattern(None)
+            .tree_sitter_query_base64(None)
+            .category(RuleCategory::BestPractices)
+            .code_base64("Zm9v".to_string())
+            .short_description_base64(None)
+            .entity_checked(None)
+            .rule_type(RuleType::TreeSitterQuery)
+            .severity(RuleSeverity::Error)
+            .cwe(None)
+            .arguments(vec![])
+            .tests(vec![])
+            .is_testing(false)
+            .documentation_url(None)
+            .build()
+            .unwrap();
+
+        let violation_with_method = Violation {
+            start: Position { line: 10, col: 1 },
+            end: Position { line: 10, col: 20 },
+            message: "some violation".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+            enclosing_function: Some(EnclosingFunction {
+                name: "my_method".to_string(),
+            }),
+        };
+        let violation_without_method = Violation {
+            start: Position { line: 20, col: 1 },
+            end: Position { line: 20, col: 5 },
+            message: "another violation".to_string(),
+            severity: RuleSeverity::Error,
+            category: RuleCategory::BestPractices,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+            enclosing_function: None,
+        };
+
+        let rule_result = RuleResult {
+            rule_name: "my-rule".to_string(),
+            filename: "myfile.py".to_string(),
+            violations: vec![violation_with_method, violation_without_method],
+            errors: vec![],
+            execution_error: None,
+            output: None,
+            execution_time_ms: 0,
+            parsing_time_ms: 0,
+            query_node_time_ms: 0,
+        };
+
+        let sarif_report = generate_sarif_report(
+            &[rule.into()],
+            &[rule_result.try_into().unwrap()],
+            &"mydir".to_string(),
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "abc".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 0,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        let sarif_json = serde_json::to_value(sarif_report).unwrap();
+
+        // Violation with enclosing_function: logicalLocations must carry name and kind.
+        let logical_locations = sarif_json
+            .pointer("/runs/0/results/0/locations/0/logicalLocations")
+            .expect("logicalLocations should be present when enclosing_function is set");
+        assert_json_include!(
+            actual: logical_locations,
+            expected: serde_json::json!([{
+                "kind": "function",
+                "name": "my_method"
+            }])
+        );
+
+        // Violation without enclosing_function: no logicalLocations key at all.
+        let no_logical_locations =
+            sarif_json.pointer("/runs/0/results/1/locations/0/logicalLocations");
+        assert!(
+            no_logical_locations.is_none(),
+            "logicalLocations should be absent when enclosing_function is None"
+        );
+
+        assert!(validate_data(&sarif_json));
     }
 
     // Ensure that diff-aware scanning information are correctly surfaced
@@ -1956,6 +2069,7 @@ mod tests {
                     fixes: vec![],
                     taint_flow: None,
                     is_suppressed: false,
+                    enclosing_function: None,
                 };
                 let rr = RuleResult {
                     rule_name: format!("rule-{idx}"),
@@ -2049,6 +2163,7 @@ mod tests {
             fixes: vec![],
             taint_flow: None,
             is_suppressed: false,
+            enclosing_function: None,
         };
         let rule_results = [TEST_FILE_PATH, NON_TEST_FILE_PATH]
             .into_iter()
