@@ -585,25 +585,27 @@ fn main() -> Result<()> {
 
         let static_analysis_metadata = &execution_result.metadata;
 
-        let number_of_rules_used = rules_results
-            .iter()
-            .unique_by(|v| v.rule_name.as_str())
-            .count();
-
-        let total_files_analyzed = rules_results
+        let files_with_violations = rules_results
             .iter()
             .unique_by(|v| v.filename.as_str())
             .count();
 
+        let rules_with_matches = rules_results
+            .iter()
+            .unique_by(|v| v.rule_name.as_str())
+            .count();
+
+        let sa_duration = static_analysis_start.elapsed().as_secs_f64();
+
         all_path_metadata.extend(static_analysis_metadata.clone());
 
-        println!(
-            "Found {} violation(s) in {} file(s) using {} rule(s) within {} sec(s)",
-            nb_violations,
-            total_files_analyzed,
-            number_of_rules_used,
-            static_analysis_start.elapsed().as_secs()
-        );
+        println!("Static Analysis Summary");
+        println!("  Files scanned: {}", files_to_analyze.len());
+        println!("  Files with violations: {}", files_with_violations);
+        println!("  Total violations: {}", nb_violations);
+        println!("  Rules evaluated: {}", configuration.rules.len());
+        println!("  Rules with matches: {}", rules_with_matches);
+        println!("  Duration: {:.3}s", sa_duration);
 
         result.static_analysis = Some(execution_result);
     }
@@ -645,24 +647,26 @@ fn main() -> Result<()> {
             }
         }
 
-        let number_of_rules_used = secrets_rules_results
-            .iter()
-            .unique_by(|v| v.rule_name.as_str())
-            .count();
-
-        let total_files_analyzed = secrets_rules_results
+        let files_with_secrets = secrets_rules_results
             .iter()
             .unique_by(|v| v.filename.as_str())
             .count();
 
-        println!(
-            "Found {} secret(s) (including {} valid) in {} file(s) using {} rule(s) within {} sec(s)",
-            nb_secrets_found,
-            nb_secrets_validated,
-            total_files_analyzed,
-            number_of_rules_used,
-            secrets_start.elapsed().as_secs()
-        );
+        let rules_with_matches = secrets_rules_results
+            .iter()
+            .unique_by(|v| v.rule_name.as_str())
+            .count();
+
+        let secrets_duration = secrets_start.elapsed().as_secs_f64();
+
+        println!("Secrets Summary");
+        println!("  Files scanned: {}", secrets_files.len());
+        println!("  Files with secrets: {}", files_with_secrets);
+        println!("  Total secrets: {}", nb_secrets_found);
+        println!("  Valid secrets: {}", nb_secrets_validated);
+        println!("  Rules evaluated: {}", configuration.secrets_rules.len());
+        println!("  Rules with matches: {}", rules_with_matches);
+        println!("  Duration: {:.3}s", secrets_duration);
 
         result.secrets = Some(execution_results);
     }
