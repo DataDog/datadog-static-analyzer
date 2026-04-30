@@ -14,10 +14,12 @@ use crate::model::datadog_api::{
 use crate::{
     constants::{
         DATADOG_HEADER_API_KEY, DATADOG_HEADER_APP_KEY, DATADOG_HEADER_JWT_TOKEN,
-        HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON,
+        HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON, HEADER_USER_AGENT,
+        USER_AGENT_PRODUCT,
     },
     model::datadog_api::APIErrorResponse,
 };
+use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::rule::Rule;
 use kernel::model::ruleset::RuleSet;
 use kernel::utils::encode_base64_string;
@@ -137,6 +139,10 @@ pub fn should_use_datadog_backend() -> bool {
     get_datadog_variable_value("API_KEY").is_ok() || get_datadog_variable_value("JWT_TOKEN").is_ok()
 }
 
+fn build_user_agent() -> String {
+    format!("{}/{}-{}", USER_AGENT_PRODUCT, CARGO_VERSION, VERSION)
+}
+
 // Returns a RequestBuilder for the given API path.
 fn make_request(
     method: RequestMethod,
@@ -153,7 +159,8 @@ fn make_request(
         RequestMethod::Get => reqwest::blocking::Client::new().get(url),
         RequestMethod::Post => reqwest::blocking::Client::new().post(url),
     }
-    .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON);
+    .header(HEADER_CONTENT_TYPE, HEADER_CONTENT_TYPE_APPLICATION_JSON)
+    .header(HEADER_USER_AGENT, build_user_agent());
 
     let api_key = get_datadog_variable_value("API_KEY");
     let app_key = get_datadog_variable_value("APP_KEY");
