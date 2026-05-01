@@ -368,6 +368,7 @@ pub(crate) fn shorthand_execute_rule(
         language,
         code: js_code.to_string(),
         tree_sitter_query: query,
+        required_literals: Vec::new(),
     };
 
     runtime.execute_rule(&source_text, &tree, &filename, &rule, &arguments, timeout)

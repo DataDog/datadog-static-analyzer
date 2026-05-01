@@ -1685,6 +1685,7 @@ function visit(captures) {
             language: Language::JavaScript,
             code: rule_code.to_string(),
             tree_sitter_query: ts_query,
+            required_literals: Vec::new(),
         };
         let err = rt.execute_rule(
             &source_text,
