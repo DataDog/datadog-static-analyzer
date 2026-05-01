@@ -12,6 +12,157 @@ use sha2::Digest;
 use std::fmt;
 use std::path::Path;
 
+/// Conservatively extract substrings that **must** appear in any source file
+/// that could match `query_source`. The result is used as a cheap content
+/// pre-filter: if a file's text contains none of these literals, we can skip
+/// running the rule entirely without affecting correctness.
+///
+/// We only extract literals from `(#eq? @capture "literal")` predicates that
+/// appear at the *outer* level of the query — i.e. not inside any optional
+/// (`?`), repeated (`*`/`+`), or alternative (`[ ... ]`) construct. Those
+/// constructs make a capture (and therefore the predicate) optional, so the
+/// literal isn't strictly required for the rule to fire. When in doubt, we
+/// return an empty `Vec`, which preserves historical behaviour exactly.
+///
+/// Why this is safe: `#eq?` is a tree-sitter predicate that filters matches
+/// where the captured node's text is byte-for-byte equal to the literal.
+/// If the file does not contain that literal anywhere, no node's text could
+/// possibly equal it, so no match could pass the predicate.
+///
+/// References:
+/// - tree-sitter query syntax: https://tree-sitter.github.io/tree-sitter/using-parsers/queries/1-syntax.html
+/// - the `#eq?` predicate is built-in and string-literal-only
+pub fn extract_required_literals(query_source: &str) -> Vec<String> {
+    // 1. Strip line comments (`;` to end of line) so quantifier / bracket
+    //    detection ignores commentary.
+    let mut clean = String::with_capacity(query_source.len());
+    for line in query_source.lines() {
+        let body = match line.find(';') {
+            Some(idx) => &line[..idx],
+            None => line,
+        };
+        clean.push_str(body);
+        clean.push('\n');
+    }
+
+    // 2. Bail out if the query uses any construct that could make a capture
+    //    optional. We're intentionally conservative; missing a possible
+    //    pre-filter is fine (we just don't optimise that rule), but a false
+    //    positive (skipping a file we should have scanned) would silently
+    //    lose findings.
+    //
+    //    The veto characters are:
+    //    - `[` `]`  : alternative groups
+    //    - `?` `*` `+` when used as a *quantifier*. These quantifiers always
+    //      attach to a node pattern, so they immediately follow `)`, `_`,
+    //      or `]` (possibly across whitespace). A `?` that follows a word
+    //      character like `q` in `#eq?` or `#match?` is part of the
+    //      predicate name and must be ignored.
+    let bytes = clean.as_bytes();
+    let mut in_string = false;
+    let mut escape = false;
+    let mut prev_non_ws: u8 = 0;
+    for &b in bytes {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if in_string {
+            match b {
+                b'\\' => escape = true,
+                b'"' => in_string = false,
+                _ => {}
+            }
+            continue;
+        }
+        match b {
+            b'"' => {
+                in_string = true;
+                prev_non_ws = b;
+            }
+            b'[' | b']' => return Vec::new(),
+            b'?' | b'*' | b'+' => {
+                // Quantifier only when attached to a closing pattern token.
+                if matches!(prev_non_ws, b')' | b'_' | b']') {
+                    return Vec::new();
+                }
+                // Otherwise this `?` is part of `#eq?` / `#match?` /
+                // `#any-of?` etc. — not a quantifier. Don't update
+                // `prev_non_ws` because the next token is what matters.
+            }
+            _ => {
+                if !b.is_ascii_whitespace() {
+                    prev_non_ws = b;
+                }
+            }
+        }
+    }
+
+    // 3. Scan for `(#eq? @<cap> "<literal>")` predicates and collect the
+    //    string literals.
+    let mut out: Vec<String> = Vec::new();
+    let mut search_from = 0usize;
+    while let Some(rel) = clean[search_from..].find("#eq?") {
+        let abs = search_from + rel + "#eq?".len();
+        search_from = abs;
+        // Skip whitespace, then expect `@<name>`.
+        let rest = clean[abs..].trim_start();
+        if !rest.starts_with('@') {
+            continue;
+        }
+        // Skip the capture name.
+        let after_at = &rest[1..];
+        let name_end = after_at
+            .find(|c: char| c.is_whitespace() || c == ')' || c == '"')
+            .unwrap_or(after_at.len());
+        let after_name = after_at[name_end..].trim_start();
+        // Expect a string literal.
+        if !after_name.starts_with('"') {
+            continue;
+        }
+        let literal_body = &after_name[1..];
+        // Find the closing quote, honouring `\` escapes.
+        let mut end_idx = None;
+        let mut iter = literal_body.char_indices();
+        while let Some((i, c)) = iter.next() {
+            if c == '\\' {
+                // Skip the next char.
+                let _ = iter.next();
+                continue;
+            }
+            if c == '"' {
+                end_idx = Some(i);
+                break;
+            }
+        }
+        let Some(end) = end_idx else { continue };
+        // We can't easily un-escape into a borrowed slice; do it explicitly.
+        let raw = &literal_body[..end];
+        let mut unescaped = String::with_capacity(raw.len());
+        let mut chars = raw.chars();
+        while let Some(c) = chars.next() {
+            if c == '\\' {
+                if let Some(next) = chars.next() {
+                    let mapped = match next {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        other => other,
+                    };
+                    unescaped.push(mapped);
+                }
+            } else {
+                unescaped.push(c);
+            }
+        }
+        // Empty literals don't filter anything out.
+        if !unescaped.is_empty() {
+            out.push(unescaped);
+        }
+    }
+    out
+}
+
 /// In the RuleCategory, we keep unknown. Old rules keep putting
 /// whatever they want as category. As a matter of fact, old rules that
 /// use old values (e.g. DEPLOYMENT) will fail deserialization. We then match
@@ -180,6 +331,17 @@ pub struct RuleInternal {
     pub language: Language,
     pub code: String,
     pub tree_sitter_query: TSQuery,
+    /// Conservatively extracted required substrings from the rule's tree-sitter
+    /// query. If any of these literals is **not** present anywhere in a source
+    /// file's content, the rule cannot possibly match that file — we can skip
+    /// running the rule entirely (no tree-sitter query traversal, no JS
+    /// dispatch).
+    ///
+    /// Extraction is intentionally conservative: see
+    /// [`extract_required_literals`] in this module. Empty means "no
+    /// pre-filter" (i.e. always run the rule, identical to historical
+    /// behaviour).
+    pub required_literals: Vec<String>,
 }
 
 // This error is meant to be used when we try to convert a Rule to a RuleInternal
@@ -268,7 +430,7 @@ impl Rule {
             })
             .transpose()?;
 
-        let tree_sitter_query = String::from_utf8(
+        let tree_sitter_query_source = String::from_utf8(
             general_purpose::STANDARD
                 .decode(
                     self.tree_sitter_query_base64
@@ -277,7 +439,8 @@ impl Rule {
                 )
                 .map_err(|e| RuleInternalError::InvalidBase64(e.to_string()))?,
         )?;
-        let tree_sitter_query = get_query(&tree_sitter_query, &self.language)
+        let required_literals = extract_required_literals(&tree_sitter_query_source);
+        let tree_sitter_query = get_query(&tree_sitter_query_source, &self.language)
             .map_err(|e| RuleInternalError::InvalidTreeSitterQuery(Box::new(e)))?;
 
         Ok(RuleInternal {
@@ -289,6 +452,7 @@ impl Rule {
             language: self.language,
             code,
             tree_sitter_query,
+            required_literals,
         })
     }
 

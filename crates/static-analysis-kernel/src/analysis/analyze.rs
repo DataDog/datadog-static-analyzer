@@ -196,6 +196,25 @@ where
     rules
         .into_iter()
         .filter(|rule| rule_config.rule_is_enabled(&rule.borrow().name))
+        .filter(|rule| {
+            // Content pre-filter: when the rule's tree-sitter query has
+            // `#eq?` predicates whose required literals are absent from the
+            // file's text, no match can possibly satisfy those predicates.
+            // We can skip running the rule entirely — saving the tree-sitter
+            // query traversal, the JS context setup, and the JS dispatch.
+            //
+            // Extraction is conservative (see
+            // `crate::model::rule::extract_required_literals`), so rules
+            // with `[]` alternatives, `?` optional, or `*`/`+` repeats yield
+            // no literals here and run unchanged — preserving correctness.
+            let r = rule.borrow();
+            if r.required_literals.is_empty() {
+                return true;
+            }
+            r.required_literals
+                .iter()
+                .all(|lit| code.contains(lit.as_str()))
+        })
         .map(|rule| {
             let rule = rule.borrow();
             if analysis_option.use_debug {
@@ -362,6 +381,7 @@ function visit(captures) {
                 language,
                 code: rule_code.to_string(),
                 tree_sitter_query,
+                required_literals: Vec::new(),
             };
 
             let results = analyze_with(
@@ -469,6 +489,7 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -525,6 +546,7 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
         let rule2 = RuleInternal {
             name: "myrule2".to_string(),
@@ -535,6 +557,7 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code2.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -632,6 +655,7 @@ for(var i = 0; i <= 10; i--){}
             language: Language::JavaScript,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(tree_sitter_query, &Language::JavaScript).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -683,6 +707,7 @@ def foo():
             language: Language::Python,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(tree_sitter_query, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -730,6 +755,7 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -788,6 +814,7 @@ def foo2(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -855,6 +882,7 @@ function visit(captures) {
             language: Language::Java,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(ts_query, &Language::Java).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -1024,6 +1052,7 @@ function visit(node, filename, code) {
             language: Language::Go,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(query, &Language::Go).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -1180,6 +1209,7 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
         let rule2 = RuleInternal {
             name: "rs/rule2".to_string(),
@@ -1190,6 +1220,7 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let local_config: file_v1::ConfigFile = parse_any_schema_yaml(
@@ -1255,6 +1286,7 @@ function visit(query, filename, code) {
             language: Language::Starlark,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Starlark).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -1301,6 +1333,7 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
         let rule2 = RuleInternal {
             name: "rs/rule2".to_string(),
@@ -1311,6 +1344,7 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+            required_literals: Vec::new(),
         };
 
         let analysis_options = AnalysisOptions {
