@@ -463,7 +463,7 @@ version = "0.8.4"
 dependencies = [
  "anyhow",
  "assert-json-diff",
- "base64 0.21.7",
+ "base64 0.22.1",
  "common",
  "csv",
  "derive_builder",
@@ -3903,7 +3903,7 @@ name = "static-analysis-kernel"
 version = "0.8.4"
 dependencies = [
  "anyhow",
- "base64 0.21.7",
+ "base64 0.22.1",
  "cc",
  "common",
  "deno_core",
@@ -3929,7 +3929,7 @@ version = "0.8.4"
 dependencies = [
  "anyhow",
  "assert-json-diff",
- "base64 0.21.7",
+ "base64 0.22.1",
  "common",
  "derive_builder",
  "secrets",
