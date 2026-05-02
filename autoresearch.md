@@ -239,6 +239,16 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 
 **Final state**: ~70–71 s wall (vs 251 s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
 
+5-run back-to-back wall measurement at the final state:
+- run 1: 79.92 s (cold page cache)
+- run 2: 80.32 s (cache warming)
+- run 3: 71.40 s (warm)
+- run 4: 71.19 s (warm)
+- run 5: 70.96 s (warm)
+
+**Steady-state (warm cache) ~71 s.** All comparisons in the table above are
+warm-vs-warm (baseline run #1 also had warm cache from the setup phase).
+
 ## Quick-look final profile (run #15 commit)
 
 ```
