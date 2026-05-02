@@ -277,8 +277,19 @@ impl Rule {
                 )
                 .map_err(|e| RuleInternalError::InvalidBase64(e.to_string()))?,
         )?;
-        let tree_sitter_query = get_query(&tree_sitter_query, &self.language)
+        let tree_sitter_query_source = tree_sitter_query;
+        let mut tree_sitter_query = get_query(&tree_sitter_query_source, &self.language)
             .map_err(|e| RuleInternalError::InvalidTreeSitterQuery(Box::new(e)))?;
+
+        // JS-side `const NAME = [...]` mining: extends the TS-derived
+        // pre-screen with a global OR-group of literals + leading-alphanumeric
+        // prefixes from any safely-mineable rule-level array. See
+        // `analysis::js_literal_miner` for the full safety contract.
+        let mined =
+            crate::analysis::js_literal_miner::mine_required_literals(&code, &tree_sitter_query_source);
+        if !mined.is_empty() {
+            tree_sitter_query.add_global_required(mined);
+        }
 
         Ok(RuleInternal {
             name: self.name.clone(),

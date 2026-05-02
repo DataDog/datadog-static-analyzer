@@ -217,15 +217,40 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 - Crash → log the panic / error class in `asi`.
 - For a clean +/- 1 % wall change: re-run once before deciding.
 
-## Progress (auto-updated during session)
+## Progress
 
 | run | wall_seconds | delta vs baseline | description |
 |-----|--------------|-------------------|-------------|
 | 1   | 251.25       | 0%                | baseline                                                                 |
-| 2   | 238.07       | -5.2%             | memchr fast-path in get_lines_to_ignore                                  |
-| 3   | 237.98       | -5.3%             | reuse parsed tree for is_test_file (perf-neutral, refactor only)         |
-| 4   | 213.61       | -15.0%            | per-rule + file-level literal pre-screen (#eq? / #any-of?)               |
-| 5   | 193.16       | -23.1%            | extend pre-screen to #match? regex (longest literal run)                 |
+| 2   | 238.07       | -5.2%             | memchr fast-path in `get_lines_to_ignore`                                |
+| 3   | 237.98       | -5.3%             | reuse parsed tree for `is_test_file` (perf-neutral, refactor only)       |
+| 4   | 213.61       | -15.0%            | per-rule + file-level literal pre-screen (`#eq?` / `#any-of?`)           |
+| 5   | 193.16       | -23.1%            | extend pre-screen to `#match?` regex (longest literal run)               |
 | 6   | 166.64       | -33.7%            | multi-pattern pre-screen (per-pattern extraction, OR across patterns)    |
-| 7   | 156.65       | -37.7%            | smarter [-depth + ?/*/+ quantifier tracking                              |
+| 7   | 156.65       | -37.7%            | smarter `[`-depth + `?`/`*`/`+` quantifier tracking                      |
+| 8   | 155.27       | -38.2%            | (verification rerun, no code changes)                                    |
+
+## Where the time goes (post-optimization profile, dd-source)
+
+Total analyzer Duration ~137s. Top remaining consumers (CPU time across 100k+ files):
+
+| rule | CPU s | query s | exec s | TS query shape | why not screened |
+|------|------:|--------:|-------:|----------------|------------------|
+| `datacenter-portability/no-hardcoded-cluster` (Go)         | 89 | 27 | 62 | `((interpreted_string_literal) @literal)` | no TS predicates; JS does prefix-extraction on a `const clusters = [...]` array (`cluster.match(/^[a-z0-9]+/i)[0]`), so naive JS array mining would miss findings |
+| `datacenter-portability/no-hardcoded-cluster-yml`           | 33 | 3  | 30 | `[ ... ]` alternation        | every alternation branch ends in `@literal`; same JS mining issue        |
+| `datacenter-portability/no-hardcoded-datacenter` (Go)       | 32 | 28 | 4  | `[(assignment_statement) (interpreted_string_literal)] @literal` | similar |
+| `python-flask/command-injection`                            | 22 | 3  | 19 | 2 patterns: 1 selective + 1 unconstrained | second pattern matches any assignment; JS only consumes pattern-1 captures — detecting that requires JS analysis |
+| `datacenter-portability/no-hardcoded-datacenter-yml`        | 16 | 4  | 12 | similar to cluster-yml      | similar |
+
+The top-5 are ~191 s of CPU = ~24 s wall in 8-way parallel. They share a common shape: "capture every string literal in every Go/YAML file, do JS-side filtering against a small list with JS-side prefix transforms". The TS-query-based pre-screen can't help. JS-side mining could in principle, but the JS prefix-transform pattern means naive array extraction is unsafe (would miss findings). See `autoresearch.ideas.md` for a sketch of how to do it correctly.
+
+## Session summary
+
+- 7 kept improvements (8 experiments) over a single morning.
+- All 350+ kernel unit tests still pass; 10/10 reference repos preserve their
+  baseline SARIF fingerprints (deep check) on every kept iteration.
+- `peak_rss_mb` stayed within ±3% of baseline; `user_cpu_seconds` dropped 39%.
+- Most of the win comes from a single, conservative literal pre-screen
+  (TSQuery-derived OR over patterns of AND of OR of literals), with iterative
+  refinements that handled increasingly intricate query shapes safely.
 

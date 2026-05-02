@@ -115,6 +115,51 @@ impl TSQuery {
         &self.pre_screen
     }
 
+    /// Add a global required-OR-group to this query's pre-screen, e.g. from
+    /// JS-side `const ARR = [...]` mining. Must be called before the query
+    /// is shared across threads.
+    #[inline]
+    pub fn add_global_required(&mut self, or_group: Vec<String>) {
+        self.pre_screen.add_global_required(or_group);
+    }
+
+    /// Returns the original query source if it contains a `[` outside of
+    /// strings and `;`-line comments — useful as a coarse "this query has
+    /// alternation somewhere" check for JS-side literal mining safety. We
+    /// don't keep the source string at runtime, so this requires the caller
+    /// to pass it back in.
+    pub fn source_has_alternation(query_source: &str) -> bool {
+        let bytes = query_source.as_bytes();
+        let n = bytes.len();
+        let mut i = 0;
+        while i < n {
+            match bytes[i] {
+                b';' => {
+                    while i < n && bytes[i] != b'\n' {
+                        i += 1;
+                    }
+                }
+                b'"' => {
+                    i += 1;
+                    while i < n {
+                        if bytes[i] == b'\\' && i + 1 < n {
+                            i += 2;
+                            continue;
+                        }
+                        if bytes[i] == b'"' {
+                            i += 1;
+                            break;
+                        }
+                        i += 1;
+                    }
+                }
+                b'[' => return true,
+                _ => i += 1,
+            }
+        }
+        false
+    }
+
     /// Returns a [`TSQueryCursor`] bound to the provided cursor.
     pub fn with_cursor<'a, 'tree: 'a>(
         &'a self,
@@ -207,6 +252,26 @@ impl LiteralPreScreen {
     #[inline]
     pub fn is_trivial(&self) -> bool {
         self.patterns.is_empty()
+    }
+
+    /// Append a global OR-group of required literals: at least one must appear
+    /// in the file for the rule to possibly match. This is rule-wide rather
+    /// than tied to a single TS pattern (e.g. JS-mined `const ARR = [...]`).
+    ///
+    /// Implementation: appends the OR-group to every existing pattern's
+    /// AND-of-OR-groups list. If there were no existing patterns (TS-derived
+    /// pre-screen was trivial), promotes the global group to a single pattern.
+    pub fn add_global_required(&mut self, or_group: Vec<String>) {
+        if or_group.is_empty() {
+            return;
+        }
+        if self.patterns.is_empty() {
+            self.patterns.push(vec![or_group]);
+        } else {
+            for and_groups in &mut self.patterns {
+                and_groups.push(or_group.clone());
+            }
+        }
     }
 
     /// Returns `true` if `code` *could* satisfy at least one of the query's
