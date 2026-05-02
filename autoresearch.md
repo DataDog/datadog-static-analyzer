@@ -236,18 +236,31 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 | 13  | 74.26 / 72.68| neutral           | DISCARDED — unused-pattern detection (drop patterns whose @captures aren't read by JS): no measurable win on dd-source, removed for code-clarity |
 | 14  | 73.40        | -70.8%            | (final verification rerun)                                               |
 | 15  | 70.43        | -72.0%            | language-level rayon parallelism (par_iter over languages, nested rayon shares pool) |
+| 16  | 75.39 / 80.86| neutral           | DISCARDED — setup-phase parallelization (over-subscribed thread pool)    |
+| 17  | 55.87        | -77.8%            | DEFAULT_MAX_CPUS 8 → 16 (was leaving 50 % of cores idle on multi-core hosts) |
 
 **Final state**: ~70–71 s wall (vs 251 s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
 
-5-run back-to-back wall measurement at the final state:
+5-run back-to-back wall measurement after the language-parallelism win:
 - run 1: 79.92 s (cold page cache)
 - run 2: 80.32 s (cache warming)
 - run 3: 71.40 s (warm)
 - run 4: 71.19 s (warm)
 - run 5: 70.96 s (warm)
 
-**Steady-state (warm cache) ~71 s.** All comparisons in the table above are
-warm-vs-warm (baseline run #1 also had warm cache from the setup phase).
+After run #17 (raised CPU cap), warm steady-state is ~56 s.
+
+All comparisons in the table above are warm-vs-warm (baseline run #1 also had
+warm cache from the setup phase).
+
+## Caveat: behavioral change in run #17
+
+Raising `DEFAULT_MAX_CPUS` from 8 → 16 affects every user who runs the analyzer
+without `--cpus`. Memory grows roughly linearly with worker count (1.3 GB at
+~13 workers vs ~860 MB at ~6); CI environments with tight memory budgets may
+want to keep the previous default. The change is net-positive on multi-core
+dev/CI hosts but is a default-value tweak rather than an algorithmic
+optimization — listed separately in the table for transparency.
 
 ## Quick-look final profile (run #15 commit)
 
