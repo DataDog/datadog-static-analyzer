@@ -287,6 +287,39 @@ impl LiteralPreScreen {
             })
     }
 
+    /// Like `matches`, but instead of doing per-literal `code.contains`
+    /// scans, look each literal up in a precomputed set of literals known
+    /// to be present in the file. The set is typically built once per file
+    /// via a multi-pattern Aho-Corasick scan over all rules' literals
+    /// (~O(file_size) once vs ~O(file_size × n_rules) lazy).
+    ///
+    /// Allocation-free per call.
+    #[inline]
+    pub fn matches_with_present(
+        &self,
+        present: &std::collections::HashSet<&str>,
+    ) -> bool {
+        self.patterns.is_empty()
+            || self.patterns.iter().any(|and_groups| {
+                and_groups.iter().all(|or_group| {
+                    or_group
+                        .iter()
+                        .any(|lit| present.contains(lit.as_str()))
+                })
+            })
+    }
+
+    /// Iterator over every literal that this pre-screen references across
+    /// all patterns, AND-groups, and OR-groups. Used to populate a global
+    /// per-language Aho-Corasick automaton.
+    pub fn iter_literals(&self) -> impl Iterator<Item = &str> {
+        self.patterns
+            .iter()
+            .flat_map(|and_groups| and_groups.iter())
+            .flat_map(|or_group| or_group.iter())
+            .map(|s| s.as_str())
+    }
+
     /// Build a pre-screen from a compiled query and its source string by
     /// iterating each top-level pattern's source-slice via
     /// [`tree_sitter::Query::start_byte_for_pattern`]. Per-pattern,
@@ -1734,5 +1767,21 @@ mod alternation_and_quantifier_tests {
         assert!(!s.is_trivial());
         assert!(s.matches("resp.set_cookie(\"k\", v)"));
         assert!(!s.matches("resp.headers['X-Foo'] = 'bar'"));
+    }
+}
+
+#[cfg(test)]
+mod overlap_pre_screen_test {
+    use super::*;
+    use crate::model::common::Language;
+    #[test]
+    fn type_check_isinstance_extracts_type() {
+        // Regression test: rule has #eq? at depth-0 outside an [...] alternation.
+        let q = "(comparison_operator\n\t(call\n\t\tfunction: (identifier) @funcname\n\t)\n\toperators: [\"==\" \"is\"]\n\t(#eq? @funcname \"type\")\n) @comparison";
+        let ts = TSQuery::try_new(&get_tree_sitter_language(&Language::Python), q).unwrap();
+        let pre = ts.pre_screen();
+        let lits: Vec<&str> = pre.iter_literals().collect();
+        assert!(!pre.is_trivial());
+        assert!(lits.contains(&"type"));
     }
 }

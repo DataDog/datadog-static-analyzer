@@ -6,6 +6,7 @@ use common::analysis_options::AnalysisOptions;
 use indicatif::ProgressBar;
 use kernel::analysis::analyze::{analyze_with, analyze_with_combined, generate_flow_graph_dot};
 use kernel::analysis::combined_query::CombinedQuery;
+use kernel::analysis::literal_index::LiteralIndex;
 use kernel::analysis::tree_sitter::get_tree_sitter_language;
 use kernel::analysis::ddsa_lib::v8_platform::{Initialized, V8Platform};
 use kernel::analysis::ddsa_lib::JsRuntime;
@@ -93,6 +94,7 @@ pub fn static_analysis(
         Vec<PathBuf>,
         Vec<RuleInternal>,
         Option<CombinedQuery>,
+        Option<LiteralIndex>,
     );
     let mut per_language: Vec<LangSetup> = Vec::new();
     for language in languages {
@@ -109,13 +111,26 @@ pub fn static_analysis(
         } else {
             None
         };
+        // Build per-language Aho-Corasick literal index (used by the file-
+        // level pre-screen and per-rule pre-screen checks). Same threshold
+        // as combined query — below it, the build cost outweighs savings.
+        let literal_index = if n_files.saturating_mul(n_rules) > COMBINED_QUERY_THRESHOLD {
+            LiteralIndex::build(&rules_for_language)
+        } else {
+            None
+        };
         println!(
-            "Analyzing {} {:?} files using {} rules{}",
+            "Analyzing {} {:?} files using {} rules{}{}",
             n_files,
             language,
             n_rules,
             if combined.is_some() {
                 " (combined query)"
+            } else {
+                ""
+            },
+            if literal_index.is_some() {
+                " (AC literal index)"
             } else {
                 ""
             }
@@ -126,7 +141,13 @@ pub fn static_analysis(
                 language, n_files
             );
         }
-        per_language.push((language, files_for_language, rules_for_language, combined));
+        per_language.push((
+            language,
+            files_for_language,
+            rules_for_language,
+            combined,
+            literal_index,
+        ));
     }
 
     // Process each language's per-file fold/reduce in parallel. The inner
@@ -134,11 +155,12 @@ pub fn static_analysis(
     // rayon's work-stealing handles nested parallelism without deadlock.
     let language_results: Vec<(AnalysisStatistics, Vec<RuleResult>, HashMap<String, Option<ArtifactClassification>>)> = per_language
         .into_par_iter()
-        .map(|(language, files_for_language, rules_for_language, combined_query)| {
+        .map(|(language, files_for_language, rules_for_language, combined_query, literal_index)| {
             // Inline the original per-language inner block (sans progress bar,
             // which interleaves badly across concurrent languages).
             let progress_bar: Option<ProgressBar> = None;
             let combined_query = combined_query.as_ref();
+            let literal_index = literal_index.as_ref();
 
         // take the relative path for the analysis
         let (stats, rule_results, path_metadata) = files_for_language
@@ -175,6 +197,7 @@ pub fn static_analysis(
                                 language,
                                 &rules_for_language,
                                 cq,
+                                literal_index,
                                 &relative_path,
                                 &file_content,
                                 &rule_config,

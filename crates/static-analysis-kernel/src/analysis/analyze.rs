@@ -4,6 +4,7 @@ use crate::analysis::ddsa_lib::js::flow::java::{ClassGraph, FileGraph};
 use crate::analysis::ddsa_lib::runtime::ExecutionResult;
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::generated_content::{is_generated_file, is_minified_file};
+use crate::analysis::literal_index::LiteralIndex;
 use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
 use crate::model::analysis::{
     FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
@@ -368,6 +369,7 @@ pub fn analyze_with_combined(
     language: &Language,
     rules: &[RuleInternal],
     combined: &CombinedQuery,
+    literal_index: Option<&LiteralIndex>,
     filename: &Arc<str>,
     code: &Arc<str>,
     rule_config: &RuleConfig,
@@ -384,11 +386,23 @@ pub fn analyze_with_combined(
 
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
+    // Build the per-file present-literals set ONCE via Aho-Corasick if a
+    // language-level index was provided. Each subsequent pre_screen check
+    // does a HashSet lookup (~10 ns) instead of a `code.contains` memchr
+    // scan (~hundreds of ns). On dd-source this saves the file-level
+    // screen ~2 s wall, plus smaller savings in the per-rule loop.
+    let present_literals = literal_index.map(|idx| idx.present_in(code));
+
     // File-level pre-screen: bail if no rule can match this file. Order
     // matters - see run #35's analysis: pre_screen first (cheap memchr-
     // style content check), rule_is_enabled second (HashMap + path glob).
     let any_rule_could_match = rules.iter().any(|rule| {
-        rule.tree_sitter_query.pre_screen().matches(code) && rule_config.rule_is_enabled(&rule.name)
+        let pre_screen = rule.tree_sitter_query.pre_screen();
+        let pre_pass = match &present_literals {
+            Some(set) => pre_screen.matches_with_present(set),
+            None => pre_screen.matches(code),
+        };
+        pre_pass && rule_config.rule_is_enabled(&rule.name)
     });
     if !any_rule_could_match {
         return (vec![], None);
@@ -443,7 +457,12 @@ pub fn analyze_with_combined(
             }
             // Even with combined query, respect each rule's pre-screen — it
             // may filter further than the file-level any() above.
-            if !rule.tree_sitter_query.pre_screen().matches(code) {
+            let pre_screen = rule.tree_sitter_query.pre_screen();
+            let pre_pass = match &present_literals {
+                Some(set) => pre_screen.matches_with_present(set),
+                None => pre_screen.matches(code),
+            };
+            if !pre_pass {
                 return Some(RuleResult {
                     rule_name: rule.name.clone(),
                     filename: String::new(),

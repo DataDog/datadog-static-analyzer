@@ -3904,6 +3904,7 @@ dependencies = [
 name = "static-analysis-kernel"
 version = "0.8.4"
 dependencies = [
+ "aho-corasick",
  "anyhow",
  "base64 0.21.7",
  "cc",
