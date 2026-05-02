@@ -233,6 +233,11 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 | 10  | 133.39       | -46.9%            | JS-side `const` array mining (full + leading-alphanumeric prefix)        |
 | 11  | 73.17        | -70.9%            | relax alternation gate when JS uses a single capture name                |
 | 12  | 71.93        | -71.4%            | (verification rerun, no code changes)                                    |
+| 13  | 74.26 / 72.68| neutral           | DISCARDED — unused-pattern detection (drop patterns whose @captures aren't read by JS): no measurable win on dd-source, removed for code-clarity |
+| 14  | 73.40        | -70.8%            | (final verification rerun)                                               |
+
+**Plateau confirmed at ~72–73s** (multiple back-to-back runs in 71.9–74.3s range; ~2–3s noise floor). Total session win: **−71.4 % wall** vs `main` baseline.
+
 
 ## Where the time goes (final profile, dd-source)
 
