@@ -83,7 +83,37 @@ impactful or if the constraints relax.
 - **Skip empty-bucket rules in the combined-query path** (#4 from prior
   research). Only relevant once combined query is implemented.
 
-## Don't-try (verified dead ends)
+## Don't-try (verified dead ends, additions from this session)
+
+- **v8 init in a side thread** (run #45 — SIGSEGV on cloudops). v8 platform
+  init enables PKU (Memory Protection Keys) on the calling thread; rayon
+  workers spawned LATER by the main thread don't inherit PKU and segfault
+  on first v8 use. The v8_platform.rs doc explicitly warns about this.
+  v8 init MUST stay on the parent thread of all v8-using child threads.
+
+- **Thin LTO in release-dev profile** (run #46). No measurable wall
+  improvement (mean 25.38 vs 25.23 = within noise), user_cpu UP +7s
+  consistently, clean build time exploded ~30s → 4m43s. LTO inlining
+  decisions can pessimize as well as speed up; not a useful lever here.
+
+- **Lazy pre-screen filter at combined-query emit time** (run #49). Real
+  CPU savings (-5s user_cpu = -1.8%) but no wall improvement. The saved
+  work (capture-Vec allocation for rules whose pre_screen rejects the
+  file) wasn't on the critical path — it filled idle worker time. With
+  rayon, wall = max(per-worker), so CPU savings on non-critical-path work
+  don't reduce wall. Don't keep retrying "save N µs per (file, rule) pair"
+  optimizations — they don't move the wall metric.
+
+- **rustc_hash::FxHashSet for AC present_literals** (run #47). Consistent
+  +1.4s wall regression and +7-8s user_cpu across 2 runs. Root cause unclear
+  (collisions on this literal distribution? code-layout perturbation from
+  new monomorphization? dep version mismatch with the transitive rustc-hash
+  through tree-sitter?) but the regression was unambiguous. If HashSet ops
+  become a bottleneck again, the right answer is `Vec<bool>` indexed by
+  literal_id (zero hashing) — requires refactoring LiteralPreScreen to
+  store ids instead of strings.
+
+## Don't-try (verified dead ends, prior runs)
 
 - **Eager pre-screen mask precomputation per file** (run #9): regressed wall
   by ~10 s. The lazy `.any()` short-circuit was already optimal because most

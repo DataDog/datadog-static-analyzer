@@ -162,9 +162,14 @@ pub fn static_analysis(
             let combined_query = combined_query.as_ref();
             let literal_index = literal_index.as_ref();
 
-        // take the relative path for the analysis
+        // take the relative path for the analysis. `with_min_len(8)` tells
+        // rayon to keep at least 8 files together per work-stealing chunk
+        // — reduces per-task scheduling overhead for the 271k+ small tasks
+        // (avg ~600 µs per file) without preventing big-file load balancing
+        // (rayon still steals at the chunk boundary).
         let (stats, rule_results, path_metadata) = files_for_language
             .into_par_iter()
+            .with_min_len(8)
             .fold(
                 || (AnalysisStatistics::new(), Vec::new(), HashMap::new()),
                 |(mut stats, mut fold_results, mut path_metadata), path| {
