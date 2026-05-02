@@ -237,7 +237,34 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 | 14  | 73.40        | -70.8%            | (final verification rerun)                                               |
 | 15  | 70.43        | -72.0%            | language-level rayon parallelism (par_iter over languages, nested rayon shares pool) |
 
-**Final state**: ~70-71s wall (vs 251s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
+**Final state**: ~70–71 s wall (vs 251 s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
+
+## Quick-look final profile (run #15 commit)
+
+```
+wall=70.65s user=313s sys=19s rss=860 MB
+Duration (analyzer): 52.11 s   # static_analysis() phase
+overhead: 18.5 s              # dd-auth + rule fetch + startup + SARIF write
+rules with matches: 24 of 63
+files scanned: 271,428
+violations: 18,545 (== baseline)
+fingerprints: 10/10 reference-repo deep check passes
+```
+
+Top remaining CPU consumers (per-file paralleled at ×6 worker threads):
+
+```
+python-flask/command-injection            22.1 s CPU  (was 22 s) — plateau; common literal
+python-flask/html-format-from-user-input   6.0 s
+python-flask/os-popen-command-injection    5.5 s
+dd-trace-go-v2-migration/with-servicename  5.3 s  (was 27 s before pre-screen)
+python-flask/os-system-unsanitized-data    4.3 s
+```
+
+The python-flask block dominates because every Python file in the repo trips its
+low-cardinality required literals ("subprocess", "request", etc.). Further wins
+require either a combined Tree-sitter query for shared per-file traversal across
+the python-flask rules (sketched in `autoresearch.ideas.md`) or rule-side changes.
 
 
 ## Where the time goes (final profile, dd-source)
