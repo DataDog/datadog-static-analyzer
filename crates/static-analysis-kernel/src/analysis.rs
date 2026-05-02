@@ -1,4 +1,5 @@
 pub mod analyze;
+pub mod combined_query;
 pub mod ddsa_lib;
 pub mod generated_content;
 pub mod js_literal_miner;

@@ -180,6 +180,10 @@ pub struct RuleInternal {
     pub language: Language,
     pub code: String,
     pub tree_sitter_query: TSQuery,
+    /// The original tree-sitter query source string. Retained so that a
+    /// per-language combined query can be constructed by concatenating
+    /// rules' sources at static_analysis() time.
+    pub tree_sitter_query_source: String,
 }
 
 // This error is meant to be used when we try to convert a Rule to a RuleInternal
@@ -300,6 +304,7 @@ impl Rule {
             language: self.language,
             code,
             tree_sitter_query,
+            tree_sitter_query_source,
         })
     }
 

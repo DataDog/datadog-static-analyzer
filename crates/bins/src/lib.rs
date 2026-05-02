@@ -4,7 +4,9 @@ use cli::model::cli_configuration::CliConfiguration;
 use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal};
 use common::analysis_options::AnalysisOptions;
 use indicatif::ProgressBar;
-use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
+use kernel::analysis::analyze::{analyze_with, analyze_with_combined, generate_flow_graph_dot};
+use kernel::analysis::combined_query::CombinedQuery;
+use kernel::analysis::tree_sitter::get_tree_sitter_language;
 use kernel::analysis::ddsa_lib::v8_platform::{Initialized, V8Platform};
 use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::classifiers::{is_test_file, ArtifactClassification};
@@ -80,7 +82,19 @@ pub fn static_analysis(
     //   errors before launching workers.
     // - Per-language progress bars are disabled when running in parallel
     //   (interleaved bars would be unreadable).
-    let mut per_language: Vec<(&Language, Vec<PathBuf>, Vec<RuleInternal>)> = Vec::new();
+    // - Adaptive combined-query: when `file_count * rule_count >
+    //   COMBINED_QUERY_THRESHOLD`, build one combined `tree_sitter::Query`
+    //   covering all rules' patterns and let the analyzer walk each file's
+    //   parse tree once for ALL rules. Below the threshold, the per-rule
+    //   path's lower upfront cost wins.
+    const COMBINED_QUERY_THRESHOLD: usize = 10_000;
+    type LangSetup<'a> = (
+        &'a Language,
+        Vec<PathBuf>,
+        Vec<RuleInternal>,
+        Option<CombinedQuery>,
+    );
+    let mut per_language: Vec<LangSetup> = Vec::new();
     for language in languages {
         let files_for_language = filter_files_for_language(files_to_analyze, language);
         if files_for_language.is_empty() {
@@ -88,20 +102,31 @@ pub fn static_analysis(
         }
         let rules_for_language: Vec<RuleInternal> =
             convert_rules_to_rules_internal(config, language)?;
+        let n_files = files_for_language.len();
+        let n_rules = rules_for_language.len();
+        let combined = if n_files.saturating_mul(n_rules) > COMBINED_QUERY_THRESHOLD {
+            CombinedQuery::try_new(&rules_for_language, &get_tree_sitter_language(language))
+        } else {
+            None
+        };
         println!(
-            "Analyzing {} {:?} files using {} rules",
-            files_for_language.len(),
+            "Analyzing {} {:?} files using {} rules{}",
+            n_files,
             language,
-            rules_for_language.len()
+            n_rules,
+            if combined.is_some() {
+                " (combined query)"
+            } else {
+                ""
+            }
         );
         if config.use_debug {
             println!(
                 "Analyzing {}, {} files detected",
-                language,
-                files_for_language.len()
+                language, n_files
             );
         }
-        per_language.push((language, files_for_language, rules_for_language));
+        per_language.push((language, files_for_language, rules_for_language, combined));
     }
 
     // Process each language's per-file fold/reduce in parallel. The inner
@@ -109,10 +134,11 @@ pub fn static_analysis(
     // rayon's work-stealing handles nested parallelism without deadlock.
     let language_results: Vec<(AnalysisStatistics, Vec<RuleResult>, HashMap<String, Option<ArtifactClassification>>)> = per_language
         .into_par_iter()
-        .map(|(language, files_for_language, rules_for_language)| {
+        .map(|(language, files_for_language, rules_for_language, combined_query)| {
             // Inline the original per-language inner block (sans progress bar,
             // which interleaves badly across concurrent languages).
             let progress_bar: Option<ProgressBar> = None;
+            let combined_query = combined_query.as_ref();
 
         // take the relative path for the analysis
         let (stats, rule_results, path_metadata) = files_for_language
@@ -143,15 +169,28 @@ pub fn static_analysis(
                         let file_content = Arc::from(file_content);
                         // Capture the parsed tree alongside results so we can
                         // reuse it for `is_test_file` below instead of re-parsing.
-                        let (mut results, parsed_tree) = analyze_with(
-                            runtime_ref,
-                            language,
-                            &rules_for_language,
-                            &relative_path,
-                            &file_content,
-                            &rule_config,
-                            options,
-                        );
+                        let (mut results, parsed_tree) = if let Some(cq) = combined_query {
+                            analyze_with_combined(
+                                runtime_ref,
+                                language,
+                                &rules_for_language,
+                                cq,
+                                &relative_path,
+                                &file_content,
+                                &rule_config,
+                                options,
+                            )
+                        } else {
+                            analyze_with(
+                                runtime_ref,
+                                language,
+                                &rules_for_language,
+                                &relative_path,
+                                &file_content,
+                                &rule_config,
+                                options,
+                            )
+                        };
                         results.retain_mut(|r| {
                             // We'll drop all `RuleResult` that don't contain violations
                             let should_retain = !r.violations.is_empty();

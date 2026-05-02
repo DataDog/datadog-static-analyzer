@@ -1,3 +1,4 @@
+use crate::analysis::combined_query::CombinedQuery;
 use crate::analysis::ddsa_lib::common::DDSAJsRuntimeError;
 use crate::analysis::ddsa_lib::js::flow::java::{ClassGraph, FileGraph};
 use crate::analysis::ddsa_lib::runtime::ExecutionResult;
@@ -348,6 +349,194 @@ where
     (results, Some(tree))
 }
 
+/// Like [`analyze_with`] but uses a precomputed `CombinedQuery` to walk the
+/// parse tree once for ALL rules, then dispatches matches per-rule via
+/// [`JsRuntime::execute_rule_with_matches`]. This trades the upfront cost of
+/// building the combined query (paid once at startup) against per-file work.
+///
+/// Caller invariant: `rules` and `combined` must have been built from the
+/// same rule slice in the same order. `pattern_to_rule_idx` indices in
+/// `combined` are direct indices into `rules`.
+#[allow(clippy::too_many_arguments)]
+pub fn analyze_with_combined(
+    runtime: &mut JsRuntime,
+    language: &Language,
+    rules: &[RuleInternal],
+    combined: &CombinedQuery,
+    filename: &Arc<str>,
+    code: &Arc<str>,
+    rule_config: &RuleConfig,
+    analysis_option: &AnalysisOptions,
+) -> (Vec<RuleResult>, Option<Arc<tree_sitter::Tree>>) {
+    if analysis_option.ignore_generated_files
+        && (is_generated_file(code, language) || is_minified_file(code, language))
+    {
+        if analysis_option.use_debug {
+            eprintln!("Skipping generated file {}", filename);
+        }
+        return (vec![], None);
+    }
+
+    let lines_to_ignore = get_lines_to_ignore(code, language);
+
+    // Reuse the same per-rule pre-screen filter as the standard path: if no
+    // rule could match, skip parse + combined-query traversal.
+    let any_rule_could_match = rules.iter().any(|rule| {
+        rule_config.rule_is_enabled(&rule.name) && rule.tree_sitter_query.pre_screen().matches(code)
+    });
+    if !any_rule_could_match {
+        return (vec![], None);
+    }
+
+    let now = Instant::now();
+    let Some(tree) = get_tree(code, language) else {
+        if analysis_option.use_debug {
+            eprintln!("error when parsing source file {filename}");
+        }
+        return (vec![], None);
+    };
+    let tree = Arc::new(tree);
+    let cst_parsing_time = now.elapsed();
+
+    let timeout = analysis_option.timeout.or(Some(RULE_EXECUTION_TIMEOUT));
+
+    // Walk the tree ONCE, getting per-rule match buckets.
+    let now = Instant::now();
+    let mut cursor = tree_sitter::QueryCursor::new();
+    let mut buckets = combined.matches_per_rule(tree.root_node(), code, timeout, &mut cursor);
+    let combined_query_time = now.elapsed();
+
+    let results: Vec<RuleResult> = rules
+        .iter()
+        .enumerate()
+        .filter_map(|(rule_idx, rule)| {
+            if !rule_config.rule_is_enabled(&rule.name) {
+                return None;
+            }
+            // Even with combined query, respect each rule's pre-screen — it
+            // may filter further than the file-level any() above.
+            if !rule.tree_sitter_query.pre_screen().matches(code) {
+                return Some(RuleResult {
+                    rule_name: rule.name.clone(),
+                    filename: filename.to_string(),
+                    violations: vec![],
+                    errors: vec![],
+                    execution_error: None,
+                    output: None,
+                    execution_time_ms: 0,
+                    parsing_time_ms: cst_parsing_time.as_millis(),
+                    query_node_time_ms: 0,
+                });
+            }
+            // Take ownership of this rule's matches — we won't need them again.
+            let matches = std::mem::take(&mut buckets[rule_idx]);
+            if matches.is_empty() {
+                return Some(RuleResult {
+                    rule_name: rule.name.clone(),
+                    filename: filename.to_string(),
+                    violations: vec![],
+                    errors: vec![],
+                    execution_error: None,
+                    output: None,
+                    execution_time_ms: 0,
+                    parsing_time_ms: cst_parsing_time.as_millis(),
+                    query_node_time_ms: combined_query_time.as_millis(),
+                });
+            }
+            let res = runtime.execute_rule_with_matches(
+                code,
+                &tree,
+                filename,
+                rule,
+                &matches,
+                &rule_config.get_arguments(&rule.name),
+                timeout,
+            );
+            // Same translation layer as analyze_with's per-rule arm.
+            let (violations, errors, execution_error, console_output, timing) = match res {
+                Ok(execution) => {
+                    let ExecutionResult {
+                        mut violations,
+                        console_lines,
+                        timing,
+                    } = execution;
+                    let console_output = (!console_lines.is_empty() && analysis_option.log_output)
+                        .then_some(console_lines.join("\n"));
+                    violations.iter_mut().for_each(|v| {
+                        let base_ignored =
+                            lines_to_ignore.should_filter_rule(rule.name.as_str(), v.start.line);
+                        let flow_ignored = v
+                            .taint_flow
+                            .as_ref()
+                            .map(|flow| {
+                                flow.iter().any(|region| {
+                                    lines_to_ignore.should_filter_rule(
+                                        rule.name.as_str(),
+                                        region.start.line,
+                                    )
+                                })
+                            })
+                            .unwrap_or(false);
+                        if base_ignored || flow_ignored {
+                            v.is_suppressed = true;
+                        }
+                    });
+                    violations.iter_mut().for_each(|violation| {
+                        if let Some(severity) = rule_config.get_severity(&rule.name) {
+                            violation.severity = severity;
+                        }
+                        if let Some(category) = rule_config.get_category(&rule.name) {
+                            violation.category = category;
+                        }
+                    });
+                    (violations, vec![], None, console_output, timing)
+                }
+                Err(err) => {
+                    let r_f = format!("{}:{}", rule.name, filename);
+                    let (err_kind, execution_error) = match err {
+                        DDSAJsRuntimeError::JavaScriptTimeout { timeout }
+                        | DDSAJsRuntimeError::TreeSitterTimeout { timeout } => {
+                            if analysis_option.use_debug {
+                                eprintln!(
+                                    "rule:file {} TIMED OUT ({} ms)",
+                                    r_f,
+                                    timeout.as_millis()
+                                );
+                            }
+                            (ERROR_RULE_TIMEOUT, None)
+                        }
+                        other_err => {
+                            let reason = other_err.to_string();
+                            if analysis_option.use_debug {
+                                eprintln!(
+                                    "rule:file {} execution error, message: {}",
+                                    r_f, reason
+                                );
+                            }
+                            (ERROR_RULE_EXECUTION, Some(reason))
+                        }
+                    };
+                    let errors = vec![err_kind.to_string()];
+                    (vec![], errors, execution_error, None, Default::default())
+                }
+            };
+            Some(RuleResult {
+                rule_name: rule.name.clone(),
+                filename: filename.to_string(),
+                violations,
+                errors,
+                execution_error,
+                output: console_output,
+                execution_time_ms: timing.execution.as_millis(),
+                parsing_time_ms: cst_parsing_time.as_millis(),
+                query_node_time_ms: combined_query_time.as_millis(),
+            })
+        })
+        .collect();
+
+    (results, Some(tree))
+}
+
 /// Returns a [DOT Language] graph that models taint flow within the file.
 /// If the file contains an unsupported language, `None` is returned.
 ///
@@ -414,6 +603,7 @@ function visit(captures) {
                 description: None,
                 category: RuleCategory::Unknown,
                 severity: RuleSeverity::None,
+                tree_sitter_query_source: class_tsq.to_string(),
                 language,
                 code: rule_code.to_string(),
                 tree_sitter_query,
@@ -525,6 +715,8 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -581,6 +773,8 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
         let rule2 = RuleInternal {
             name: "myrule2".to_string(),
@@ -591,6 +785,8 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code2.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -688,6 +884,8 @@ for(var i = 0; i <= 10; i--){}
             language: Language::JavaScript,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(tree_sitter_query, &Language::JavaScript).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -739,6 +937,8 @@ def foo():
             language: Language::Python,
             code: rule_code1.to_string(),
             tree_sitter_query: get_query(tree_sitter_query, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -786,6 +986,8 @@ def foo(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -844,6 +1046,8 @@ def foo2(arg1):
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -911,6 +1115,8 @@ function visit(captures) {
             language: Language::Java,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(ts_query, &Language::Java).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -1080,6 +1286,8 @@ function visit(node, filename, code) {
             language: Language::Go,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(query, &Language::Go).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions {
@@ -1236,6 +1444,8 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
         let rule2 = RuleInternal {
             name: "rs/rule2".to_string(),
@@ -1246,6 +1456,8 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let local_config: file_v1::ConfigFile = parse_any_schema_yaml(
@@ -1311,6 +1523,8 @@ function visit(query, filename, code) {
             language: Language::Starlark,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Starlark).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions::default();
@@ -1357,6 +1571,8 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
         let rule2 = RuleInternal {
             name: "rs/rule2".to_string(),
@@ -1367,6 +1583,8 @@ function visit(node, filename, code) {
             language: Language::Python,
             code: rule_code.to_string(),
             tree_sitter_query: get_query(QUERY_CODE, &Language::Python).unwrap(),
+
+            tree_sitter_query_source: String::new(),
         };
 
         let analysis_options = AnalysisOptions {

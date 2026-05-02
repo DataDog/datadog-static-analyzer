@@ -214,6 +214,66 @@ impl JsRuntime {
         })
     }
 
+    /// Like [`execute_rule`] but accepts pre-computed `query_matches` from a
+    /// shared (e.g. combined-query) traversal, skipping the per-rule
+    /// tree-sitter cursor invocation. The rest of the path — JS compilation
+    /// caching, bridge setup, v8 execution, violations drain — is identical.
+    pub fn execute_rule_with_matches(
+        &mut self,
+        source_text: &Arc<str>,
+        source_tree: &Arc<tree_sitter::Tree>,
+        file_name: &Arc<str>,
+        rule: &RuleInternal,
+        query_matches: &[analysis::tree_sitter::QueryMatch<tree_sitter::Node>],
+        rule_arguments: &HashMap<String, String>,
+        timeout: Option<Duration>,
+    ) -> Result<ExecutionResult, DDSAJsRuntimeError> {
+        let rule_cache = Rc::clone(&self.rule_cache);
+        let mut rule_cache_ref = rule_cache.borrow_mut();
+        if !rule_cache_ref.contains_key(&rule.name) {
+            let script = CompiledRule::new(&mut self.runtime.handle_scope(), &rule.code)?;
+            rule_cache_ref.insert(rule.name.clone(), script);
+        }
+        let compiled_rule = rule_cache_ref
+            .get(&rule.name)
+            .expect("cache should have been populated");
+
+        let now = Instant::now();
+
+        let mut execution_res = self.execute_rule_internal(
+            source_text,
+            source_tree,
+            file_name,
+            rule.language,
+            &compiled_rule.script,
+            query_matches,
+            rule_arguments,
+            timeout,
+        );
+        if let Err(DDSAJsRuntimeError::Execution { error }) = &mut execution_res {
+            compiled_rule.filter_stack_trace(&mut error.stack_trace_frames);
+        }
+        let js_violations = execution_res?;
+
+        let execution_time = now.elapsed();
+
+        let violations = js_violations
+            .into_iter()
+            .map(|v| v.into_violation(rule.severity, rule.category))
+            .collect::<Vec<_>>();
+
+        let timing = ExecutionTimingCompat {
+            ts_query: Duration::ZERO,
+            execution: execution_time,
+        };
+        let console_lines = self.console.borrow_mut().drain().collect::<Vec<_>>();
+        Ok(ExecutionResult {
+            violations,
+            console_lines,
+            timing,
+        })
+    }
+
     /// Drops the cached [v8::UnboundScript] for the given `rule_name` if its `rule_code` doesn't match the provided.
     /// Returns `true` if an entry was evicted, or `false` if not.
     ///
@@ -1685,6 +1745,8 @@ function visit(captures) {
             language: Language::JavaScript,
             code: rule_code.to_string(),
             tree_sitter_query: ts_query,
+
+            tree_sitter_query_source: String::new(),
         };
         let err = rt.execute_rule(
             &source_text,
