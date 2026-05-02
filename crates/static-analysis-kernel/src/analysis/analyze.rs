@@ -205,7 +205,7 @@ where
     // Conservative literal pre-screen (see `LiteralPreScreen`): if no rule can
     // possibly match this file given its required `#eq?` / `#any-of?` literals,
     // skip both the tree-sitter parse and the per-rule loop entirely. This is
-    // a strict superset filter — only files that COULD match still get parsed.
+    // a strict superset filter - only files that COULD match still get parsed.
     //
     // We compute this BEFORE parsing so the win includes the parse cost on
     // "cold" files (no required literal anywhere).
@@ -243,10 +243,15 @@ where
             // produce any match and we'd execute v8 with zero captures.
             // Short-circuit with an empty `RuleResult` (matches the existing
             // "no captures → empty result" path inside `execute_rule`).
+            // The filename is left empty here: the driver's retain_mut
+            // will drop this RuleResult anyway (violations is empty), so
+            // the only visible cost is in the per-rule timing stats which
+            // would have shown 0 ms for this file. Saves ~270 MB of
+            // String alloc churn across a dd-source-scale scan.
             if !rule.tree_sitter_query.pre_screen().matches(code) {
                 return RuleResult {
                     rule_name: rule.name.clone(),
-                    filename: filename.to_string(),
+                    filename: String::new(),
                     violations: vec![],
                     errors: vec![],
                     execution_error: None,
@@ -380,7 +385,7 @@ pub fn analyze_with_combined(
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
     // File-level pre-screen: bail if no rule can match this file. Order
-    // matters — see run #35's analysis: pre_screen first (cheap memchr-
+    // matters - see run #35's analysis: pre_screen first (cheap memchr-
     // style content check), rule_is_enabled second (HashMap + path glob).
     let any_rule_could_match = rules.iter().any(|rule| {
         rule.tree_sitter_query.pre_screen().matches(code) && rule_config.rule_is_enabled(&rule.name)
@@ -415,12 +420,15 @@ pub fn analyze_with_combined(
             // matches for this rule, skip rule_is_enabled + pre_screen
             // entirely. This is the common case (most rules don't match
             // most files). For the (file, rule) pairs where bucket is
-            // empty, we save ~2 µs/iter that would otherwise hit the
+            // empty, we save ~2 µs/iter that would otherwise hit the
             // path_restrictions HashMap and pre_screen `code.contains` calls.
+            // Leave filename empty: this RuleResult will be dropped by the
+            // driver's retain_mut (violations is empty); allocating the
+            // path-string would just be alloc/free churn. ~270 MB saved.
             if buckets[rule_idx].is_empty() {
                 return Some(RuleResult {
                     rule_name: rule.name.clone(),
-                    filename: filename.to_string(),
+                    filename: String::new(),
                     violations: vec![],
                     errors: vec![],
                     execution_error: None,
@@ -438,7 +446,7 @@ pub fn analyze_with_combined(
             if !rule.tree_sitter_query.pre_screen().matches(code) {
                 return Some(RuleResult {
                     rule_name: rule.name.clone(),
-                    filename: filename.to_string(),
+                    filename: String::new(),
                     violations: vec![],
                     errors: vec![],
                     execution_error: None,
@@ -448,7 +456,7 @@ pub fn analyze_with_combined(
                     query_node_time_ms: 0,
                 });
             }
-            // Take ownership of this rule's matches — we won't need them again.
+            // Take ownership of this rule's matches - we won't need them again.
             let matches = std::mem::take(&mut buckets[rule_idx]);
             // (Defensive: re-check emptiness after take in case mem::take
             // races with another rule_idx access — it can't here, but the
@@ -456,7 +464,7 @@ pub fn analyze_with_combined(
             if matches.is_empty() {
                 return Some(RuleResult {
                     rule_name: rule.name.clone(),
-                    filename: filename.to_string(),
+                    filename: String::new(),
                     violations: vec![],
                     errors: vec![],
                     execution_error: None,
