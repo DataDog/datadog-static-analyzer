@@ -472,6 +472,7 @@ dependencies = [
  "path-slash",
  "percent-encoding",
  "prettytable-rs",
+ "rayon",
  "reqwest",
  "secrets",
  "serde",
