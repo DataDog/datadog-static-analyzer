@@ -46,7 +46,14 @@ use crate::analysis::tree_sitter::TSQuery;
 /// `const NAME = [...]` array in the rule's JavaScript code, or an empty
 /// vector if no safely-mineable array is found.
 pub fn mine_required_literals(rule_code: &str, ts_query_source: &str) -> Vec<String> {
-    if TSQuery::source_has_alternation(ts_query_source) {
+    // The original safety gate per prior research: "skip when the TS query
+    // contains `[`" (alternation may make the JS array filter apply
+    // non-uniformly across branches). We relax this when the JS body uses
+    // exactly one capture name — the JS treats all branches the same way,
+    // so the array filter is uniform.
+    if TSQuery::source_has_alternation(ts_query_source)
+        && distinct_js_capture_count(rule_code) != 1
+    {
         return Vec::new();
     }
     let mut out = Vec::new();
@@ -250,6 +257,66 @@ fn leading_alnum_run(s: &str) -> String {
         .collect()
 }
 
+/// Count distinct capture names referenced in the JS body via
+/// `query.captures.X`, `query.captures["X"]`, `query.capturesList.X`, or
+/// `query.capturesList["X"]`. We're heuristic, not a JS parser; this is
+/// deliberately approximate but sufficient for the safety check.
+fn distinct_js_capture_count(js: &str) -> usize {
+    let bytes = js.as_bytes();
+    let n = bytes.len();
+    let mut seen = std::collections::HashSet::<&str>::new();
+    let mut i = 0;
+    let needles: [&[u8]; 4] = [
+        b"query.captures.",
+        b"query.captures[",
+        b"query.capturesList.",
+        b"query.capturesList[",
+    ];
+    while i < n {
+        let mut matched = false;
+        for needle in &needles {
+            if i + needle.len() <= n && &bytes[i..i + needle.len()] == *needle {
+                let after = i + needle.len();
+                let (name_start, name_end) = if needle.ends_with(b"[") {
+                    // bracket form: skip optional quote, then take identifier-ish chars
+                    let mut j = after;
+                    if j < n && (bytes[j] == b'"' || bytes[j] == b'\'' || bytes[j] == b'`') {
+                        j += 1;
+                    }
+                    let s = j;
+                    while j < n
+                        && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'-' || bytes[j] == b'$')
+                    {
+                        j += 1;
+                    }
+                    (s, j)
+                } else {
+                    // dot form: identifier chars after the dot
+                    let mut j = after;
+                    while j < n
+                        && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_' || bytes[j] == b'$')
+                    {
+                        j += 1;
+                    }
+                    (after, j)
+                };
+                if name_end > name_start {
+                    if let Ok(name) = std::str::from_utf8(&bytes[name_start..name_end]) {
+                        seen.insert(name);
+                    }
+                }
+                i = name_end;
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            i += 1;
+        }
+    }
+    seen.len()
+}
+
 /// Parse a JS array literal of strings. Returns the parsed elements (with
 /// escape decoding) or `None` if the input isn't a clean string array.
 fn parse_string_array(src: &str) -> Option<Vec<String>> {
@@ -412,10 +479,31 @@ mod tests {
     }
 
     #[test]
-    fn skips_when_ts_query_has_alternation() {
-        let js = "const URLS = ['foo.bar.com', 'baz.qux.org'];\nfunction visit() { URLS.includes(...) }";
-        let ts = "[(a) (b)]";
+    fn skips_when_ts_query_has_alternation_and_multiple_js_captures() {
+        // TS alternation + JS uses both `query.captures.a` and
+        // `query.captures.b` → unsafe to mine; bail.
+        let js = r#"const URLS = ['foo.bar.com', 'baz.qux.org'];
+function visit(query) {
+    if (query.captures.a) { URLS.includes(query.captures.a.text); }
+    if (query.captures.b) { URLS.includes(query.captures.b.text); }
+}"#;
+        let ts = "[(_) @a (_) @b]";
         assert!(mine_required_literals(js, ts).is_empty());
+    }
+
+    #[test]
+    fn allows_alternation_when_js_uses_single_capture() {
+        // TS alternation but JS only references `query.captures.literal`,
+        // i.e. uniform handling across branches → mining is safe.
+        let js = r#"const URLS = ['foo.bar.com', 'baz.qux.org'];
+function visit(query) {
+    const node = query.captures.literal;
+    URLS.find(u => node.text.includes(u));
+}"#;
+        let ts = "[(a) (b) (c)] @literal";
+        let lits = mine_required_literals(js, ts);
+        assert!(!lits.is_empty());
+        assert!(lits.iter().any(|l| l == "foo.bar.com"));
     }
 
     #[test]
