@@ -69,32 +69,31 @@ pub fn static_analysis(
 
     let directory_path = Path::new(config.source_directory.as_str());
 
-    // Finally run the analysis
+    // Run each language's analysis in parallel. Within each language, the
+    // existing rayon par_iter over files keeps file-level parallelism. This
+    // overlaps the small-file-count languages (Python, YAML, ...) with the
+    // long-tail one (Go) so total wall ≈ max(per-language) instead of sum.
+    //
+    // Notes:
+    // - We materialize file lists and rule lists up-front (sequentially)
+    //   to keep the parallel section pure and to surface rule-conversion
+    //   errors before launching workers.
+    // - Per-language progress bars are disabled when running in parallel
+    //   (interleaved bars would be unreadable).
+    let mut per_language: Vec<(&Language, Vec<PathBuf>, Vec<RuleInternal>)> = Vec::new();
     for language in languages {
         let files_for_language = filter_files_for_language(files_to_analyze, language);
-
         if files_for_language.is_empty() {
             continue;
         }
-
-        // we only use the progress bar when the debug mode is not active, otherwise, it puts
-        // too much information on the screen.
-        let progress_bar = if !config.use_debug {
-            Some(ProgressBar::new(files_for_language.len() as u64))
-        } else {
-            None
-        };
-
         let rules_for_language: Vec<RuleInternal> =
             convert_rules_to_rules_internal(config, language)?;
-
         println!(
             "Analyzing {} {:?} files using {} rules",
             files_for_language.len(),
             language,
             rules_for_language.len()
         );
-
         if config.use_debug {
             println!(
                 "Analyzing {}, {} files detected",
@@ -102,6 +101,18 @@ pub fn static_analysis(
                 files_for_language.len()
             );
         }
+        per_language.push((language, files_for_language, rules_for_language));
+    }
+
+    // Process each language's per-file fold/reduce in parallel. The inner
+    // `.into_par_iter()` over files shares the same global rayon thread pool;
+    // rayon's work-stealing handles nested parallelism without deadlock.
+    let language_results: Vec<(AnalysisStatistics, Vec<RuleResult>, HashMap<String, Option<ArtifactClassification>>)> = per_language
+        .into_par_iter()
+        .map(|(language, files_for_language, rules_for_language)| {
+            // Inline the original per-language inner block (sans progress bar,
+            // which interleaves badly across concurrent languages).
+            let progress_bar: Option<ProgressBar> = None;
 
         // take the relative path for the analysis
         let (stats, rule_results, path_metadata) = files_for_language
@@ -232,6 +243,10 @@ pub fn static_analysis(
                     base
                 },
             );
+            (stats, rule_results, path_metadata)
+        })
+        .collect();
+    for (stats, rule_results, path_metadata) in language_results {
         all_rule_results.extend(rule_results);
         all_stats += stats;
         for (k, v) in path_metadata {
@@ -240,10 +255,6 @@ pub fn static_analysis(
             // Because a file only (currently) maps to a single `Language`, it's guaranteed that
             // the key will be unique.
             debug_assert!(existing.is_none());
-        }
-
-        if let Some(pb) = &progress_bar {
-            pb.finish();
         }
     }
 
