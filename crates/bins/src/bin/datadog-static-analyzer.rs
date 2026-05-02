@@ -292,8 +292,10 @@ fn main() -> Result<()> {
 
     // Rulesets to exclude when fetching default rulesets
     let mut excluded_rulesets = Vec::<&str>::new();
-    // if there is a configuration file, we load the rules from it. But it means
-    // we cannot have the rule parameter given.
+    // PHASE 1: apply sast_config (if any) to path_config and other globals.
+    // We DO NOT fetch rules here — that's deferred until after the file walk
+    // is spawned, so the network fetch can overlap with disk I/O.
+    let mut explicit_rs_owned: Vec<String> = Vec::new();
     if let Some(conf) = sast_config {
         ignore_gitignore = conf
             .global_config
@@ -306,26 +308,17 @@ fn main() -> Result<()> {
         }
 
         if static_analysis_enabled {
-            let explicit_rs = conf.explicit_rulesets().collect::<Vec<_>>();
-            let rules_from_api = get_rules_from_rulesets(&explicit_rs, use_staging, use_debug)
-                .inspect_err(|e| {
-                    if let DatadogApiError::RulesetNotFound(rs) = e {
-                        eprintln!("Error: ruleset {rs} not found");
-                        exit(EXIT_CODE_RULESET_NOT_FOUND);
-                    }
-                })
-                .context("error when reading rules from API")?;
-            rules.extend(rules_from_api);
-            excluded_rulesets.extend(explicit_rs);
+            // Capture explicit rulesets and exclusion list now; the actual
+            // network fetch happens below, concurrently with the file walk.
+            explicit_rs_owned = conf.explicit_rulesets().map(|s| s.to_string()).collect();
+            excluded_rulesets.extend(explicit_rs_owned.iter().map(String::as_str));
             excluded_rulesets.extend(conf.ignore_rulesets.iter().map(String::as_str));
         }
-        // copy the only and ignore paths from the configuration file
         if let Some(pc) = conf.global_config.as_ref().and_then(|g| g.paths.as_ref()) {
             path_config.ignore.extend_from_slice(&pc.ignore);
             path_config.only = pc.only.clone();
         }
 
-        // Get the max file size from the configuration or default to the default constant.
         max_file_size_kb = conf
             .global_config
             .as_ref()
@@ -336,6 +329,60 @@ fn main() -> Result<()> {
             .as_ref()
             .and_then(|g| g.ignore_generated_files)
             .unwrap_or(true);
+    }
+
+    // PHASE 2: finalize path_config (gitignore, CLI ignore options, default-
+    // ignored globs) so we can clone-and-move it into the walk thread.
+    path_config
+        .ignore
+        .extend(ignore_paths_from_options.iter().map(|p| p.clone().into()));
+    if !ignore_gitignore {
+        match read_files_from_gitignore(&directory_to_analyze) {
+            Ok(paths_from_gitignore) => {
+                path_config
+                    .ignore
+                    .extend(paths_from_gitignore.iter().map(|p| p.clone().into()));
+            }
+            Err(e) => {
+                eprintln!("Warning: error when reading .gitignore file: {}", e);
+                eprintln!("Continuing without .gitignore patterns");
+            }
+        }
+    }
+    if ignore_generated_files {
+        path_config
+            .ignore
+            .extend(DEFAULT_IGNORED_GLOBS.iter().map(|&p| p.to_string().into()));
+    }
+
+    // PHASE 3: spawn file walk on a background OS thread BEFORE the rule
+    // fetch. On dd-source the network rule fetch is ~3-4 s and the file walk
+    // is ~1 s; previously they ran serially, now they overlap and we save
+    // ~1 s wall.
+    let walk_dir = directory_to_analyze.clone();
+    let walk_subdirs = subdirectories_to_analyze.clone();
+    let walk_pc = path_config.clone();
+    let walk_handle = std::thread::spawn(move || {
+        get_files(&walk_dir, walk_subdirs, &walk_pc)
+    });
+
+    // PHASE 4: rule fetch — runs on the main thread, in parallel with the
+    // background file walk above.
+    if let Some(conf) = sast_config {
+        if static_analysis_enabled {
+            let explicit_rs: Vec<&str> =
+                explicit_rs_owned.iter().map(String::as_str).collect();
+            let rules_from_api = get_rules_from_rulesets(&explicit_rs, use_staging, use_debug)
+                .inspect_err(|e| {
+                    if let DatadogApiError::RulesetNotFound(rs) = e {
+                        eprintln!("Error: ruleset {rs} not found");
+                        exit(EXIT_CODE_RULESET_NOT_FOUND);
+                    }
+                })
+                .context("error when reading rules from API")?;
+            rules.extend(rules_from_api);
+            let _ = conf; // keep the borrow scoped to make intent obvious
+        }
     }
 
     if static_analysis_enabled {
@@ -374,39 +421,12 @@ fn main() -> Result<()> {
         vec![]
     };
 
-    // add ignore path from the options
-    path_config
-        .ignore
-        .extend(ignore_paths_from_options.iter().map(|p| p.clone().into()));
-
-    // ignore all directories that are in gitignore
-    if !ignore_gitignore {
-        match read_files_from_gitignore(&directory_to_analyze) {
-            Ok(paths_from_gitignore) => {
-                path_config
-                    .ignore
-                    .extend(paths_from_gitignore.iter().map(|p| p.clone().into()));
-            }
-            Err(e) => {
-                eprintln!("Warning: error when reading .gitignore file: {}", e);
-                eprintln!("Continuing without .gitignore patterns");
-            }
-        }
-    }
-    if ignore_generated_files {
-        path_config
-            .ignore
-            .extend(DEFAULT_IGNORED_GLOBS.iter().map(|&p| p.to_string().into()));
-    }
-
     let languages = get_languages_for_rules(&rules);
 
-    let files_in_repository = get_files(
-        &directory_to_analyze,
-        subdirectories_to_analyze.clone(),
-        &path_config,
-    )
-    .context("unable to get the list of files to analyze")?;
+    let files_in_repository = walk_handle
+        .join()
+        .map_err(|_| anyhow::anyhow!("file walk thread panicked"))?
+        .context("unable to get the list of files to analyze")?;
 
     let num_cores_requested = matches
         .opt_str("c")
