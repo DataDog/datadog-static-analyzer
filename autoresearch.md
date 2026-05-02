@@ -1,0 +1,218 @@
+# Autoresearch: Speed up datadog-static-analyzer scans on dd-source
+
+## Objective
+
+Reduce scan duration of `datadog-static-analyzer` on the `dd-source` monorepo
+(15 GB, 271 k files scanned, ~250 s wall-time baseline). Wins on `dd-source`
+should generalize to other repos. Code-only optimizations: no rule changes.
+
+## Metrics
+
+- **Primary**: `wall_seconds` — total end-to-end wall time (lower is better) of
+  ```
+  /usr/bin/time -e ... dd-auth --domain app.datadoghq.com -- \
+      datadog-static-analyzer --directory ~/dd/dd-source --output X.sarif --format sarif
+  ```
+  measured on the 16-core dev box.
+- **Secondary**:
+  - `analyzer_seconds` — analyzer-self-reported `Duration:` (excludes startup,
+    rule fetch, SARIF serialization). Cleaner signal for the actual scan loop.
+  - `peak_rss_mb` — peak resident memory.
+  - `user_cpu_seconds`, `sys_cpu_seconds` — total CPU time across rayon workers.
+  - `violations` — total violations found. Should never change unless a rule
+    regression is intentional. Tracked as a sanity monitor.
+  - `build_seconds` — incremental compile time. Not part of validation, but a
+    huge jump signals over-engineering.
+
+## Baseline (commit `eff32af0`, captured at session start)
+
+| metric | value |
+|---|---|
+| wall_seconds | 249.33 |
+| analyzer_seconds | 231.06 |
+| peak_rss_mb | 909 |
+| user_cpu_seconds | 1364.79 |
+| sys_cpu_seconds | 28.46 |
+| violations | 18545 |
+| files_scanned | 271428 |
+| rules_evaluated | 63 |
+
+The dd-source scan uses 8 of 16 logical cores (analyzer caps at 8 unless
+`--cpus` is passed). Average CPU usage is 558 %.
+
+## How to Run
+
+```bash
+./autoresearch.sh        # builds, runs benchmark, light fingerprint check
+./autoresearch.checks.sh # deep 9-repo correctness check (auto-run after benchmark)
+```
+
+`autoresearch.sh` outputs `METRIC name=value` lines and appends a JSONL record
+to `~/autoresearch-static-analyzer/runs.jsonl` for every run (kept or rejected).
+
+### Why the dd-auth wrapper
+
+`dd-source` ships a `static-analysis.datadog.yml` config that selects a custom
+mix of rulesets (some not in `static-analysis-default-rules`). The analyzer
+refuses `-r rules.json` when a config file is present. So **dd-source must be
+benchmarked via dd-auth**, which fetches rules through the live API.
+
+The dd-auth path adds ~5 s of network/auth overhead. On a ~250 s baseline that
+is sub-2 % noise. Repeated runs of the bare `dd-auth` call have varied <0.3 s
+in measurement. Acceptable.
+
+The 9-repo deep check uses `-r ~/autoresearch-static-analyzer/all-rulesets.json`
+(cached at session start, 1150 rules across 59 rulesets) for stability and
+speed — no network in the hot path.
+
+## Files in Scope
+
+Optimization-relevant code lives mostly in
+`crates/static-analysis-kernel/src/analysis/`:
+
+- `analyze.rs` — the per-file rule loop. Calls `get_tree`, `get_lines_to_ignore`,
+  then iterates rules and dispatches to `runtime.execute_rule`.
+- `tree_sitter.rs` — `TSQuery` / `TSQueryCursor` wrapper around `tree_sitter::Query`.
+  Where any combined-query work would land.
+- `ddsa_lib/runtime.rs` — `JsRuntime::execute_rule` and `execute_rule_internal`.
+  TS query matching against the parse tree, then v8 dispatch with bridge data.
+- `ddsa_lib/bridge*.rs`, `ddsa_lib/v8_ds.rs` — Rust↔v8 bridges; tweaks here are
+  high-risk, do only with care.
+- `classifiers/*` — `is_test_file`, `is_generated_file`, `is_minified_file`. Cheap.
+- `path_restrictions.rs`, `rule_config.rs` — filter rules per-file by path globs.
+- `crates/cli/src/file_utils.rs` — file walking & language detection.
+- `crates/bins/src/lib.rs` — `static_analysis()` rayon driver, `JS_RUNTIME` thread-local.
+- `crates/bins/src/bin/datadog-static-analyzer.rs` — CLI entrypoint.
+
+You may also touch profile flags in `Cargo.toml` if there is a measured win, but
+keep the diff minimal.
+
+## Off Limits
+
+- **Static-analysis rules** in `~/dd/static-analysis-default-rules`. Read-only.
+  Rule behavior must not change.
+- **Rule semantics** in general — every change must produce identical SARIF output
+  on every reference repo (10 repos checked at deep level).
+- The benchmark target `~/dd/dd-source` (read-only).
+- Public CLI flags, exit codes, SARIF output schema.
+
+## Constraints
+
+- All 10 reference fingerprints (3 light + 9 deep) must match baseline. The
+  deep check runs automatically after each passing benchmark.
+- **`dd-source` fingerprint alone is INSUFFICIENT.** It only exercises 24 rules
+  out of ~1150. A change that matches dd-source but breaks any of the other 9
+  repos is a correctness regression and must be rejected or fixed.
+- No new dependencies unless a clear, large win.
+- No regressing the small-repo path: combined-query / bulk-cost optimizations
+  must be **adaptive**, not always-on. Small-repo scans (apis, lading) must
+  not slow down by more than ~10 %.
+- Resource gate (vs original `main` baseline above):
+  - Small drift in RSS / CPU is fine.
+  - Sudden ~25 %+ peak RSS jump or ~2× CPU time = red flag, investigate.
+- Code clarity matters. Complex optimizations require a comment naming the
+  technique (e.g. "combined Tree-sitter multi-pattern query" or
+  "per-rule literal pre-screen with #eq?/#any-of? extraction").
+
+## Per-Run Logging
+
+Every run appends a JSONL record to `~/autoresearch-static-analyzer/runs.jsonl`
+(kept OR rejected — completeness over tidiness). Schema:
+
+```json
+{
+  "timestamp": "...", "git_sha": "...", "branch": "...",
+  "repo": "dd-source",
+  "wall_time_seconds": ..., "analyzer_duration_seconds": ...,
+  "peak_rss_mb": ..., "peak_rss_kb": ...,
+  "user_cpu_seconds": ..., "sys_cpu_seconds": ...,
+  "files_scanned": ..., "total_violations": ..., "rules_evaluated": ...,
+  "ddsource_fingerprint_count": ..., "ddsource_fingerprint_match": true,
+  "light_fingerprint_match": true, "light_fingerprint_details": "...",
+  "build_seconds": ..., "preflight_seconds": ...
+}
+```
+
+`runs.jsonl` is the authoritative record for later graphing with pandas/duckdb.
+The `kept` field is implicit in `autoresearch.jsonl` (this is just the resource
+log, run-by-run).
+
+## What's Been Tried
+
+(Prior session — these are starting points, not pre-applied. The prior
+session's branch is **not** merged into our base. Our base is `main` @
+`eff32af0`. Don't assume any of this is in the tree.)
+
+### Promising Directions (apply adaptively, watch for small-repo regressions)
+
+1. **Combine per-rule TS queries into ONE multi-pattern query per language**
+   (largest single win — ~2× on big workloads, regresses small repos 1.4–2.4×).
+   Make this **adaptive** based on `file_count × rule_count` per language at
+   startup. **Top priority.**
+2. **Per-rule literal pre-screen** — extract required substrings from
+   `#eq?`/`#any-of?`/`#match?` predicates; skip v8 dispatch if file lacks them.
+   Two granularities: file-level (skip parse+query) and per-rule (skip v8).
+   Hard safety: bail on `|`, `(?i)`, `[`, `?`, `*`, `+` in regex.
+3. **JS-side literal mining** for broad-capture rules — mine top-level
+   `const NAME = ["lit", ...]` arrays as required substrings. Safety gates:
+   skip if name contains TYPE/KIND/NODE; skip if no element has non-alphanumeric
+   chars; skip if TS query contains `[`.
+4. **Skip empty-bucket rules early** in the combined-query path (~5 % win).
+5. **Reuse the parse tree** for `is_test_file` and other post-processing.
+6. **Fast-paths**: `get_lines_to_ignore` `memchr` for `no-dd-sa`/`datadog-disable`.
+
+### Don't-Try List (verified dead ends, do not re-investigate without new evidence)
+
+- Thread-local `tree_sitter::Parser` cache — no measurable win.
+- Skipping `bridge_query_match.clear()` — v8 GC penalty exceeds savings.
+- Flat `Vec<(rule_idx, match)>` from combined query — just shifts cost.
+- Per-rule v8-dispatch skip without the conservative literal-extraction gates above
+  — produces incorrect results.
+- HashMap-based per-file literal-presence cache — alloc cost > dedup savings.
+- Regex literal extraction returning the *longest run* — silently misses violations
+  on alternation.
+- `#[inline(always)]` on same-crate hot paths — compiler already does it.
+
+## Architectural Notes (where the time goes)
+
+For the dd-source baseline (`231 s` analyzer Duration):
+
+- 271 k files, 8-way rayon parallel. So ~7 ms wall per file on average across
+  the per-language work.
+- 24 rules with matches out of 63 evaluated. Rules with zero matches still pay
+  query-cursor + (currently) per-rule TS query setup costs.
+- Per-file: `get_lines_to_ignore` (string scan) → `get_tree` (TS parse) →
+  for each rule: `tree_sitter_query.with_cursor(...).matches(...)` → if non-empty,
+  v8 `execute_rule_internal` (bridge push + script run + violations drain).
+- A new v8 isolate setup happens per rayon thread but is amortized.
+
+The combined-query idea (#1) replaces N per-rule queries with 1 multi-pattern
+query, walking the parse tree once. Small-repo cost is mostly the upfront
+`tree_sitter::Query::new` for a giant pattern source.
+
+## Working Directory Layout
+
+```
+~/autoresearch-static-analyzer/
+├── all-rulesets.json          # cached 59 rulesets / 1150 rules (session start)
+├── fingerprint.py             # SARIF → stable hash
+├── baselines/
+│   ├── baseline_fingerprints.json
+│   ├── dd-source.sarif        # main baseline SARIF (NB: this is dd-source-baseline.sarif)
+│   ├── dd-source-resources.json
+│   ├── cloudops.sarif, apis.sarif, ...   # 9 reference SARIFs
+├── runs.jsonl                 # per-run resource log (append-only)
+└── last-dd-source.sarif       # latest dd-source SARIF (for deep-check reuse)
+```
+
+## Loop Etiquette
+
+- Improved `wall_seconds` AND deep check passes → `keep`.
+- Worse `wall_seconds` → `discard`. Capture in `asi.rollback_reason` exactly
+  *which* phase regressed (analyzer_seconds vs build_seconds vs other).
+- Light fingerprint mismatch → `discard` with details — it means a real
+  semantic regression, not a perf change. Inspect `light_fingerprint_details`.
+- Deep check failure (after passing light) → `checks_failed`. This means a rule
+  applied differently on a corner-case repo. Investigate before retrying.
+- Crash → log the panic / error class in `asi`.
+- For a clean +/- 1 % wall change: re-run once before deciding.
