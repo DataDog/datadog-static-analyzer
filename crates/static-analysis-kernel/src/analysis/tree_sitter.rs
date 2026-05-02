@@ -416,9 +416,129 @@ fn parse_text_predicate_literals(inner: &str) -> Option<Vec<String>> {
                 Some(group)
             }
         }
-        // `#match?`, `#not-match?`, `#is?`, custom predicates: not extracted.
+        "#match?" => {
+            // Extract the longest contiguous literal run from the regex source.
+            // Safe IFF the regex has no top-level `|` alternation and no
+            // `(?...)` group modifiers (notably `(?i)` case-insensitive).
+            let regex_src = tokens.next_string_literal()?;
+            let lit = extract_required_literal_from_regex(&regex_src)?;
+            if lit.trim().is_empty() {
+                return None;
+            }
+            Some(vec![lit])
+        }
+        // `#not-match?`, `#is?`, custom predicates: not extracted.
         _ => None,
     }
+}
+
+/// Extract the longest contiguous run of literal characters from a regex,
+/// to be used as a required-literal screening hint. Returns `None` when the
+/// regex is too unconstrained for safe extraction.
+///
+/// Safety:
+/// - Bails on top-level `|` alternation (different branches → different literals).
+/// - Bails on `(?...)` group-modifier prefixes (e.g. `(?i)` case-insensitive
+///   would make the extracted literal wrong-case).
+/// - Treats `^`, `$`, anchors, zero-width assertions, and unescaped
+///   `.`, `*`, `+`, `?`, `{`, `[`, `(` as run boundaries.
+/// - Decodes `\X` for `X` in the standard regex special set as a literal `X`.
+///   Other escapes (`\n`, `\t`, `\d`, `\w`, etc.) end the current run.
+///
+/// Returns the longest run found, e.g.:
+/// - `"gopkg.in/DataDog/dd-trace-go.v1/.*"` → `"in/DataDog/dd-trace-go"`
+/// - `r"^\".*\.fabric\.dog.*\"$"` → `".fabric.dog"`
+fn extract_required_literal_from_regex(re: &str) -> Option<String> {
+    let bytes = re.as_bytes();
+    let n = bytes.len();
+
+    // Quick global bails. Top-level `|` would split into alternatives with
+    // different requirements; we'd need per-branch handling.
+    if has_unescaped(bytes, b'|') {
+        return None;
+    }
+    if has_group_modifier(bytes) {
+        return None;
+    }
+
+    let mut runs: Vec<Vec<u8>> = Vec::new();
+    let mut current: Vec<u8> = Vec::new();
+    let mut i = 0;
+    while i < n {
+        let c = bytes[i];
+        if c == b'\\' && i + 1 < n {
+            let next = bytes[i + 1];
+            // Treat `\X` as a literal `X` only for the regex meta-set.
+            // Other escapes (`\d`, `\w`, `\s`, `\b`, hex escapes, etc.) end
+            // the run — those don't pin a single character.
+            const META: &[u8] = b".*+?{}|()[]^$\\/";
+            if META.contains(&next) {
+                current.push(next);
+                i += 2;
+                continue;
+            } else {
+                runs.push(std::mem::take(&mut current));
+                i += 2;
+                continue;
+            }
+        }
+        // Run-ending metachars (we already excluded `|`).
+        if matches!(
+            c,
+            b'.' | b'*' | b'+' | b'?' | b'{' | b'[' | b'(' | b'^' | b'$' | b')' | b'}' | b']'
+        ) {
+            runs.push(std::mem::take(&mut current));
+            i += 1;
+            continue;
+        }
+        // Non-printable / non-ASCII: end the run conservatively.
+        if !c.is_ascii_graphic() && c != b' ' {
+            runs.push(std::mem::take(&mut current));
+            i += 1;
+            continue;
+        }
+        current.push(c);
+        i += 1;
+    }
+    runs.push(current);
+
+    let longest = runs.into_iter().max_by_key(|r| r.len())?;
+    if longest.len() < 3 {
+        // Runs shorter than 3 chars are too generic to screen safely (they'd
+        // appear in nearly every file).
+        return None;
+    }
+    String::from_utf8(longest).ok()
+}
+
+fn has_unescaped(bytes: &[u8], target: u8) -> bool {
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == target {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn has_group_modifier(bytes: &[u8]) -> bool {
+    let mut i = 0;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+            continue;
+        }
+        if bytes[i] == b'(' && bytes[i + 1] == b'?' {
+            return true;
+        }
+        i += 1;
+    }
+    false
 }
 
 /// Minimal lexer over a tree-sitter predicate body. Skips whitespace, parses
@@ -1161,13 +1281,80 @@ mod literal_pre_screen_tests {
     }
 
     #[test]
-    fn match_predicate_not_extracted() {
-        // `#match?` is intentionally not extracted in v1 (regex risk).
+    fn match_predicate_extracts_literal_prefix() {
+        // Anchored regex with literal prefix — we extract `^foo$` → "foo".
         let s = LiteralPreScreen::extract(
             r#"(id) @x (#match? @x "^foo$")"#,
             1,
         );
+        assert!(!s.is_trivial());
+        assert!(s.matches("foo"));
+        assert!(!s.matches("bar"));
+    }
+
+    #[test]
+    fn match_predicate_extracts_longest_run() {
+        // The longest contiguous literal run wins.
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#match? @x "gopkg.in/DataDog/dd-trace-go.v1/.*")"#,
+            1,
+        );
+        assert!(!s.is_trivial());
+        assert!(s.matches("import \"gopkg.in/DataDog/dd-trace-go.v1/ddtrace/tracer\""));
+        assert!(!s.matches("package main\nfunc Foo() {}"));
+    }
+
+    #[test]
+    fn match_predicate_decodes_escaped_specials() {
+        // `\.fabric\.dog` should yield literal `.fabric.dog`.
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#match? @x "^.*\.fabric\.dog.*$")"#,
+            1,
+        );
+        assert!(!s.is_trivial());
+        assert!(s.matches("hello.fabric.dog world"));
+        assert!(!s.matches("hello.world"));
+    }
+
+    #[test]
+    fn match_predicate_bails_on_alternation() {
+        // Top-level `|` → each branch has its own requirements; bail.
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#match? @x "foo|bar|baz")"#,
+            1,
+        );
         assert!(s.is_trivial());
+    }
+
+    #[test]
+    fn match_predicate_bails_on_group_modifier() {
+        // `(?i)` makes the literal case-insensitive — we'd extract wrong case.
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#match? @x "(?i)foo")"#,
+            1,
+        );
+        assert!(s.is_trivial());
+    }
+
+    #[test]
+    fn match_predicate_bails_when_no_long_enough_run() {
+        // Longest literal run of 2 chars or less → too generic, bail.
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#match? @x "a.b.c.d")"#,
+            1,
+        );
+        assert!(s.is_trivial());
+    }
+
+    #[test]
+    fn match_predicate_decodes_escaped_slash() {
+        // `\/` is the regex-escape for `/` (legal in some flavors).
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#match? @x "^prefix\/path\/.*$")"#,
+            1,
+        );
+        assert!(!s.is_trivial());
+        assert!(s.matches("prefix/path/anything"));
     }
 
     #[test]
