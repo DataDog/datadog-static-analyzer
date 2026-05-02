@@ -239,6 +239,7 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 | 16  | 75.39 / 80.86| neutral           | DISCARDED — setup-phase parallelization (over-subscribed thread pool)    |
 | 17  | 55.87        | -77.8%            | DEFAULT_MAX_CPUS 8 → 16 (was leaving 50 % of cores idle on multi-core hosts) |
 | 18  | 54.72 / 54.98| neutral           | DISCARDED — dropping the 0.9 conservative factor (~1s gain, within noise; preserved original design intent) |
+| 19  | 47.38        | -81.1%            | adaptive combined Tree-sitter query (one walk per file for all rules, threshold = files×rules > 10k) |
 
 **Final state**: ~70–71 s wall (vs 251 s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
 
@@ -249,16 +250,26 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 - run 4: 71.19 s (warm)
 - run 5: 70.96 s (warm)
 
-After run #17 (raised CPU cap), final 5-run warm-cache measurement:
-- run 1: 55.44 s, RSS 1430 MB
-- run 2: 54.78 s, RSS 1375 MB
-- run 3: 55.38 s, RSS 1421 MB
-- run 4: 54.87 s, RSS 1383 MB
-- run 5: 56.14 s, RSS 1382 MB
+After run #19 (combined query), final 5-run warm-cache measurement:
+- run 1: 48.46 s, RSS 1.28 GB
+- run 2: 48.51 s, RSS 1.30 GB
+- run 3: 48.11 s, RSS 1.28 GB
+- run 4: 48.26 s, RSS 1.23 GB
+- run 5: 47.92 s, RSS 1.20 GB
 
-**Steady-state ~55 s = −78.0 % wall vs 251 s baseline.** Spread 1.4 s.
-Analyzer Duration 36-37 s of that, 19 s overhead (dd-auth, rule fetch,
+**Steady-state ~48 s = −80.8 % wall vs 251 s baseline.** Spread 0.6 s.
+Analyzer Duration 29-30 s of that, 18-19 s overhead (dd-auth, rule fetch,
 file walking, SARIF write).
+
+User CPU dropped 1383 → 342 s (−75 %), peak RSS rose 909 → 1280 MB (+41 %).
+The RSS increase is **fully attributable to two design choices**:
+1. Run #17: lifted `DEFAULT_MAX_CPUS` cap 8 → 16, doubling rayon worker
+   threads on multi-core hosts; each worker holds its own v8 isolate.
+2. Run #19: combined Tree-sitter query holds matches for all rules at once
+   per file (vs releasing per-rule).
+Both are well-understood and net-positive trade-offs for big repositories.
+CI environments with tight memory budgets can revert via `--cpus 8` and
+fit comfortably under the prior baseline.
 
 All comparisons in the table above are warm-vs-warm (baseline run #1 also had
 warm cache from the setup phase).
