@@ -11,7 +11,13 @@ pub static USER_AGENT_PRODUCT: &str = "datadog-static-analyzer";
 pub static QUERY_PARAM_SCHEMA_VERSION: &str = "schema_version";
 pub static SARIF_PROPERTY_DATADOG_FINGERPRINT: &str = "DATADOG_FINGERPRINT";
 pub static SARIF_PROPERTY_SHA: &str = "SHA";
-pub static DEFAULT_MAX_CPUS: usize = 8;
+/// Default upper bound on the number of CPU cores the analyzer will use
+/// when `--cpus` is not specified. Intentionally still capped to keep
+/// memory growth bounded on large machines (each worker holds its own v8
+/// isolate); the analyzer scales near-linearly with worker count up to this
+/// limit on dd-source-scale repositories. Smaller machines fall back to
+/// `num_cpus::get()` via [`crate::utils::choose_cpu_count`].
+pub static DEFAULT_MAX_CPUS: usize = 16;
 pub static DEFAULT_MAX_FILE_SIZE_KB: u64 = 200;
 // See https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 pub static GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH: &str = "CI_COMMIT_BRANCH";
