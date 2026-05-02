@@ -235,8 +235,9 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 | 12  | 71.93        | -71.4%            | (verification rerun, no code changes)                                    |
 | 13  | 74.26 / 72.68| neutral           | DISCARDED — unused-pattern detection (drop patterns whose @captures aren't read by JS): no measurable win on dd-source, removed for code-clarity |
 | 14  | 73.40        | -70.8%            | (final verification rerun)                                               |
+| 15  | 70.43        | -72.0%            | language-level rayon parallelism (par_iter over languages, nested rayon shares pool) |
 
-**Plateau confirmed at ~72–73s** (multiple back-to-back runs in 71.9–74.3s range; ~2–3s noise floor). Total session win: **−71.4 % wall** vs `main` baseline.
+**Final state**: ~70-71s wall (vs 251s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
 
 
 ## Where the time goes (final profile, dd-source)
