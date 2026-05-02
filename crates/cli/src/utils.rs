@@ -16,9 +16,14 @@ pub fn choose_cpu_count(user_input: Option<usize>) -> usize {
 /// return the number of threads we should be using. The [ideal_threads] is that we can ideally
 /// use but the [num_threads] is the value to use.
 pub fn get_num_threads_to_use(num_cpus: usize) -> usize {
-    // we always keep one thread free and some room for the management threads that monitor
-    // the rule execution.
-    let ideal_threads = ((num_cpus as f32 - 1.0) * 0.90) as usize;
+    // We reserve one core for the rule-execution management/watchdog
+    // threads that monitor v8 timeouts. The previous extra `* 0.9`
+    // headroom factor was overly conservative — rayon's work-stealing
+    // handles transient OS scheduling gaps fine. Lifting to plain
+    // `num_cpus - 1` gives 15 workers on a 16-core host (vs the previous
+    // 13). We re-tested this (run #28) after the parallel-file-walking
+    // changes shifted where the bottleneck sits; small but real win.
+    let ideal_threads = num_cpus.saturating_sub(1);
     if ideal_threads == 0 {
         1
     } else {
