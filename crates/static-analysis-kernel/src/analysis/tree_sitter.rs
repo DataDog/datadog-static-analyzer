@@ -101,7 +101,7 @@ impl TSQuery {
     ) -> Result<Self, tree_sitter::QueryError> {
         let query = tree_sitter::Query::new(language, source)?;
         let capture_names = Self::build_cache(&query);
-        let pre_screen = LiteralPreScreen::extract(source, query.pattern_count());
+        let pre_screen = LiteralPreScreen::extract_from_query(&query, source);
         Ok(Self {
             query,
             capture_names,
@@ -167,9 +167,9 @@ impl From<tree_sitter::Query> for TSQuery {
 
 /// A conservative literal pre-screen extracted from a tree-sitter query source.
 ///
-/// Encodes "this rule can only possibly match files that contain at least one
-/// literal from EACH `and_groups` entry". An empty `and_groups` means the
-/// rule must always be evaluated (no screening possible).
+/// A query may have multiple top-level patterns OR'd together (`pattern_count
+/// > 1`). For the rule to match a file, ANY of those patterns must match —
+/// so the pre-screen is `OR over patterns(AND over groups(OR over literals))`.
 ///
 /// Built once per query (at startup). Used per-file in the analyzer hot path,
 /// so `matches()` is allocation-free and uses `str::contains` (memchr/SIMD).
@@ -177,59 +177,90 @@ impl From<tree_sitter::Query> for TSQuery {
 /// **Safety direction:** under-promise. Adding too few groups misses
 /// optimization but never blocks a file that should match. Adding too many is
 /// a correctness bug. We therefore only extract literals when we can prove
-/// they're required across every match path:
+/// they're required for that pattern to match:
 ///
-/// - Only queries with exactly one top-level pattern are eligible.
 /// - We extract from `(#eq? @cap "lit")` (single literal, single AND-group).
 /// - We extract from `(#any-of? @cap "lit1" "lit2")` (one OR-group).
-/// - `#match?` regex extraction is intentionally **not** implemented in v1
-///   because alternation, character classes, etc. make it easy to get wrong.
+/// - We extract the longest contiguous literal run from `#match?` regexes
+///   (with safety bails on `|`, `(?...)` modifiers, runs <3 chars).
+/// - We bail per-pattern on any `[` (alternation) outside strings/comments.
+/// - We bail the WHOLE screen (every pattern is required) if any pattern
+///   ends up with zero AND-groups — an unconstrained pattern can match
+///   anything, so the file cannot be safely skipped.
 #[derive(Debug, Default, Clone)]
 pub struct LiteralPreScreen {
-    /// Each entry is an OR-group; ALL groups must be satisfied (AND).
-    and_groups: Vec<Vec<String>>,
+    /// OR over patterns. For each pattern, ALL of its OR-groups must contain
+    /// at least one literal that's in the file. An empty outer Vec means
+    /// no screen possible (every file must run the rule).
+    patterns: Vec<Vec<Vec<String>>>,
 }
 
 impl LiteralPreScreen {
     /// A pre-screen that lets every file through.
     pub fn always_match() -> Self {
         Self {
-            and_groups: Vec::new(),
+            patterns: Vec::new(),
         }
     }
 
     /// Returns `true` if this pre-screen has no groups (i.e. `matches()` is a no-op).
     #[inline]
     pub fn is_trivial(&self) -> bool {
-        self.and_groups.is_empty()
+        self.patterns.is_empty()
     }
 
-    /// Returns `true` if `code` *could* satisfy this query's predicates,
-    /// or if no pre-screen is available (in which case the caller must run
-    /// the full query). Allocation-free.
+    /// Returns `true` if `code` *could* satisfy at least one of the query's
+    /// patterns, or if no pre-screen is available (in which case the caller
+    /// must run the full query). Allocation-free.
     #[inline]
     pub fn matches(&self, code: &str) -> bool {
-        // No screen → always run the rule.
-        self.and_groups.is_empty()
-            || self
-                .and_groups
-                .iter()
-                .all(|or_group| or_group.iter().any(|lit| code.contains(lit.as_str())))
+        self.patterns.is_empty()
+            || self.patterns.iter().any(|and_groups| {
+                and_groups
+                    .iter()
+                    .all(|or_group| or_group.iter().any(|lit| code.contains(lit.as_str())))
+            })
     }
 
-    /// Parse a tree-sitter query source string and extract `#eq?`/`#any-of?`
-    /// literals as required pre-screen groups.
-    ///
-    /// We bail (return an always-match screen) on:
-    /// - `pattern_count != 1` — multiple top-level patterns OR'd; a literal
-    ///   required by one is not required by the others.
-    /// - any `[` outside strings/comments — tree-sitter treats `[A B]` as
-    ///   alternation, and a predicate inside one branch is not required by
-    ///   the other branches. Detecting this structurally is non-trivial, so
-    ///   we conservatively skip the entire query. (This matches the safety
-    ///   rule in prior research item #3.)
-    /// - `(?i)`, `|`, `?`, `*`, `+` inside `#match?` regexes — see
-    ///   `parse_text_predicate_literals`.
+    /// Build a pre-screen from a compiled query and its source string by
+    /// iterating each top-level pattern's source-slice via
+    /// [`tree_sitter::Query::start_byte_for_pattern`].
+    pub fn extract_from_query(query: &tree_sitter::Query, source: &str) -> Self {
+        let pcount = query.pattern_count();
+        if pcount == 0 {
+            return Self::always_match();
+        }
+
+        let bytes = source.as_bytes();
+        let mut patterns: Vec<Vec<Vec<String>>> = Vec::with_capacity(pcount);
+        for p in 0..pcount {
+            let start = query.start_byte_for_pattern(p);
+            let end = query.end_byte_for_pattern(p);
+            // Defensive: guard against ranges that don't fit (shouldn't happen).
+            if start >= bytes.len() || end > bytes.len() || start >= end {
+                return Self::always_match();
+            }
+            let slice = &source[start..end];
+            // `[A B]` alternation inside a pattern — predicates aren't required
+            // across all branches. Bail.
+            if has_alternation_bracket(slice) {
+                return Self::always_match();
+            }
+            let and_groups = extract_and_groups_from_pattern_source(slice);
+            if and_groups.is_empty() {
+                // Unconstrained pattern: it can match arbitrary code, so the
+                // rule (`OR of patterns`) can match arbitrary code too. We
+                // can't safely skip files based on the other patterns alone.
+                return Self::always_match();
+            }
+            patterns.push(and_groups);
+        }
+        Self { patterns }
+    }
+
+    /// Single-pattern shorthand used by tests. Behaves like `extract_from_query`
+    /// but takes the source directly when we don't already have a compiled query.
+    #[cfg(test)]
     pub fn extract(source: &str, pattern_count: usize) -> Self {
         if pattern_count != 1 {
             return Self::always_match();
@@ -237,58 +268,71 @@ impl LiteralPreScreen {
         if has_alternation_bracket(source) {
             return Self::always_match();
         }
-        let mut and_groups: Vec<Vec<String>> = Vec::new();
-        let bytes = source.as_bytes();
-        let n = bytes.len();
-        let mut i = 0;
-        while i < n {
-            match bytes[i] {
-                // Line comments run to end of line.
-                b';' => {
-                    while i < n && bytes[i] != b'\n' {
-                        i += 1;
-                    }
-                }
-                // Skip over string literals so internal `(` doesn't trigger us.
-                b'"' => {
-                    i += 1;
-                    while i < n {
-                        if bytes[i] == b'\\' && i + 1 < n {
-                            i += 2;
-                            continue;
-                        }
-                        if bytes[i] == b'"' {
-                            i += 1;
-                            break;
-                        }
-                        i += 1;
-                    }
-                }
-                // Predicate forms look like `(#eq? ...)` or `(#any-of? ...)`.
-                b'(' => {
-                    let mut j = i + 1;
-                    while j < n && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
-                        j += 1;
-                    }
-                    if j < n && bytes[j] == b'#' {
-                        if let Some(close) = find_matching_paren(bytes, i) {
-                            let inner = &source[i + 1..close];
-                            if let Some(group) = parse_text_predicate_literals(inner) {
-                                and_groups.push(group);
-                            }
-                            i = close + 1;
-                            continue;
-                        }
-                    }
-                    i += 1;
-                }
-                _ => {
+        let and_groups = extract_and_groups_from_pattern_source(source);
+        if and_groups.is_empty() {
+            return Self::always_match();
+        }
+        Self {
+            patterns: vec![and_groups],
+        }
+    }
+}
+
+/// Walk a (single-pattern) query source and collect `#eq?` / `#any-of?` /
+/// `#match?` literals as AND-groups. Caller is responsible for the
+/// alternation-bracket bail.
+fn extract_and_groups_from_pattern_source(source: &str) -> Vec<Vec<String>> {
+    let mut and_groups: Vec<Vec<String>> = Vec::new();
+    let bytes = source.as_bytes();
+    let n = bytes.len();
+    let mut i = 0;
+    while i < n {
+        match bytes[i] {
+            // Line comments run to end of line.
+            b';' => {
+                while i < n && bytes[i] != b'\n' {
                     i += 1;
                 }
             }
+            // Skip over string literals so internal `(` doesn't trigger us.
+            b'"' => {
+                i += 1;
+                while i < n {
+                    if bytes[i] == b'\\' && i + 1 < n {
+                        i += 2;
+                        continue;
+                    }
+                    if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            // Predicate forms look like `(#eq? ...)` etc.
+            b'(' => {
+                let mut j = i + 1;
+                while j < n && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
+                    j += 1;
+                }
+                if j < n && bytes[j] == b'#' {
+                    if let Some(close) = find_matching_paren(bytes, i) {
+                        let inner = &source[i + 1..close];
+                        if let Some(group) = parse_text_predicate_literals(inner) {
+                            and_groups.push(group);
+                        }
+                        i = close + 1;
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
         }
-        Self { and_groups }
     }
+    and_groups
 }
 
 /// Returns true if the query source contains a `[` outside any string
@@ -1357,6 +1401,73 @@ mod literal_pre_screen_tests {
         assert!(s.matches("prefix/path/anything"));
     }
 
+    // -- multi-pattern tests (use a real tree-sitter Query) ---------------
+    use crate::analysis::tree_sitter::get_tree_sitter_language;
+    use crate::model::common::Language;
+
+    fn screen_for_go_query(src: &str) -> LiteralPreScreen {
+        let lang = get_tree_sitter_language(&Language::Go);
+        let q = tree_sitter::Query::new(&lang, src).unwrap();
+        LiteralPreScreen::extract_from_query(&q, src)
+    }
+
+    #[test]
+    fn multi_pattern_both_constrained_unlocks_screen() {
+        // Two top-level patterns; each constrains a literal. File must
+        // contain at least one of the two literals to possibly match.
+        let src = r#"
+(import_spec
+    path: (interpreted_string_literal) @import.path
+    (#match? @import.path "gopkg.in/DataDog/dd-trace-go.v1/.*")
+) @import
+(selector_expression
+    operand: (identifier)
+    field: (field_identifier) @func.name
+    (#eq? @func.name "WithServiceName")
+) @call
+"#;
+        let s = screen_for_go_query(src);
+        assert!(!s.is_trivial());
+        assert!(s.matches("// uses WithServiceName here\n"));
+        assert!(s.matches("// uses gopkg.in/DataDog/dd-trace-go.v1/ddtrace\n"));
+        // No literal → file safely skipped.
+        assert!(!s.matches("package main\nfunc Foo() {}\n"));
+    }
+
+    #[test]
+    fn multi_pattern_one_unconstrained_bails() {
+        // First pattern requires `Foo`; second matches ANY function call.
+        // Because pattern 2 can match arbitrary code, the rule can match
+        // arbitrary code, so we must bail.
+        let src = r#"
+(call_expression
+  function: (identifier) @fn
+  (#eq? @fn "Foo")
+) @first
+(call_expression) @anycall
+"#;
+        let s = screen_for_go_query(src);
+        assert!(s.is_trivial(), "unconstrained second pattern must force bail");
+        assert!(s.matches("anything goes"));
+    }
+
+    #[test]
+    fn multi_pattern_alternation_bracket_in_one_pattern_bails() {
+        // Even if other patterns are clean, an internal `[...]` in one
+        // pattern is unsafe — we don't know which branch's predicates apply.
+        let src = r#"
+(call_expression
+  function: (identifier) @fn
+  (#eq? @fn "safe")
+) @first
+(_
+  [(assignment_statement) (interpreted_string_literal)] @lit
+) @second
+"#;
+        let s = screen_for_go_query(src);
+        assert!(s.is_trivial());
+    }
+
     #[test]
     fn capture_to_capture_eq_ignored() {
         // `#eq? @a @b` cannot reduce to a literal screen.
@@ -1365,8 +1476,8 @@ mod literal_pre_screen_tests {
     }
 
     #[test]
-    fn multi_pattern_skipped() {
-        // pattern_count > 1 -> we conservatively skip extraction.
+    fn multi_pattern_extract_skipped_in_single_pattern_helper() {
+        // The single-pattern test helper bails when called with pattern_count > 1.
         let s = LiteralPreScreen::extract(r#"((id) @a (#eq? @a "foo")) ((id) @b)"#, 2);
         assert!(s.is_trivial());
     }
