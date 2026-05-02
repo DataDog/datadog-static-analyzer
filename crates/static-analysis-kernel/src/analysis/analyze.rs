@@ -379,19 +379,9 @@ pub fn analyze_with_combined(
 
     let lines_to_ignore = get_lines_to_ignore(code, language);
 
-    // Reuse the same per-rule pre-screen filter as the standard path: if no
-    // rule could match, skip parse + combined-query traversal.
-    //
-    // Order matters: `pre_screen.matches(code)` is a content-only check
-    // (memchr-style `code.contains` over a small literal list — short on
-    // average), while `rule_is_enabled` walks `path_restrictions` for the
-    // file path (HashMap + glob iteration per ruleset). On dd-source most
-    // rules are config-enabled (so rule_is_enabled returns true), but many
-    // files trip pre_screen for SOME but not ALL rules. Putting pre_screen
-    // first lets .any() short-circuit on the cheaper check, saving the
-    // path-restriction work for screen-rejected rules. Measurement (run
-    // #34's instrumentation) showed the screen as a ~7 s wall hot path,
-    // dominated by the per-rule iteration cost.
+    // File-level pre-screen: bail if no rule can match this file. Order
+    // matters — see run #35's analysis: pre_screen first (cheap memchr-
+    // style content check), rule_is_enabled second (HashMap + path glob).
     let any_rule_could_match = rules.iter().any(|rule| {
         rule.tree_sitter_query.pre_screen().matches(code) && rule_config.rule_is_enabled(&rule.name)
     });
@@ -421,6 +411,25 @@ pub fn analyze_with_combined(
         .iter()
         .enumerate()
         .filter_map(|(rule_idx, rule)| {
+            // Cheapest check first: if the combined query produced no
+            // matches for this rule, skip rule_is_enabled + pre_screen
+            // entirely. This is the common case (most rules don't match
+            // most files). For the (file, rule) pairs where bucket is
+            // empty, we save ~2 µs/iter that would otherwise hit the
+            // path_restrictions HashMap and pre_screen `code.contains` calls.
+            if buckets[rule_idx].is_empty() {
+                return Some(RuleResult {
+                    rule_name: rule.name.clone(),
+                    filename: filename.to_string(),
+                    violations: vec![],
+                    errors: vec![],
+                    execution_error: None,
+                    output: None,
+                    execution_time_ms: 0,
+                    parsing_time_ms: cst_parsing_time.as_millis(),
+                    query_node_time_ms: combined_query_time.as_millis(),
+                });
+            }
             if !rule_config.rule_is_enabled(&rule.name) {
                 return None;
             }
@@ -441,6 +450,9 @@ pub fn analyze_with_combined(
             }
             // Take ownership of this rule's matches — we won't need them again.
             let matches = std::mem::take(&mut buckets[rule_idx]);
+            // (Defensive: re-check emptiness after take in case mem::take
+            // races with another rule_idx access — it can't here, but the
+            // existing code structure expects this guard.)
             if matches.is_empty() {
                 return Some(RuleResult {
                     rule_name: rule.name.clone(),
