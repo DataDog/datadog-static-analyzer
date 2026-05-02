@@ -332,19 +332,63 @@ defaults (e.g. `DEFAULT_MAX_CPUS = 8`).
 
 ## Session summary
 
-- 11 experiments, 9 kept, 1 discarded, 1 explicit verification rerun.
-- Baseline 251.25 s → final 71.93 s (best of 11/12) = **−71.4 %**.
-- All 360+ kernel unit tests still pass; 10/10 reference repos preserve their
+- 19 experiments, 12 kept (including a few verification reruns), 5 discarded.
+- Baseline 251.25 s → final ~48 s = **−80.8 %**.
+- All 362 kernel unit tests pass; 10/10 reference repos preserve their
   baseline SARIF fingerprints (deep check) on every kept iteration.
-- `peak_rss_mb` stayed within ±3 % of baseline; `user_cpu_seconds` dropped 76 %.
-- The big wins came from a layered conservative literal pre-screen:
-  (1) `#eq?` / `#any-of?` extraction, (2) `#match?` regex literal extraction,
-  (3) multi-pattern OR-aware extraction, (4) `[`-depth + quantifier tracking,
-  (5) JS-side `const` array mining with leading-alphanumeric prefix transform,
-  (6) relaxing the alternation gate when JS handles all branches uniformly.
-- One small refactor (`is_test_file` reusing the parsed tree) and one fast
-  path (`memchr` for `no-dd-sa` markers) provided the early easy wins.
-- See `autoresearch.ideas.md` for what we deliberately didn't pursue (combined
-  Tree-sitter query for shared traversal, JS analysis to detect unused
-  patterns).
+- `user_cpu_seconds` dropped 75 % (1383 → 342 s).
+- `peak_rss_mb` rose 41 % (909 → 1280 MB), entirely from two well-understood
+  trade-offs: doubling rayon worker count (run #17) and combined-query
+  match retention (run #19). Memory-constrained users can revert via
+  `--cpus 8` to recover the old memory profile.
+
+Wins, in order:
+
+1. **memchr fast-path in `get_lines_to_ignore`** — most files have no
+   `no-dd-sa` / `datadog-disable` markers; bail before per-line whitespace-
+   stripping and per-pattern `.contains()`. (Run #2; −5.2 %.)
+2. **Reuse parsed tree for `is_test_file`** — perf-neutral but enables
+   future tree-sharing. (Run #3.)
+3. **Conservative literal pre-screen** — the bulk of the wins. Iterative
+   refinements:
+   - `#eq?` / `#any-of?` extraction with file-level + per-rule short-circuit
+     (run #4: −15 %).
+   - `#match?` regex longest-literal-run with safety bails on `|`, `(?...)`,
+     short runs (run #5: −23 %).
+   - Multi-pattern OR-aware extraction via `start_byte_for_pattern` (run #6:
+     −34 %).
+   - `[`-depth and `?`/`*`/`+`-quantifier tracking so predicates inside
+     alternation/optional groups are skipped without bailing the whole
+     screen (run #7: −38 %).
+4. **JS-side `const NAME = [...]` mining** — mine each element as required
+   literal AND its leading `[a-zA-Z0-9_]+` prefix run, safely covering the
+   common `text.includes(elem) || text.includes(elem.match(/^[a-z0-9]+/i)[0])`
+   pattern. (Run #10: −47 %.)
+5. **Relax the alternation gate when JS uses a single capture name** —
+   when the rule's JS body references exactly one `query.captures.X` name,
+   all `[...]` alternation branches are handled uniformly, so JS-mining
+   stays safe even with `[` in the TS query. (Run #11: −71 %.)
+6. **Language-level rayon parallelism** — replace the sequential
+   `for language in languages` loop with a `par_iter`. Nested rayon shares
+   the global thread pool. (Run #15: −72 %.)
+7. **Lift `DEFAULT_MAX_CPUS` from 8 to 16** — the conservative cap left 50 %
+   of cores idle on multi-core dev/CI hosts. Smaller machines still clamp
+   to `min(logical_cores, cap)`. (Run #17: −78 %.)
+8. **Adaptive combined Tree-sitter query** — when `file_count × rule_count >
+   10000`, build one big multi-pattern `tree_sitter::Query` per language,
+   walk each file's parse tree once, dispatch matches per rule via new
+   `JsRuntime::execute_rule_with_matches`. Below the threshold, falls back
+   to per-rule path. (Run #19: −81 %.)
+
+Discarded experiments (preserved in `autoresearch.jsonl` for context):
+
+- Eager pre-screen mask precomputation (run #9): regressed ~10 s; the lazy
+  `.any()` short-circuit was already optimal.
+- Unused-pattern detection (run #13): neutral, added complexity for nothing.
+- Setup-phase parallelization (run #16): nested-rayon over-subscription.
+- Drop `* 0.9` headroom factor (run #18): within noise.
+
+Ideas not pursued (see `autoresearch.ideas.md`): parallel directory walking
+with `jwalk`, threshold tuning for combined query, Aho-Corasick batched
+literal screening, per-rule timing accounting in combined-query path.
 
