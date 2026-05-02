@@ -238,6 +238,7 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 | 15  | 70.43        | -72.0%            | language-level rayon parallelism (par_iter over languages, nested rayon shares pool) |
 | 16  | 75.39 / 80.86| neutral           | DISCARDED — setup-phase parallelization (over-subscribed thread pool)    |
 | 17  | 55.87        | -77.8%            | DEFAULT_MAX_CPUS 8 → 16 (was leaving 50 % of cores idle on multi-core hosts) |
+| 18  | 54.72 / 54.98| neutral           | DISCARDED — dropping the 0.9 conservative factor (~1s gain, within noise; preserved original design intent) |
 
 **Final state**: ~70–71 s wall (vs 251 s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
 
