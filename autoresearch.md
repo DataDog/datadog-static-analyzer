@@ -240,6 +240,8 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 | 17  | 55.87        | -77.8%            | DEFAULT_MAX_CPUS 8 → 16 (was leaving 50 % of cores idle on multi-core hosts) |
 | 18  | 54.72 / 54.98| neutral           | DISCARDED — dropping the 0.9 conservative factor (~1s gain, within noise; preserved original design intent) |
 | 19  | 47.38        | -81.1%            | adaptive combined Tree-sitter query (one walk per file for all rules, threshold = files×rules > 10k) |
+| 20–26 | various   | plateau (47–49s)  | 7 plateau attempts (cursor reuse / empty-bucket skip / pre-screen reorder / mask precompute) all DISCARDED — see jsonl |
+| 27  | 35.48        | -85.9%            | parallelize file walking with depth-2 fan-out + parallel filter_files_by_size (saved ~12s wall on the previously-hidden 13s+2.5s sequential file-walk hotspot) |
 
 **Final state**: ~70–71 s wall (vs 251 s baseline) = **−72.0 %**. Confidence ~3× noise floor on the last improvement. Memory and CPU stayed within the resource gate (peak RSS −8 % from baseline).
 
@@ -250,16 +252,14 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 - run 4: 71.19 s (warm)
 - run 5: 70.96 s (warm)
 
-After run #19 (combined query), final 5-run warm-cache measurement:
-- run 1: 48.46 s, RSS 1.28 GB
-- run 2: 48.51 s, RSS 1.30 GB
-- run 3: 48.11 s, RSS 1.28 GB
-- run 4: 48.26 s, RSS 1.23 GB
-- run 5: 47.92 s, RSS 1.20 GB
+After run #27 (parallel file walking), warm-cache measurements:
+- run 1: 37.36 s
+- run 2: 35.48 s
 
-**Steady-state ~48 s = −80.8 % wall vs 251 s baseline.** Spread 0.6 s.
-Analyzer Duration 29-30 s of that, 18-19 s overhead (dd-auth, rule fetch,
-file walking, SARIF write).
+**Steady-state ~36 s = −85.7 % wall vs 251 s baseline.**
+Analyzer Duration ~30 s of that, ~6 s overhead (dd-auth network + minimal
+file walking now). The previously-hidden 15 s of sequential file walking
+is gone.
 
 User CPU dropped 1383 → 342 s (−75 %), peak RSS rose 909 → 1280 MB (+41 %).
 The RSS increase is **fully attributable to two design choices**:
