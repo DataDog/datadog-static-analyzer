@@ -128,29 +128,50 @@ cp "$DD_SARIF" "$WORK_DIR/last-dd-source.sarif"
 # We don't know `kept` here — autoresearch.jsonl will record that. We append
 # per-run resource data unconditionally so the file is the source of truth.
 git_sha=$(cd "$REPO_ROOT" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+branch_name=$(cd "$REPO_ROOT" && git branch --show-current 2>/dev/null || echo "unknown")
 ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-python3 - <<PY >> "$RUNS_LOG"
-import json, sys
+# Pass values via env vars so the python heredoc does not have to handle
+# arbitrary characters (notably JSON commas/quotes in fingerprint diff blobs).
+export AR_TS="$ts"
+export AR_GIT_SHA="$git_sha"
+export AR_BRANCH="$branch_name"
+export AR_WALL="$wall_secs"
+export AR_ANALYZER="$analyzer_duration"
+export AR_RSS_MB="$rss_mb"
+export AR_RSS_KB="$rss_kb"
+export AR_USER="$user_secs"
+export AR_SYS="$sys_secs"
+export AR_FILES="$files_scanned"
+export AR_VIOLS="$total_violations"
+export AR_RULES="$rules_evaluated"
+export AR_DDS_COUNT="$ddsource_count"
+export AR_DDS_MATCH="$ddsource_match"
+export AR_FP_MATCH="$fingerprint_match"
+export AR_FP_DETAILS="$fingerprint_details"
+export AR_BUILD="$build_secs"
+export AR_PREFLIGHT="$preflight_secs"
+python3 - >> "$RUNS_LOG" <<'PY'
+import json, os
 rec = {
-    "timestamp": "$ts",
-    "git_sha": "$git_sha",
-    "branch": "$(cd "$REPO_ROOT" && git branch --show-current 2>/dev/null || echo unknown)",
+    "timestamp": os.environ["AR_TS"],
+    "git_sha": os.environ["AR_GIT_SHA"],
+    "branch": os.environ["AR_BRANCH"],
     "repo": "dd-source",
-    "wall_time_seconds": float("$wall_secs"),
-    "analyzer_duration_seconds": float("$analyzer_duration"),
-    "peak_rss_mb": int("$rss_mb"),
-    "peak_rss_kb": int("$rss_kb"),
-    "user_cpu_seconds": float("$user_secs"),
-    "sys_cpu_seconds": float("$sys_secs"),
-    "files_scanned": int("$files_scanned"),
-    "total_violations": int("$total_violations"),
-    "rules_evaluated": int("$rules_evaluated"),
-    "ddsource_fingerprint_count": int("$ddsource_count"),
-    "ddsource_fingerprint_match": "$ddsource_match" == "true",
-    "light_fingerprint_match": "$fingerprint_match" == "true",
-    "light_fingerprint_details": "$fingerprint_details",
-    "build_seconds": float("$build_secs"),
-    "preflight_seconds": float("$preflight_secs"),
+    "wall_time_seconds": float(os.environ["AR_WALL"]),
+    "analyzer_duration_seconds": float(os.environ["AR_ANALYZER"]),
+    "peak_rss_mb": int(os.environ["AR_RSS_MB"]),
+    "peak_rss_kb": int(os.environ["AR_RSS_KB"]),
+    "user_cpu_seconds": float(os.environ["AR_USER"]),
+    "sys_cpu_seconds": float(os.environ["AR_SYS"]),
+    "files_scanned": int(os.environ["AR_FILES"]),
+    "total_violations": int(os.environ["AR_VIOLS"]),
+    "rules_evaluated": int(os.environ["AR_RULES"]),
+    "ddsource_fingerprint_count": int(os.environ["AR_DDS_COUNT"]),
+    "ddsource_fingerprint_match": os.environ["AR_DDS_MATCH"] == "true",
+    "light_fingerprint_match": os.environ["AR_FP_MATCH"] == "true",
+    "light_fingerprint_details": os.environ["AR_FP_DETAILS"],
+    "build_seconds": float(os.environ["AR_BUILD"]),
+    "preflight_seconds": float(os.environ["AR_PREFLIGHT"]),
 }
 print(json.dumps(rec))
 PY

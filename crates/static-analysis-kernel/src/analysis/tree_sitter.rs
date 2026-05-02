@@ -86,6 +86,12 @@ pub fn get_query(
 pub struct TSQuery {
     query: tree_sitter::Query,
     capture_names: Vec<Arc<str>>,
+    /// A conservative literal pre-screen extracted from the query source.
+    /// If non-empty, a file's source code must contain at least one literal
+    /// from each AND-group for the rule to *possibly* match. Files that fail
+    /// the screen can skip the v8 dispatch (and, at the file level, the
+    /// tree-sitter parse) without changing semantics.
+    pre_screen: LiteralPreScreen,
 }
 
 impl TSQuery {
@@ -95,10 +101,18 @@ impl TSQuery {
     ) -> Result<Self, tree_sitter::QueryError> {
         let query = tree_sitter::Query::new(language, source)?;
         let capture_names = Self::build_cache(&query);
+        let pre_screen = LiteralPreScreen::extract(source, query.pattern_count());
         Ok(Self {
             query,
             capture_names,
+            pre_screen,
         })
+    }
+
+    /// Returns the literal pre-screen for this query (cheap to call, no allocations).
+    #[inline]
+    pub fn pre_screen(&self) -> &LiteralPreScreen {
+        &self.pre_screen
     }
 
     /// Returns a [`TSQueryCursor`] bound to the provided cursor.
@@ -144,7 +158,359 @@ impl From<tree_sitter::Query> for TSQuery {
         Self {
             query: value,
             capture_names,
+            // We only have the compiled query here, no source string to scan,
+            // so there's no usable pre-screen.
+            pre_screen: LiteralPreScreen::always_match(),
         }
+    }
+}
+
+/// A conservative literal pre-screen extracted from a tree-sitter query source.
+///
+/// Encodes "this rule can only possibly match files that contain at least one
+/// literal from EACH `and_groups` entry". An empty `and_groups` means the
+/// rule must always be evaluated (no screening possible).
+///
+/// Built once per query (at startup). Used per-file in the analyzer hot path,
+/// so `matches()` is allocation-free and uses `str::contains` (memchr/SIMD).
+///
+/// **Safety direction:** under-promise. Adding too few groups misses
+/// optimization but never blocks a file that should match. Adding too many is
+/// a correctness bug. We therefore only extract literals when we can prove
+/// they're required across every match path:
+///
+/// - Only queries with exactly one top-level pattern are eligible.
+/// - We extract from `(#eq? @cap "lit")` (single literal, single AND-group).
+/// - We extract from `(#any-of? @cap "lit1" "lit2")` (one OR-group).
+/// - `#match?` regex extraction is intentionally **not** implemented in v1
+///   because alternation, character classes, etc. make it easy to get wrong.
+#[derive(Debug, Default, Clone)]
+pub struct LiteralPreScreen {
+    /// Each entry is an OR-group; ALL groups must be satisfied (AND).
+    and_groups: Vec<Vec<String>>,
+}
+
+impl LiteralPreScreen {
+    /// A pre-screen that lets every file through.
+    pub fn always_match() -> Self {
+        Self {
+            and_groups: Vec::new(),
+        }
+    }
+
+    /// Returns `true` if this pre-screen has no groups (i.e. `matches()` is a no-op).
+    #[inline]
+    pub fn is_trivial(&self) -> bool {
+        self.and_groups.is_empty()
+    }
+
+    /// Returns `true` if `code` *could* satisfy this query's predicates,
+    /// or if no pre-screen is available (in which case the caller must run
+    /// the full query). Allocation-free.
+    #[inline]
+    pub fn matches(&self, code: &str) -> bool {
+        // No screen → always run the rule.
+        self.and_groups.is_empty()
+            || self
+                .and_groups
+                .iter()
+                .all(|or_group| or_group.iter().any(|lit| code.contains(lit.as_str())))
+    }
+
+    /// Parse a tree-sitter query source string and extract `#eq?`/`#any-of?`
+    /// literals as required pre-screen groups.
+    ///
+    /// We bail (return an always-match screen) on:
+    /// - `pattern_count != 1` — multiple top-level patterns OR'd; a literal
+    ///   required by one is not required by the others.
+    /// - any `[` outside strings/comments — tree-sitter treats `[A B]` as
+    ///   alternation, and a predicate inside one branch is not required by
+    ///   the other branches. Detecting this structurally is non-trivial, so
+    ///   we conservatively skip the entire query. (This matches the safety
+    ///   rule in prior research item #3.)
+    /// - `(?i)`, `|`, `?`, `*`, `+` inside `#match?` regexes — see
+    ///   `parse_text_predicate_literals`.
+    pub fn extract(source: &str, pattern_count: usize) -> Self {
+        if pattern_count != 1 {
+            return Self::always_match();
+        }
+        if has_alternation_bracket(source) {
+            return Self::always_match();
+        }
+        let mut and_groups: Vec<Vec<String>> = Vec::new();
+        let bytes = source.as_bytes();
+        let n = bytes.len();
+        let mut i = 0;
+        while i < n {
+            match bytes[i] {
+                // Line comments run to end of line.
+                b';' => {
+                    while i < n && bytes[i] != b'\n' {
+                        i += 1;
+                    }
+                }
+                // Skip over string literals so internal `(` doesn't trigger us.
+                b'"' => {
+                    i += 1;
+                    while i < n {
+                        if bytes[i] == b'\\' && i + 1 < n {
+                            i += 2;
+                            continue;
+                        }
+                        if bytes[i] == b'"' {
+                            i += 1;
+                            break;
+                        }
+                        i += 1;
+                    }
+                }
+                // Predicate forms look like `(#eq? ...)` or `(#any-of? ...)`.
+                b'(' => {
+                    let mut j = i + 1;
+                    while j < n && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
+                        j += 1;
+                    }
+                    if j < n && bytes[j] == b'#' {
+                        if let Some(close) = find_matching_paren(bytes, i) {
+                            let inner = &source[i + 1..close];
+                            if let Some(group) = parse_text_predicate_literals(inner) {
+                                and_groups.push(group);
+                            }
+                            i = close + 1;
+                            continue;
+                        }
+                    }
+                    i += 1;
+                }
+                _ => {
+                    i += 1;
+                }
+            }
+        }
+        Self { and_groups }
+    }
+}
+
+/// Returns true if the query source contains a `[` outside any string
+/// literal or `;`-line comment. Used as a conservative bail signal because
+/// `[A B]` is alternation in tree-sitter queries; literals inside one
+/// branch are not required by the others.
+fn has_alternation_bracket(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let n = bytes.len();
+    let mut i = 0;
+    while i < n {
+        match bytes[i] {
+            b';' => {
+                while i < n && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'"' => {
+                i += 1;
+                while i < n {
+                    if bytes[i] == b'\\' && i + 1 < n {
+                        i += 2;
+                        continue;
+                    }
+                    if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            b'[' => return true,
+            _ => i += 1,
+        }
+    }
+    false
+}
+
+/// Find the index of the matching `)` for the `(` at `open`, respecting
+/// strings and line comments. Returns `None` if the source is malformed.
+fn find_matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
+    debug_assert_eq!(bytes[open], b'(');
+    let mut depth: i32 = 0;
+    let mut i = open;
+    let n = bytes.len();
+    while i < n {
+        match bytes[i] {
+            b';' => {
+                while i < n && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            b'"' => {
+                i += 1;
+                while i < n {
+                    if bytes[i] == b'\\' && i + 1 < n {
+                        i += 2;
+                        continue;
+                    }
+                    if bytes[i] == b'"' {
+                        i += 1;
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+            b'(' => {
+                depth += 1;
+                i += 1;
+            }
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+                i += 1;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    None
+}
+
+/// Parse the body of a text-predicate s-expression (the bytes between the
+/// outermost `(` and `)`, exclusive) and return the OR-group of literals it
+/// requires, if it's a `#eq?` or `#any-of?` predicate. Other predicates and
+/// any unexpected shape return `None` (don't constrain the screen).
+fn parse_text_predicate_literals(inner: &str) -> Option<Vec<String>> {
+    let mut tokens = TextPredicateTokens::new(inner);
+    let kind = tokens.next_word()?;
+    // Capture-form `#eq?` requires `@cap1 @cap2` (capture-vs-capture) which
+    // can't be reduced to a literal screen, so we only proceed if the FIRST
+    // arg is `@cap` and the SECOND is a string literal.
+    let first_arg = tokens.next_arg()?;
+    if !first_arg.starts_with('@') {
+        return None;
+    }
+    match kind {
+        "#eq?" | "#not-eq?" | "#any-eq?" | "#any-not-eq?" => {
+            // Negative forms (#not-eq?, #any-not-eq?) cannot be used to require
+            // a literal's presence — they require its absence. Skip them.
+            if kind != "#eq?" && kind != "#any-eq?" {
+                return None;
+            }
+            let lit = tokens.next_string_literal()?;
+            // Sanity: skip empty / whitespace-only literals.
+            if lit.trim().is_empty() {
+                return None;
+            }
+            Some(vec![lit])
+        }
+        "#any-of?" => {
+            let mut group = Vec::new();
+            while let Some(lit) = tokens.next_string_literal() {
+                if !lit.trim().is_empty() {
+                    group.push(lit);
+                }
+            }
+            // If we ended up with no literals (or any was ill-formed), give up.
+            if group.is_empty() {
+                None
+            } else {
+                Some(group)
+            }
+        }
+        // `#match?`, `#not-match?`, `#is?`, custom predicates: not extracted.
+        _ => None,
+    }
+}
+
+/// Minimal lexer over a tree-sitter predicate body. Skips whitespace, parses
+/// `@captures`, words like `#eq?`, and double-quoted string literals (with
+/// `\\` and `\"` escapes). Anything else is treated as a generic word.
+struct TextPredicateTokens<'a> {
+    s: &'a [u8],
+    i: usize,
+}
+
+impl<'a> TextPredicateTokens<'a> {
+    fn new(s: &'a str) -> Self {
+        Self {
+            s: s.as_bytes(),
+            i: 0,
+        }
+    }
+
+    fn skip_ws(&mut self) {
+        while self.i < self.s.len()
+            && matches!(self.s[self.i], b' ' | b'\t' | b'\n' | b'\r')
+        {
+            self.i += 1;
+        }
+    }
+
+    /// Returns the next non-whitespace word (ending at whitespace or `)`).
+    fn next_word(&mut self) -> Option<&'a str> {
+        self.skip_ws();
+        if self.i >= self.s.len() || self.s[self.i] == b'"' {
+            return None;
+        }
+        let start = self.i;
+        while self.i < self.s.len()
+            && !matches!(self.s[self.i], b' ' | b'\t' | b'\n' | b'\r' | b')')
+        {
+            self.i += 1;
+        }
+        if start == self.i {
+            return None;
+        }
+        // Safe: we only stepped over ASCII whitespace boundaries; the slice is valid UTF-8.
+        std::str::from_utf8(&self.s[start..self.i]).ok()
+    }
+
+    /// Returns the next argument: a `@capture`, a word, or a quoted string.
+    fn next_arg(&mut self) -> Option<&'a str> {
+        self.skip_ws();
+        if self.i >= self.s.len() {
+            return None;
+        }
+        if self.s[self.i] == b'"' {
+            // Caller probably wants `next_string_literal` instead; defer.
+            return None;
+        }
+        self.next_word()
+    }
+
+    /// Returns the next double-quoted string literal (with escape decoding),
+    /// or `None` if the next non-whitespace token isn't a string.
+    fn next_string_literal(&mut self) -> Option<String> {
+        self.skip_ws();
+        if self.i >= self.s.len() || self.s[self.i] != b'"' {
+            return None;
+        }
+        self.i += 1;
+        let mut out = Vec::new();
+        while self.i < self.s.len() {
+            match self.s[self.i] {
+                b'\\' if self.i + 1 < self.s.len() => {
+                    let next = self.s[self.i + 1];
+                    out.push(match next {
+                        b'n' => b'\n',
+                        b't' => b'\t',
+                        b'r' => b'\r',
+                        // For any other escape, keep the literal char as-is.
+                        c => c,
+                    });
+                    self.i += 2;
+                }
+                b'"' => {
+                    self.i += 1;
+                    return String::from_utf8(out).ok();
+                }
+                c => {
+                    out.push(c);
+                    self.i += 1;
+                }
+            }
+        }
+        // Unterminated string — give up to be safe.
+        None
     }
 }
 
@@ -733,5 +1099,179 @@ SELECT * FROM table WHERE column = 'value';
         assert_eq!("identifier", superclasses.ast_type);
         assert_eq!(None, superclasses.field_name);
         assert!(query_node.captures.contains_key("classname"));
+    }
+}
+
+#[cfg(test)]
+mod literal_pre_screen_tests {
+    use super::*;
+
+    #[test]
+    fn empty_query_yields_trivial_screen() {
+        let s = LiteralPreScreen::extract("(identifier) @x", 1);
+        assert!(s.is_trivial());
+        assert!(s.matches("anything"));
+    }
+
+    #[test]
+    fn eq_predicate_extracted() {
+        // `#eq? @cap "literal"` -> requires "literal".
+        let s = LiteralPreScreen::extract(
+            r#"(call_expression function: (identifier) @id (#eq? @id "system"))"#,
+            1,
+        );
+        assert!(!s.is_trivial());
+        assert!(s.matches("import os; os.system('ls')"));
+        assert!(!s.matches("hello world"));
+    }
+
+    #[test]
+    fn any_of_predicate_extracted() {
+        let s = LiteralPreScreen::extract(
+            r#"(call_expression function: (_) @fn (#any-of? @fn "exec" "eval" "compile"))"#,
+            1,
+        );
+        assert!(!s.is_trivial());
+        assert!(s.matches("eval('1')"));
+        assert!(s.matches("compile_my_thing()"));
+        assert!(!s.matches("foo bar baz"));
+    }
+
+    #[test]
+    fn multiple_eq_predicates_anded() {
+        // Both literals required.
+        let s = LiteralPreScreen::extract(
+            r#"(call (id) @a (#eq? @a "foo") (id) @b (#eq? @b "bar"))"#,
+            1,
+        );
+        assert!(s.matches("foo bar"));
+        assert!(!s.matches("foo only"));
+        assert!(!s.matches("bar only"));
+    }
+
+    #[test]
+    fn negative_predicates_ignored() {
+        // `#not-eq?` cannot screen by literal presence (it requires absence).
+        let s = LiteralPreScreen::extract(
+            r#"(call (id) @a (#not-eq? @a "foo"))"#,
+            1,
+        );
+        assert!(s.is_trivial());
+        assert!(s.matches("anything"));
+    }
+
+    #[test]
+    fn match_predicate_not_extracted() {
+        // `#match?` is intentionally not extracted in v1 (regex risk).
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#match? @x "^foo$")"#,
+            1,
+        );
+        assert!(s.is_trivial());
+    }
+
+    #[test]
+    fn capture_to_capture_eq_ignored() {
+        // `#eq? @a @b` cannot reduce to a literal screen.
+        let s = LiteralPreScreen::extract(r#"(call (id) @a (id) @b (#eq? @a @b))"#, 1);
+        assert!(s.is_trivial());
+    }
+
+    #[test]
+    fn multi_pattern_skipped() {
+        // pattern_count > 1 -> we conservatively skip extraction.
+        let s = LiteralPreScreen::extract(r#"((id) @a (#eq? @a "foo")) ((id) @b)"#, 2);
+        assert!(s.is_trivial());
+    }
+
+    #[test]
+    fn comments_skipped() {
+        let s = LiteralPreScreen::extract(
+            "; (#eq? @x \"trap\")\n(id) @x (#eq? @x \"real\")",
+            1,
+        );
+        assert!(s.matches("real"));
+        assert!(!s.matches("trap"));
+    }
+
+    #[test]
+    fn escaped_quotes_in_string_literal() {
+        let s = LiteralPreScreen::extract(
+            r#"(id) @x (#eq? @x "say \"hi\"")"#,
+            1,
+        );
+        assert!(s.matches(r#"say "hi""#));
+        assert!(!s.matches("hello"));
+    }
+
+    #[test]
+    fn paren_inside_string_does_not_break_paren_matching() {
+        // The `)` inside the string must not close the predicate.
+        let s = LiteralPreScreen::extract(r#"(id) @x (#eq? @x "weird)stuff") (id) @y"#, 1);
+        assert!(s.matches("weird)stuff"));
+        assert!(!s.matches("nothing here"));
+    }
+
+    #[test]
+    fn always_match_when_no_literals() {
+        assert!(LiteralPreScreen::always_match().matches(""));
+        assert!(LiteralPreScreen::always_match().matches("xyz"));
+    }
+}
+
+#[cfg(test)]
+mod alternation_bracket_tests {
+    use super::*;
+
+    #[test]
+    fn detects_top_level_bracket() {
+        assert!(has_alternation_bracket("[A B]@x"));
+    }
+
+    #[test]
+    fn detects_nested_bracket() {
+        assert!(has_alternation_bracket("(call [(a) (b)])"));
+    }
+
+    #[test]
+    fn ignores_bracket_in_string() {
+        assert!(!has_alternation_bracket(r#"(_) @x (#eq? @x "[abc]")"#));
+    }
+
+    #[test]
+    fn ignores_bracket_in_comment() {
+        assert!(!has_alternation_bracket("; comment with [bracket]\n(id)"));
+    }
+
+    #[test]
+    fn no_bracket() {
+        assert!(!has_alternation_bracket("(call (id) @a (#eq? @a \"x\"))"));
+    }
+
+    #[test]
+    fn alternation_query_yields_trivial_screen() {
+        // Real-world `go-security/command-injection` shape — must not extract.
+        let q = r#"
+[
+    (call_expression
+        function: (selector_expression
+            field: (field_identifier) @command
+        )
+        (#eq? @command "Command")
+    )
+    (call_expression
+        function: (selector_expression
+            field: (field_identifier) @commandcontext
+        )
+        (#eq? @commandcontext "CommandContext")
+    )
+]@call
+"#;
+        let s = LiteralPreScreen::extract(q, 1);
+        assert!(s.is_trivial(), "alternation query must NOT extract literals");
+        // A file containing only "CommandContext" should still be allowed.
+        assert!(s.matches("exec.CommandContext(ctx, \"ls\")"));
+        // And conversely, files containing neither must also pass through.
+        assert!(s.matches("package main"));
     }
 }
