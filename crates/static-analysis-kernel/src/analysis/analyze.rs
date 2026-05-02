@@ -381,8 +381,19 @@ pub fn analyze_with_combined(
 
     // Reuse the same per-rule pre-screen filter as the standard path: if no
     // rule could match, skip parse + combined-query traversal.
+    //
+    // Order matters: `pre_screen.matches(code)` is a content-only check
+    // (memchr-style `code.contains` over a small literal list — short on
+    // average), while `rule_is_enabled` walks `path_restrictions` for the
+    // file path (HashMap + glob iteration per ruleset). On dd-source most
+    // rules are config-enabled (so rule_is_enabled returns true), but many
+    // files trip pre_screen for SOME but not ALL rules. Putting pre_screen
+    // first lets .any() short-circuit on the cheaper check, saving the
+    // path-restriction work for screen-rejected rules. Measurement (run
+    // #34's instrumentation) showed the screen as a ~7 s wall hot path,
+    // dominated by the per-rule iteration cost.
     let any_rule_could_match = rules.iter().any(|rule| {
-        rule_config.rule_is_enabled(&rule.name) && rule.tree_sitter_query.pre_screen().matches(code)
+        rule.tree_sitter_query.pre_screen().matches(code) && rule_config.rule_is_enabled(&rule.name)
     });
     if !any_rule_could_match {
         return (vec![], None);
