@@ -216,3 +216,16 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
   applied differently on a corner-case repo. Investigate before retrying.
 - Crash → log the panic / error class in `asi`.
 - For a clean +/- 1 % wall change: re-run once before deciding.
+
+## Progress (auto-updated during session)
+
+| run | wall_seconds | delta vs baseline | description |
+|-----|--------------|-------------------|-------------|
+| 1   | 251.25       | 0%                | baseline                                                                 |
+| 2   | 238.07       | -5.2%             | memchr fast-path in get_lines_to_ignore                                  |
+| 3   | 237.98       | -5.3%             | reuse parsed tree for is_test_file (perf-neutral, refactor only)         |
+| 4   | 213.61       | -15.0%            | per-rule + file-level literal pre-screen (#eq? / #any-of?)               |
+| 5   | 193.16       | -23.1%            | extend pre-screen to #match? regex (longest literal run)                 |
+| 6   | 166.64       | -33.7%            | multi-pattern pre-screen (per-pattern extraction, OR across patterns)    |
+| 7   | 156.65       | -37.7%            | smarter [-depth + ?/*/+ quantifier tracking                              |
+
