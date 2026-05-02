@@ -235,7 +235,8 @@ fn main() -> Result<()> {
     let mut path_config = PathConfig {
         ignore: Vec::new(),
         only: None,
-    };
+            ..Default::default()
+        };
     let ignore_paths_from_options = matches.opt_strs("p");
     let directory_to_analyze_option = matches.opt_str("i");
     let subdirectories_to_analyze = matches.opt_strs("u");

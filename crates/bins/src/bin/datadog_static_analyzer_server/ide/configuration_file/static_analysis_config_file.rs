@@ -80,6 +80,7 @@ fn create_ignored_rule() -> RuleConfig {
         paths: PathConfig {
             ignore: create_ignored_pattern(),
             only: None,
+            ..Default::default()
         },
         ..Default::default()
     }

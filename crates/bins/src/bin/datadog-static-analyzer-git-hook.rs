@@ -228,7 +228,8 @@ fn main() -> Result<()> {
     let mut path_config = PathConfig {
         ignore: Vec::new(),
         only: None,
-    };
+            ..Default::default()
+        };
     let directory_to_analyze_option = matches.opt_str("r");
 
     let Some(directory_to_analyze) = directory_to_analyze_option.map(PathBuf::from) else {

@@ -972,6 +972,7 @@ mod tests {
         let path_config = PathConfig {
             ignore: vec!["src/**/main.rs".to_string().into()],
             only: None,
+            ..Default::default()
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
         assert_contains_files!(
@@ -990,6 +991,7 @@ mod tests {
         let path_config = PathConfig {
             ignore: vec!["src/a".to_string().into()],
             only: None,
+            ..Default::default()
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
         assert_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs",]);
@@ -999,6 +1001,7 @@ mod tests {
         let path_config = PathConfig {
             ignore: vec![],
             only: Some(vec!["**/other.rs".to_string().into()]),
+            ..Default::default()
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
         assert_contains_files!(&base_path, files, ["src/a/other.rs", "test/a/other.rs"]);
@@ -1008,6 +1011,7 @@ mod tests {
         let path_config = PathConfig {
             ignore: vec![],
             only: Some(vec!["src/a".to_string().into()]),
+            ..Default::default()
         };
         let files = get_files(&base_path, vec![], &path_config).unwrap();
         assert_contains_files!(&base_path, files, ["src/a/main.rs", "src/a/other.rs"]);
