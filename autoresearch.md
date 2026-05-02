@@ -249,7 +249,16 @@ query, walking the parse tree once. Small-repo cost is mostly the upfront
 - run 4: 71.19 s (warm)
 - run 5: 70.96 s (warm)
 
-After run #17 (raised CPU cap), warm steady-state is ~56 s.
+After run #17 (raised CPU cap), final 5-run warm-cache measurement:
+- run 1: 55.44 s, RSS 1430 MB
+- run 2: 54.78 s, RSS 1375 MB
+- run 3: 55.38 s, RSS 1421 MB
+- run 4: 54.87 s, RSS 1383 MB
+- run 5: 56.14 s, RSS 1382 MB
+
+**Steady-state ~55 s = −78.0 % wall vs 251 s baseline.** Spread 1.4 s.
+Analyzer Duration 36-37 s of that, 19 s overhead (dd-auth, rule fetch,
+file walking, SARIF write).
 
 All comparisons in the table above are warm-vs-warm (baseline run #1 also had
 warm cache from the setup phase).
