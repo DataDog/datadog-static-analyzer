@@ -6,13 +6,12 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use sha2::{Digest, Sha256};
-use globset::{GlobSet, GlobSetBuilder};
 use rayon::prelude::*;
 use walkdir::WalkDir;
 
 use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
-use kernel::config::common::{PathConfig, PathPattern};
+use kernel::config::common::PathConfig;
 use kernel::model::common::Language;
 use kernel::model::common::Language::Dockerfile;
 use kernel::model::violation::Violation;
@@ -163,28 +162,6 @@ pub fn read_files_from_gitignore(source_directory: &Path) -> Result<Vec<String>>
     read_files_from_gitignore_internal(&gitignore_path)
 }
 
-/// Build a single `GlobSet` from a list of `PathPattern`s, returning `None`
-/// if no patterns have a glob component. Used to bulk-match path-config
-/// glob patterns in one pass per file (vs ~135 individual `is_match` calls).
-fn build_path_glob_set(patterns: &[PathPattern]) -> Option<GlobSet> {
-    let mut builder = GlobSetBuilder::new();
-    let mut added_any = false;
-    for pattern in patterns {
-        if let Some(matcher) = &pattern.glob {
-            // Re-add the original glob string with the same flags that
-            // `PathPattern::From<String>` uses. The matcher's accessor
-            // returns the underlying `Glob`, which we feed directly to the
-            // builder.
-            builder.add(matcher.glob().clone());
-            added_any = true;
-        }
-    }
-    if !added_any {
-        return None;
-    }
-    builder.build().ok()
-}
-
 /// get the files to analyze from the directory. This function walks the directory
 /// to analyze recursively and gets all the files.
 /// if passed, subdirectories_to_analyze are subdirectories within the directory.
@@ -217,66 +194,6 @@ pub fn get_files(
         vec![directory.to_path_buf()]
     };
 
-    // Pre-compile path-config patterns into a `GlobSet` once. This trades
-    // ~17 s CPU of per-entry pattern iteration (one `glob.is_match()` per
-    // pattern × ~135 patterns × 272 k entries) for a single bulk-match call
-    // per entry. Prefixes still need to be checked separately because
-    // `globset` doesn't support "path component starts with" matching
-    // directly. See `PathPattern::matches` for the original semantics.
-    let ignore_glob_set = build_path_glob_set(&path_config.ignore);
-    let ignore_prefixes: Vec<&Path> = path_config
-        .ignore
-        .iter()
-        .map(|p| p.prefix.as_path())
-        .filter(|p| !p.as_os_str().is_empty())
-        .collect();
-    let only_glob_set: Option<GlobSet> = path_config
-        .only
-        .as_ref()
-        .and_then(|patterns| build_path_glob_set(patterns));
-    let only_prefixes: Option<Vec<&Path>> = path_config.only.as_ref().map(|patterns| {
-        patterns
-            .iter()
-            .map(|p| p.prefix.as_path())
-            .filter(|p| !p.as_os_str().is_empty())
-            .collect()
-    });
-    let path_allowed = |rel: &str| -> bool {
-        // Match the semantics of `PathConfig::allows_file`: file allowed iff
-        //   none of the ignore patterns match AND
-        //   (only is None OR some of the only patterns match).
-        // For each list, a pattern matches iff its glob matches OR the path
-        // starts (component-wise) with its prefix.
-        let ignored = ignore_glob_set
-            .as_ref()
-            .map(|s| s.is_match(rel))
-            .unwrap_or(false)
-            || {
-                let p = Path::new(rel);
-                ignore_prefixes.iter().any(|prefix| p.starts_with(prefix))
-            };
-        if ignored {
-            return false;
-        }
-        // If `only` was None at the source, both helper structures are
-        // empty; allow the file unconditionally.
-        if only_glob_set.is_none() && only_prefixes.is_none() {
-            return true;
-        }
-        let glob_hit = only_glob_set
-            .as_ref()
-            .map(|s| s.is_match(rel))
-            .unwrap_or(false);
-        let prefix_hit = only_prefixes
-            .as_ref()
-            .map(|prefixes| {
-                let p = Path::new(rel);
-                prefixes.iter().any(|prefix| p.starts_with(prefix))
-            })
-            .unwrap_or(false);
-        glob_hit || prefix_hit
-    };
-
     // Inner walker for one subtree (sequential WalkDir within one rayon worker).
     let walk_subtree = |subtree: PathBuf| -> Result<Vec<PathBuf>> {
         let mut out = Vec::new();
@@ -293,7 +210,7 @@ pub fn get_files(
             else {
                 continue;
             };
-            should_include = should_include && path_allowed(rel_path_str);
+            should_include = should_include && path_config.allows_file(rel_path_str);
             if entry_path.starts_with(&git_directory) {
                 should_include = false;
             }

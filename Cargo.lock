@@ -468,6 +468,7 @@ dependencies = [
  "csv",
  "derive_builder",
  "git2",
+ "globset",
  "num_cpus",
  "path-slash",
  "percent-encoding",
