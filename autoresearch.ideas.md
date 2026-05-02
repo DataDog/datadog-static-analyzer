@@ -1,24 +1,18 @@
 # Autoresearch ideas backlog (post-session)
 
-Final session result: **−72.0 %** wall on dd-source (251.25 s → ~70.43 s). Below
-are ideas that could push further and were intentionally deferred.
+Final session result: **−80.8 %** wall on dd-source (251.25 s → ~48 s).
 
-## High-potential
+Below are ideas that could push further and were intentionally deferred or
+abandoned for marginal returns.
 
-- **Adaptive combined Tree-sitter query (per-language)**
-  Build one `tree_sitter::Query` per language that concatenates all rule
-  patterns (with `pattern_index → rule_idx` mapping). Walk each file once,
-  bucket matches by rule, dispatch v8 per rule. Estimated ~3-5 s wall on
-  dd-source (the python-flask block has many rules sharing similar Python
-  parse-tree shapes; today each rule walks the tree independently).
+## Implemented (was in this list, now done)
 
-  Implementation is non-trivial: we need a new `JsRuntime::execute_rule_with_matches`
-  that bypasses the internal TS query phase, plus capture-name remapping
-  (combined query merges capture indices, but JS reads captures by name so
-  this Just Works as long as capture-name collisions across rules are
-  disambiguated by `pattern_index`). Per prior research, threshold this on
-  `file_count × rule_count` so small repos keep the per-rule path (one-time
-  combined-query build cost dominates small workloads).
+- ~~Adaptive combined Tree-sitter query (per-language)~~ — DONE in run #19
+  (−8.5 s wall, −120 s CPU). Threshold: `file_count × rule_count > 10_000`.
+- ~~Lift `DEFAULT_MAX_CPUS = 8` cap on multi-core dev boxes~~ — DONE in run
+  #17 (lifted 8 → 16, −14.5 s wall on the 16-core host).
+
+## High-potential (not yet attempted)
 
 - **Parallel directory walking**
   `cli/src/file_utils.rs::get_files` uses single-threaded `walkdir::WalkDir`
@@ -26,20 +20,14 @@ are ideas that could push further and were intentionally deferred.
   (parallel walker, drop-in API) would parallelize the walk. Requires a new
   dependency; otherwise mechanical. Estimated 1-3 s wall.
 
-- **Lift `DEFAULT_MAX_CPUS = 8` cap on multi-core dev boxes**
-  The 16-core dev box only uses ~6 worker threads (rayon: `(8 − 1) × 0.9 = 6`).
-  Raising the cap to `num_cpus::get()` would roughly halve analyzer wall on
-  large repos. **Behavioral change** affecting all users; CI environments
-  with shared cores might prefer the conservative default. Could be done
-  adaptively (e.g. cap at 16 instead of 8, or scale with available RAM).
-  Estimated 10-25 s wall on this hardware.
+- **Tune the combined-query threshold**
+  Currently `file_count × rule_count > 10_000` triggers combined query. The
+  optimal threshold likely depends on average rule complexity (number of
+  patterns, tree-walk node-type diversity). A small perf microbenchmark
+  across a few repo sizes would show whether 10k is right, or if e.g. 5k
+  works better for medium repos.
 
 ## Medium-potential
-
-- **Combined query just for the long tail**: identify rules whose TS query is
-  cheap-traversal-but-shared (e.g., `(call_expression)` style) and build a
-  combined query for just those, leaving complex rules per-rule. Less risky
-  than full combined query.
 
 - **Skip-at-build of unused-pattern rules**
   Tried in run #15 (discarded as neutral). The implementation works but the
@@ -53,6 +41,13 @@ are ideas that could push further and were intentionally deferred.
   per-rule check is then O(K) HashMap lookups. Saves redundant `code.contains`
   calls on identical literals across rules. Estimated <1 s wall (current
   contains-based screen is already SIMD-optimized; gain is small).
+
+- **Per-rule timing accounting in combined-query path**
+  Currently `analyze_with_combined` reports the SHARED `combined_query_time`
+  in each rule's `query_node_time_ms`, which inflates `-x` performance
+  output (sum of per-rule query times >> actual). Either zero out the
+  per-rule query time or amortize across surviving rules. Cosmetic but
+  improves diagnostic accuracy.
 
 ## Smaller / cleanup
 
@@ -69,7 +64,7 @@ are ideas that could push further and were intentionally deferred.
   files pass the first rule's screen quickly. Don't replace short-circuit
   patterns with eager precomputation.
 
-- **Setup-phase parallelization across languages** (run #15): regressed
+- **Setup-phase parallelization across languages** (run #16): regressed
   wall by ~5-10 s. Nested rayon (setup + per-language + per-file) over-
   subscribes the thread pool and creates scheduling contention. Keep setup
   serial.
@@ -77,6 +72,10 @@ are ideas that could push further and were intentionally deferred.
 - **Unused-pattern detection** (run #13): neutral on dd-source. The required
   literals from the surviving constrained pattern aren't selective enough
   in this workload.
+
+- **Drop the `* 0.9` headroom factor in `get_num_threads_to_use`** (run #18):
+  ~1 s gain, within noise; preserves the original conservative design intent
+  of leaving headroom for the v8 watchdog management threads.
 
 - (From prior research; verified twice, do not re-investigate without
   new evidence)
