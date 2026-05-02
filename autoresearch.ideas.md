@@ -1,9 +1,35 @@
 # Autoresearch ideas backlog (post-session)
 
-Final session result: **−80.8 %** wall on dd-source (251.25 s → ~48 s).
+Final session result: **−81.1 %** wall on dd-source (251.25 s → 47.4 s best,
+5-run mean ~48.25 s).
 
 Below are ideas that could push further and were intentionally deferred or
 abandoned for marginal returns.
+
+## Stopping observation (after 25 experiments, 13 keep / 12 discard)
+
+Runs #19–#25 consecutively failed to push past the run #18 plateau. Every
+attempt at micro-optimization within `analyze_with_combined` (cursor reuse,
+empty-bucket skip, pre-screen reordering, eager vs lazy mask) was either
+neutral or a small regression. The CPU utilization at the plateau is ~88–91 %
+on 13 workers — close to the hardware ceiling for this workload — and the
+remaining wall (47–49 s) is split fairly evenly between analyzer Duration
+(~30 s) and out-of-analyzer overhead (~18 s: dd-auth + API rule fetch +
+file walking + SARIF gen + write).
+
+Further wins almost certainly require one of:
+
+- Adding a new dependency (e.g. `jwalk` for parallel directory walking,
+  `aho-corasick` as a direct dep for batched literal screening).
+- Changing default behavior beyond what's already done (`DEFAULT_MAX_CPUS`
+  is already at 16; uncapping further or increasing the `0.9` headroom
+  factor causes sub-noise gains and is conservatively rejected).
+- Rule-side changes (out of scope per the user constraints).
+- Streaming / parallel SARIF generation (small win, would need careful
+  output-stability validation).
+
+Only take on these if a future benchmark shows them being individually
+impactful or if the constraints relax.
 
 ## Implemented (was in this list, now done)
 
