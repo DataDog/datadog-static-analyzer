@@ -1,0 +1,18 @@
+{
+  "wall_time_seconds": 249.33,
+  "analyzer_duration_seconds": 231.056,
+  "user_cpu_seconds": 1364.79,
+  "sys_cpu_seconds": 28.46,
+  "peak_rss_mb": 909,
+  "peak_rss_kbytes": 930844,
+  "files_scanned": 271428,
+  "files_with_violations": 12842,
+  "total_violations": 18545,
+  "rules_evaluated": 63,
+  "rules_with_matches": 24,
+  "fingerprint_count": 18558,
+  "fingerprint_sha256": "f93ad0df0f9455669746ccc17652f8e7e1046891cc5314cff94b1a226a7c59f0",
+  "command": "dd-auth --domain app.datadoghq.com -- analyzer --directory ~/dd/dd-source --output ... --format sarif",
+  "captured_at": "2026-05-02T15:32Z (session start)",
+  "git_baseline_sha": "eff32af0"
+}

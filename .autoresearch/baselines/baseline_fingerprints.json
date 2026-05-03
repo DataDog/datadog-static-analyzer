@@ -1,0 +1,12 @@
+{
+  "dd-source": {"sha256": "f93ad0df0f9455669746ccc17652f8e7e1046891cc5314cff94b1a226a7c59f0", "count": 18558, "uses_dd_auth": true},
+  "cloudops":          {"sha256": "6c084f70b76bd5c440f36d3bba9da08069a7cca9e60d93ec32ec2e715cba54db", "count": 206,  "uses_dd_auth": false},
+  "apis":              {"sha256": "35ebda3229975fbd5b1958668b887c0d75039a6afa096f9ea39bb490351e06c5", "count": 42,   "uses_dd_auth": false},
+  "dd-git-hooks":      {"sha256": "ec47c61aa5607e776610c3f5b4ed3d52a89927667048b289b9fc917c7fa7eac2", "count": 113,  "uses_dd_auth": false},
+  "datacenter-config": {"sha256": "acb50697269e8cedf806d63b5163c73f364384104012534c7143c3234fb62a7a", "count": 57,   "uses_dd_auth": false},
+  "cloud-inventory":   {"sha256": "5a98bc7bc7ad67679d301866bdbfca9b857f30490d09add6a356069e99c9e77f", "count": 439,  "uses_dd_auth": false},
+  "datastores":        {"sha256": "5b7b57bf650731367ec329e2f478f29b68d685fe00c773d94fed4f644e3c0bec", "count": 120,  "uses_dd_auth": false},
+  "devtools":          {"sha256": "d17783f46f2f06602623cb5fb866ec0802baf1206841d41749d332e72e31ee04", "count": 1908, "uses_dd_auth": false},
+  "saluki":            {"sha256": "cb9d3a65a2b3e46f587b5daeb70ac22ccad8525cc7c1e6438508f36dd8cc5b61", "count": 117,  "uses_dd_auth": false},
+  "lading":            {"sha256": "ec254406112a64dcfb75be1a88ebb0a6454299dd9130e51d2a672fec15e2e144", "count": 17,   "uses_dd_auth": false}
+}
