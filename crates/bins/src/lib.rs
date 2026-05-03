@@ -96,58 +96,71 @@ pub fn static_analysis(
         Option<CombinedQuery>,
         Option<LiteralIndex>,
     );
-    let mut per_language: Vec<LangSetup> = Vec::new();
-    for language in languages {
-        let files_for_language = filter_files_for_language(files_to_analyze, language);
-        if files_for_language.is_empty() {
-            continue;
-        }
-        let rules_for_language: Vec<RuleInternal> =
-            convert_rules_to_rules_internal(config, language)?;
-        let n_files = files_for_language.len();
-        let n_rules = rules_for_language.len();
-        let combined = if n_files.saturating_mul(n_rules) > COMBINED_QUERY_THRESHOLD {
-            CombinedQuery::try_new(&rules_for_language, &get_tree_sitter_language(language))
-        } else {
-            None
-        };
-        // Build per-language Aho-Corasick literal index (used by the file-
-        // level pre-screen and per-rule pre-screen checks). Same threshold
-        // as combined query — below it, the build cost outweighs savings.
-        let literal_index = if n_files.saturating_mul(n_rules) > COMBINED_QUERY_THRESHOLD {
-            LiteralIndex::build(&rules_for_language)
-        } else {
-            None
-        };
-        println!(
-            "Analyzing {} {:?} files using {} rules{}{}",
-            n_files,
-            language,
-            n_rules,
-            if combined.is_some() {
-                " (combined query)"
-            } else {
-                ""
-            },
-            if literal_index.is_some() {
-                " (AC literal index)"
-            } else {
-                ""
+    // Parallelize the per-language setup. Each language's work is
+    // independent (filter files, convert rules, build combined query, build
+    // literal index). The combined-query and literal-index builds for big
+    // languages take ~tens to hundreds of ms each — enough that running
+    // them serially is a real fraction of total wall time. Run #16 tried
+    // this earlier and discarded; the codebase has since added much heavier
+    // setup work (combined query construction, AC index build), making this
+    // worth re-trying.
+    //
+    // Setup runs on the global rayon pool, which is initialized in main
+    // BEFORE this function is called. The actual per-file analysis is also
+    // a par_iter on the same pool but happens AFTER setup completes, so no
+    // nesting.
+    use rayon::prelude::*;
+    let setups: Vec<anyhow::Result<Option<LangSetup>>> = languages
+        .par_iter()
+        .map(|language| -> anyhow::Result<Option<LangSetup>> {
+            let files_for_language = filter_files_for_language(files_to_analyze, language);
+            if files_for_language.is_empty() {
+                return Ok(None);
             }
-        );
-        if config.use_debug {
+            let rules_for_language: Vec<RuleInternal> =
+                convert_rules_to_rules_internal(config, language)?;
+            let n_files = files_for_language.len();
+            let n_rules = rules_for_language.len();
+            let combined = if n_files.saturating_mul(n_rules) > COMBINED_QUERY_THRESHOLD {
+                CombinedQuery::try_new(&rules_for_language, &get_tree_sitter_language(language))
+            } else {
+                None
+            };
+            let literal_index = if n_files.saturating_mul(n_rules) > COMBINED_QUERY_THRESHOLD {
+                LiteralIndex::build(&rules_for_language)
+            } else {
+                None
+            };
+            Ok(Some((
+                language,
+                files_for_language,
+                rules_for_language,
+                combined,
+                literal_index,
+            )))
+        })
+        .collect();
+    let mut per_language: Vec<LangSetup> = Vec::new();
+    for s in setups {
+        if let Some(setup) = s? {
             println!(
-                "Analyzing {}, {} files detected",
-                language, n_files
+                "Analyzing {} {:?} files using {} rules{}{}",
+                setup.1.len(),
+                setup.0,
+                setup.2.len(),
+                if setup.3.is_some() {
+                    " (combined query)"
+                } else {
+                    ""
+                },
+                if setup.4.is_some() {
+                    " (AC literal index)"
+                } else {
+                    ""
+                }
             );
+            per_language.push(setup);
         }
-        per_language.push((
-            language,
-            files_for_language,
-            rules_for_language,
-            combined,
-            literal_index,
-        ));
     }
 
     // Process each language's per-file fold/reduce in parallel. The inner
