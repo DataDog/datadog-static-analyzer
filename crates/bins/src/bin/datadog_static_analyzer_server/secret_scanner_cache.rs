@@ -34,11 +34,18 @@ impl SecretScannerCache {
     ///
     /// The expensive work (rule deserialization + scanner building) happens outside
     /// any lock to avoid blocking concurrent readers.
-    pub fn get_or_build(
+    /// Callers supply the parser used on cache miss. The hash key is the raw JSON bytes,
+    /// so callers that feed the same raw rules share the same cache entry regardless of
+    /// which parser they use.
+    pub fn get_or_build_with<F>(
         &self,
         raw_rules: &[Box<serde_json::value::RawValue>],
         use_debug: bool,
-    ) -> Result<(Arc<Scanner>, Arc<Vec<SecretRule>>), String> {
+        parse: F,
+    ) -> Result<(Arc<Scanner>, Arc<Vec<SecretRule>>), String>
+    where
+        F: FnOnce(&[Box<serde_json::value::RawValue>]) -> Result<Vec<SecretRule>, String>,
+    {
         let hash = Self::compute_rules_hash(raw_rules);
 
         // Fast path: read lock only (the common case in IDE usage)
@@ -52,11 +59,7 @@ impl SecretScannerCache {
         }
 
         // Slow path: cache miss - build scanner WITHOUT holding any lock
-        let rules: Vec<SecretRule> = raw_rules
-            .iter()
-            .map(|r| serde_json::from_str(r.get()))
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("Failed to parse rules: {}", e))?;
+        let rules = parse(raw_rules)?;
         let scanner = build_sds_scanner(&rules, use_debug)?;
         let scanner = Arc::new(scanner);
         let rules = Arc::new(rules);
@@ -100,18 +103,29 @@ mod tests {
         )]
     }
 
+    fn parse_direct(raw: &[Box<serde_json::value::RawValue>]) -> Result<Vec<SecretRule>, String> {
+        raw.iter()
+            .map(|r| serde_json::from_str(r.get()))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| format!("Failed to parse rules: {}", e))
+    }
+
     #[test]
     fn test_cache_hit() {
         let cache = SecretScannerCache::new();
         let rules = sample_rules_json();
 
         // First call: cache miss, builds scanner
-        let (scanner1, parsed_rules1) = cache.get_or_build(&rules, false).unwrap();
+        let (scanner1, parsed_rules1) = cache
+            .get_or_build_with(&rules, false, parse_direct)
+            .unwrap();
         assert_eq!(parsed_rules1.len(), 1);
         assert_eq!(parsed_rules1[0].id, "test-rule");
 
         // Second call with same rules: cache hit
-        let (scanner2, parsed_rules2) = cache.get_or_build(&rules, false).unwrap();
+        let (scanner2, parsed_rules2) = cache
+            .get_or_build_with(&rules, false, parse_direct)
+            .unwrap();
         assert!(Arc::ptr_eq(&scanner1, &scanner2));
         assert!(Arc::ptr_eq(&parsed_rules1, &parsed_rules2));
     }
@@ -121,14 +135,18 @@ mod tests {
         let cache = SecretScannerCache::new();
         let rules1 = sample_rules_json();
 
-        let (scanner1, _) = cache.get_or_build(&rules1, false).unwrap();
+        let (scanner1, _) = cache
+            .get_or_build_with(&rules1, false, parse_direct)
+            .unwrap();
 
         // Different rules should cause a cache miss
         let rules2 = vec![raw(
             r#"{"id":"other-rule","sds_id":"sds-456","name":"Other Rule","description":"Another test rule","pattern":"SECRET_[A-Z]+","priority":"high","default_included_keywords":[],"default_excluded_keywords":[],"look_ahead_character_count":30,"validators":[],"pattern_capture_groups":[]}"#,
         )];
 
-        let (scanner2, parsed_rules2) = cache.get_or_build(&rules2, false).unwrap();
+        let (scanner2, parsed_rules2) = cache
+            .get_or_build_with(&rules2, false, parse_direct)
+            .unwrap();
         assert!(!Arc::ptr_eq(&scanner1, &scanner2));
         assert_eq!(parsed_rules2[0].id, "other-rule");
     }

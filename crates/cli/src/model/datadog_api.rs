@@ -323,10 +323,10 @@ impl TryFrom<SecretRuleApiMatchValidation> for SecretRuleMatchValidation {
             }
             SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING => Ok(
                 SecretRuleMatchValidation::CustomHttp(SecretRuleMatchValidationHttp {
-                    endpoint: value.endpoint.expect("no endpoint"),
+                    endpoint: value.endpoint.ok_or("missing endpoint")?,
                     hosts: value.hosts.unwrap_or_default(),
                     request_headers: value.request_headers.unwrap_or_default(),
-                    http_method: value.http_method.expect("missing http method").into(),
+                    http_method: value.http_method.ok_or("missing http method")?.into(),
                     timeout_seconds: value.timeout_seconds,
                     valid_http_status_code: value
                         .valid_http_status_code

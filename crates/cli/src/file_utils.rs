@@ -17,6 +17,7 @@ use kernel::model::violation::Violation;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
     (Language::Csharp, &["cs"]),
+    (Language::Dart, &["dart"]),
     (Language::Dockerfile, &["docker", "dockerfile"]),
     (Language::Elixir, &["ex", "exs"]),
     (Language::Go, &["go"]),

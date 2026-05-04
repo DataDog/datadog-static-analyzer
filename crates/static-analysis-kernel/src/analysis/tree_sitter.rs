@@ -11,6 +11,7 @@ use tree_sitter::CaptureQuantifier;
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
         fn tree_sitter_c_sharp() -> tree_sitter::Language;
+        fn tree_sitter_dart() -> tree_sitter::Language;
         fn tree_sitter_dockerfile() -> tree_sitter::Language;
         fn tree_sitter_elixir() -> tree_sitter::Language;
         fn tree_sitter_go() -> tree_sitter::Language;
@@ -36,6 +37,7 @@ pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
 
     match language {
         Language::Csharp => unsafe { tree_sitter_c_sharp() },
+        Language::Dart => unsafe { tree_sitter_dart() },
         Language::Dockerfile => unsafe { tree_sitter_dockerfile() },
         Language::Go => unsafe { tree_sitter_go() },
         Language::Elixir => unsafe { tree_sitter_elixir() },
@@ -496,6 +498,17 @@ function foo() {console.log("bar");}"#;
         let t = get_tree(source_code, &Language::Json);
         assert!(t.is_some());
         assert_eq!("document", t.unwrap().root_node().kind());
+    }
+
+    #[test]
+    fn test_dart_get_tree() {
+        let source_code = r#"void main() {
+  print('Hello, Dart!');
+}
+"#;
+        let t = get_tree(source_code, &Language::Dart);
+        assert!(t.is_some());
+        assert_eq!("program", t.unwrap().root_node().kind());
     }
 
     #[test]

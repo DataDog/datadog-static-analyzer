@@ -45,7 +45,12 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
         Language::JavaScript | Language::TypeScript | Language::Kotlin | Language::Apex => {
             vec!["//", "/*"]
         }
-        Language::Go | Language::Rust | Language::Csharp | Language::Java | Language::Swift => {
+        Language::Go
+        | Language::Rust
+        | Language::Csharp
+        | Language::Dart
+        | Language::Java
+        | Language::Swift => {
             vec!["//"]
         }
         Language::Json => {
@@ -1313,6 +1318,7 @@ function visit(node, filename, code) {
             use_debug: false,
             ignore_generated_files: false,
             timeout: None,
+            ..Default::default()
         };
 
         let local_config: file_v1::ConfigFile = parse_any_schema_yaml(

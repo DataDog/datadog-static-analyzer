@@ -254,6 +254,17 @@ fn main() {
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
+        TreeSitterProject {
+            name: "tree-sitter-dart".to_string(),
+            compilation_unit: "tree-sitter-dart".to_string(),
+            // Fork of https://github.com/UserNobody14/tree-sitter-dart
+            repository: "https://github.com/muh-nee/tree-sitter-dart".to_string(),
+            build_dir: "src".into(),
+            // ABI 14 version of upstream 0fc19c3a57b1109802af41d2b8f60d8835c5da3a
+            commit_hash: "dfad3d21e451c9406bee9c44e4ffcd6d7fb44bb7".to_string(),
+            files: vec!["parser.c".to_string(), "scanner.c".to_string()],
+            cpp: false,
+        },
     ];
 
     // For each project:
