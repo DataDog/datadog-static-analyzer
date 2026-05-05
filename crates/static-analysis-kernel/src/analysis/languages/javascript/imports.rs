@@ -31,20 +31,28 @@ pub(crate) const JS_IMPORTS_QUERY: &str = r#"
   source: (string (string_fragment) @name))
 
 ; import { <name> } from '<imported_from>'
+(import_statement
+  (import_clause
+    (named_imports
+      (import_specifier
+        .
+        name: (identifier) @name
+        .
+      )
+    )
+  )
+  "from"
+  source: (string (string_fragment) @imported_from)
+)
+
 ; import { _ as <name> } from '<imported_from>'
 (import_statement
   (import_clause
     (named_imports
       (import_specifier
         .
-        [
-          name: (identifier) @name
-          name: (
-            (_) @name_except_default
-            "as"
-          )
-        ]
-        .
+        name: (_) @name_except_default
+        "as"
       )
     )
   )
