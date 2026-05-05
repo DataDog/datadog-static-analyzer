@@ -7,7 +7,7 @@ use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
 use std::borrow::Cow;
 use std::sync::LazyLock;
-use streaming_iterator::StreamingIterator;
+use tree_sitter::StreamingIterator;
 
 /// JavaScript module representation, which consists of a name and where it's imported from
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
