@@ -744,4 +744,28 @@ SELECT * FROM table WHERE column = 'value';
         assert_eq!(None, superclasses.field_name);
         assert!(query_node.captures.contains_key("classname"));
     }
+
+    #[test]
+    fn ts_query_cursor_matches_timeout() {
+        let timeout = Duration::from_millis(500);
+        let source = "let x = 1234;\n".repeat(2000);
+
+        let tree = get_tree(&source, &Language::JavaScript).unwrap();
+        // (Combinatorial explosion query, which should take longer than the `timeout` duration).
+        let query = get_query("(((_)*) @one (_)* @two)", &Language::JavaScript).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let num_captured = query
+                .cursor()
+                .matches(tree.root_node(), &source, Some(timeout))
+                .len();
+            tx.send(num_captured).unwrap();
+        });
+
+        let num_captured = rx
+            .recv_timeout(timeout * 2)
+            .expect("query callback should've halted execution");
+        assert!(num_captured > 0);
+    }
 }
