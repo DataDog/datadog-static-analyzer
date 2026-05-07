@@ -224,7 +224,11 @@ impl LiteralPreScreen {
 
     /// Build a pre-screen from a compiled query and its source string by
     /// iterating each top-level pattern's source-slice via
-    /// [`tree_sitter::Query::start_byte_for_pattern`].
+    /// [`tree_sitter::Query::start_byte_for_pattern`]. Per-pattern,
+    /// `extract_and_groups_from_pattern_source` only extracts predicates at
+    /// `[`-depth 0 and not inside any `?`/`*`/`+`-quantified group, so it's
+    /// safe to call even on patterns that themselves contain `[...]`
+    /// elsewhere.
     pub fn extract_from_query(query: &tree_sitter::Query, source: &str) -> Self {
         let pcount = query.pattern_count();
         if pcount == 0 {
@@ -241,11 +245,6 @@ impl LiteralPreScreen {
                 return Self::always_match();
             }
             let slice = &source[start..end];
-            // `[A B]` alternation inside a pattern — predicates aren't required
-            // across all branches. Bail.
-            if has_alternation_bracket(slice) {
-                return Self::always_match();
-            }
             let and_groups = extract_and_groups_from_pattern_source(slice);
             if and_groups.is_empty() {
                 // Unconstrained pattern: it can match arbitrary code, so the
@@ -265,9 +264,6 @@ impl LiteralPreScreen {
         if pattern_count != 1 {
             return Self::always_match();
         }
-        if has_alternation_bracket(source) {
-            return Self::always_match();
-        }
         let and_groups = extract_and_groups_from_pattern_source(source);
         if and_groups.is_empty() {
             return Self::always_match();
@@ -279,22 +275,62 @@ impl LiteralPreScreen {
 }
 
 /// Walk a (single-pattern) query source and collect `#eq?` / `#any-of?` /
-/// `#match?` literals as AND-groups. Caller is responsible for the
-/// alternation-bracket bail.
+/// `#match?` literals as AND-groups.
+///
+/// **Conservatism gate:** we only extract a predicate when it is
+/// unconditionally required — i.e. when its enclosing groups are not
+/// behind an `[...]` alternation or a `?` / `*` / `+` quantifier. If any
+/// suffix-quantifier or alternation appears anywhere in the pattern, we
+/// take the safe path and skip extraction for predicates that *might* sit
+/// inside the conditional region.
+///
+/// Implementation:
+/// - Track `[` depth. Only depth-0 predicates are eligible (alternation
+///   wraps multiple branches, predicates inside one branch aren't required).
+/// - Track an "in conditional" stack: for each open paren, record whether
+///   it'll later be quantified by `?`, `*`, or `+`. We can't know this
+///   until we see the close — so we collect predicate candidates with their
+///   span and apply the filter at close time.
+///
+/// To keep this single-pass and simple, we collect candidates as
+/// `(predicate_kind, predicate_byte_range)` and then post-filter. The
+/// filter checks every enclosing `)` quantifier suffix in the source.
 fn extract_and_groups_from_pattern_source(source: &str) -> Vec<Vec<String>> {
-    let mut and_groups: Vec<Vec<String>> = Vec::new();
     let bytes = source.as_bytes();
     let n = bytes.len();
+
+    // Pass 1: walk the source, building an open-paren stack with the byte
+    // position of each `(`. For each `)`, peek at the following non-comment
+    // byte; if it's `?`, `*`, or `+`, record that span as "conditional".
+    // Collect predicate spans as we go.
+    #[derive(Debug)]
+    struct Predicate {
+        // Source offsets of the `(` and `)` that wrap the predicate.
+        open: usize,
+        close: usize,
+        // Stack of enclosing `(...)` opens at the moment we entered the predicate.
+        enclosing_opens: Vec<usize>,
+        // True if the predicate is at `[`-depth 0.
+        bracket_depth_zero: bool,
+    }
+    let mut predicates: Vec<Predicate> = Vec::new();
+    let mut paren_stack: Vec<usize> = Vec::new();
+    // `conditional_opens`: set of `(` byte-positions whose closing paren is
+    // followed by a `?`, `*`, or `+` quantifier (or which sit inside `[...]`
+    // alternation — same effect: the contents aren't unconditionally required).
+    let mut conditional_opens: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    let mut bracket_depth: i32 = 0;
+    // Stack of `[`-open positions, for tracking which `(` opens were entered
+    // while inside an alternation. The last-popped `[` doesn't matter for
+    // correctness because we already use bracket_depth.
     let mut i = 0;
     while i < n {
         match bytes[i] {
-            // Line comments run to end of line.
             b';' => {
                 while i < n && bytes[i] != b'\n' {
                     i += 1;
                 }
             }
-            // Skip over string literals so internal `(` doesn't trigger us.
             b'"' => {
                 i += 1;
                 while i < n {
@@ -309,67 +345,90 @@ fn extract_and_groups_from_pattern_source(source: &str) -> Vec<Vec<String>> {
                     i += 1;
                 }
             }
-            // Predicate forms look like `(#eq? ...)` etc.
+            b'[' => {
+                bracket_depth += 1;
+                i += 1;
+            }
+            b']' => {
+                if bracket_depth > 0 {
+                    bracket_depth -= 1;
+                }
+                i += 1;
+            }
             b'(' => {
                 let mut j = i + 1;
                 while j < n && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
                     j += 1;
                 }
-                if j < n && bytes[j] == b'#' {
+                let is_predicate = j < n && bytes[j] == b'#';
+                paren_stack.push(i);
+                if is_predicate {
                     if let Some(close) = find_matching_paren(bytes, i) {
-                        let inner = &source[i + 1..close];
-                        if let Some(group) = parse_text_predicate_literals(inner) {
-                            and_groups.push(group);
-                        }
+                        let enclosing_opens = paren_stack[..paren_stack.len() - 1].to_vec();
+                        predicates.push(Predicate {
+                            open: i,
+                            close,
+                            enclosing_opens,
+                            bracket_depth_zero: bracket_depth == 0,
+                        });
+                        // Pop the predicate's own open from the stack — it'll
+                        // be re-added when the outer scan reaches `close`.
+                        // (We skip past it directly.)
+                        paren_stack.pop();
                         i = close + 1;
                         continue;
                     }
                 }
                 i += 1;
             }
-            _ => {
+            b')' => {
+                let opened = paren_stack.pop();
+                // Look ahead past whitespace/comments for a quantifier suffix.
+                let mut j = i + 1;
+                while j < n && matches!(bytes[j], b' ' | b'\t' | b'\n' | b'\r') {
+                    j += 1;
+                }
+                let quantified = j < n && matches!(bytes[j], b'?' | b'*' | b'+');
+                if quantified {
+                    if let Some(open_pos) = opened {
+                        conditional_opens.insert(open_pos);
+                    }
+                }
+                // Also: any `(` opened while inside `[...]` alternation
+                // is conditional, since the enclosing alternation makes
+                // even unquantified groups optional in spirit. We mark
+                // that at `(` time by checking bracket_depth.
                 i += 1;
             }
+            _ => i += 1,
+        }
+    }
+
+    // Pass 2: filter predicates. Keep a predicate only if:
+    // - it's at bracket-depth 0, AND
+    // - none of its enclosing opens is conditional.
+    let mut and_groups: Vec<Vec<String>> = Vec::new();
+    for p in &predicates {
+        if !p.bracket_depth_zero {
+            continue;
+        }
+        if p.enclosing_opens
+            .iter()
+            .any(|o| conditional_opens.contains(o))
+        {
+            continue;
+        }
+        let inner = &source[p.open + 1..p.close];
+        if let Some(group) = parse_text_predicate_literals(inner) {
+            and_groups.push(group);
         }
     }
     and_groups
 }
 
-/// Returns true if the query source contains a `[` outside any string
-/// literal or `;`-line comment. Used as a conservative bail signal because
-/// `[A B]` is alternation in tree-sitter queries; literals inside one
-/// branch are not required by the others.
-fn has_alternation_bracket(source: &str) -> bool {
-    let bytes = source.as_bytes();
-    let n = bytes.len();
-    let mut i = 0;
-    while i < n {
-        match bytes[i] {
-            b';' => {
-                while i < n && bytes[i] != b'\n' {
-                    i += 1;
-                }
-            }
-            b'"' => {
-                i += 1;
-                while i < n {
-                    if bytes[i] == b'\\' && i + 1 < n {
-                        i += 2;
-                        continue;
-                    }
-                    if bytes[i] == b'"' {
-                        i += 1;
-                        break;
-                    }
-                    i += 1;
-                }
-            }
-            b'[' => return true,
-            _ => i += 1,
-        }
-    }
-    false
-}
+// (Earlier versions had `has_alternation_bracket` as a coarse pre-bail; the
+// current `extract_and_groups_from_pattern_source` tracks bracket depth and
+// quantifier suffixes precisely, so a top-level utility is no longer needed.)
 
 /// Find the index of the matching `)` for the `(` at `open`, respecting
 /// strings and line comments. Returns `None` if the source is malformed.
@@ -602,9 +661,7 @@ impl<'a> TextPredicateTokens<'a> {
     }
 
     fn skip_ws(&mut self) {
-        while self.i < self.s.len()
-            && matches!(self.s[self.i], b' ' | b'\t' | b'\n' | b'\r')
-        {
+        while self.i < self.s.len() && matches!(self.s[self.i], b' ' | b'\t' | b'\n' | b'\r') {
             self.i += 1;
         }
     }
@@ -1316,10 +1373,7 @@ mod literal_pre_screen_tests {
     #[test]
     fn negative_predicates_ignored() {
         // `#not-eq?` cannot screen by literal presence (it requires absence).
-        let s = LiteralPreScreen::extract(
-            r#"(call (id) @a (#not-eq? @a "foo"))"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(call (id) @a (#not-eq? @a "foo"))"#, 1);
         assert!(s.is_trivial());
         assert!(s.matches("anything"));
     }
@@ -1327,10 +1381,7 @@ mod literal_pre_screen_tests {
     #[test]
     fn match_predicate_extracts_literal_prefix() {
         // Anchored regex with literal prefix — we extract `^foo$` → "foo".
-        let s = LiteralPreScreen::extract(
-            r#"(id) @x (#match? @x "^foo$")"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(id) @x (#match? @x "^foo$")"#, 1);
         assert!(!s.is_trivial());
         assert!(s.matches("foo"));
         assert!(!s.matches("bar"));
@@ -1351,10 +1402,7 @@ mod literal_pre_screen_tests {
     #[test]
     fn match_predicate_decodes_escaped_specials() {
         // `\.fabric\.dog` should yield literal `.fabric.dog`.
-        let s = LiteralPreScreen::extract(
-            r#"(id) @x (#match? @x "^.*\.fabric\.dog.*$")"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(id) @x (#match? @x "^.*\.fabric\.dog.*$")"#, 1);
         assert!(!s.is_trivial());
         assert!(s.matches("hello.fabric.dog world"));
         assert!(!s.matches("hello.world"));
@@ -1363,40 +1411,28 @@ mod literal_pre_screen_tests {
     #[test]
     fn match_predicate_bails_on_alternation() {
         // Top-level `|` → each branch has its own requirements; bail.
-        let s = LiteralPreScreen::extract(
-            r#"(id) @x (#match? @x "foo|bar|baz")"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(id) @x (#match? @x "foo|bar|baz")"#, 1);
         assert!(s.is_trivial());
     }
 
     #[test]
     fn match_predicate_bails_on_group_modifier() {
         // `(?i)` makes the literal case-insensitive — we'd extract wrong case.
-        let s = LiteralPreScreen::extract(
-            r#"(id) @x (#match? @x "(?i)foo")"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(id) @x (#match? @x "(?i)foo")"#, 1);
         assert!(s.is_trivial());
     }
 
     #[test]
     fn match_predicate_bails_when_no_long_enough_run() {
         // Longest literal run of 2 chars or less → too generic, bail.
-        let s = LiteralPreScreen::extract(
-            r#"(id) @x (#match? @x "a.b.c.d")"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(id) @x (#match? @x "a.b.c.d")"#, 1);
         assert!(s.is_trivial());
     }
 
     #[test]
     fn match_predicate_decodes_escaped_slash() {
         // `\/` is the regex-escape for `/` (legal in some flavors).
-        let s = LiteralPreScreen::extract(
-            r#"(id) @x (#match? @x "^prefix\/path\/.*$")"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(id) @x (#match? @x "^prefix\/path\/.*$")"#, 1);
         assert!(!s.is_trivial());
         assert!(s.matches("prefix/path/anything"));
     }
@@ -1447,7 +1483,10 @@ mod literal_pre_screen_tests {
 (call_expression) @anycall
 "#;
         let s = screen_for_go_query(src);
-        assert!(s.is_trivial(), "unconstrained second pattern must force bail");
+        assert!(
+            s.is_trivial(),
+            "unconstrained second pattern must force bail"
+        );
         assert!(s.matches("anything goes"));
     }
 
@@ -1484,20 +1523,14 @@ mod literal_pre_screen_tests {
 
     #[test]
     fn comments_skipped() {
-        let s = LiteralPreScreen::extract(
-            "; (#eq? @x \"trap\")\n(id) @x (#eq? @x \"real\")",
-            1,
-        );
+        let s = LiteralPreScreen::extract("; (#eq? @x \"trap\")\n(id) @x (#eq? @x \"real\")", 1);
         assert!(s.matches("real"));
         assert!(!s.matches("trap"));
     }
 
     #[test]
     fn escaped_quotes_in_string_literal() {
-        let s = LiteralPreScreen::extract(
-            r#"(id) @x (#eq? @x "say \"hi\"")"#,
-            1,
-        );
+        let s = LiteralPreScreen::extract(r#"(id) @x (#eq? @x "say \"hi\"")"#, 1);
         assert!(s.matches(r#"say "hi""#));
         assert!(!s.matches("hello"));
     }
@@ -1518,37 +1551,15 @@ mod literal_pre_screen_tests {
 }
 
 #[cfg(test)]
-mod alternation_bracket_tests {
+mod alternation_and_quantifier_tests {
     use super::*;
 
     #[test]
-    fn detects_top_level_bracket() {
-        assert!(has_alternation_bracket("[A B]@x"));
-    }
-
-    #[test]
-    fn detects_nested_bracket() {
-        assert!(has_alternation_bracket("(call [(a) (b)])"));
-    }
-
-    #[test]
-    fn ignores_bracket_in_string() {
-        assert!(!has_alternation_bracket(r#"(_) @x (#eq? @x "[abc]")"#));
-    }
-
-    #[test]
-    fn ignores_bracket_in_comment() {
-        assert!(!has_alternation_bracket("; comment with [bracket]\n(id)"));
-    }
-
-    #[test]
-    fn no_bracket() {
-        assert!(!has_alternation_bracket("(call (id) @a (#eq? @a \"x\"))"));
-    }
-
-    #[test]
     fn alternation_query_yields_trivial_screen() {
-        // Real-world `go-security/command-injection` shape — must not extract.
+        // Real-world `go-security/command-injection` shape: `[A B]@cap`. With
+        // depth-tracking we now skip the predicates inside the alternation
+        // (so each branch's literal is not required across both branches),
+        // ending up with no AND-groups → always-match.
         let q = r#"
 [
     (call_expression
@@ -1566,10 +1577,72 @@ mod alternation_bracket_tests {
 ]@call
 "#;
         let s = LiteralPreScreen::extract(q, 1);
-        assert!(s.is_trivial(), "alternation query must NOT extract literals");
-        // A file containing only "CommandContext" should still be allowed.
+        assert!(
+            s.is_trivial(),
+            "alternation query must NOT extract literals"
+        );
         assert!(s.matches("exec.CommandContext(ctx, \"ls\")"));
-        // And conversely, files containing neither must also pass through.
         assert!(s.matches("package main"));
+    }
+
+    #[test]
+    fn predicate_in_optional_group_is_skipped() {
+        // `(...)?` makes its contents optional — predicates inside aren't
+        // unconditionally required, so we must skip them.
+        let q = r#"
+(function_definition
+    body: (block
+        (expression_statement
+            (assignment
+                left: (identifier) @v
+                (#eq? @v "foo")
+            )
+        )?
+        (call (identifier) @id (#eq? @id "bar"))
+    )
+)
+"#;
+        let s = LiteralPreScreen::extract(q, 1);
+        // "foo" inside the optional group must NOT be extracted, but "bar"
+        // outside it should be.
+        assert!(!s.is_trivial());
+        assert!(s.matches("bar()"));
+        assert!(!s.matches("baz only"));
+    }
+
+    #[test]
+    fn top_level_predicate_outside_alternation_extracted() {
+        // The python-flask/cookie-injection shape: a `[A B]` alternation
+        // appears in the query, but separately at depth 0 we have a
+        // `#eq? @id "set_cookie"` predicate. That literal IS required for
+        // the rule to match.
+        let q = r#"
+(function_definition
+  (parameters (identifier) @_param)
+  (block
+    (expression_statement
+      (assignment
+        left: (identifier) @_taint
+        right: [
+          (identifier) @_paramusage
+          (call (argument_list (identifier) @_paramusage))
+        ]
+      )
+    )
+    (expression_statement
+      (call
+        function: (attribute
+          attribute: (identifier) @id
+          (#eq? @id "set_cookie")
+        )
+      )
+    )
+  )
+)
+"#;
+        let s = LiteralPreScreen::extract(q, 1);
+        assert!(!s.is_trivial());
+        assert!(s.matches("resp.set_cookie(\"k\", v)"));
+        assert!(!s.matches("resp.headers['X-Foo'] = 'bar'"));
     }
 }
