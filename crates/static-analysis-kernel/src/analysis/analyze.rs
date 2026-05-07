@@ -26,6 +26,18 @@ const DISABLE_KEYWORDS: [&str; 2] = ["no-dd-sa", "datadog-disable"];
 /// If a no-dd-sa statement occurs on the first line, it applies to the whole file.
 /// Otherwise, it only applies to the line below.
 fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
+    // Fast-path: the vast majority of files contain neither marker. `str::contains`
+    // uses a SIMD/memchr-style search that's effectively a single linear scan, so
+    // doing two of them up-front is ~free relative to the per-line work below.
+    // (DISABLE_KEYWORDS = ["no-dd-sa", "datadog-disable"].)
+    if !DISABLE_KEYWORDS.iter().any(|kw| code.contains(*kw)) {
+        return LinesToIgnore {
+            lines_to_ignore: Vec::new(),
+            lines_to_ignore_per_rule: HashMap::new(),
+            ignore_file: FileIgnoreBehavior::SomeRules(Vec::new()),
+        };
+    }
+
     let mut lines_to_ignore_for_all_rules = vec![];
     let mut lines_to_ignore_per_rules: HashMap<u32, Vec<String>> = HashMap::new();
 
@@ -156,6 +168,9 @@ fn get_lines_to_ignore(code: &str, language: &Language) -> LinesToIgnore {
     }
 }
 
+/// Run the per-rule analysis loop on a file. Returns the per-rule results and,
+/// when parsing succeeded, the parsed Tree-sitter tree wrapped in an `Arc` so
+/// callers can reuse it (e.g. for [`is_test_file`]) without re-parsing.
 pub fn analyze_with<I>(
     runtime: &mut JsRuntime,
     language: &Language,
@@ -164,7 +179,7 @@ pub fn analyze_with<I>(
     code: &Arc<str>,
     rule_config: &RuleConfig,
     analysis_option: &AnalysisOptions,
-) -> Vec<RuleResult>
+) -> (Vec<RuleResult>, Option<Arc<tree_sitter::Tree>>)
 where
     I: IntoIterator,
     I::Item: Borrow<RuleInternal>,
@@ -176,30 +191,69 @@ where
         if analysis_option.use_debug {
             eprintln!("Skipping generated file {}", filename);
         }
-        return vec![];
+        return (vec![], None);
     }
 
     let lines_to_ignore = get_lines_to_ignore(code, language);
+
+    // Materialize once so we can do a file-level screen and then iterate again
+    // for the per-rule loop. Each item is `Borrow<RuleInternal>`, typically
+    // a slice reference, so this is a small Vec of pointers.
+    let rules: Vec<I::Item> = rules.into_iter().collect();
+
+    // Conservative literal pre-screen (see `LiteralPreScreen`): if no rule can
+    // possibly match this file given its required `#eq?` / `#any-of?` literals,
+    // skip both the tree-sitter parse and the per-rule loop entirely. This is
+    // a strict superset filter — only files that COULD match still get parsed.
+    //
+    // We compute this BEFORE parsing so the win includes the parse cost on
+    // "cold" files (no required literal anywhere).
+    let any_rule_could_match = rules.iter().any(|rule| {
+        let r = rule.borrow();
+        rule_config.rule_is_enabled(&r.name) && r.tree_sitter_query.pre_screen().matches(code)
+    });
+    if !any_rule_could_match {
+        return (vec![], None);
+    }
 
     let now = Instant::now();
     let Some(tree) = get_tree(code, language) else {
         if analysis_option.use_debug {
             eprintln!("error when parsing source file {filename}");
         }
-        return vec![];
+        return (vec![], None);
     };
     let tree = Arc::new(tree);
     let cst_parsing_time = now.elapsed();
 
     let timeout = analysis_option.timeout.or(Some(RULE_EXECUTION_TIMEOUT));
 
-    rules
+    let results: Vec<RuleResult> = rules
         .into_iter()
         .filter(|rule| rule_config.rule_is_enabled(&rule.borrow().name))
         .map(|rule| {
             let rule = rule.borrow();
             if analysis_option.use_debug {
                 eprintln!("Apply rule {} file {}", rule.name, filename);
+            }
+
+            // Per-rule literal pre-screen. If this rule's required literals
+            // aren't all present in the file, the tree-sitter query cannot
+            // produce any match and we'd execute v8 with zero captures.
+            // Short-circuit with an empty `RuleResult` (matches the existing
+            // "no captures → empty result" path inside `execute_rule`).
+            if !rule.tree_sitter_query.pre_screen().matches(code) {
+                return RuleResult {
+                    rule_name: rule.name.clone(),
+                    filename: filename.to_string(),
+                    violations: vec![],
+                    errors: vec![],
+                    execution_error: None,
+                    output: None,
+                    execution_time_ms: 0,
+                    parsing_time_ms: cst_parsing_time.as_millis(),
+                    query_node_time_ms: 0,
+                };
             }
 
             let res = runtime.execute_rule(
@@ -290,7 +344,8 @@ where
                 query_node_time_ms: timing.ts_query.as_millis(),
             }
         })
-        .collect()
+        .collect();
+    (results, Some(tree))
 }
 
 /// Returns a [DOT Language] graph that models taint flow within the file.
@@ -364,7 +419,7 @@ function visit(captures) {
                 tree_sitter_query,
             };
 
-            let results = analyze_with(
+            let (results, _tree) = analyze_with(
                 runtime,
                 &language,
                 [rule],
@@ -441,6 +496,7 @@ def foo(arg1):
             rule_config,
             analysis_option,
         )
+        .0
     }
 
     // execution time must be more than 0

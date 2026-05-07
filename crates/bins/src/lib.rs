@@ -130,7 +130,9 @@ pub fn static_analysis(
                         });
 
                         let file_content = Arc::from(file_content);
-                        let mut results = analyze_with(
+                        // Capture the parsed tree alongside results so we can
+                        // reuse it for `is_test_file` below instead of re-parsing.
+                        let (mut results, parsed_tree) = analyze_with(
                             runtime_ref,
                             language,
                             &rules_for_language,
@@ -186,11 +188,13 @@ pub fn static_analysis(
                             && !path_metadata.contains_key(relative_path.as_ref())
                         {
                             let cloned_path_str = relative_path.to_string();
+                            // Reuse the tree parsed by `analyze_with` to avoid
+                            // a second tree-sitter parse here.
                             let metadata = if is_test_file(
                                 *language,
                                 file_content.as_ref(),
                                 std::path::Path::new(&cloned_path_str),
-                                None,
+                                parsed_tree.as_deref(),
                             ) {
                                 Some(ArtifactClassification { is_test_file: true })
                             } else {

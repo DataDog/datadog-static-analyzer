@@ -31,7 +31,7 @@ fn test_rule(runtime: &mut JsRuntime, rule: &Rule, test: &RuleTest) -> Result<St
         ..Default::default()
     };
     let rules = vec![rule_internal];
-    let analyze_result = analyze_with(
+    let (analyze_result, _tree) = analyze_with(
         runtime,
         &rule.language,
         &rules,

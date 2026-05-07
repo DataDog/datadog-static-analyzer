@@ -94,7 +94,7 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
         .join(", ");
 
     // execute the rule. If we fail to convert, return an error.
-    let rule_results = analyze_with(
+    let (rule_results, _tree) = analyze_with(
         runtime,
         &request.language,
         request.rules,
