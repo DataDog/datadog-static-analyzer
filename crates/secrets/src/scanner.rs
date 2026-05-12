@@ -513,6 +513,94 @@ mod tests {
         mock.assert();
     }
 
+    /// With `disable_validation`, SDS must not run HTTP active checkers — the mock receives no requests.
+    #[test]
+    fn test_custom_http_validation_not_called_when_disable_validation() {
+        use httpmock::Method::GET;
+        use httpmock::MockServer;
+        use std::collections::BTreeMap;
+
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/validate")
+                .query_param("secret", "api_key_abc123");
+            then.status(200);
+        });
+
+        let rule = SecretRule {
+            id: "primary".to_string(),
+            sds_id: "sds_id_primary".to_string(),
+            name: "primary".to_string(),
+            description: "primary".to_string(),
+            pattern: "\\bapi_key_[a-z0-9]+\\b".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: Some(SecretRuleMatchValidation::CustomHttpV2(
+                SecretRuleMatchValidationHttpV2 {
+                    match_pairing: None,
+                    provides: None,
+                    calls: vec![SecretRuleHttpCallConfig {
+                        request: SecretRuleHttpRequestConfig {
+                            endpoint: format!("{}/validate?secret=$MATCH", server.base_url()),
+                            method: SecretRuleMatchValidationHttpMethod::Get,
+                            hosts: vec![],
+                            headers: BTreeMap::new(),
+                            body: None,
+                            timeout_seconds: Some(3),
+                        },
+                        response: SecretRuleHttpResponseConfig {
+                            conditions: vec![SecretRuleResponseCondition {
+                                condition_type: SecretRuleResponseConditionType::Valid,
+                                status_code: Some(SecretRuleStatusCodeMatcher::Single {
+                                    single: 200,
+                                }),
+                                raw_body: None,
+                                body: None,
+                            }],
+                        },
+                    }],
+                },
+            )),
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        };
+
+        let rules = vec![rule];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+
+        let options = AnalysisOptions {
+            disable_validation: true,
+            ..Default::default()
+        };
+        let results = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            "key: api_key_abc123\n",
+            &options,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rule_id, "primary");
+        assert_eq!(results[0].matches.len(), 1);
+        assert_eq!(
+            results[0].matches[0].validation_status,
+            SecretValidationStatus::NotValidated
+        );
+
+        assert_eq!(
+            mock.hits(),
+            0,
+            "HTTP validation must be skipped when disable_validation is true"
+        );
+    }
+
     #[test]
     fn test_find_secrets_all_ignored() {
         let rules: Vec<SecretRule> = vec![SecretRule {
