@@ -4,9 +4,9 @@ use common::model::position::Position;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use streaming_iterator::StreamingIterator;
-use tree_sitter::CaptureQuantifier;
+use std::time::{Duration, Instant};
+use tree_sitter::StreamingIterator;
+use tree_sitter::{CaptureQuantifier, QueryCursorOptions, QueryCursorState};
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
@@ -171,23 +171,32 @@ enum MaybeOwnedMut<'a, T> {
 }
 
 impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
-    /// Iterate over all the tree-sitter query matches in the order that they were found.
+    /// Returns all of the tree-sitter query matches in the order that they were found.
     ///
     /// ***Note:*** Because multiple patterns can match the same set of nodes, one match may contain captures
     /// that appear before _(i.e. the source text location)_ some of the captures from a previous match.
     pub fn matches(
-        &'a mut self,
+        &mut self,
         node: tree_sitter::Node<'tree>,
         text: &'tree str,
         timeout: Option<Duration>,
-    ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> + 'a {
+    ) -> Vec<QueryMatch<tree_sitter::Node<'tree>>> {
         let cursor = match &mut self.cursor {
             MaybeOwnedMut::Borrowed(cursor) => cursor,
             MaybeOwnedMut::Owned(cursor) => cursor,
         };
-        cursor.set_timeout_micros(timeout.map(|t| t.as_micros()).unwrap_or_default() as u64);
-        let matches = cursor.matches(self.query, node, text.as_bytes());
-        matches.map_deref(|q_match| {
+        let deadline = timeout.and_then(|t| Instant::now().checked_add(t));
+        let mut on_progress = move |_: &QueryCursorState| match deadline {
+            Some(d) => Instant::now() >= d,
+            None => false,
+        };
+        let mut options = QueryCursorOptions::new();
+        if deadline.is_some() {
+            options = options.progress_callback(&mut on_progress);
+        }
+
+        let m = cursor.matches_with_options(self.query, node, text.as_bytes(), options);
+        m.map_deref(|q_match| {
             for capture in q_match.captures {
                 self.captures_scratch
                     .entry(capture.index)
@@ -216,6 +225,7 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
                 .map(|(_, query_capture)| query_capture)
                 .collect::<Vec<_>>()
         })
+        .collect::<Vec<_>>()
     }
 }
 
@@ -733,5 +743,29 @@ SELECT * FROM table WHERE column = 'value';
         assert_eq!("identifier", superclasses.ast_type);
         assert_eq!(None, superclasses.field_name);
         assert!(query_node.captures.contains_key("classname"));
+    }
+
+    #[test]
+    fn ts_query_cursor_matches_timeout() {
+        let timeout = Duration::from_millis(500);
+        let source = "let x = 1234;\n".repeat(2000);
+
+        let tree = get_tree(&source, &Language::JavaScript).unwrap();
+        // (Combinatorial explosion query, which should take longer than the `timeout` duration).
+        let query = get_query("(((_)*) @one (_)* @two)", &Language::JavaScript).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let num_captured = query
+                .cursor()
+                .matches(tree.root_node(), &source, Some(timeout))
+                .len();
+            tx.send(num_captured).unwrap();
+        });
+
+        let num_captured = rx
+            .recv_timeout(timeout * 2)
+            .expect("query callback should've halted execution");
+        assert!(num_captured > 0);
     }
 }

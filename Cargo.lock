@@ -3917,7 +3917,6 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "sha2",
- "streaming-iterator",
  "thiserror 2.0.18",
  "tree-sitter",
  "v8",
@@ -4500,13 +4499,14 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.24.7"
+version = "0.25.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a5387dffa7ffc7d2dae12b50c6f7aab8ff79d6210147c6613561fc3d474c6f75"
+checksum = "6d7b8994f367f16e6fa14b5aebbcb350de5d7cbea82dc5b00ae997dd71680dd2"
 dependencies = [
  "cc",
  "regex",
  "regex-syntax 0.8.10",
+ "serde_json",
  "streaming-iterator",
  "tree-sitter-language",
 ]

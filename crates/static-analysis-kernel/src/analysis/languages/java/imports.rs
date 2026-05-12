@@ -6,7 +6,7 @@ use crate::analysis::languages::ts_node_text;
 use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
 use std::sync::LazyLock;
-use streaming_iterator::StreamingIterator;
+use tree_sitter::StreamingIterator;
 
 /// Structured information about an import in a Java source file.
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Hash)]
