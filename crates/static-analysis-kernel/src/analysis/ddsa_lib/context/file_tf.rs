@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use deno_core::v8::{self, HandleScope};
-use streaming_iterator::StreamingIterator;
+use tree_sitter::StreamingIterator;
 
 use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError};
 use crate::analysis::ddsa_lib::js;
