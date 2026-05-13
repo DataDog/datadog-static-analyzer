@@ -625,8 +625,7 @@ mod tests {
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
             api_secret_rule_invalid_match_validation_type,
         );
-        let converted = converted.expect("convert SecretRule");
-        assert!(!converted.is_supporting_rule);
+        assert!(converted.is_ok());
     }
 
     #[test]

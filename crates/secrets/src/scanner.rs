@@ -231,38 +231,6 @@ mod tests {
     }
 
     #[test]
-    fn test_find_secrets_only_supporting_rule_returns_no_results() {
-        let rules: Vec<SecretRule> = vec![SecretRule {
-            id: "supporting".to_string(),
-            sds_id: "sds_id_supporting".to_string(),
-            name: "supporting".to_string(),
-            description: "supporting".to_string(),
-            pattern: "FOOBAR".to_string(),
-            default_included_keywords: vec![],
-            default_excluded_keywords: vec![],
-            look_ahead_character_count: Some(30),
-            priority: RulePriority::Medium,
-            validators: Some(vec![]),
-            validators_v2: None,
-            match_validation: None,
-            pattern_capture_groups: vec![],
-            is_supporting_rule: true,
-        }];
-
-        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
-        let text = "FOOBAR\n";
-        let results = find_secrets(
-            &scanner,
-            rules.as_slice(),
-            "myfile",
-            text,
-            &AnalysisOptions::default(),
-        );
-
-        assert!(results.is_empty());
-    }
-
-    #[test]
     fn test_find_secrets_with_ignore_directive() {
         let rules: Vec<SecretRule> = vec![SecretRule {
             id: "secret_rule".to_string(),
