@@ -472,6 +472,8 @@ pub struct SecretRule {
     pub match_validation: Option<SecretRuleMatchValidation>,
     pub sds_id: String,
     pub pattern_capture_groups: Vec<String>,
+    #[serde(default)]
+    pub is_supporting_rule: bool,
 }
 
 impl SecretRule {
@@ -528,8 +530,9 @@ impl SecretRule {
                 regex_rule_config.with_pattern_capture_groups(self.pattern_capture_groups.clone());
         }
 
-        let mut rule_config =
-            RootRuleConfig::new(regex_rule_config).match_action(MatchAction::None);
+        let mut rule_config = RootRuleConfig::new(regex_rule_config)
+            .match_action(MatchAction::None)
+            .is_supporting_rule(self.is_supporting_rule);
 
         if let Some(match_validation) = &self.match_validation {
             if let Ok(mvt) = match_validation.try_into() {
@@ -635,6 +638,7 @@ mod tests {
             }]),
             match_validation: None,
             pattern_capture_groups: vec!["sds_match".to_string()],
+            is_supporting_rule: false,
         };
 
         // Validates that convert_to_sds_ruleconfig doesn't panic and returns a valid config.

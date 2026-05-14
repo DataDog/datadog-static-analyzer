@@ -212,6 +212,7 @@ mod tests {
             validators_v2: None,
             match_validation: None,
             pattern_capture_groups: vec![],
+            is_supporting_rule: false,
         };
 
         let secret_rule2 = SecretRule {
@@ -228,6 +229,7 @@ mod tests {
             validators_v2: None,
             match_validation: None,
             pattern_capture_groups: vec![],
+            is_supporting_rule: false,
         };
 
         let cli_configuration_base = CliConfiguration {

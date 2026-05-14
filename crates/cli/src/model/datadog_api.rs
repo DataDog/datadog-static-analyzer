@@ -381,6 +381,7 @@ pub struct SecretRuleApiAttributes {
     /// PairedValidator active checker — sent as a standalone field with no `type` discriminator.
     pub paired_validator_config: Option<SecretRulePairedValidatorConfig>,
     pub pattern_capture_groups: Option<Vec<String>>,
+    pub is_supporting_rule: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -424,6 +425,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
                 .map(|v| v.into_iter().map(|validator| validator.into()).collect()),
             match_validation,
             pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
+            is_supporting_rule: val.attributes.is_supporting_rule.unwrap_or(false),
         })
     }
 }
@@ -579,6 +581,7 @@ mod tests {
                 match_validation_v2: None,
                 paired_validator_config: None,
                 pattern_capture_groups: None,
+                is_supporting_rule: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -616,12 +619,50 @@ mod tests {
                 match_validation_v2: None,
                 paired_validator_config: None,
                 pattern_capture_groups: None,
+                is_supporting_rule: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
             api_secret_rule_invalid_match_validation_type,
         );
         assert!(converted.is_ok());
+    }
+
+    #[test]
+    fn convert_secrets_rules_from_api_to_lib_supporting_rule_true() {
+        let api_rule = SecretRuleApiType {
+            id: "secret_type".to_string(),
+            attributes: SecretRuleApiAttributes {
+                name: "secret_rule_name".to_string(),
+                description: "secret_rule_description".to_string(),
+                pattern: "pattern".to_string(),
+                priority: "medium".to_string(),
+                default_included_keywords: None,
+                default_excluded_keywords: None,
+                look_ahead_character_count: None,
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+                validators: None,
+                validators_v2: None,
+                match_validation: Some(SecretRuleApiMatchValidation {
+                    r#type: SecretRuleApiMatchValidation::CUSTOM_HTTP_STRING.to_string(),
+                    endpoint: Some("endpoint".to_string()),
+                    hosts: Some(vec!["endpoint".to_string()]),
+                    request_headers: None,
+                    http_method: Some(Get),
+                    timeout_seconds: None,
+                    valid_http_status_code: None,
+                    invalid_http_status_code: None,
+                }),
+                match_validation_v2: None,
+                paired_validator_config: None,
+                pattern_capture_groups: None,
+                is_supporting_rule: Some(true),
+            },
+        };
+
+        let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(api_rule)
+            .expect("convert SecretRule");
+        assert!(converted.is_supporting_rule);
     }
 
     #[test]
@@ -652,6 +693,7 @@ mod tests {
                 match_validation_v2: None,
                 paired_validator_config: None,
                 pattern_capture_groups: None,
+                is_supporting_rule: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -694,6 +736,7 @@ mod tests {
                 match_validation_v2: None,
                 paired_validator_config: None,
                 pattern_capture_groups: None,
+                is_supporting_rule: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -736,6 +779,7 @@ mod tests {
                 match_validation_v2: None,
                 paired_validator_config: None,
                 pattern_capture_groups: None,
+                is_supporting_rule: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -993,5 +1037,60 @@ mod tests {
             rule.match_validation,
             Some(SecretRuleMatchValidation::CustomHttpV2(_))
         ));
+    }
+
+    #[test]
+    fn is_supporting_rule_deserialized_from_api() {
+        let json_data = json!({
+            "data": [
+                {
+                    "id": "secrets/rule-id", // is_supporting_rule is omitted from the API, should default to false
+                    "type": "secret_rule",
+                    "attributes": {
+                        "name": "rule-name",
+                        "description": "rule-description",
+                        "pattern": "FOO",
+                        "priority": "medium",
+                        "sds_id": "sds-123"
+                    }
+                },
+                {
+                    "id": "secrets/rule-id-2", // is_supporting_rule is set to false
+                    "type": "secret_rule",
+                    "attributes": {
+                        "name": "rule-name",
+                        "description": "rule-description",
+                        "pattern": "FOO",
+                        "priority": "medium",
+                        "sds_id": "sds-123",
+                        "is_supporting_rule": false
+                    }
+                },
+                {
+                    "id": "secrets/supporting-rule-id", // is_supporting_rule is set to true
+                    "type": "secret_rule",
+                    "attributes": {
+                        "name": "supporting-rule-name",
+                        "description": "supporting-rule-description",
+                        "pattern": "FOO",
+                        "priority": "medium",
+                        "sds_id": "sds-supporting-123",
+                        "is_supporting_rule": true
+                    }
+                }
+            ]
+        });
+
+        let api_response: StaticAnalysisSecretsAPIResponse =
+            serde_json::from_value(json_data).expect("Failed to deserialize JSON");
+
+        for rule in api_response.data {
+            let rule: SecretRule = rule.clone().try_into().expect("Failed to convert rule");
+            if rule.id == "secrets/supporting-rule-id" {
+                assert!(rule.is_supporting_rule);
+            } else {
+                assert!(!rule.is_supporting_rule);
+            }
+        }
     }
 }
