@@ -797,12 +797,10 @@ SELECT * FROM table WHERE column = 'value';
     ///
     /// Source (Python): `日 = 1; end = 2`
     /// 日 = 3 UTF-8 bytes, 1 UTF-16 unit.
-    /// `end` starts at byte offset 7 (`日`(3) + ' '(1) + '='(1) + ' '(1) + '1'(1) = 7),
-    /// but UTF-16 units before it: 日(1),' '(1),=(1),' '(1),1(1),;(1),' '(1) = 7 → col 8.
-    /// Since 日 is BMP (1 UTF-16 unit = 1 byte col unit at the codepoint level, but 3 UTF-8
-    /// bytes), we have: 3 bytes - 1 UTF-16 = 2 byte savings on that char, so byte 7 → UTF-16 col
-    /// = 7 - 2 + 1 = 6.  Let's recompute step by step:
-    ///   日(3 bytes → 1 UTF-16), ' '(1→1), =(1→1), ' '(1→1), 1(1→1), ;(1→1), ' '(1→1) = 7 UTF-16 units → col 8
+    ///
+    /// `end` starts at byte 9:  日(3) + ' '(1) + =(1) + ' '(1) + 1(1) + ;(1) + ' '(1) = 9 bytes.
+    /// UTF-16 prefix for those 9 bytes:
+    ///   日(1) + ' '(1) + =(1) + ' '(1) + 1(1) + ;(1) + ' '(1) = 7 UTF-16 units → 1-based col 8.
     #[test]
     fn test_get_query_nodes_cjk() {
         // Python: assign 日 = 1, then end = 2
