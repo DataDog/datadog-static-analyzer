@@ -114,7 +114,7 @@ pub fn op_ts_node_named_children<'s>(
         let idx = ctx_borrow
             .ddsa_root_context()
             .line_column_index()
-            .unwrap_or_else(|| LineColumnIndex::new(""));
+            .expect("tree text must be set before ops run");
         let mut bridge_ref = ts_node_bridge.borrow_mut();
 
         let mut cursor = ts_node.walk();
@@ -173,7 +173,7 @@ pub fn op_ts_node_parent(
     // rescanning the source on every parent call.
     let idx = root_ctx
         .line_column_index()
-        .unwrap_or_else(|| LineColumnIndex::new(""));
+        .expect("tree text must be set before ops run");
     let mut bridge_ref = ts_node_bridge.borrow_mut();
     let nid = bridge_ref.insert(scope, parent_ts_node, &idx);
     Some(nid)
