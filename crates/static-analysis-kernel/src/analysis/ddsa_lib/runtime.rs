@@ -1451,9 +1451,12 @@ function visit(query, filename, code) {
     /// `stella_compat.js::getCode` correctly extracts an identifier that follows a multibyte
     /// character on the same line.
     ///
-    /// The source `"🚀protectedName = 1;"` has the emoji (4 UTF-8 bytes / 2 UTF-16 code units)
-    /// before the identifier.  With UTF-16 columns, `col - 1` correctly indexes into the JS
-    /// string via `substring`, so `getCodeForNode(node, code)` returns `"protectedName"`.
+    /// The source is `"\u{1F680}"; protectedName = 1;` — the emoji sits inside a string literal
+    /// so that `protectedName` is a distinct, standalone identifier token.
+    /// Bytes before `protectedName`: `"` (1) + 🚀 (4) + `"` (1) + `;` (1) + ` ` (1) = 8 bytes.
+    /// UTF-16 prefix: `"` (1) + 🚀 surrogate pair (2) + `"` (1) + `;` (1) + ` ` (1) = 6 units → col 7.
+    /// With UTF-16 columns, `col - 1` correctly indexes into the JS string via `substring`,
+    /// so `getCodeForNode(node, code)` returns `"protectedName"`.
     #[test]
     fn stella_compat_getcode_multibyte() {
         let mut rt = cfg_test_v8().new_runtime();
