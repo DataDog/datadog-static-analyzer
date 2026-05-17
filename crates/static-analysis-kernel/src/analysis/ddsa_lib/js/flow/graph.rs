@@ -623,11 +623,14 @@ impl From<LocatedEdge<'_>> for dot_structures::Edge {
 impl<'a> LocatedNode<'a> {
     /// Constructs a new `LocatedNode` from a tree-sitter node.
     ///
-    /// `source` is the full source text that was parsed to produce `node`; it is used via
-    /// [`LineColumnIndex`] to emit a 1-based UTF-16 code-unit column consistent with
-    /// [`TreeSitterNode::from_ts_node_with_index`].
-    pub fn new_cst(node: tree_sitter::Node, text: &'a str, source: &str) -> LocatedNode<'a> {
-        let idx = LineColumnIndex::new(source);
+    /// `idx` must be a [`LineColumnIndex`] built from the same source text that was parsed to
+    /// produce `node`. Pass a single index built at the call site — do **not** construct one
+    /// per-node, as that would scan the entire source on every call.
+    pub fn new_cst(
+        node: tree_sitter::Node,
+        text: &'a str,
+        idx: &LineColumnIndex<'_>,
+    ) -> LocatedNode<'a> {
         let start = node.start_position();
         Self::Cst {
             text,
@@ -1229,7 +1232,8 @@ strict digraph TestPhi {
         let raw_byte_col_plus_one = x_node.start_position().column + 1;
 
         // LocatedNode::new_cst must produce a UTF-16 col ≠ raw byte col + 1.
-        let located = LocatedNode::new_cst(x_node, tree.text(x_node), source);
+        let idx = LineColumnIndex::new(source);
+        let located = LocatedNode::new_cst(x_node, tree.text(x_node), &idx);
         let located_col = match located {
             LocatedNode::Cst { col, .. } => col,
             _ => panic!("expected Cst variant"),
@@ -1249,7 +1253,8 @@ strict digraph TestPhi {
         let ascii_tree = TsTree::new(ascii_source, Language::JavaScript);
         let ascii_x = ascii_tree.find_named_nodes(Some("x"), Some("identifier"))[0];
         let ascii_raw = ascii_x.start_position().column + 1;
-        let ascii_located = LocatedNode::new_cst(ascii_x, ascii_tree.text(ascii_x), ascii_source);
+        let ascii_idx = LineColumnIndex::new(ascii_source);
+        let ascii_located = LocatedNode::new_cst(ascii_x, ascii_tree.text(ascii_x), &ascii_idx);
         let ascii_col = match ascii_located {
             LocatedNode::Cst { col, .. } => col,
             _ => panic!("expected Cst variant"),
@@ -1258,6 +1263,5 @@ strict digraph TestPhi {
             ascii_col, ascii_raw,
             "ASCII: UTF-16 col should equal raw byte col + 1"
         );
-        let _ = LineColumnIndex::new(ascii_source); // ensure import is used
     }
 }

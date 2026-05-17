@@ -264,10 +264,14 @@ pub fn op_digraph_adjacency_list_to_dot(
     let tsn_bridge = tsn_bridge.borrow();
     let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
     let ctx_bridge = ctx_bridge.borrow();
-    let text = ctx_bridge
-        .ddsa_root_context()
+    let root_ctx = ctx_bridge.ddsa_root_context();
+    let text = root_ctx
         .get_text()
         .expect("tree text should always be `Some` during rule execution");
+    // Build the index once before the per-vertex loop; use the cached line_starts when available.
+    let lc_idx = root_ctx
+        .line_column_index()
+        .unwrap_or_else(|| LineColumnIndex::new(text));
 
     // Transformation:
     // If `VertexKind::CST`: constructs a dot node from metadata from the `TsNodeBridge` and `RootContext`.
@@ -285,7 +289,7 @@ pub fn op_digraph_adjacency_list_to_dot(
                 let node_text = ts_node
                     .utf8_text(text.as_bytes())
                     .expect("bytes should be utf8 sequence");
-                Some(LocatedNode::new_cst(ts_node, node_text, text))
+                Some(LocatedNode::new_cst(ts_node, node_text, &lc_idx))
             }
             VertexKind::Phi => Some(LocatedNode::new_phi(vid.internal_id())),
             VertexKind::Invalid => None,
