@@ -9,15 +9,15 @@ use std::fmt;
 /// A source-code position.
 ///
 /// * `line` — 1-based line number.
-/// * `col` — 1-based **UTF-16 code-unit** column number for every position produced by the
-///   static-analysis kernel (tree-sitter path).  On ASCII-only lines, one UTF-16 code unit equals
-///   one byte, so the value is identical to what a byte-column would be.  For non-ASCII characters
-///   (CJK ideographs, emoji surrogate pairs, combining marks, etc.) the value reflects UTF-16
-///   semantics, which matches LSP / VS Code and the SARIF v2.1 default encoding.
-///
-///   The `get_position_in_string` helper (used by the secrets scanner) emits grapheme-based
-///   columns under a different contract; that path does **not** flow through `Position.col` in the
-///   kernel output.
+/// * `col` — 1-based column number.  The unit depends on the producer:
+///   - **Static-analysis kernel** (tree-sitter path): UTF-16 code-unit column.  Matches LSP,
+///     VS Code, and the SARIF v2.1 default encoding.  On ASCII-only lines, one UTF-16 code unit
+///     equals one byte, so the value is identical to a byte-column.  For non-ASCII characters
+///     (CJK ideographs, emoji surrogate pairs, combining marks, etc.) the count reflects UTF-16
+///     surrogate-pair expansion.
+///   - **Secrets scanner** (`get_position_in_string`): Unicode-grapheme-cluster column.  A single
+///     user-perceived character (including emoji and composed sequences) counts as one unit
+///     regardless of its UTF-8 or UTF-16 size.
 #[derive(Deserialize, Debug, Serialize, Clone, Copy, Builder, PartialEq, Eq, Hash)]
 pub struct Position {
     pub line: u32,
