@@ -22,33 +22,7 @@ const parseFile = (filepath) => {
       const current = {};
       current.message = i.message;
       current.ruleId = i.ruleId;
-      // ------------------------------------------------------------------
-      // IMPORTANT (TEMPORARY): strip `startColumn` / `endColumn` from the region.
-      //
-      // PR #914 changes the kernel from emitting 1-based UTF-8 byte columns to
-      // 1-based UTF-16 code-unit columns (matching LSP / VS Code / SARIF v2.1).
-      //
-      // While that PR is in review, `main` still emits byte columns and the
-      // feature branch emits UTF-16 columns. The regression check compares
-      // results as JSON strings, so it would flag every violation that lives
-      // on a line containing a non-ASCII character as a "removed + added"
-      // pair — same file, same rule, same line; only the column number drifts
-      // by N (where N is the number of multibyte chars before the position).
-      //
-      // To unblock CI for #914 we compare by
-      //     (file, ruleId, message, startLine, endLine)
-      // and intentionally ignore columns. This is a one-shot loosening for
-      // the byte→UTF-16 transition. A stacked follow-up PR will restore
-      // `startColumn` / `endColumn` to the comparison key once #914 lands on
-      // `main` (at which point both runs are on UTF-16 columns again and
-      // column-level regression detection becomes meaningful again).
-      // ------------------------------------------------------------------
-      const { startColumn: _startCol, endColumn: _endCol, ...regionWithoutColumns } =
-        i.locations[0].physicalLocation.region;
-      current.physicalLocation = {
-        ...i.locations[0].physicalLocation,
-        region: regionWithoutColumns,
-      };
+      current.physicalLocation = i.locations[0].physicalLocation;
       results.push(current);
     }
 
@@ -81,16 +55,13 @@ const main = async () => {
     let table1 = [];
 
     if (count1 > 0 || count2 > 0) {
-      // Location display only shows `startLine-endLine`. Columns are
-      // intentionally omitted to match the comparison key (see `parseFile`
-      // above for the full rationale on the byte→UTF-16 transition).
       for (const item of diff1) {
         const json = JSON.parse(item);
         table1.push([
           { data: json.physicalLocation.artifactLocation.uri },
           { data: json.message.text },
           { data: json.ruleId },
-          { data: `${json.physicalLocation.region.startLine}-${json.physicalLocation.region.endLine}` },
+          { data: `${json.physicalLocation.region.startLine}:${json.physicalLocation.region.startColumn}-${json.physicalLocation.region.endLine}:${json.physicalLocation.region.endColumn}` },
           { data: dupes1[json.ruleId] },
         ]);
       }
@@ -103,7 +74,7 @@ const main = async () => {
           { data: json.physicalLocation.artifactLocation.uri },
           { data: json.message.text },
           { data: json.ruleId },
-          { data: `${json.physicalLocation.region.startLine}-${json.physicalLocation.region.endLine}` },
+          { data: `${json.physicalLocation.region.startLine}:${json.physicalLocation.region.startColumn}-${json.physicalLocation.region.endLine}:${json.physicalLocation.region.endColumn}` },
           { data: dupes2[json.ruleId] },
         ]);
       }
