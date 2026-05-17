@@ -779,23 +779,6 @@ SELECT * FROM table WHERE column = 'value';
         let tree = get_tree(source_code, &Language::Python).unwrap();
         let idx = LineColumnIndex::new(source_code);
         let root = map_node(tree.root_node(), &idx).unwrap();
-        // Find the `num` identifier node in the AST.
-        fn find_node<'a>(
-            node: &'a crate::model::analysis::TreeSitterNode,
-            ast_type: &str,
-            text: &str,
-        ) -> Option<&'a crate::model::analysis::TreeSitterNode> {
-            // Check children recursively.
-            for child in &node.children {
-                if child.ast_type == ast_type {
-                    return Some(child);
-                }
-                if let Some(found) = find_node(child, ast_type, text) {
-                    return Some(found);
-                }
-            }
-            None
-        }
         // We parse "x = "🚀"; num = 5" as Python.
         // The second assignment has `num` as the left side (an identifier).
         // Byte 12 = 'n', UTF-16 col = 11.
