@@ -5,6 +5,7 @@
 use crate::analysis::ddsa_lib::common::{
     load_function, swallow_v8_error, v8_uint, Class, DDSAJsRuntimeError, Instance, NodeId,
 };
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::marker::PhantomData;
@@ -24,26 +25,32 @@ pub struct TreeSitterNode<T> {
 }
 
 impl<T> TreeSitterNode<T> {
-    /// Converts the provided [`tree_sitter::Node`] into a `TreeSitterNode`, assigning the provided id.
-    pub fn from_ts_node(id: NodeId, node: tree_sitter::Node) -> Self {
-        // NOTE: We normalize the 0-based `tree_sitter::Point` to be 1-based.
-        fn normalize_ts_point_num(num: usize) -> u32 {
-            num as u32 + 1
-        }
+    /// Converts the provided [`tree_sitter::Node`] into a `TreeSitterNode`, assigning the
+    /// provided id.
+    ///
+    /// Columns are produced as **1-based UTF-16 code-unit** values using `idx`, which must be
+    /// built from the same source string that was parsed to obtain `node`.  Use this constructor
+    /// everywhere the source string is available — it is the single source of truth for
+    /// `Position.col` semantics.
+    pub fn from_ts_node_with_index(
+        id: NodeId,
+        node: tree_sitter::Node,
+        idx: &LineColumnIndex<'_>,
+    ) -> Self {
         let tree_sitter::Point {
-            row: start_line,
-            column: start_col,
+            row: start_row,
+            column: start_byte_col,
         } = node.start_position();
         let tree_sitter::Point {
-            row: end_line,
-            column: end_col,
+            row: end_row,
+            column: end_byte_col,
         } = node.end_position();
         Self {
             id,
-            start_line: normalize_ts_point_num(start_line),
-            start_col: normalize_ts_point_num(start_col),
-            end_line: normalize_ts_point_num(end_line),
-            end_col: normalize_ts_point_num(end_col),
+            start_line: (start_row as u32) + 1,
+            start_col: idx.byte_col_to_utf16_col(start_row, start_byte_col),
+            end_line: (end_row as u32) + 1,
+            end_col: idx.byte_col_to_utf16_col(end_row, end_byte_col),
             node_type_id: node.kind_id(),
             _pd: PhantomData,
         }
@@ -104,6 +111,7 @@ mod tests {
     };
     use crate::analysis::tree_sitter::get_tree_sitter_language;
     use crate::model::common::Language;
+    use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
     use std::marker::PhantomData;
     use tree_sitter::StreamingIterator;
@@ -152,7 +160,8 @@ mod tests {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&lang).unwrap();
 
-        let tree = parser.parse(r#"foo(bar, baz);"#, None).unwrap();
+        let source = r#"foo(bar, baz);"#;
+        let tree = parser.parse(source, None).unwrap();
         let root = tree.root_node();
 
         assert_eq!(root.start_position().row, 0);
@@ -160,12 +169,73 @@ mod tests {
         assert_eq!(root.end_position().row, 0);
         assert_eq!(root.end_position().column, 14);
 
-        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node(0, root);
+        let idx = LineColumnIndex::new(source);
+        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node_with_index(0, root, &idx);
 
         assert_eq!(tree_sitter_node.start_line, 1);
         assert_eq!(tree_sitter_node.start_col, 1);
         assert_eq!(tree_sitter_node.end_line, 1);
         assert_eq!(tree_sitter_node.end_col, 15);
+    }
+
+    /// Mirrors [`ts_node_line_col_one_based`] but with multibyte content.
+    ///
+    /// Source: `"\u{1F680}"; foo(bar);`
+    ///   The emoji lives in a string literal so `foo` is a distinct identifier.
+    ///   Bytes before `foo`: `"` (1) + 🚀 (4) + `"` (1) + `;` (1) + ` ` (1) = 8 bytes.
+    ///   UTF-16 prefix:      `"` (1) + 🚀 (2) + `"` (1) + `;` (1) + ` ` (1) = 6 units → col 7.
+    #[test]
+    fn ts_node_line_col_multibyte() {
+        let lang = get_tree_sitter_language(&Language::JavaScript);
+        let mut parser = tree_sitter::Parser::new();
+        parser.set_language(&lang).unwrap();
+
+        // Source: `"\u{1F680}"; foo(bar);`
+        // 🚀 is placed inside a string literal so `foo` is clearly a separate identifier.
+        let source = "\"\u{1F680}\"; foo(bar);";
+        let tree = parser.parse(source, None).unwrap();
+
+        // The second statement is `foo(bar);`
+        let root = tree.root_node();
+        let call_node = root
+            .child(1) // second expression_statement
+            .unwrap()
+            .child(0) // call_expression
+            .unwrap();
+
+        // `foo` starts at byte 8 ("🚀" = 6 bytes + "; " = 2 bytes).
+        let fn_node = call_node.child_by_field_name("function").unwrap();
+        assert_eq!(fn_node.start_position().column, 8, "byte col of `foo` is 8");
+
+        let idx = LineColumnIndex::new(source);
+        let ts_node = TreeSitterNode::<Instance>::from_ts_node_with_index(0, fn_node, &idx);
+        assert_eq!(ts_node.start_line, 1);
+        // UTF-16 col 7: " (1) + 🚀 surrogate pair (2) + " (1) + ; (1) + space (1) = 6 → col 7.
+        assert_eq!(
+            ts_node.start_col, 7,
+            "UTF-16 col of `foo` should be 7 (emoji as string literal)"
+        );
+
+        // Also verify with a CJK prefix: `"日"; foo(bar);`
+        // 日 = 3 UTF-8 bytes, 1 UTF-16 unit.
+        // Bytes before foo: " (1) + 日 (3) + " (1) + ; (1) + space (1) = 7 bytes.
+        // UTF-16: " (1) + 日 (1) + " (1) + ; (1) + space (1) = 5 units → col 6.
+        let source_cjk = "\"\u{65E5}\"; foo(bar);";
+        let tree_cjk = parser.parse(source_cjk, None).unwrap();
+        let call_cjk = tree_cjk.root_node().child(1).unwrap().child(0).unwrap();
+        let fn_cjk = call_cjk.child_by_field_name("function").unwrap();
+        assert_eq!(
+            fn_cjk.start_position().column,
+            7,
+            "byte col of `foo` after 日 is 7"
+        );
+        let idx_cjk = LineColumnIndex::new(source_cjk);
+        let ts_node_cjk = TreeSitterNode::<Instance>::from_ts_node_with_index(1, fn_cjk, &idx_cjk);
+        // UTF-16 col 6: " (1) + 日 (1) + " (1) + ; (1) + space (1) = 5 → col 6.
+        assert_eq!(
+            ts_node_cjk.start_col, 6,
+            "UTF-16 col of `foo` after 日 should be 6"
+        );
     }
 
     /// Tests that we use the [`tree_sitter::Node::kind_id`] instead of the [`tree_sitter::Node::grammar_id`], which
@@ -188,7 +258,8 @@ mod tests {
         // This should resolve to `assert_ne!("identifier", "property_identifier")`
         assert_ne!(ts_node.grammar_name(), ts_node.kind());
 
-        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node(0, ts_node);
+        let idx = LineColumnIndex::new(text);
+        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node_with_index(0, ts_node, &idx);
         assert_eq!(tree_sitter_node.node_type_id, ts_node.kind_id());
     }
 

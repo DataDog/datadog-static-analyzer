@@ -6,6 +6,18 @@ use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+/// A source-code position.
+///
+/// * `line` — 1-based line number.
+/// * `col` — 1-based **UTF-16 code-unit** column number for every position produced by the
+///   static-analysis kernel (tree-sitter path).  On ASCII-only lines, one UTF-16 code unit equals
+///   one byte, so the value is identical to what a byte-column would be.  For non-ASCII characters
+///   (CJK ideographs, emoji surrogate pairs, combining marks, etc.) the value reflects UTF-16
+///   semantics, which matches LSP / VS Code and the SARIF v2.1 default encoding.
+///
+///   The `get_position_in_string` helper (used by the secrets scanner) emits grapheme-based
+///   columns under a different contract; that path does **not** flow through `Position.col` in the
+///   kernel output.
 #[derive(Deserialize, Debug, Serialize, Clone, Copy, Builder, PartialEq, Eq, Hash)]
 pub struct Position {
     pub line: u32,

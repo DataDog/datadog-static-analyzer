@@ -5,6 +5,7 @@
 use crate::analysis::ddsa_lib::bridge::TsNodeBridge;
 use crate::analysis::ddsa_lib::common::{swallow_v8_error, v8_uint};
 use crate::analysis::ddsa_lib::test_utils::TsTree;
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use graphviz_rust::dot_structures;
 use graphviz_rust::dot_structures::{Attribute, Stmt};
@@ -621,11 +622,17 @@ impl From<LocatedEdge<'_>> for dot_structures::Edge {
 
 impl<'a> LocatedNode<'a> {
     /// Constructs a new `LocatedNode` from a tree-sitter node.
-    pub fn new_cst(node: tree_sitter::Node, text: &'a str) -> LocatedNode<'a> {
+    ///
+    /// `source` is the full source text that was parsed to produce `node`; it is used via
+    /// [`LineColumnIndex`] to emit a 1-based UTF-16 code-unit column consistent with
+    /// [`TreeSitterNode::from_ts_node_with_index`].
+    pub fn new_cst(node: tree_sitter::Node, text: &'a str, source: &str) -> LocatedNode<'a> {
+        let idx = LineColumnIndex::new(source);
+        let start = node.start_position();
         Self::Cst {
             text,
-            line: node.start_position().row + 1,
-            col: node.start_position().column + 1,
+            line: start.row + 1,
+            col: idx.byte_col_to_utf16_col(start.row, start.column) as usize,
             cst_kind: node.kind(),
         }
     }
@@ -1194,5 +1201,63 @@ strict digraph TestPhi {
 ";
         let expected = graphviz_rust::parse(expected).unwrap();
         assert_eq!(collection.to_digraph(), expected);
+    }
+
+    /// **Regression-prevention test**: `LocatedNode::new_cst` emits a 1-based UTF-16 column that
+    /// differs from the raw `tree_sitter::Point.column + 1` value for multibyte input.
+    ///
+    /// If a future change reintroduces a raw `tree_sitter::Point.column + 1` read in
+    /// `LocatedNode::new_cst`, this test will fail on the multibyte assertion.
+    #[test]
+    fn located_node_multibyte_col_is_utf16() {
+        use crate::analysis::ddsa_lib::js::flow::graph::LocatedNode;
+        use crate::analysis::ddsa_lib::test_utils::TsTree;
+        use crate::model::common::Language;
+        use common::utils::position_utils::LineColumnIndex;
+
+        // Source: "🚀var x = 1;"
+        // 🚀 = 4 UTF-8 bytes, 2 UTF-16 code units.
+        // `x` identifier starts at byte 8 (4 for 🚀, 4 for "var ").
+        // UTF-16 prefix: 🚀(2) + v(1) + a(1) + r(1) + ' '(1) = 6 units → col 7.
+        // Raw byte col of `x` = 8 → raw byte col + 1 = 9.
+        // (These differ because 🚀 = 4 bytes but 2 UTF-16 units.)
+        let source = "\u{1F680}var x = 1;";
+        let tree = TsTree::new(source, Language::JavaScript);
+
+        // Find the `x` identifier node.
+        let x_node = tree.find_named_nodes(Some("x"), Some("identifier"))[0];
+        let raw_byte_col_plus_one = x_node.start_position().column + 1;
+
+        // LocatedNode::new_cst must produce a UTF-16 col ≠ raw byte col + 1.
+        let located = LocatedNode::new_cst(x_node, tree.text(x_node), source);
+        let located_col = match located {
+            LocatedNode::Cst { col, .. } => col,
+            _ => panic!("expected Cst variant"),
+        };
+
+        // UTF-16 col should be smaller than raw byte col on multibyte input.
+        assert_ne!(
+            located_col, raw_byte_col_plus_one,
+            "LocatedNode col should be UTF-16, not raw byte col + 1 (raw={raw_byte_col_plus_one})"
+        );
+        // Sanity check: for this specific source, UTF-16 col must be 7.
+        // prefix "🚀var " = 2+1+1+1+1 = 6 UTF-16 units → col 7
+        assert_eq!(located_col, 7, "UTF-16 col of `x` after 🚀 should be 7");
+
+        // Additionally, verify that for an ASCII source the values agree (regression guard).
+        let ascii_source = "var x = 1;";
+        let ascii_tree = TsTree::new(ascii_source, Language::JavaScript);
+        let ascii_x = ascii_tree.find_named_nodes(Some("x"), Some("identifier"))[0];
+        let ascii_raw = ascii_x.start_position().column + 1;
+        let ascii_located = LocatedNode::new_cst(ascii_x, ascii_tree.text(ascii_x), ascii_source);
+        let ascii_col = match ascii_located {
+            LocatedNode::Cst { col, .. } => col,
+            _ => panic!("expected Cst variant"),
+        };
+        assert_eq!(
+            ascii_col, ascii_raw,
+            "ASCII: UTF-16 col should equal raw byte col + 1"
+        );
+        let _ = LineColumnIndex::new(ascii_source); // ensure import is used
     }
 }

@@ -7,6 +7,7 @@ use crate::analysis::ddsa_lib::js::TreeSitterNode;
 use crate::analysis::ddsa_lib::v8_ds::MirroredIndexMap;
 use crate::analysis::ddsa_lib::{js, RawTSNode};
 use crate::analysis::tree_sitter::{TSCaptureContent, TSQueryCapture};
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 
@@ -39,7 +40,16 @@ impl TsNodeBridge {
     /// Inserts a tree-sitter node into the bridge, returning the `NodeId` it was assigned.
     ///
     /// If the node already existed in the bridge, the existing `NodeId` will be returned.
-    pub fn insert(&mut self, scope: &mut HandleScope, node: tree_sitter::Node) -> NodeId {
+    ///
+    /// `idx` must be built from the same source string that produced `node`; it is forwarded to
+    /// [`TreeSitterNode::from_ts_node_with_index`] so that `col` values are 1-based UTF-16
+    /// code units.
+    pub fn insert(
+        &mut self,
+        scope: &mut HandleScope,
+        node: tree_sitter::Node,
+        idx: &LineColumnIndex<'_>,
+    ) -> NodeId {
         let raw_ts_node = RawTSNode::new(node);
         if let Some((_, _, node_id)) = self.mirrored_im.get_full(&raw_ts_node) {
             *node_id
@@ -48,7 +58,7 @@ impl TsNodeBridge {
             // to the map's current length. Because we use this as the `NodeId`, we can pre-assign
             // this, knowing this invariant (index == NodeId) will hold.
             let node_id = self.mirrored_im.len() as NodeId;
-            let v8_node = self.build_v8_node(scope, node, node_id);
+            let v8_node = self.build_v8_node(scope, node, node_id, idx);
             self.mirrored_im
                 .insert_with(scope, raw_ts_node, node_id, |scope, _key, value| {
                     // In Rust, we map from `tree_sitter::Node` to `NodeId`.
@@ -76,14 +86,15 @@ impl TsNodeBridge {
             .map(|(raw_node, _)| raw_node)
     }
 
-    /// Serializes a [`tree_sitter::Node`] to v8.
+    /// Serializes a [`tree_sitter::Node`] to v8 using UTF-16 column values from `idx`.
     fn build_v8_node<'s>(
         &self,
         scope: &mut HandleScope<'s>,
         node: tree_sitter::Node,
         id: NodeId,
+        idx: &LineColumnIndex<'_>,
     ) -> v8::Local<'s, v8::Object> {
-        let ts_node = TreeSitterNode::<Instance>::from_ts_node(id, node);
+        let ts_node = TreeSitterNode::<Instance>::from_ts_node_with_index(id, node, idx);
         self.js_class.new_instance(scope, ts_node)
     }
 
@@ -108,24 +119,28 @@ impl TsNodeBridge {
         self.mirrored_im.as_local(scope)
     }
 
-    /// Inserts the nodes from a [`TSQueryCapture<tree_sitter::Node>`] into a v8 scope, consuming the `QueryCapture`.
-    /// Returns a transformed `QueryCapture` containing the ids of the inserted nodes.
+    /// Inserts the nodes from a [`TSQueryCapture<tree_sitter::Node>`] into a v8 scope, consuming
+    /// the `QueryCapture`. Returns a transformed `QueryCapture` containing the ids of the inserted
+    /// nodes.
+    ///
+    /// `idx` is forwarded to [`insert`](Self::insert) for UTF-16 column conversion.
     pub fn insert_capture(
         &mut self,
         scope: &mut HandleScope,
         capture: TSQueryCapture<tree_sitter::Node>,
+        idx: &LineColumnIndex<'_>,
     ) -> TSQueryCapture<NodeId> {
         TSQueryCapture::<NodeId> {
             name: capture.name,
             contents: match capture.contents {
                 TSCaptureContent::Single(node) => {
-                    let nid = self.insert(scope, node);
+                    let nid = self.insert(scope, node, idx);
                     TSCaptureContent::Single(nid)
                 }
                 TSCaptureContent::Multi(nodes) => {
                     let nids = nodes
                         .into_iter()
-                        .map(|node| self.insert(scope, node))
+                        .map(|node| self.insert(scope, node, idx))
                         .collect::<Vec<_>>();
                     TSCaptureContent::Multi(nids)
                 }
@@ -158,6 +173,7 @@ mod tests {
     };
     use crate::analysis::ddsa_lib::RawTSNode;
     use crate::model::common::Language;
+    use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
     use deno_core::v8::HandleScope;
     use std::cell::RefCell;
@@ -205,22 +221,24 @@ mod tests {
         let scope = &mut runtime.handle_scope();
         let mut bridge = bridge.borrow_mut();
 
-        let tree = TsTree::new(r#"const val = foo(bar, baz);"#, Language::JavaScript);
+        let source = r#"const val = foo(bar, baz);"#;
+        let tree = TsTree::new(source, Language::JavaScript);
+        let idx = LineColumnIndex::new(source);
         let foo = tree.find_named_nodes(Some("foo"), None)[0];
         let bar = tree.find_named_nodes(Some("bar"), None)[0];
         let baz = tree.find_named_nodes(Some("baz"), None)[0];
 
         assert!(bridge.v8_get(scope, 0).is_none());
-        assert_eq!(bridge.insert(scope, foo), 0);
+        assert_eq!(bridge.insert(scope, foo, &idx), 0);
         let v8_tsn = bridge.v8_get(scope, 0).unwrap();
         assert!(ts_node_eq(scope, v8_tsn, foo));
         assert!(bridge.v8_get(scope, 1).is_none());
-        assert_eq!(bridge.insert(scope, bar), 1);
-        assert_eq!(bridge.insert(scope, baz), 2);
+        assert_eq!(bridge.insert(scope, bar, &idx), 1);
+        assert_eq!(bridge.insert(scope, baz, &idx), 2);
 
         bridge.clear(scope);
         assert!(bridge.is_empty());
-        assert_eq!(bridge.insert(scope, baz), 0);
+        assert_eq!(bridge.insert(scope, baz, &idx), 0);
         let v8_tsn = bridge.v8_get(scope, 0).unwrap();
         assert!(ts_node_eq(scope, v8_tsn, baz));
     }
@@ -232,13 +250,15 @@ mod tests {
         let scope = &mut runtime.handle_scope();
         let mut bridge = bridge.borrow_mut();
 
-        let tree = TsTree::new(r#"const val = foo(bar, baz);"#, Language::JavaScript);
+        let source = r#"const val = foo(bar, baz);"#;
+        let tree = TsTree::new(source, Language::JavaScript);
+        let idx = LineColumnIndex::new(source);
         let foo = tree.find_named_nodes(Some("foo"), None)[0];
         let bar = tree.find_named_nodes(Some("bar"), None)[0];
         let baz = tree.find_named_nodes(Some("baz"), None)[0];
 
         for node in [foo, bar, baz] {
-            bridge.insert(scope, node);
+            bridge.insert(scope, node, &idx);
         }
 
         let bar_raw = RawTSNode::new(bar);
@@ -252,14 +272,48 @@ mod tests {
         let scope = &mut runtime.handle_scope();
         let mut bridge = bridge.borrow_mut();
 
-        let tree = TsTree::new(r#"const val = foo(bar, baz);"#, Language::JavaScript);
+        let source = r#"const val = foo(bar, baz);"#;
+        let tree = TsTree::new(source, Language::JavaScript);
+        let idx = LineColumnIndex::new(source);
         let foo = tree.find_named_nodes(Some("foo"), None)[0];
 
-        assert_eq!(bridge.insert(scope, foo), 0);
+        assert_eq!(bridge.insert(scope, foo, &idx), 0);
         assert!(bridge.v8_get(scope, 0).is_some());
         assert!(bridge.v8_get(scope, 1).is_none());
-        assert_eq!(bridge.insert(scope, foo), 0);
+        assert_eq!(bridge.insert(scope, foo, &idx), 0);
         assert!(bridge.v8_get(scope, 1).is_none());
+    }
+
+    /// Inserting a node from a multibyte source produces UTF-16 columns in the v8 object.
+    ///
+    /// Source: `"\u{1F680}"; abc = 1` — 🚀 is 4 UTF-8 bytes / 2 UTF-16 code units inside a string.
+    /// `abc` starts at byte 8 (after `"🚀"; `), and its UTF-16 col must account for the emoji.
+    ///
+    /// Byte layout: `"` `🚀`(4 bytes) `"` `;` ` ` = 8 bytes → `abc` at byte 8.
+    /// UTF-16 prefix: `"` + 🚀(2 units) + `"` + `;` + ` ` = 6 units → col 7.
+    #[test]
+    fn ts_node_bridge_multibyte_utf16_col() {
+        let (mut runtime, bridge) = setup_bridge();
+        let scope = &mut runtime.handle_scope();
+        let mut bridge = bridge.borrow_mut();
+
+        // Parse `"\u{1F680}"; abc = 1` as JavaScript.
+        let source = "\"\u{1F680}\"; abc = 1";
+        let tree = TsTree::new(source, Language::JavaScript);
+        let idx = LineColumnIndex::new(source);
+        let abc = tree.find_named_nodes(Some("abc"), Some("identifier"))[0];
+        // "🚀" (6 bytes: quote+4+quote) + "; " (2 bytes) = 8 bytes before `abc`.
+        assert_eq!(abc.start_position().column, 8, "byte col of `abc` is 8");
+
+        bridge.insert(scope, abc, &idx);
+        let v8_obj = bridge.v8_get(scope, 0).unwrap();
+
+        // Read `_startCol` from the v8 object.
+        let start_col = get_field::<v8::Integer>(v8_obj, "_startCol", scope, "integer")
+            .unwrap()
+            .value() as u32;
+        // UTF-16 units before abc: `"` (1) + 🚀 (2 surrogate units) + `"` (1) + `;` (1) + ` ` (1) = 6 → col 7.
+        assert_eq!(start_col, 7, "UTF-16 col of `abc` after 🚀 should be 7");
     }
 
     /// The text that the node spans can be retrieved.
@@ -271,6 +325,7 @@ const abc = 123;
 const def = 456;
 ";
         let tree = TsTree::new(file_contents, Language::JavaScript);
+        let idx = LineColumnIndex::new(file_contents);
         let file_contents = Arc::<str>::from(file_contents);
         let file_name = Arc::<str>::from("file_name.js");
 
@@ -284,8 +339,8 @@ const def = 456;
             .set_root_context(scope, &tree.tree(), &file_contents, &file_name);
         let node_0 = tree.find_named_nodes(Some("abc"), Some("identifier"))[0];
         let node_1 = tree.find_named_nodes(Some("456"), Some("number"))[0];
-        ts_node_bridge.borrow_mut().insert(scope, node_0);
-        ts_node_bridge.borrow_mut().insert(scope, node_1);
+        ts_node_bridge.borrow_mut().insert(scope, node_0, &idx);
+        ts_node_bridge.borrow_mut().insert(scope, node_1, &idx);
         let expected = [(0, "abc"), (1, "456")]
             .map(|(nid, text)| (format!("TS_NODES.get({}).text;", nid), text));
         for (code, text) in &expected {
@@ -311,6 +366,7 @@ const def = 456;
         let (mut runtime, ts_node_bridge) = setup_bridge();
         let file_contents = "const abc = 123;";
         let tree = TsTree::new(file_contents, Language::JavaScript);
+        let idx = LineColumnIndex::new(file_contents);
         let file_contents = Arc::<str>::from(file_contents);
         let file_name = Arc::<str>::from("file_name.js");
 
@@ -323,7 +379,7 @@ const def = 456;
             .borrow_mut()
             .set_root_context(scope, &tree.tree(), &file_contents, &file_name);
         let node_0 = tree.find_named_nodes(Some("abc"), Some("identifier"))[0];
-        ts_node_bridge.borrow_mut().insert(scope, node_0);
+        ts_node_bridge.borrow_mut().insert(scope, node_0, &idx);
 
         let code = "\
 const node = TS_NODES.get(0);

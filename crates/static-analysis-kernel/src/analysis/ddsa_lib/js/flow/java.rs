@@ -101,6 +101,7 @@ mod tests {
     use crate::model::common::Language;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use common::model::position;
+    use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
     use std::sync::Arc;
 
@@ -118,13 +119,14 @@ mod tests {
     pub(crate) fn setup(source_text: &str) -> (JsRuntime, TsTree) {
         let mut rt = cfg_test_v8().new_runtime();
         let tree = TsTree::new(source_text, Language::Java);
-        let source_text = Arc::<str>::from(source_text);
+        let idx = LineColumnIndex::new(source_text);
+        let source_arc = Arc::<str>::from(source_text);
         let filename = Arc::<str>::from("test_doesnt_use_filename");
-        rt.bridge_context().borrow_mut().set_root_context(&mut rt.v8_handle_scope(), &tree.tree(), &source_text, &filename);
+        rt.bridge_context().borrow_mut().set_root_context(&mut rt.v8_handle_scope(), &tree.tree(), &source_arc, &filename);
         let tsn_bridge = rt.bridge_ts_node();
         let mut tsn_bridge = tsn_bridge.borrow_mut();
         for node in tree.find_named_nodes(None, None) {
-            tsn_bridge.insert(&mut rt.v8_handle_scope(), node);
+            tsn_bridge.insert(&mut rt.v8_handle_scope(), node, &idx);
         }
 
         (rt, tree)
@@ -413,11 +415,18 @@ serialized;
     #[test]
     fn violation_taint_flow_regions() {
         let v_converter = ViolationConverter::new();
-        fn position_eq(region: js::CodeRegion<Instance>, node: tree_sitter::Node) -> bool {
-            region.start_line == (node.start_position().row as u32) + 1
-                && region.start_col == (node.start_position().column as u32) + 1
-                && region.end_line == (node.end_position().row as u32) + 1
-                && region.end_col == (node.end_position().column as u32) + 1
+        fn position_eq(
+            region: js::CodeRegion<Instance>,
+            node: tree_sitter::Node,
+            source: &str,
+        ) -> bool {
+            let idx = LineColumnIndex::new(source);
+            let start = node.start_position();
+            let end = node.end_position();
+            region.start_line == (start.row as u32) + 1
+                && region.start_col == idx.byte_col_to_utf16_col(start.row, start.column)
+                && region.end_line == (end.row as u32) + 1
+                && region.end_col == idx.byte_col_to_utf16_col(end.row, end.column)
         }
 
         // language=java
@@ -465,7 +474,7 @@ v;
             )
             .unwrap();
 
-        assert!(position_eq(violation.base_region, expected_flow[0]));
+        assert!(position_eq(violation.base_region, expected_flow[0], code));
 
         let taint_flow_regions = violation.taint_flow_regions.unwrap();
         assert_eq!(taint_flow_regions.len(), expected_flow.len());
@@ -473,7 +482,7 @@ v;
             .iter()
             .zip(expected_flow)
             .for_each(|(&region, node)| {
-                assert!(position_eq(region, node));
+                assert!(position_eq(region, node, code));
             });
     }
 

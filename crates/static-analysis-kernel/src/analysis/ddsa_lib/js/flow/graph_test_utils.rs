@@ -81,7 +81,7 @@ pub fn cst_dot_digraph(
     let tree = ts_tree.tree();
     let candidates = TsTree::preorder_nodes(root_node.unwrap_or(tree.root_node()))
         .iter()
-        .map(|&node| LocatedNode::new_cst(node, ts_tree.text(node)))
+        .map(|&node| LocatedNode::new_cst(node, ts_tree.text(node), ts_tree.source()))
         .collect::<Vec<_>>();
 
     // The `String` in the tuple is the original ID of the vertex (as specified in the DOT).

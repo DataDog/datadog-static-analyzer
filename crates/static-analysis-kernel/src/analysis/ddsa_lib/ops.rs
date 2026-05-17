@@ -5,6 +5,7 @@
 use crate::analysis::ddsa_lib;
 use crate::analysis::ddsa_lib::common::{v8_uint, NodeId};
 use crate::analysis::ddsa_lib::{bridge, runtime, RawTSNode};
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::{op2, v8, OpState};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -104,6 +105,12 @@ pub fn op_ts_node_named_children<'s>(
         None
     } else {
         let array = v8::Array::new(scope, count as i32);
+        // ctx_bridge is only needed in this branch. Build the index while ctx_borrow is alive;
+        // ts_node_bridge and ctx_bridge are separate RefCells so the concurrent borrows are valid.
+        let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
+        let ctx_borrow = ctx_bridge.borrow();
+        let source = ctx_borrow.ddsa_root_context().get_text().unwrap_or("");
+        let idx = LineColumnIndex::new(source);
         let mut bridge_ref = ts_node_bridge.borrow_mut();
 
         let mut cursor = ts_node.walk();
@@ -119,7 +126,7 @@ pub fn op_ts_node_named_children<'s>(
             }
             let child_node = cursor.node();
 
-            let nid = bridge_ref.insert(scope, child_node);
+            let nid = bridge_ref.insert(scope, child_node, &idx);
             let nid = v8_uint(scope, nid);
             let nid_index = i * 2;
             array.set_index(scope, nid_index as u32, nid.into());
@@ -152,14 +159,16 @@ pub fn op_ts_node_parent(
     let safe_raw_ts_node = OpSafeRawTSNode::from_tsn_bridge(&ts_node_bridge.borrow(), node_id)?;
     let ts_node = safe_raw_ts_node.to_node();
 
-    let ctx_bridge = ctx_bridge.borrow_mut();
-    let root_ctx = ctx_bridge.ddsa_root_context();
+    let ctx_borrow = ctx_bridge.borrow();
+    let root_ctx = ctx_borrow.ddsa_root_context();
     let safe_raw_parent =
         OpSafeRawTSNode::from_root_context(root_ctx, |ctx| ctx.get_ts_node_parent(ts_node))?;
     let parent_ts_node = safe_raw_parent.to_node();
 
+    let source = root_ctx.get_text().unwrap_or("");
+    let idx = LineColumnIndex::new(source);
     let mut bridge_ref = ts_node_bridge.borrow_mut();
-    let nid = bridge_ref.insert(scope, parent_ts_node);
+    let nid = bridge_ref.insert(scope, parent_ts_node, &idx);
     Some(nid)
 }
 
@@ -269,7 +278,7 @@ pub fn op_digraph_adjacency_list_to_dot(
                 let node_text = ts_node
                     .utf8_text(text.as_bytes())
                     .expect("bytes should be utf8 sequence");
-                Some(LocatedNode::new_cst(ts_node, node_text))
+                Some(LocatedNode::new_cst(ts_node, node_text, text))
             }
             VertexKind::Phi => Some(LocatedNode::new_phi(vid.internal_id())),
             VertexKind::Invalid => None,
