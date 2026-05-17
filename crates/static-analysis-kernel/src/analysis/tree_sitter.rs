@@ -763,16 +763,11 @@ SELECT * FROM table WHERE column = 'value';
     ///
     /// Source: `x = "🚀"; num = 5`
     /// UTF-8 byte layout (0-indexed, line 0):
-    ///   x(0) ' '(1) =(2) ' '(3) "(4) 🚀(5..8) "(9) ;(10) ' '(11) n(12) u(13) m(14) ' '(15)
-    /// UTF-16 layout:
-    ///   x(1) ' '(2) =(3) ' '(4) "(5) 🚀(6,7) "(8) ;(9) ' '(10) n(11) ...
-    ///   → `num` starts at UTF-16 col 11 (0-based byte 11, but 🚀 takes 2 UTF-16 units → 11-2+1 = 10?)
+    ///   x(0) ' '(1) =(2) ' '(3) "(4) 🚀(5-8) "(9) ;(10) ' '(11) n(12) u(13) m(14) ...
     ///
-    /// Let's compute carefully:
-    ///   bytes 0-10: `x = "🚀";` (11 bytes: x, ' ', =, ' ', ", 🚀×4, ", ;)
-    ///   byte 11 (space), byte 12..14 = 'n','u','m'
-    ///   UTF-16 prefix to byte 12: x(1),' '(1),=(1),' '(1),"(1),🚀(2),"(1),;(1),' '(1) = 10 units
-    ///   → num starts at UTF-16 col 11 (10 units + 1-based)
+    /// `num` starts at byte 12.  UTF-16 prefix for bytes 0..12:
+    ///   x(1) + ' '(1) + =(1) + ' '(1) + "(1) + 🚀(2) + "(1) + ;(1) + ' '(1) = 10 UTF-16 units
+    ///   → `num` is at 1-based UTF-16 col 11.
     #[test]
     fn test_map_node_multibyte_emoji() {
         let source_code = "x = \"\u{1F680}\"; num = 5";
