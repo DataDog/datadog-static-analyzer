@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::RawTSNode;
+use common::utils::position_utils::LineColumnIndex;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,6 +18,11 @@ pub struct RootContext {
     tree: Option<Arc<tree_sitter::Tree>>,
     /// The source string that was parsed by tree-sitter to generate `tree`.
     tree_text: Option<Arc<str>>,
+    /// Pre-computed byte offset of the start of each line in `tree_text`.
+    ///
+    /// Built once in [`set_text`] and reused by [`line_column_index`] to avoid re-scanning the
+    /// source on every deno op call (e.g. `namedChildren`, `parent`).
+    line_starts: Vec<usize>,
     /// A filename associated with a rule execution.
     filename: Option<Arc<str>>,
 
@@ -45,8 +51,27 @@ impl RootContext {
 
     /// Assigns the provided text string to the context. If an existing text string was assigned, it
     /// will be returned as `Some(text)`.
+    ///
+    /// Also rebuilds the internal [`line_starts`](Self::line_column_index) cache so that subsequent
+    /// calls to [`line_column_index`](Self::line_column_index) are O(1).
     pub fn set_text(&mut self, text: Arc<str>) -> Option<Arc<str>> {
+        self.line_starts = LineColumnIndex::compute_line_starts(&text);
         Option::replace(&mut self.tree_text, text)
+    }
+
+    /// Returns a [`LineColumnIndex`] built from the cached line-start offsets.
+    ///
+    /// Construction is O(1) — the line-start offsets are pre-computed in [`set_text`] and stored
+    /// as a `Vec<usize>`. This avoids the O(source_len) scan that `LineColumnIndex::new` would
+    /// perform on every deno op call.
+    ///
+    /// Returns `None` when no source text has been assigned yet.
+    pub fn line_column_index(&self) -> Option<LineColumnIndex<'_>> {
+        let source = self.tree_text.as_deref()?;
+        Some(LineColumnIndex::from_parts(
+            source,
+            self.line_starts.clone(),
+        ))
     }
 
     /// Returns a reference to the underlying [`tree_sitter::Tree`], if it exists.

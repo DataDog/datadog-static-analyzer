@@ -109,8 +109,12 @@ pub fn op_ts_node_named_children<'s>(
         // ts_node_bridge and ctx_bridge are separate RefCells so the concurrent borrows are valid.
         let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
         let ctx_borrow = ctx_bridge.borrow();
-        let source = ctx_borrow.ddsa_root_context().get_text().unwrap_or("");
-        let idx = LineColumnIndex::new(source);
+        // Use the pre-computed line_starts cached in RootContext (O(1)) rather than
+        // rescanning the source on every namedChildren call.
+        let idx = ctx_borrow
+            .ddsa_root_context()
+            .line_column_index()
+            .unwrap_or_else(|| LineColumnIndex::new(""));
         let mut bridge_ref = ts_node_bridge.borrow_mut();
 
         let mut cursor = ts_node.walk();
@@ -165,8 +169,11 @@ pub fn op_ts_node_parent(
         OpSafeRawTSNode::from_root_context(root_ctx, |ctx| ctx.get_ts_node_parent(ts_node))?;
     let parent_ts_node = safe_raw_parent.to_node();
 
-    let source = root_ctx.get_text().unwrap_or("");
-    let idx = LineColumnIndex::new(source);
+    // Use the pre-computed line_starts cached in RootContext (O(1)) rather than
+    // rescanning the source on every parent call.
+    let idx = root_ctx
+        .line_column_index()
+        .unwrap_or_else(|| LineColumnIndex::new(""));
     let mut bridge_ref = ts_node_bridge.borrow_mut();
     let nid = bridge_ref.insert(scope, parent_ts_node, &idx);
     Some(nid)

@@ -17,21 +17,40 @@ pub struct LineColumnIndex<'a> {
 impl<'a> LineColumnIndex<'a> {
     /// Builds the index by scanning `source` for newline characters.
     pub fn new(source: &'a str) -> Self {
-        let mut line_starts = vec![0usize];
-        for (i, b) in source.bytes().enumerate() {
-            // Intentionally split on `\n` only — this mirrors tree-sitter's line model exactly.
-            // Tree-sitter does not treat bare `\r` (old Mac OS 9) as a line terminator; for
-            // Windows `\r\n` files the `\r` is part of the column on the same line, matching
-            // tree-sitter's `Point.column` values. Using a broader splitter (e.g. `str::lines`)
-            // would diverge from tree-sitter and produce wrong UTF-16 columns.
-            if b == b'\n' {
-                line_starts.push(i + 1);
-            }
-        }
+        let line_starts = Self::compute_line_starts(source);
         Self {
             source,
             line_starts,
         }
+    }
+
+    /// Creates a [`LineColumnIndex`] from a **pre-computed** `line_starts` vector.
+    ///
+    /// Use this when `line_starts` has already been built by [`compute_line_starts`] and cached
+    /// (e.g. in `RootContext`) to avoid re-scanning the source on every call.
+    /// `line_starts` must have been computed from the same `source` string.
+    pub fn from_parts(source: &'a str, line_starts: Vec<usize>) -> Self {
+        Self {
+            source,
+            line_starts,
+        }
+    }
+
+    /// Scans `source` and returns the byte offset of the start of each line.
+    ///
+    /// Intentionally splits on `\n` only — this mirrors tree-sitter's line model exactly.
+    /// Tree-sitter does not treat bare `\r` (old Mac OS 9) as a line terminator; for
+    /// Windows `\r\n` files the `\r` is part of the column on the same line, matching
+    /// tree-sitter's `Point.column` values. Using a broader splitter (e.g. `str::lines`)
+    /// would diverge from tree-sitter and produce wrong UTF-16 columns.
+    pub fn compute_line_starts(source: &str) -> Vec<usize> {
+        let mut line_starts = vec![0usize];
+        for (i, b) in source.bytes().enumerate() {
+            if b == b'\n' {
+                line_starts.push(i + 1);
+            }
+        }
+        line_starts
     }
 
     /// Converts a tree-sitter 0-based `(row, byte_col)` point to a 1-based UTF-16 code-unit
