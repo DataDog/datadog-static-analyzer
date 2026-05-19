@@ -344,11 +344,11 @@ pub fn get_query_nodes(
 // `idx` is a pre-built [`LineColumnIndex`] for the source that produced `node`; it is used to
 // convert tree-sitter's 0-based UTF-8 byte columns into 1-based UTF-16 code-unit columns so
 // that `Position.col` is consistent with LSP / VS Code / SARIF v2.1 semantics.
-pub fn map_node(node: tree_sitter::Node, idx: &LineColumnIndex<'_>) -> Option<TreeSitterNode> {
+pub fn map_node(node: tree_sitter::Node, idx: &LineColumnIndex) -> Option<TreeSitterNode> {
     fn map_node_internal(
         cursor: &mut tree_sitter::TreeCursor,
         only_named_node: bool,
-        idx: &LineColumnIndex<'_>,
+        idx: &LineColumnIndex,
     ) -> Option<TreeSitterNode> {
         // we do not map space, parenthesis and other non-named nodes if there
         // when `only_named_node` is true (which is `true` for children only).

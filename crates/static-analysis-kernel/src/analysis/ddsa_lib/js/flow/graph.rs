@@ -629,7 +629,7 @@ impl<'a> LocatedNode<'a> {
     pub fn new_cst(
         node: tree_sitter::Node,
         text: &'a str,
-        idx: &LineColumnIndex<'_>,
+        idx: &LineColumnIndex,
     ) -> LocatedNode<'a> {
         let start = node.start_position();
         Self::Cst {

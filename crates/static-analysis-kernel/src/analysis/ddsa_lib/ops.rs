@@ -5,7 +5,6 @@
 use crate::analysis::ddsa_lib;
 use crate::analysis::ddsa_lib::common::{v8_uint, NodeId};
 use crate::analysis::ddsa_lib::{bridge, runtime, RawTSNode};
-use common::utils::position_utils::LineColumnIndex;
 use deno_core::{op2, v8, OpState};
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -109,7 +108,7 @@ pub fn op_ts_node_named_children<'s>(
         // ts_node_bridge and ctx_bridge are separate RefCells so the concurrent borrows are valid.
         let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
         let ctx_borrow = ctx_bridge.borrow();
-        // Use the pre-computed line_starts cached in RootContext (O(1)) rather than
+        // Use the pre-computed index cached in RootContext (O(1)) rather than
         // rescanning the source on every namedChildren call.
         let idx = ctx_borrow
             .ddsa_root_context()
@@ -130,7 +129,7 @@ pub fn op_ts_node_named_children<'s>(
             }
             let child_node = cursor.node();
 
-            let nid = bridge_ref.insert(scope, child_node, &idx);
+            let nid = bridge_ref.insert(scope, child_node, idx);
             let nid = v8_uint(scope, nid);
             let nid_index = i * 2;
             array.set_index(scope, nid_index as u32, nid.into());
@@ -169,13 +168,13 @@ pub fn op_ts_node_parent(
         OpSafeRawTSNode::from_root_context(root_ctx, |ctx| ctx.get_ts_node_parent(ts_node))?;
     let parent_ts_node = safe_raw_parent.to_node();
 
-    // Use the pre-computed line_starts cached in RootContext (O(1)) rather than
+    // Use the pre-computed index cached in RootContext (O(1)) rather than
     // rescanning the source on every parent call.
     let idx = root_ctx
         .line_column_index()
         .expect("tree text must be set before ops run");
     let mut bridge_ref = ts_node_bridge.borrow_mut();
-    let nid = bridge_ref.insert(scope, parent_ts_node, &idx);
+    let nid = bridge_ref.insert(scope, parent_ts_node, idx);
     Some(nid)
 }
 
@@ -268,10 +267,11 @@ pub fn op_digraph_adjacency_list_to_dot(
     let text = root_ctx
         .get_text()
         .expect("tree text should always be `Some` during rule execution");
-    // Build the index once before the per-vertex loop; use the cached line_starts when available.
+    // Use the pre-computed index cached in RootContext (O(1)) rather than rebuilding per-vertex.
+    // `set_text` always builds the index alongside `tree_text`, so this is always `Some` here.
     let lc_idx = root_ctx
         .line_column_index()
-        .unwrap_or_else(|| LineColumnIndex::new(text));
+        .expect("tree text must be set before ops run");
 
     // Transformation:
     // If `VertexKind::CST`: constructs a dot node from metadata from the `TsNodeBridge` and `RootContext`.
@@ -289,7 +289,7 @@ pub fn op_digraph_adjacency_list_to_dot(
                 let node_text = ts_node
                     .utf8_text(text.as_bytes())
                     .expect("bytes should be utf8 sequence");
-                Some(LocatedNode::new_cst(ts_node, node_text, &lc_idx))
+                Some(LocatedNode::new_cst(ts_node, node_text, lc_idx))
             }
             VertexKind::Phi => Some(LocatedNode::new_phi(vid.internal_id())),
             VertexKind::Invalid => None,

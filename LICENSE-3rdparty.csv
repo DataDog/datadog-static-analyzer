@@ -12,6 +12,7 @@ graphviz-rust,https://github.com/besok/graphviz-rust,MIT,Copyright (c) 2013 Bori
 indexmap,https://github.com/indexmap-rs/indexmap,MIT and Apache-2.0,Copyright (c) 2016-2017 bluss
 indicatif,https://crates.io/crates/indicatif,MIT,Copyright (c) 2017 Armin Ronacher <armin.ronacher@active-4.com>
 itertools,https://github.com/rust-itertools/itertools,MIT,Copyright 2015 itertools Developers
+line-index,https://github.com/rust-lang/rust-analyzer,MIT OR Apache-2.0,Copyright (c) 2019 rust-analyzer developers
 num_cpus,https://github.com/seanmonstar/num_cpus,MIT, Copyright (c) 2015 Sean McArthur
 percent-encoding,https://github.com/servo/rust-url/,MIT, Copyright (c) 2013-2022 The rust-url developers
 prettytable-rs,https://github.com/phsym/prettytable-rs/,BSD-3-Clause,Copyright (c) 2022 Pierre-Henri Symoneaux

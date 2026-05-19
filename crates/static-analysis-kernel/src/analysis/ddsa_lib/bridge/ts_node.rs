@@ -48,7 +48,7 @@ impl TsNodeBridge {
         &mut self,
         scope: &mut HandleScope,
         node: tree_sitter::Node,
-        idx: &LineColumnIndex<'_>,
+        idx: &LineColumnIndex,
     ) -> NodeId {
         let raw_ts_node = RawTSNode::new(node);
         if let Some((_, _, node_id)) = self.mirrored_im.get_full(&raw_ts_node) {
@@ -92,7 +92,7 @@ impl TsNodeBridge {
         scope: &mut HandleScope<'s>,
         node: tree_sitter::Node,
         id: NodeId,
-        idx: &LineColumnIndex<'_>,
+        idx: &LineColumnIndex,
     ) -> v8::Local<'s, v8::Object> {
         let ts_node = TreeSitterNode::<Instance>::from_ts_node_with_index(id, node, idx);
         self.js_class.new_instance(scope, ts_node)
@@ -128,7 +128,7 @@ impl TsNodeBridge {
         &mut self,
         scope: &mut HandleScope,
         capture: TSQueryCapture<tree_sitter::Node>,
-        idx: &LineColumnIndex<'_>,
+        idx: &LineColumnIndex,
     ) -> TSQueryCapture<NodeId> {
         TSQueryCapture::<NodeId> {
             name: capture.name,

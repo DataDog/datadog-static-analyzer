@@ -35,7 +35,7 @@ impl<T> TreeSitterNode<T> {
     pub fn from_ts_node_with_index(
         id: NodeId,
         node: tree_sitter::Node,
-        idx: &LineColumnIndex<'_>,
+        idx: &LineColumnIndex,
     ) -> Self {
         let tree_sitter::Point {
             row: start_row,

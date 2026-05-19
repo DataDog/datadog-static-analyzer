@@ -45,7 +45,7 @@ impl QueryMatchBridge {
         scope: &mut HandleScope,
         matches: impl Into<Vec<QueryMatch<tree_sitter::Node<'tree>>>>,
         node_bridge: &mut TsNodeBridge,
-        idx: &LineColumnIndex<'_>,
+        idx: &LineColumnIndex,
     ) {
         let matches = matches.into();
         // Pass each node in via the bridge (assigning it an id), and use this id to transform

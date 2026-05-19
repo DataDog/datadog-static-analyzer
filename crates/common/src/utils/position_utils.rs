@@ -1,87 +1,45 @@
 use crate::model::position::Position;
 use bstr::BStr;
 use bstr::ByteSlice;
+use line_index::{LineCol, LineIndex, WideEncoding};
 
 /// Precomputed per-line index for fast repeated UTF-8 byte-column → UTF-16 code-unit column
 /// conversion.
 ///
 /// Build once per source string with [`LineColumnIndex::new`], then call
-/// [`byte_col_to_utf16_col`] for every tree-sitter node on that source.
-pub struct LineColumnIndex<'a> {
-    source: &'a str,
-    /// Byte offset of the start of each line (0-indexed line number → byte offset of first byte
-    /// on that line).
-    line_starts: Vec<usize>,
-}
+/// [`byte_col_to_utf16_col`](LineColumnIndex::byte_col_to_utf16_col) for every tree-sitter node
+/// on that source. Backed by [`line_index::LineIndex`] from the rust-analyzer project.
+///
+/// ## Line model
+///
+/// [`line_index::LineIndex`] splits on `\n` only, which mirrors tree-sitter's line model exactly.
+/// Tree-sitter does not treat a bare `\r` (classic Mac OS 9) as a line terminator; for Windows
+/// `\r\n` files the `\r` is counted as part of the column on the same line, matching
+/// tree-sitter's `Point.column` values. Using a broader splitter (e.g. Unicode line endings)
+/// would diverge from tree-sitter and produce wrong UTF-16 columns.
+#[derive(Debug)]
+pub struct LineColumnIndex(LineIndex);
 
-impl<'a> LineColumnIndex<'a> {
-    /// Builds the index by scanning `source` for newline characters.
-    pub fn new(source: &'a str) -> Self {
-        let line_starts = Self::compute_line_starts(source);
-        Self {
-            source,
-            line_starts,
-        }
-    }
-
-    /// Creates a [`LineColumnIndex`] from a **pre-computed** `line_starts` vector.
-    ///
-    /// Use this when `line_starts` has already been built by [`compute_line_starts`] and cached
-    /// (e.g. in `RootContext`) to avoid re-scanning the source on every call.
-    /// `line_starts` must have been computed from the same `source` string.
-    pub fn from_parts(source: &'a str, line_starts: Vec<usize>) -> Self {
-        Self {
-            source,
-            line_starts,
-        }
-    }
-
-    /// Scans `source` and returns the byte offset of the start of each line.
-    ///
-    /// Intentionally splits on `\n` only — this mirrors tree-sitter's line model exactly.
-    /// Tree-sitter does not treat bare `\r` (old Mac OS 9) as a line terminator; for
-    /// Windows `\r\n` files the `\r` is part of the column on the same line, matching
-    /// tree-sitter's `Point.column` values. Using a broader splitter (e.g. `str::lines`)
-    /// would diverge from tree-sitter and produce wrong UTF-16 columns.
-    pub fn compute_line_starts(source: &str) -> Vec<usize> {
-        let mut line_starts = vec![0usize];
-        for (i, b) in source.bytes().enumerate() {
-            if b == b'\n' {
-                line_starts.push(i + 1);
-            }
-        }
-        line_starts
+impl LineColumnIndex {
+    /// Builds the index by scanning `source`.
+    pub fn new(source: &str) -> Self {
+        Self(LineIndex::new(source))
     }
 
     /// Converts a tree-sitter 0-based `(row, byte_col)` point to a 1-based UTF-16 code-unit
     /// column.
     ///
-    /// **ASCII fast path**: when the line prefix up to `byte_col` is pure ASCII (all bytes
-    /// < 128), each byte is one UTF-16 code unit, so the result is simply `byte_col + 1`.
-    /// This path costs one slice-level `is_ascii()` check and is taken for the vast majority of
-    /// real-world source lines.
+    /// Falls back to `byte_col + 1` (correct for ASCII-only content) when the coordinates fall
+    /// outside the indexed source, preserving pre-existing behaviour for out-of-range inputs.
     pub fn byte_col_to_utf16_col(&self, row: usize, byte_col: usize) -> u32 {
-        let line_start = self
-            .line_starts
-            .get(row)
-            .copied()
-            .unwrap_or(self.source.len());
-        // Slice from the line start to end-of-source (unbounded); the subsequent `prefix` slice
-        // clamps this to exactly `byte_col` bytes, so the trailing lines are never examined.
-        let source_from_line_start = &self.source.as_bytes()[line_start..];
-        // `byte_col` is the number of bytes from the line start to the position.
-        let prefix_len = byte_col.min(source_from_line_start.len());
-        let prefix = &source_from_line_start[..prefix_len];
-
-        // ASCII fast path: one byte == one UTF-16 code unit.
-        if prefix.is_ascii() {
-            return (byte_col + 1) as u32;
-        }
-
-        // Slow path: count UTF-16 code units emitted by each Unicode scalar.
-        let prefix_str = std::str::from_utf8(prefix).unwrap_or("");
-        let utf16_col: usize = prefix_str.chars().map(|c| c.len_utf16()).sum();
-        (utf16_col + 1) as u32
+        let lc = LineCol {
+            line: row as u32,
+            col: byte_col as u32,
+        };
+        self.0
+            .to_wide(WideEncoding::Utf16, lc)
+            .map(|w| w.col + 1)
+            .unwrap_or((byte_col as u32) + 1)
     }
 }
 
