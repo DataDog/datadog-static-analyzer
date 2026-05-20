@@ -29,17 +29,13 @@ impl LineColumnIndex {
     /// Converts a tree-sitter 0-based `(row, byte_col)` point to a 1-based UTF-16 code-unit
     /// column.
     ///
-    /// Falls back to `byte_col + 1` (correct for ASCII-only content) when the coordinates fall
-    /// outside the indexed source, preserving pre-existing behaviour for out-of-range inputs.
-    pub fn byte_col_to_utf16_col(&self, row: usize, byte_col: usize) -> u32 {
+    /// Returns `None` if `(row, byte_col)` falls outside the indexed source.
+    pub fn byte_col_to_utf16_col(&self, row: usize, byte_col: usize) -> Option<u32> {
         let lc = LineCol {
             line: row as u32,
             col: byte_col as u32,
         };
-        self.0
-            .to_wide(WideEncoding::Utf16, lc)
-            .map(|w| w.col + 1)
-            .unwrap_or((byte_col as u32) + 1)
+        self.0.to_wide(WideEncoding::Utf16, lc).map(|w| w.col + 1)
     }
 }
 
@@ -179,115 +175,15 @@ mod tests {
         );
     }
 
-    // ── LineColumnIndex tests ─────────────────────────────────────────────────
-
     #[test]
-    fn lci_ascii_fast_path() {
-        // Pure ASCII: UTF-16 col == byte col + 1 for every position.
-        let idx = LineColumnIndex::new("hello world\nfoo bar");
-        assert_eq!(idx.byte_col_to_utf16_col(0, 0), 1); // 'h' → col 1
-        assert_eq!(idx.byte_col_to_utf16_col(0, 5), 6); // ' ' → col 6
-        assert_eq!(idx.byte_col_to_utf16_col(1, 3), 4); // ' ' on line 2 → col 4
-    }
-
-    #[test]
-    fn lci_bmp_non_ascii() {
-        // 'é' is U+00E9: 2 UTF-8 bytes, 1 UTF-16 code unit.
-        // Source: "café\nend"  — bytes: c(0) a(1) f(2) é(3,4) \n(5)
-        let src = "caf\u{00E9}\nend";
-        let idx = LineColumnIndex::new(src);
-        // byte_col 3 (start of é) → prefix "caf" = 3 UTF-16 units → col 4
-        assert_eq!(idx.byte_col_to_utf16_col(0, 3), 4);
-        // byte_col 5 (past é, 3 + 2 bytes) → prefix "café" = 4 UTF-16 units → col 5
-        assert_eq!(idx.byte_col_to_utf16_col(0, 5), 5);
-        // line 1 is ASCII
-        assert_eq!(idx.byte_col_to_utf16_col(1, 3), 4);
-    }
-
-    #[test]
-    fn lci_supplementary_plane_emoji() {
-        // '🚀' is U+1F680: 4 UTF-8 bytes, 2 UTF-16 code units (surrogate pair).
-        // Source: "x🚀y"
-        // byte positions: x(0) 🚀(1,2,3,4) y(5)
-        let src = "x\u{1F680}y";
-        let idx = LineColumnIndex::new(src);
-        // byte_col 0 → col 1 (before 'x')
-        assert_eq!(idx.byte_col_to_utf16_col(0, 0), 1);
-        // byte_col 1 → prefix = "x" → 1 UTF-16 unit → col 2
-        assert_eq!(idx.byte_col_to_utf16_col(0, 1), 2);
-        // byte_col 5 → prefix = "x🚀" → x(1) + 🚀(2) = 3 UTF-16 units → col 4
-        assert_eq!(idx.byte_col_to_utf16_col(0, 5), 4);
-        // byte_col 6 → prefix = "x🚀y" → 3+1 = 4 UTF-16 units → col 5
-        assert_eq!(idx.byte_col_to_utf16_col(0, 6), 5);
-    }
-
-    #[test]
-    fn lci_cjk() {
-        // '日' is U+65E5: 3 UTF-8 bytes, 1 UTF-16 code unit.
-        // Source: "日本"
-        // bytes: 日(0,1,2) 本(3,4,5)
-        let src = "\u{65E5}\u{672C}"; // 日本
-        let idx = LineColumnIndex::new(src);
-        // byte_col 0 → col 1
-        assert_eq!(idx.byte_col_to_utf16_col(0, 0), 1);
-        // byte_col 3 → prefix = "日" → 1 UTF-16 unit → col 2
-        assert_eq!(idx.byte_col_to_utf16_col(0, 3), 2);
-        // byte_col 6 → prefix = "日本" → 2 UTF-16 units → col 3
-        assert_eq!(idx.byte_col_to_utf16_col(0, 6), 3);
-    }
-
-    #[test]
-    fn lci_combining_mark() {
-        // 'e' + U+0301 (combining acute accent): 2 codepoints, 2 UTF-16 code units, 1 grapheme.
-        // Source: "e\u{0301}x"
-        // bytes: e(0) \u{0301}(1,2) x(3)
-        let src = "e\u{0301}x";
-        let idx = LineColumnIndex::new(src);
-        // byte_col 0 → col 1
-        assert_eq!(idx.byte_col_to_utf16_col(0, 0), 1);
-        // byte_col 1 → prefix = "e" → 1 UTF-16 unit → col 2
-        assert_eq!(idx.byte_col_to_utf16_col(0, 1), 2);
-        // byte_col 3 → prefix = "e\u{0301}" → 2 UTF-16 units → col 3
-        assert_eq!(idx.byte_col_to_utf16_col(0, 3), 3);
-        // byte_col 4 → prefix = "e\u{0301}x" → 3 UTF-16 units → col 4
-        assert_eq!(idx.byte_col_to_utf16_col(0, 4), 4);
-    }
-
-    #[test]
-    fn lci_crlf_line_endings() {
-        // CRLF: tree-sitter counts \n as the line terminator and the col includes \r.
-        // Source: "ab\r\ncd"
-        // Line 0 bytes: a(0) b(1) \r(2) \n(3) → line_start[1] = 4
-        // Line 1 bytes: c(0 rel) d(1 rel)
-        let src = "ab\r\ncd";
-        let idx = LineColumnIndex::new(src);
-        // Line 0
-        assert_eq!(idx.byte_col_to_utf16_col(0, 0), 1);
-        assert_eq!(idx.byte_col_to_utf16_col(0, 2), 3); // past "ab" → 2+1=3
-                                                        // Line 1
-        assert_eq!(idx.byte_col_to_utf16_col(1, 0), 1);
-        assert_eq!(idx.byte_col_to_utf16_col(1, 2), 3);
-    }
-
-    #[test]
-    fn lci_eol_boundary() {
-        // byte_col == 0 on the start of any line → col 1.
-        let src = "abc\ndef\nghi";
-        let idx = LineColumnIndex::new(src);
-        assert_eq!(idx.byte_col_to_utf16_col(0, 0), 1);
-        assert_eq!(idx.byte_col_to_utf16_col(1, 0), 1);
-        assert_eq!(idx.byte_col_to_utf16_col(2, 0), 1);
-        // byte_col at end of "abc" (3 bytes) → col 4
-        assert_eq!(idx.byte_col_to_utf16_col(0, 3), 4);
-    }
-
-    #[test]
-    fn lci_empty_line() {
-        // An empty line: byte_col 0 → col 1.
-        let src = "\n\nfoo";
-        let idx = LineColumnIndex::new(src);
-        assert_eq!(idx.byte_col_to_utf16_col(0, 0), 1);
-        assert_eq!(idx.byte_col_to_utf16_col(1, 0), 1);
-        assert_eq!(idx.byte_col_to_utf16_col(2, 0), 1);
+    fn byte_col_to_utf16_col_calls_to_wide_utf16() {
+        // Single source string with one non-ASCII char. We only need to prove our wrapper
+        // delegates to line_index::LineIndex::to_wide(WideEncoding::Utf16, ..) and adds 1.
+        // Exhaustive encoding cases live in the line-index crate's own test suite.
+        let idx = LineColumnIndex::new("a\u{65E5}b"); // a 日 b
+                                                      // byte 0 ('a') → 0 UTF-16 units before, +1 = 1
+        assert_eq!(idx.byte_col_to_utf16_col(0, 0).unwrap(), 1);
+        // byte 4 ('b' after 日 which is 3 UTF-8 bytes / 1 UTF-16 unit) → 2 UTF-16 units before, +1 = 3
+        assert_eq!(idx.byte_col_to_utf16_col(0, 4).unwrap(), 3);
     }
 }

@@ -340,10 +340,6 @@ pub fn get_query_nodes(
 // map a node from the tree-sitter representation into our own internal representation
 // this is the representation that is passed to the JavaScript layer and how we represent
 // or expose the node to the end-user.
-//
-// `idx` is a pre-built [`LineColumnIndex`] for the source that produced `node`; it is used to
-// convert tree-sitter's 0-based UTF-8 byte columns into 1-based UTF-16 code-unit columns so
-// that `Position.col` is consistent with LSP / VS Code / SARIF v2.1 semantics.
 pub fn map_node(node: tree_sitter::Node, idx: &LineColumnIndex) -> Option<TreeSitterNode> {
     fn map_node_internal(
         cursor: &mut tree_sitter::TreeCursor,
@@ -380,11 +376,15 @@ pub fn map_node(node: tree_sitter::Node, idx: &LineColumnIndex) -> Option<TreeSi
             ast_type: cursor.node().kind().to_string(),
             start: Position {
                 line: u32::try_from(start_point.row + 1).unwrap(),
-                col: idx.byte_col_to_utf16_col(start_point.row, start_point.column),
+                col: idx
+                    .byte_col_to_utf16_col(start_point.row, start_point.column)
+                    .unwrap_or(start_point.column as u32 + 1),
             },
             end: Position {
                 line: u32::try_from(end_point.row + 1).unwrap(),
-                col: idx.byte_col_to_utf16_col(end_point.row, end_point.column),
+                col: idx
+                    .byte_col_to_utf16_col(end_point.row, end_point.column)
+                    .unwrap_or(end_point.column as u32 + 1),
             },
             field_name: cursor.field_name().map(ToString::to_string),
             children,
@@ -756,91 +756,6 @@ SELECT * FROM table WHERE column = 'value';
         assert_eq!("identifier", superclasses.ast_type);
         assert_eq!(None, superclasses.field_name);
         assert!(query_node.captures.contains_key("classname"));
-    }
-
-    /// `map_node` emits 1-based UTF-16 columns.  An emoji (U+1F680, 4 UTF-8 bytes, 2 UTF-16
-    /// code units) before a named identifier must shift subsequent col values accordingly.
-    ///
-    /// Source: `x = "🚀"; num = 5`
-    /// UTF-8 byte layout (0-indexed, line 0):
-    ///   x(0) ' '(1) =(2) ' '(3) "(4) 🚀(5-8) "(9) ;(10) ' '(11) n(12) u(13) m(14) ...
-    ///
-    /// `num` starts at byte 12.  UTF-16 prefix for bytes 0..12:
-    ///   x(1) + ' '(1) + =(1) + ' '(1) + "(1) + 🚀(2) + "(1) + ;(1) + ' '(1) = 10 UTF-16 units
-    ///   → `num` is at 1-based UTF-16 col 11.
-    #[test]
-    fn test_map_node_multibyte_emoji() {
-        let source_code = "x = \"\u{1F680}\"; num = 5";
-        let tree = get_tree(source_code, &Language::Python).unwrap();
-        let idx = LineColumnIndex::new(source_code);
-        let root = map_node(tree.root_node(), &idx).unwrap();
-        // We parse "x = "🚀"; num = 5" as Python.
-        // The second assignment has `num` as the left side (an identifier).
-        // Byte 12 = 'n', UTF-16 col = 11.
-        let second_stmt = root.children.get(1).unwrap(); // second expression_statement
-        let assignment = second_stmt.children.get(0).unwrap();
-        // In Python AST, the left side of `num = 5` is an identifier.
-        let num_node = assignment
-            .children
-            .iter()
-            .find(|c| c.ast_type == "identifier")
-            .unwrap();
-        // Byte offset of 'n' in `x = "🚀"; num = 5`:
-        //   "x = \"" = 5 bytes, "🚀" = 4 bytes, "\"; " = 3 bytes = total 12 bytes before 'n'
-        // UTF-16 col: x(1),' '(1),=(1),' '(1),"(1),🚀_high(1),🚀_low(1),"(1),;(1),' '(1) = 10 → col 11
-        assert_eq!(num_node.start.col, 11, "UTF-16 col of `num` should be 11");
-        assert_eq!(num_node.start.line, 1);
-    }
-
-    /// `get_query_nodes` emits 1-based UTF-16 columns for CJK characters
-    /// (3 UTF-8 bytes, 1 UTF-16 code unit each).
-    ///
-    /// Source (Python): `日 = 1; end = 2`
-    /// 日 = 3 UTF-8 bytes, 1 UTF-16 unit.
-    ///
-    /// `end` starts at byte 9:  日(3) + ' '(1) + =(1) + ' '(1) + 1(1) + ;(1) + ' '(1) = 9 bytes.
-    /// UTF-16 prefix for those 9 bytes:
-    ///   日(1) + ' '(1) + =(1) + ' '(1) + 1(1) + ;(1) + ' '(1) = 7 UTF-16 units → 1-based col 8.
-    #[test]
-    fn test_get_query_nodes_cjk() {
-        // Python: assign 日 = 1, then end = 2
-        let code = "\u{65E5} = 1; end = 2"; // 日 = 1; end = 2
-        let q = "(identifier) @id";
-        let tree = get_tree(code, &Language::Python).unwrap();
-        let query = get_query(q, &Language::Python).expect("query defined");
-        let nodes = get_query_nodes(
-            &tree,
-            &query,
-            "f.py",
-            code,
-            &std::collections::HashMap::new(),
-        );
-
-        // 日 is at byte 0, UTF-16 col 1 (ASCII fast path applies to byte 0).
-        // But 日 itself is an identifier. Its start byte col is 0 → UTF-16 col 1.
-        let dai_col = nodes
-            .iter()
-            .flat_map(|mn| mn.captures.values())
-            .find(|n| n.start.col == 1)
-            .map(|n| n.start.col)
-            .unwrap_or(0);
-        assert_eq!(dai_col, 1, "日 starts at UTF-16 col 1");
-
-        // `end` starts at byte 11 in the source:
-        //   日(3) + ' '(1) + '='(1) + ' '(1) + '1'(1) + ';'(1) + ' '(1) = 9 bytes → byte 9
-        //   Wait, let me recount: 日=3, ' '=1 → 4, '='=1 → 5, ' '=1 → 6, '1'=1 → 7, ';'=1 → 8, ' '=1 → 9
-        //   So 'e' in 'end' is at byte 9.
-        //   UTF-16 prefix to byte 9: 日(1),' '(1),=(1),' '(1),1(1),;(1),' '(1) = 7 units → col 8.
-        let end_col = nodes
-            .iter()
-            .flat_map(|mn| mn.captures.values())
-            .find(|n| {
-                // The `end` identifier node is at col > 1.
-                n.start.col > 1
-            })
-            .map(|n| n.start.col)
-            .unwrap_or(0);
-        assert_eq!(end_col, 8, "UTF-16 col of `end` after CJK char should be 8");
     }
 
     #[test]

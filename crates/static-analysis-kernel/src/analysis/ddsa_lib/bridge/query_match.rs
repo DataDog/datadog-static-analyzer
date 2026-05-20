@@ -34,10 +34,6 @@ impl QueryMatchBridge {
     /// Sets the bridge's data to the list of [`QueryMatch`]es, inserting tree-sitter nodes
     /// into the provided `TsNodeBridge`.
     ///
-    /// `idx` must be built from the same source string that produced the tree-sitter nodes in
-    /// `matches`; it is forwarded to [`TsNodeBridge::insert_capture`] so that `col` values
-    /// stored in v8 are 1-based UTF-16 code units.
-    ///
     /// NOTE: if the bridge had existing `QueryMatch`es, the tree-sitter nodes associated with them
     ///       will not be removed from the `TsNodeBridge`.
     pub fn set_data<'tree>(

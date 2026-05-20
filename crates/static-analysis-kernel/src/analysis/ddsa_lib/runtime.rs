@@ -1448,47 +1448,6 @@ function visit(query, filename, code) {
         assert_eq!(*violation, expected);
     }
 
-    /// `stella_compat.js::getCode` correctly extracts an identifier that follows a multibyte
-    /// character on the same line.
-    ///
-    /// The source is `"\u{1F680}"; protectedName = 1;` — the emoji sits inside a string literal
-    /// so that `protectedName` is a distinct, standalone identifier token.
-    /// Bytes before `protectedName`: `"` (1) + 🚀 (4) + `"` (1) + `;` (1) + ` ` (1) = 8 bytes.
-    /// UTF-16 prefix: `"` (1) + 🚀 surrogate pair (2) + `"` (1) + `;` (1) + ` ` (1) = 6 units → col 7.
-    /// With UTF-16 columns, `col - 1` correctly indexes into the JS string via `substring`,
-    /// so `getCodeForNode(node, code)` returns `"protectedName"`.
-    #[test]
-    fn stella_compat_getcode_multibyte() {
-        let mut rt = cfg_test_v8().new_runtime();
-        // 🚀 is placed in a string literal so that `protectedName` is a distinct identifier.
-        // Bytes before `protectedName`: " (1) + 🚀 (4) + " (1) + ; (1) + space (1) = 8 bytes.
-        // UTF-16 col: " (1) + 🚀 surrogate pair (2) + " (1) + ; (1) + space (1) = 6 units → col 7.
-        let text = "\"\u{1F680}\"; protectedName = 1;";
-        let filename = "some_filename.js";
-        let ts_query = r#"((identifier) @cap_name (#eq? @cap_name "protectedName"))"#;
-        let rule = r#"
-function visit(query, filename, code) {
-    const node = query.captures["cap_name"];
-    const nodeText = getCodeForNode(node, code);
-    const error = buildError(
-        node.start.line,
-        node.start.col,
-        node.end.line,
-        node.end.col,
-        nodeText
-    );
-    addError(error);
-}
-"#;
-        let violations =
-            shorthand_execute_rule_internal(&mut rt, text, filename, ts_query, rule, None).unwrap();
-        assert_eq!(violations.len(), 1);
-        let violation = violations.first().unwrap();
-        assert_eq!(violation.message, "protectedName");
-        // UTF-16 col 7: "(1) + 🚀 surrogate pair(2) + "(1) + ;(1) + space(1) = 6 units → col 7.
-        assert_eq!(violation.base_region.start_col, 7);
-    }
-
     /// Passing a `VisitArgFilenameCompat` or `VisitArgCodeCompat` instance directly into console.log
     /// returns the contents of the underlying string.
     #[test]

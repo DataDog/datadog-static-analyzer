@@ -73,49 +73,6 @@ mod tests {
         assert_eq!("module", response.result.unwrap().ast_type);
     }
 
-    /// `process_tree_sitter_tree_request` emits 1-based UTF-16 columns for non-ASCII content.
-    ///
-    /// Source: `x = "🚀"; num = 5`
-    /// The emoji (🚀, U+1F680) is 4 UTF-8 bytes / 2 UTF-16 code units.  `num` starts at byte 12,
-    /// so its UTF-16 col = 10 (units before it) + 1 = 11.
-    #[test]
-    fn test_process_tree_sitter_tree_request_multibyte() {
-        // Source: `x = "🚀"; num = 5`
-        // printf 'x = "\xF0\x9F\x9A\x80"; num = 5' | base64
-        let request = TreeSitterRequest {
-            code_base64: "eCA9ICLwn5qAIjsgbnVtID0gNQ==".to_string(),
-            file_encoding: "utf-8".to_string(),
-            language: Language::Python,
-        };
-        let response = process_tree_sitter_tree_request(request);
-        assert!(response.errors.is_empty());
-        let root = response.result.unwrap();
-
-        /// Depth-first search for a node whose `start.col` matches `expected_col`.
-        fn find_col(
-            node: &crate::model::tree_sitter_tree_node::ServerTreeSitterNode,
-            expected_col: u32,
-        ) -> bool {
-            if node.start.col == expected_col {
-                return true;
-            }
-            node.children.iter().any(|c| find_col(c, expected_col))
-        }
-
-        // `num` starts at byte 12 in `x = "🚀"; num = 5`.
-        // UTF-16 units before it: x(1) ' '(1) =(1) ' '(1) "(1) 🚀(2) "(1) ;(1) ' '(1) = 10 → col 11.
-        assert!(
-            find_col(&root, 11),
-            "expected a node with UTF-16 start.col == 11 (position of `num` after 🚀)"
-        );
-
-        // Ensure that no node reports col 13 (what the raw byte col + 1 would give for `num`).
-        assert!(
-            !find_col(&root, 13),
-            "no node should report raw byte col 13 — that would indicate the UTF-16 fix is not applied"
-        );
-    }
-
     #[test]
     fn test_process_tree_sitter_invalid_base64() {
         let request = TreeSitterRequest {

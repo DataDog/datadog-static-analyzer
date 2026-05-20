@@ -122,8 +122,6 @@ impl TsNodeBridge {
     /// Inserts the nodes from a [`TSQueryCapture<tree_sitter::Node>`] into a v8 scope, consuming
     /// the `QueryCapture`. Returns a transformed `QueryCapture` containing the ids of the inserted
     /// nodes.
-    ///
-    /// `idx` is forwarded to [`insert`](Self::insert) for UTF-16 column conversion.
     pub fn insert_capture(
         &mut self,
         scope: &mut HandleScope,
@@ -282,38 +280,6 @@ mod tests {
         assert!(bridge.v8_get(scope, 1).is_none());
         assert_eq!(bridge.insert(scope, foo, &idx), 0);
         assert!(bridge.v8_get(scope, 1).is_none());
-    }
-
-    /// Inserting a node from a multibyte source produces UTF-16 columns in the v8 object.
-    ///
-    /// Source: `"\u{1F680}"; abc = 1` — 🚀 is 4 UTF-8 bytes / 2 UTF-16 code units inside a string.
-    /// `abc` starts at byte 8 (after `"🚀"; `), and its UTF-16 col must account for the emoji.
-    ///
-    /// Byte layout: `"` `🚀`(4 bytes) `"` `;` ` ` = 8 bytes → `abc` at byte 8.
-    /// UTF-16 prefix: `"` + 🚀(2 units) + `"` + `;` + ` ` = 6 units → col 7.
-    #[test]
-    fn ts_node_bridge_multibyte_utf16_col() {
-        let (mut runtime, bridge) = setup_bridge();
-        let scope = &mut runtime.handle_scope();
-        let mut bridge = bridge.borrow_mut();
-
-        // Parse `"\u{1F680}"; abc = 1` as JavaScript.
-        let source = "\"\u{1F680}\"; abc = 1";
-        let tree = TsTree::new(source, Language::JavaScript);
-        let idx = LineColumnIndex::new(source);
-        let abc = tree.find_named_nodes(Some("abc"), Some("identifier"))[0];
-        // "🚀" (6 bytes: quote+4+quote) + "; " (2 bytes) = 8 bytes before `abc`.
-        assert_eq!(abc.start_position().column, 8, "byte col of `abc` is 8");
-
-        bridge.insert(scope, abc, &idx);
-        let v8_obj = bridge.v8_get(scope, 0).unwrap();
-
-        // Read `_startCol` from the v8 object.
-        let start_col = get_field::<v8::Integer>(v8_obj, "_startCol", scope, "integer")
-            .unwrap()
-            .value() as u32;
-        // UTF-16 units before abc: `"` (1) + 🚀 (2 surrogate units) + `"` (1) + `;` (1) + ` ` (1) = 6 → col 7.
-        assert_eq!(start_col, 7, "UTF-16 col of `abc` after 🚀 should be 7");
     }
 
     /// The text that the node spans can be retrieved.

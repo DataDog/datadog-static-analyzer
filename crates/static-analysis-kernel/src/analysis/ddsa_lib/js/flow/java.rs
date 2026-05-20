@@ -424,9 +424,9 @@ serialized;
             let start = node.start_position();
             let end = node.end_position();
             region.start_line == (start.row as u32) + 1
-                && region.start_col == idx.byte_col_to_utf16_col(start.row, start.column)
+                && region.start_col == idx.byte_col_to_utf16_col(start.row, start.column).unwrap()
                 && region.end_line == (end.row as u32) + 1
-                && region.end_col == idx.byte_col_to_utf16_col(end.row, end.column)
+                && region.end_col == idx.byte_col_to_utf16_col(end.row, end.column).unwrap()
         }
 
         // language=java

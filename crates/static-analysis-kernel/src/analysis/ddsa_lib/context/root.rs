@@ -19,9 +19,6 @@ pub struct RootContext {
     /// The source string that was parsed by tree-sitter to generate `tree`.
     tree_text: Option<Arc<str>>,
     /// Pre-computed line/column index for `tree_text`.
-    ///
-    /// Built once in [`set_text`] and borrowed by [`line_column_index`] on every deno op call
-    /// (e.g. `namedChildren`, `parent`), avoiding repeated source scans.
     lci: Option<LineColumnIndex>,
     /// A filename associated with a rule execution.
     filename: Option<Arc<str>>,
@@ -51,20 +48,13 @@ impl RootContext {
 
     /// Assigns the provided text string to the context. If an existing text string was assigned, it
     /// will be returned as `Some(text)`.
-    ///
-    /// Also rebuilds the internal [line/column index](Self::line_column_index) cache so that
-    /// subsequent calls to [`line_column_index`](Self::line_column_index) are O(1).
     pub fn set_text(&mut self, text: Arc<str>) -> Option<Arc<str>> {
         self.lci = Some(LineColumnIndex::new(&text));
         Option::replace(&mut self.tree_text, text)
     }
 
-    /// Returns a reference to the cached [`LineColumnIndex`].
-    ///
-    /// The index is built once in [`set_text`] and reused on every deno op call, avoiding
-    /// repeated source scans.
-    ///
-    /// Returns `None` when no source text has been assigned yet.
+    /// Returns a reference to the cached [`LineColumnIndex`], or `None` if no source text has been
+    /// assigned yet.
     pub fn line_column_index(&self) -> Option<&LineColumnIndex> {
         self.lci.as_ref()
     }

@@ -108,8 +108,6 @@ pub fn op_ts_node_named_children<'s>(
         // ts_node_bridge and ctx_bridge are separate RefCells so the concurrent borrows are valid.
         let ctx_bridge = state.borrow::<Rc<RefCell<bridge::ContextBridge>>>();
         let ctx_borrow = ctx_bridge.borrow();
-        // Use the pre-computed index cached in RootContext (O(1)) rather than
-        // rescanning the source on every namedChildren call.
         let idx = ctx_borrow
             .ddsa_root_context()
             .line_column_index()
@@ -168,8 +166,6 @@ pub fn op_ts_node_parent(
         OpSafeRawTSNode::from_root_context(root_ctx, |ctx| ctx.get_ts_node_parent(ts_node))?;
     let parent_ts_node = safe_raw_parent.to_node();
 
-    // Use the pre-computed index cached in RootContext (O(1)) rather than
-    // rescanning the source on every parent call.
     let idx = root_ctx
         .line_column_index()
         .expect("tree text must be set before ops run");
@@ -267,8 +263,6 @@ pub fn op_digraph_adjacency_list_to_dot(
     let text = root_ctx
         .get_text()
         .expect("tree text should always be `Some` during rule execution");
-    // Use the pre-computed index cached in RootContext (O(1)) rather than rebuilding per-vertex.
-    // `set_text` always builds the index alongside `tree_text`, so this is always `Some` here.
     let lc_idx = root_ctx
         .line_column_index()
         .expect("tree text must be set before ops run");
