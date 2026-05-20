@@ -1,6 +1,7 @@
 use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
 use crate::model::common::Language;
 use common::model::position::Position;
+use common::utils::position_utils::LineColumnIndex;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -297,17 +298,20 @@ pub fn get_query_nodes(
 ) -> Vec<MatchNode> {
     let mut match_nodes: Vec<MatchNode> = vec![];
 
+    let idx = LineColumnIndex::new(code);
+
     for query_match in query.cursor().matches(tree.root_node(), code, None) {
         let mut captures: HashMap<String, TreeSitterNode> = HashMap::new();
         let mut captures_list: HashMap<String, Vec<TreeSitterNode>> = HashMap::new();
         for capture in query_match {
             let list = match capture.contents {
                 TSCaptureContent::Single(node) => {
-                    map_node(node).map(|n| vec![n]).unwrap_or_default()
+                    map_node(node, &idx).map(|n| vec![n]).unwrap_or_default()
                 }
-                TSCaptureContent::Multi(nodes) => {
-                    nodes.into_iter().filter_map(map_node).collect::<Vec<_>>()
-                }
+                TSCaptureContent::Multi(nodes) => nodes
+                    .into_iter()
+                    .filter_map(|n| map_node(n, &idx))
+                    .collect::<Vec<_>>(),
             };
             // All captures are inserted into `captures_list`. However, the prior implementation continually
             // called `insert` on the `captures` map, which ended up re-writing the value every time.
@@ -336,10 +340,11 @@ pub fn get_query_nodes(
 // map a node from the tree-sitter representation into our own internal representation
 // this is the representation that is passed to the JavaScript layer and how we represent
 // or expose the node to the end-user.
-pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
+pub fn map_node(node: tree_sitter::Node, idx: &LineColumnIndex) -> Option<TreeSitterNode> {
     fn map_node_internal(
         cursor: &mut tree_sitter::TreeCursor,
         only_named_node: bool,
+        idx: &LineColumnIndex,
     ) -> Option<TreeSitterNode> {
         // we do not map space, parenthesis and other non-named nodes if there
         // when `only_named_node` is true (which is `true` for children only).
@@ -352,7 +357,7 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
         if cursor.goto_first_child() {
             loop {
                 // For the child, we only want to capture named nodes to avoid polluting the AST.
-                let maybe_child = map_node_internal(cursor, true);
+                let maybe_child = map_node_internal(cursor, true, idx);
                 if let Some(child) = maybe_child {
                     children.push(child);
                 }
@@ -363,16 +368,23 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
             cursor.goto_parent();
         }
 
+        let start_point = cursor.node().range().start_point;
+        let end_point = cursor.node().range().end_point;
+
         // finally, build the return value.
         let ts_node = TreeSitterNode {
             ast_type: cursor.node().kind().to_string(),
             start: Position {
-                line: u32::try_from(cursor.node().range().start_point.row + 1).unwrap(),
-                col: u32::try_from(cursor.node().range().start_point.column + 1).unwrap(),
+                line: u32::try_from(start_point.row + 1).unwrap(),
+                col: idx
+                    .byte_col_to_utf16_col(start_point.row, start_point.column)
+                    .unwrap_or(start_point.column as u32 + 1),
             },
             end: Position {
-                line: u32::try_from(cursor.node().range().end_point.row + 1).unwrap(),
-                col: u32::try_from(cursor.node().range().end_point.column + 1).unwrap(),
+                line: u32::try_from(end_point.row + 1).unwrap(),
+                col: idx
+                    .byte_col_to_utf16_col(end_point.row, end_point.column)
+                    .unwrap_or(end_point.column as u32 + 1),
             },
             field_name: cursor.field_name().map(ToString::to_string),
             children,
@@ -385,7 +397,7 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
 
     // Initially, we capture both un/named nodes to allow capturing unnamed node from
     // the tree-sitter query.
-    map_node_internal(&mut ts_cursor, false)
+    map_node_internal(&mut ts_cursor, false, idx)
 }
 
 #[cfg(test)]
@@ -413,7 +425,8 @@ def func():
    pass;"#;
         let t = get_tree(source_code, &Language::Python);
         assert!(t.is_some());
-        let tree_node = map_node(t.unwrap().root_node());
+        let idx = LineColumnIndex::new(source_code);
+        let tree_node = map_node(t.unwrap().root_node(), &idx);
         assert!(tree_node.is_some());
         let root = tree_node.unwrap();
         assert_eq!(2, root.children.len());

@@ -5,6 +5,7 @@
 use crate::analysis::ddsa_lib::bridge::TsNodeBridge;
 use crate::analysis::ddsa_lib::common::{swallow_v8_error, v8_uint};
 use crate::analysis::ddsa_lib::test_utils::TsTree;
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use graphviz_rust::dot_structures;
 use graphviz_rust::dot_structures::{Attribute, Stmt};
@@ -621,11 +622,18 @@ impl From<LocatedEdge<'_>> for dot_structures::Edge {
 
 impl<'a> LocatedNode<'a> {
     /// Constructs a new `LocatedNode` from a tree-sitter node.
-    pub fn new_cst(node: tree_sitter::Node, text: &'a str) -> LocatedNode<'a> {
+    pub fn new_cst(
+        node: tree_sitter::Node,
+        text: &'a str,
+        idx: &LineColumnIndex,
+    ) -> LocatedNode<'a> {
+        let start = node.start_position();
         Self::Cst {
             text,
-            line: node.start_position().row + 1,
-            col: node.start_position().column + 1,
+            line: start.row + 1,
+            col: idx
+                .byte_col_to_utf16_col(start.row, start.column)
+                .unwrap_or(start.column as u32 + 1) as usize,
             cst_kind: node.kind(),
         }
     }

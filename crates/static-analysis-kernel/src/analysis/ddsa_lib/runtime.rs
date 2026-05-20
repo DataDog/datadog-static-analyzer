@@ -15,6 +15,7 @@ use crate::analysis::ddsa_lib::resource_watchdog::V8ResourceWatchdog;
 use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::cell::RefCell;
@@ -263,10 +264,11 @@ impl JsRuntime {
 
             // Add any rule arguments
             ctx_bridge.set_rule_arguments(scope, rule_arguments);
-            // Push the query matches:
+            // Push the query matches, using UTF-16 column conversion for every node.
+            let idx = LineColumnIndex::new(source_text.as_ref());
             let mut ts_node_bridge = self.bridge_ts_node.borrow_mut();
             self.bridge_query_match
-                .set_data(scope, query_matches, &mut ts_node_bridge);
+                .set_data(scope, query_matches, &mut ts_node_bridge, &idx);
         }
 
         // We use a bridge to pull violations, so we can ignore the return value with a noop handler.

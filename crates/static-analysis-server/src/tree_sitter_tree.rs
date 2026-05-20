@@ -2,6 +2,7 @@ use crate::constants::{ERROR_CODE_NOT_BASE64, ERROR_CODE_NO_ROOT_NODE};
 use crate::model::tree_sitter_tree_node::ServerTreeSitterNode;
 use crate::model::tree_sitter_tree_request::TreeSitterRequest;
 use crate::model::tree_sitter_tree_response::TreeSitterResponse;
+use common::utils::position_utils::LineColumnIndex;
 use kernel::analysis::tree_sitter::{get_tree, map_node};
 use kernel::utils::decode_base64_string;
 
@@ -38,9 +39,10 @@ pub fn process_tree_sitter_tree_request(request: TreeSitterRequest) -> TreeSitte
         return no_root_node;
     }
 
-    if let Some(result) =
-        result.map(|tree| map_node(tree.root_node()).map(ServerTreeSitterNode::from))
-    {
+    if let Some(result) = result.map(|tree| {
+        let idx = LineColumnIndex::new(&decoded);
+        map_node(tree.root_node(), &idx).map(ServerTreeSitterNode::from)
+    }) {
         tracing::info!("Successfully completed tree-sitter AST generation");
         TreeSitterResponse {
             result,
