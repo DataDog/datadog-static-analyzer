@@ -7,7 +7,7 @@ use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
 use crate::model::common::Language;
 use std::borrow::Cow;
 use std::sync::LazyLock;
-use streaming_iterator::StreamingIterator;
+use tree_sitter::StreamingIterator;
 
 /// JavaScript module representation, which consists of a name and where it's imported from
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,20 +31,28 @@ pub(crate) const JS_IMPORTS_QUERY: &str = r#"
   source: (string (string_fragment) @name))
 
 ; import { <name> } from '<imported_from>'
+(import_statement
+  (import_clause
+    (named_imports
+      (import_specifier
+        .
+        name: (identifier) @name
+        .
+      )
+    )
+  )
+  "from"
+  source: (string (string_fragment) @imported_from)
+)
+
 ; import { _ as <name> } from '<imported_from>'
 (import_statement
   (import_clause
     (named_imports
       (import_specifier
         .
-        [
-          name: (identifier) @name
-          name: (
-            (_) @name_except_default
-            "as"
-          )
-        ]
-        .
+        name: (_) @name_except_default
+        "as"
       )
     )
   )

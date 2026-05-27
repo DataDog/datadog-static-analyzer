@@ -1,6 +1,43 @@
 use crate::model::position::Position;
 use bstr::BStr;
 use bstr::ByteSlice;
+use line_index::{LineCol, LineIndex, WideEncoding};
+
+/// Precomputed per-line index for fast repeated UTF-8 byte-column → UTF-16 code-unit column
+/// conversion.
+///
+/// Build once per source string with [`LineColumnIndex::new`], then call
+/// [`byte_col_to_utf16_col`](LineColumnIndex::byte_col_to_utf16_col) for every tree-sitter node
+/// on that source. Backed by [`line_index::LineIndex`] from the rust-analyzer project.
+///
+/// ## Line model
+///
+/// [`line_index::LineIndex`] splits on `\n` only, which mirrors tree-sitter's line model exactly.
+/// Tree-sitter does not treat a bare `\r` (classic Mac OS 9) as a line terminator; for Windows
+/// `\r\n` files the `\r` is counted as part of the column on the same line, matching
+/// tree-sitter's `Point.column` values. Using a broader splitter (e.g. Unicode line endings)
+/// would diverge from tree-sitter and produce wrong UTF-16 columns.
+#[derive(Debug)]
+pub struct LineColumnIndex(LineIndex);
+
+impl LineColumnIndex {
+    /// Builds the index by scanning `source`.
+    pub fn new(source: &str) -> Self {
+        Self(LineIndex::new(source))
+    }
+
+    /// Converts a tree-sitter 0-based `(row, byte_col)` point to a 1-based UTF-16 code-unit
+    /// column.
+    ///
+    /// Returns `None` if `(row, byte_col)` falls outside the indexed source.
+    pub fn byte_col_to_utf16_col(&self, row: usize, byte_col: usize) -> Option<u32> {
+        let lc = LineCol {
+            line: row as u32,
+            col: byte_col as u32,
+        };
+        self.0.to_wide(WideEncoding::Utf16, lc).map(|w| w.col + 1)
+    }
+}
 
 /// Get position of an offset in a code and return a [Position].
 pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
@@ -136,5 +173,17 @@ mod tests {
             get_position_in_string(text, text.len() - 1).unwrap(),
             Position::new(3, 13)
         );
+    }
+
+    #[test]
+    fn byte_col_to_utf16_col_calls_to_wide_utf16() {
+        // Single source string with one non-ASCII char. We only need to prove our wrapper
+        // delegates to line_index::LineIndex::to_wide(WideEncoding::Utf16, ..) and adds 1.
+        // Exhaustive encoding cases live in the line-index crate's own test suite.
+        let idx = LineColumnIndex::new("a\u{65E5}b"); // a 日 b
+                                                      // byte 0 ('a') → 0 UTF-16 units before, +1 = 1
+        assert_eq!(idx.byte_col_to_utf16_col(0, 0).unwrap(), 1);
+        // byte 4 ('b' after 日 which is 3 UTF-8 bytes / 1 UTF-16 unit) → 2 UTF-16 units before, +1 = 3
+        assert_eq!(idx.byte_col_to_utf16_col(0, 4).unwrap(), 3);
     }
 }

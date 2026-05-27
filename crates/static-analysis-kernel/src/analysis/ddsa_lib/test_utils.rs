@@ -395,6 +395,11 @@ impl TsTree {
         Arc::clone(&self.tree)
     }
 
+    /// Returns the full source text.
+    pub fn source(&self) -> &str {
+        &self.text
+    }
+
     /// Returns the text for the provided node.
     pub fn text(&self, node: tree_sitter::Node) -> &str {
         node.utf8_text(self.text.as_bytes()).unwrap()

@@ -3,6 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::RawTSNode;
+use common::utils::position_utils::LineColumnIndex;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,6 +18,8 @@ pub struct RootContext {
     tree: Option<Arc<tree_sitter::Tree>>,
     /// The source string that was parsed by tree-sitter to generate `tree`.
     tree_text: Option<Arc<str>>,
+    /// Pre-computed line/column index for `tree_text`.
+    lci: Option<LineColumnIndex>,
     /// A filename associated with a rule execution.
     filename: Option<Arc<str>>,
 
@@ -46,7 +49,14 @@ impl RootContext {
     /// Assigns the provided text string to the context. If an existing text string was assigned, it
     /// will be returned as `Some(text)`.
     pub fn set_text(&mut self, text: Arc<str>) -> Option<Arc<str>> {
+        self.lci = Some(LineColumnIndex::new(&text));
         Option::replace(&mut self.tree_text, text)
+    }
+
+    /// Returns a reference to the cached [`LineColumnIndex`], or `None` if no source text has been
+    /// assigned yet.
+    pub fn line_column_index(&self) -> Option<&LineColumnIndex> {
+        self.lci.as_ref()
     }
 
     /// Returns a reference to the underlying [`tree_sitter::Tree`], if it exists.

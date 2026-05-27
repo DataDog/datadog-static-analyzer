@@ -1,12 +1,13 @@
 use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
 use crate::model::common::Language;
 use common::model::position::Position;
+use common::utils::position_utils::LineColumnIndex;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
-use streaming_iterator::StreamingIterator;
-use tree_sitter::CaptureQuantifier;
+use std::time::{Duration, Instant};
+use tree_sitter::StreamingIterator;
+use tree_sitter::{CaptureQuantifier, QueryCursorOptions, QueryCursorState};
 
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
@@ -171,23 +172,32 @@ enum MaybeOwnedMut<'a, T> {
 }
 
 impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
-    /// Iterate over all the tree-sitter query matches in the order that they were found.
+    /// Returns all of the tree-sitter query matches in the order that they were found.
     ///
     /// ***Note:*** Because multiple patterns can match the same set of nodes, one match may contain captures
     /// that appear before _(i.e. the source text location)_ some of the captures from a previous match.
     pub fn matches(
-        &'a mut self,
+        &mut self,
         node: tree_sitter::Node<'tree>,
         text: &'tree str,
         timeout: Option<Duration>,
-    ) -> impl Iterator<Item = QueryMatch<tree_sitter::Node<'tree>>> + 'a {
+    ) -> Vec<QueryMatch<tree_sitter::Node<'tree>>> {
         let cursor = match &mut self.cursor {
             MaybeOwnedMut::Borrowed(cursor) => cursor,
             MaybeOwnedMut::Owned(cursor) => cursor,
         };
-        cursor.set_timeout_micros(timeout.map(|t| t.as_micros()).unwrap_or_default() as u64);
-        let matches = cursor.matches(self.query, node, text.as_bytes());
-        matches.map_deref(|q_match| {
+        let deadline = timeout.and_then(|t| Instant::now().checked_add(t));
+        let mut on_progress = move |_: &QueryCursorState| match deadline {
+            Some(d) => Instant::now() >= d,
+            None => false,
+        };
+        let mut options = QueryCursorOptions::new();
+        if deadline.is_some() {
+            options = options.progress_callback(&mut on_progress);
+        }
+
+        let m = cursor.matches_with_options(self.query, node, text.as_bytes(), options);
+        m.map_deref(|q_match| {
             for capture in q_match.captures {
                 self.captures_scratch
                     .entry(capture.index)
@@ -216,6 +226,7 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
                 .map(|(_, query_capture)| query_capture)
                 .collect::<Vec<_>>()
         })
+        .collect::<Vec<_>>()
     }
 }
 
@@ -287,17 +298,20 @@ pub fn get_query_nodes(
 ) -> Vec<MatchNode> {
     let mut match_nodes: Vec<MatchNode> = vec![];
 
+    let idx = LineColumnIndex::new(code);
+
     for query_match in query.cursor().matches(tree.root_node(), code, None) {
         let mut captures: HashMap<String, TreeSitterNode> = HashMap::new();
         let mut captures_list: HashMap<String, Vec<TreeSitterNode>> = HashMap::new();
         for capture in query_match {
             let list = match capture.contents {
                 TSCaptureContent::Single(node) => {
-                    map_node(node).map(|n| vec![n]).unwrap_or_default()
+                    map_node(node, &idx).map(|n| vec![n]).unwrap_or_default()
                 }
-                TSCaptureContent::Multi(nodes) => {
-                    nodes.into_iter().filter_map(map_node).collect::<Vec<_>>()
-                }
+                TSCaptureContent::Multi(nodes) => nodes
+                    .into_iter()
+                    .filter_map(|n| map_node(n, &idx))
+                    .collect::<Vec<_>>(),
             };
             // All captures are inserted into `captures_list`. However, the prior implementation continually
             // called `insert` on the `captures` map, which ended up re-writing the value every time.
@@ -326,10 +340,11 @@ pub fn get_query_nodes(
 // map a node from the tree-sitter representation into our own internal representation
 // this is the representation that is passed to the JavaScript layer and how we represent
 // or expose the node to the end-user.
-pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
+pub fn map_node(node: tree_sitter::Node, idx: &LineColumnIndex) -> Option<TreeSitterNode> {
     fn map_node_internal(
         cursor: &mut tree_sitter::TreeCursor,
         only_named_node: bool,
+        idx: &LineColumnIndex,
     ) -> Option<TreeSitterNode> {
         // we do not map space, parenthesis and other non-named nodes if there
         // when `only_named_node` is true (which is `true` for children only).
@@ -342,7 +357,7 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
         if cursor.goto_first_child() {
             loop {
                 // For the child, we only want to capture named nodes to avoid polluting the AST.
-                let maybe_child = map_node_internal(cursor, true);
+                let maybe_child = map_node_internal(cursor, true, idx);
                 if let Some(child) = maybe_child {
                     children.push(child);
                 }
@@ -353,16 +368,23 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
             cursor.goto_parent();
         }
 
+        let start_point = cursor.node().range().start_point;
+        let end_point = cursor.node().range().end_point;
+
         // finally, build the return value.
         let ts_node = TreeSitterNode {
             ast_type: cursor.node().kind().to_string(),
             start: Position {
-                line: u32::try_from(cursor.node().range().start_point.row + 1).unwrap(),
-                col: u32::try_from(cursor.node().range().start_point.column + 1).unwrap(),
+                line: u32::try_from(start_point.row + 1).unwrap(),
+                col: idx
+                    .byte_col_to_utf16_col(start_point.row, start_point.column)
+                    .unwrap_or(start_point.column as u32 + 1),
             },
             end: Position {
-                line: u32::try_from(cursor.node().range().end_point.row + 1).unwrap(),
-                col: u32::try_from(cursor.node().range().end_point.column + 1).unwrap(),
+                line: u32::try_from(end_point.row + 1).unwrap(),
+                col: idx
+                    .byte_col_to_utf16_col(end_point.row, end_point.column)
+                    .unwrap_or(end_point.column as u32 + 1),
             },
             field_name: cursor.field_name().map(ToString::to_string),
             children,
@@ -375,7 +397,7 @@ pub fn map_node(node: tree_sitter::Node) -> Option<TreeSitterNode> {
 
     // Initially, we capture both un/named nodes to allow capturing unnamed node from
     // the tree-sitter query.
-    map_node_internal(&mut ts_cursor, false)
+    map_node_internal(&mut ts_cursor, false, idx)
 }
 
 #[cfg(test)]
@@ -403,7 +425,8 @@ def func():
    pass;"#;
         let t = get_tree(source_code, &Language::Python);
         assert!(t.is_some());
-        let tree_node = map_node(t.unwrap().root_node());
+        let idx = LineColumnIndex::new(source_code);
+        let tree_node = map_node(t.unwrap().root_node(), &idx);
         assert!(tree_node.is_some());
         let root = tree_node.unwrap();
         assert_eq!(2, root.children.len());
@@ -733,5 +756,29 @@ SELECT * FROM table WHERE column = 'value';
         assert_eq!("identifier", superclasses.ast_type);
         assert_eq!(None, superclasses.field_name);
         assert!(query_node.captures.contains_key("classname"));
+    }
+
+    #[test]
+    fn ts_query_cursor_matches_timeout() {
+        let timeout = Duration::from_millis(500);
+        let source = "let x = 1234;\n".repeat(2000);
+
+        let tree = get_tree(&source, &Language::JavaScript).unwrap();
+        // (Combinatorial explosion query, which should take longer than the `timeout` duration).
+        let query = get_query("(((_)*) @one (_)* @two)", &Language::JavaScript).unwrap();
+
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let num_captured = query
+                .cursor()
+                .matches(tree.root_node(), &source, Some(timeout))
+                .len();
+            tx.send(num_captured).unwrap();
+        });
+
+        let num_captured = rx
+            .recv_timeout(timeout * 2)
+            .expect("query callback should've halted execution");
+        assert!(num_captured > 0);
     }
 }

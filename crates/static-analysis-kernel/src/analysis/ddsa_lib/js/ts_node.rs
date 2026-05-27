@@ -5,6 +5,7 @@
 use crate::analysis::ddsa_lib::common::{
     load_function, swallow_v8_error, v8_uint, Class, DDSAJsRuntimeError, Instance, NodeId,
 };
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::marker::PhantomData;
@@ -24,26 +25,31 @@ pub struct TreeSitterNode<T> {
 }
 
 impl<T> TreeSitterNode<T> {
-    /// Converts the provided [`tree_sitter::Node`] into a `TreeSitterNode`, assigning the provided id.
-    pub fn from_ts_node(id: NodeId, node: tree_sitter::Node) -> Self {
-        // NOTE: We normalize the 0-based `tree_sitter::Point` to be 1-based.
-        fn normalize_ts_point_num(num: usize) -> u32 {
-            num as u32 + 1
-        }
+    /// Converts the provided [`tree_sitter::Node`] into a `TreeSitterNode`, assigning the
+    /// provided id.
+    pub fn from_ts_node_with_index(
+        id: NodeId,
+        node: tree_sitter::Node,
+        idx: &LineColumnIndex,
+    ) -> Self {
         let tree_sitter::Point {
-            row: start_line,
-            column: start_col,
+            row: start_row,
+            column: start_byte_col,
         } = node.start_position();
         let tree_sitter::Point {
-            row: end_line,
-            column: end_col,
+            row: end_row,
+            column: end_byte_col,
         } = node.end_position();
         Self {
             id,
-            start_line: normalize_ts_point_num(start_line),
-            start_col: normalize_ts_point_num(start_col),
-            end_line: normalize_ts_point_num(end_line),
-            end_col: normalize_ts_point_num(end_col),
+            start_line: (start_row as u32) + 1,
+            start_col: idx
+                .byte_col_to_utf16_col(start_row, start_byte_col)
+                .unwrap_or(start_byte_col as u32 + 1),
+            end_line: (end_row as u32) + 1,
+            end_col: idx
+                .byte_col_to_utf16_col(end_row, end_byte_col)
+                .unwrap_or(end_byte_col as u32 + 1),
             node_type_id: node.kind_id(),
             _pd: PhantomData,
         }
@@ -104,9 +110,10 @@ mod tests {
     };
     use crate::analysis::tree_sitter::get_tree_sitter_language;
     use crate::model::common::Language;
+    use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
     use std::marker::PhantomData;
-    use streaming_iterator::StreamingIterator;
+    use tree_sitter::StreamingIterator;
 
     #[test]
     fn js_properties_canary() {
@@ -152,7 +159,8 @@ mod tests {
         let mut parser = tree_sitter::Parser::new();
         parser.set_language(&lang).unwrap();
 
-        let tree = parser.parse(r#"foo(bar, baz);"#, None).unwrap();
+        let source = r#"foo(bar, baz);"#;
+        let tree = parser.parse(source, None).unwrap();
         let root = tree.root_node();
 
         assert_eq!(root.start_position().row, 0);
@@ -160,7 +168,8 @@ mod tests {
         assert_eq!(root.end_position().row, 0);
         assert_eq!(root.end_position().column, 14);
 
-        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node(0, root);
+        let idx = LineColumnIndex::new(source);
+        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node_with_index(0, root, &idx);
 
         assert_eq!(tree_sitter_node.start_line, 1);
         assert_eq!(tree_sitter_node.start_col, 1);
@@ -188,7 +197,8 @@ mod tests {
         // This should resolve to `assert_ne!("identifier", "property_identifier")`
         assert_ne!(ts_node.grammar_name(), ts_node.kind());
 
-        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node(0, ts_node);
+        let idx = LineColumnIndex::new(text);
+        let tree_sitter_node = TreeSitterNode::<Instance>::from_ts_node_with_index(0, ts_node, &idx);
         assert_eq!(tree_sitter_node.node_type_id, ts_node.kind_id());
     }
 

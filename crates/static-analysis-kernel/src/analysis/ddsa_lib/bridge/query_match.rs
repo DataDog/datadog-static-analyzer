@@ -7,6 +7,7 @@ use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError, NodeId, Stell
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
 use crate::analysis::tree_sitter::QueryMatch;
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 
@@ -40,6 +41,7 @@ impl QueryMatchBridge {
         scope: &mut HandleScope,
         matches: impl Into<Vec<QueryMatch<tree_sitter::Node<'tree>>>>,
         node_bridge: &mut TsNodeBridge,
+        idx: &LineColumnIndex,
     ) {
         let matches = matches.into();
         // Pass each node in via the bridge (assigning it an id), and use this id to transform
@@ -49,7 +51,7 @@ impl QueryMatchBridge {
             .map(|q_match| {
                 q_match
                     .into_iter()
-                    .map(|capture| node_bridge.insert_capture(scope, capture))
+                    .map(|capture| node_bridge.insert_capture(scope, capture, idx))
                     .collect::<Vec<_>>()
                     .into()
             })
@@ -89,6 +91,7 @@ mod tests {
     use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
     use crate::analysis::tree_sitter::{get_tree, QueryMatch, TSCaptureContent, TSQuery};
     use crate::model::common::Language;
+    use common::utils::position_utils::LineColumnIndex;
     use deno_core::JsRuntime;
 
     fn setup_bridge() -> (JsRuntime, QueryMatchBridge, TsNodeBridge) {
@@ -124,13 +127,11 @@ const ghi = 'hello' + ' world';
 )
 ";
         let query = TSQuery::try_new(&tree.language(), query).unwrap();
-        let matches = query
-            .cursor()
-            .matches(tree.root_node(), text, None)
-            .collect::<Vec<_>>();
+        let matches = query.cursor().matches(tree.root_node(), text, None);
+        let idx = LineColumnIndex::new(text);
         assert!(query_match_bridge.is_empty());
         assert!(ts_node_bridge.is_empty());
-        query_match_bridge.set_data(scope, matches.clone(), &mut ts_node_bridge);
+        query_match_bridge.set_data(scope, matches.clone(), &mut ts_node_bridge, &idx);
         assert_eq!(query_match_bridge.len(), 3);
         assert_eq!(ts_node_bridge.len(), 3);
 
@@ -142,19 +143,17 @@ const ghi = 'hello' + ' world';
         }
 
         // The `QueryMatchBridge` doesn't clear nodes from `TsNodeBridge` when values change.
-        query_match_bridge.set_data(scope, &matches[0..2], &mut ts_node_bridge);
+        query_match_bridge.set_data(scope, &matches[0..2], &mut ts_node_bridge, &idx);
         assert_eq!(query_match_bridge.len(), 2);
         assert_eq!(ts_node_bridge.len(), 3);
-        let text = "\
+        let text2 = "\
 // Arbitrary JavaScript that contains `identifier` CST nodes
 const alpha = 'bravo';
 ";
-        let tree = get_tree(text, &Language::JavaScript).unwrap();
-        let matches = query
-            .cursor()
-            .matches(tree.root_node(), text, None)
-            .collect::<Vec<_>>();
-        query_match_bridge.set_data(scope, matches, &mut ts_node_bridge);
+        let tree2 = get_tree(text2, &Language::JavaScript).unwrap();
+        let matches2 = query.cursor().matches(tree2.root_node(), text2, None);
+        let idx2 = LineColumnIndex::new(text2);
+        query_match_bridge.set_data(scope, matches2, &mut ts_node_bridge, &idx2);
         assert_eq!(get_node_id_at_idx(&query_match_bridge, 0), 3);
         assert_eq!(ts_node_bridge.len(), 4);
     }

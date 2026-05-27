@@ -15,6 +15,7 @@ use crate::analysis::ddsa_lib::resource_watchdog::V8ResourceWatchdog;
 use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
+use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::cell::RefCell;
@@ -159,10 +160,9 @@ impl JsRuntime {
         let ts_query_cursor = Rc::clone(&self.ts_query_cursor);
         let mut ts_qc = ts_query_cursor.borrow_mut();
         let mut query_cursor = rule.tree_sitter_query.with_cursor(&mut ts_qc);
-        let query_matches = query_cursor
-            .matches(source_tree.root_node(), source_text.as_ref(), timeout)
-            .filter(|captures| !captures.is_empty())
-            .collect::<Vec<_>>();
+        let mut query_matches =
+            query_cursor.matches(source_tree.root_node(), source_text.as_ref(), timeout);
+        query_matches.retain(|captures| !captures.is_empty());
 
         let ts_query_time = now.elapsed();
 
@@ -276,10 +276,11 @@ impl JsRuntime {
 
             // Add any rule arguments
             ctx_bridge.set_rule_arguments(scope, rule_arguments);
-            // Push the query matches:
+            // Push the query matches, using UTF-16 column conversion for every node.
+            let idx = LineColumnIndex::new(source_text.as_ref());
             let mut ts_node_bridge = self.bridge_ts_node.borrow_mut();
             self.bridge_query_match
-                .set_data(scope, query_matches, &mut ts_node_bridge);
+                .set_data(scope, query_matches, &mut ts_node_bridge, &idx);
         }
 
         // We use a bridge to pull violations, so we can ignore the return value with a noop handler.
@@ -673,9 +674,7 @@ mod tests {
         let filename: Arc<str> = Arc::from("some_filename.js");
 
         let mut curs = ts_query.cursor();
-        let q_matches = curs
-            .matches(tree.root_node(), source_text.as_ref(), None)
-            .collect::<Vec<_>>();
+        let q_matches = curs.matches(tree.root_node(), source_text.as_ref(), None);
         runtime.execute_rule_internal(
             source_text,
             tree,
@@ -709,9 +708,7 @@ mod tests {
 
         let now = Instant::now();
         let mut curs = ts_query.cursor();
-        let q_matches = curs
-            .matches(tree.root_node(), source_text.as_ref(), timeout)
-            .collect::<Vec<_>>();
+        let q_matches = curs.matches(tree.root_node(), source_text.as_ref(), timeout);
         let ts_query_time = now.elapsed();
 
         // It's possible that the TS query took about as long as the timeout itself, and since
@@ -1285,11 +1282,10 @@ function visit(captures) {
             let ts_query = "(identifier) @cap_name";
             let ts_lang = get_tree_sitter_language(&language);
             let ts_query = TSQuery::try_new(&ts_lang, ts_query).unwrap();
-            let captures = ts_query
+            let mut captures = ts_query
                 .cursor()
-                .matches(tree.root_node(), text.as_ref(), None)
-                .filter(|captures| !captures.is_empty())
-                .collect::<Vec<_>>();
+                .matches(tree.root_node(), text.as_ref(), None);
+            captures.retain(|captures| !captures.is_empty());
             let _ = rt.execute_rule_internal(
                 &text,
                 &tree,

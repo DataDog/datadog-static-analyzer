@@ -9,7 +9,7 @@ use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
-use dd_sds::{RootRuleConfig, RuleConfig, Scanner};
+use dd_sds::{RootRuleConfig, RuleConfig, ScanOptionBuilder, Scanner};
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -47,7 +47,12 @@ pub fn find_secrets(
     let lines_to_ignore = get_lines_to_ignore(code);
 
     let mut codemut = code.to_owned();
-    let mut matches = match scanner.scan(&mut codemut) {
+
+    let scan_options = ScanOptionBuilder::new()
+        .with_validate_matching(!options.disable_validation)
+        .build();
+
+    let matches = match scanner.scan_with_options(&mut codemut, scan_options) {
         Ok(m) => m,
         Err(e) => {
             if options.use_debug {
@@ -62,10 +67,6 @@ pub fn find_secrets(
 
     if matches.is_empty() {
         return vec![];
-    }
-
-    if !options.disable_validation {
-        scanner.validate_matches(&mut matches);
     }
 
     matches
@@ -107,7 +108,14 @@ pub fn find_secrets(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::secret_rule::RulePriority;
+    use crate::model::secret_result::SecretValidationStatus;
+    use crate::model::secret_rule::{
+        RulePriority, SecretRuleHttpCallConfig, SecretRuleHttpRequestConfig,
+        SecretRuleHttpResponseConfig, SecretRuleMatchPairingConfig, SecretRuleMatchValidation,
+        SecretRuleMatchValidationHttpMethod, SecretRuleMatchValidationHttpV2,
+        SecretRulePairedValidatorConfig, SecretRuleResponseCondition,
+        SecretRuleResponseConditionType, SecretRuleStatusCodeMatcher,
+    };
 
     #[test]
     fn test_get_position_in_string() {
@@ -139,6 +147,7 @@ mod tests {
             validators_v2: None,
             match_validation: None,
             pattern_capture_groups: vec![],
+            is_supporting_rule: false,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
@@ -170,6 +179,58 @@ mod tests {
     }
 
     #[test]
+    fn test_find_secrets_discards_supporting_rule_matches() {
+        let supporting_rule = SecretRule {
+            id: "supporting".to_string(),
+            sds_id: "sds_id_supporting".to_string(),
+            name: "supporting".to_string(),
+            description: "supporting".to_string(),
+            pattern: "FOOBAR".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: true,
+        };
+        let primary_rule = SecretRule {
+            id: "primary".to_string(),
+            sds_id: "sds_id_primary".to_string(),
+            name: "primary".to_string(),
+            description: "primary".to_string(),
+            pattern: "FOOBAZ".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        };
+
+        let rules = vec![supporting_rule, primary_rule];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        let text = "FOOBAR\nFOOBAZ\n";
+
+        let results = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rule_id, "primary");
+        assert_eq!(results[0].matches.len(), 1);
+    }
+
+    #[test]
     fn test_find_secrets_with_ignore_directive() {
         let rules: Vec<SecretRule> = vec![SecretRule {
             id: "secret_rule".to_string(),
@@ -185,6 +246,7 @@ mod tests {
             validators_v2: None,
             match_validation: None,
             pattern_capture_groups: vec![],
+            is_supporting_rule: false,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
@@ -223,6 +285,7 @@ mod tests {
             validators_v2: None,
             match_validation: None,
             pattern_capture_groups: vec![],
+            is_supporting_rule: false,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
@@ -271,6 +334,7 @@ mod tests {
             validators_v2: None,
             match_validation: None,
             pattern_capture_groups: vec![],
+            is_supporting_rule: false,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
@@ -289,6 +353,222 @@ mod tests {
         }
     }
 
+    /// A supporting rule's match must be excluded from `find_secrets` output, but its value
+    /// must still be used to populate template variables for the main rule's HTTP validation call.
+    #[test]
+    fn test_supporting_rule_excluded_from_output_but_used_for_match_pairing() {
+        use httpmock::Method::GET;
+        use httpmock::MockServer;
+        use std::collections::BTreeMap;
+
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/validate")
+                .query_param("secret", "api_key_abc123")
+                .query_param("subdomain", "acme_corp");
+            then.status(200);
+        });
+
+        let supporting_rule = SecretRule {
+            id: "supporting".to_string(),
+            sds_id: "sds_id_supporting".to_string(),
+            name: "supporting".to_string(),
+            description: "supporting".to_string(),
+            pattern: "\\b[a-z_]+_corp\\b".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: Some(SecretRuleMatchValidation::CustomHttpV2(
+                SecretRuleMatchValidationHttpV2 {
+                    provides: Some(vec![SecretRulePairedValidatorConfig {
+                        kind: "vendor_xyz".to_string(),
+                        name: "client_subdomain".to_string(),
+                    }]),
+                    calls: vec![],
+                    match_pairing: None,
+                },
+            )),
+            pattern_capture_groups: vec![],
+            is_supporting_rule: true,
+        };
+
+        let mut parameters = BTreeMap::new();
+        parameters.insert("client_subdomain".to_string(), "$SUBDOMAIN".to_string());
+
+        let primary_rule = SecretRule {
+            id: "primary".to_string(),
+            sds_id: "sds_id_primary".to_string(),
+            name: "primary".to_string(),
+            description: "primary".to_string(),
+            pattern: "\\bapi_key_[a-z0-9]+\\b".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: Some(SecretRuleMatchValidation::CustomHttpV2(
+                SecretRuleMatchValidationHttpV2 {
+                    match_pairing: Some(SecretRuleMatchPairingConfig {
+                        kind: "vendor_xyz".to_string(),
+                        parameters,
+                    }),
+                    provides: None,
+                    calls: vec![SecretRuleHttpCallConfig {
+                        request: SecretRuleHttpRequestConfig {
+                            endpoint: format!(
+                                "{}/validate?secret=$MATCH&subdomain=$SUBDOMAIN",
+                                server.base_url()
+                            ),
+                            method: SecretRuleMatchValidationHttpMethod::Get,
+                            hosts: vec![],
+                            headers: BTreeMap::new(),
+                            body: None,
+                            timeout_seconds: Some(3),
+                        },
+                        response: SecretRuleHttpResponseConfig {
+                            conditions: vec![SecretRuleResponseCondition {
+                                condition_type: SecretRuleResponseConditionType::Valid,
+                                status_code: Some(SecretRuleStatusCodeMatcher::Single {
+                                    single: 200,
+                                }),
+                                raw_body: None,
+                                body: None,
+                            }],
+                        },
+                    }],
+                },
+            )),
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        };
+
+        let rules = vec![supporting_rule, primary_rule];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+
+        let results = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            "subdomain: acme_corp, key: api_key_abc123\n",
+            &AnalysisOptions::default(),
+        );
+
+        // The supporting rule match must not appear in output
+        assert!(
+            results.iter().all(|r| r.rule_id != "supporting"),
+            "supporting rule should not appear in output"
+        );
+
+        // The main rule match must appear with Valid status
+        let main_result = results
+            .iter()
+            .find(|r| r.rule_id == "primary")
+            .expect("main rule should have a match");
+        assert_eq!(main_result.matches.len(), 1);
+        assert_eq!(
+            main_result.matches[0].validation_status,
+            SecretValidationStatus::Valid
+        );
+
+        // The HTTP mock was called, proving the template variable was resolved from the
+        // supporting rule's match even though that match is not in the output
+        mock.assert();
+    }
+
+    /// With `disable_validation`, SDS must not run HTTP active checkers — the mock receives no requests.
+    #[test]
+    fn test_custom_http_validation_not_called_when_disable_validation() {
+        use httpmock::Method::GET;
+        use httpmock::MockServer;
+        use std::collections::BTreeMap;
+
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method(GET)
+                .path("/validate")
+                .query_param("secret", "api_key_abc123");
+            then.status(200);
+        });
+
+        let rule = SecretRule {
+            id: "primary".to_string(),
+            sds_id: "sds_id_primary".to_string(),
+            name: "primary".to_string(),
+            description: "primary".to_string(),
+            pattern: "\\bapi_key_[a-z0-9]+\\b".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: Some(SecretRuleMatchValidation::CustomHttpV2(
+                SecretRuleMatchValidationHttpV2 {
+                    match_pairing: None,
+                    provides: None,
+                    calls: vec![SecretRuleHttpCallConfig {
+                        request: SecretRuleHttpRequestConfig {
+                            endpoint: format!("{}/validate?secret=$MATCH", server.base_url()),
+                            method: SecretRuleMatchValidationHttpMethod::Get,
+                            hosts: vec![],
+                            headers: BTreeMap::new(),
+                            body: None,
+                            timeout_seconds: Some(3),
+                        },
+                        response: SecretRuleHttpResponseConfig {
+                            conditions: vec![SecretRuleResponseCondition {
+                                condition_type: SecretRuleResponseConditionType::Valid,
+                                status_code: Some(SecretRuleStatusCodeMatcher::Single {
+                                    single: 200,
+                                }),
+                                raw_body: None,
+                                body: None,
+                            }],
+                        },
+                    }],
+                },
+            )),
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        };
+
+        let rules = vec![rule];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+
+        let options = AnalysisOptions {
+            disable_validation: true,
+            ..Default::default()
+        };
+        let results = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            "key: api_key_abc123\n",
+            &options,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].rule_id, "primary");
+        assert_eq!(results[0].matches.len(), 1);
+        assert_eq!(
+            results[0].matches[0].validation_status,
+            SecretValidationStatus::NotValidated
+        );
+
+        assert_eq!(
+            mock.hits(),
+            0,
+            "HTTP validation must be skipped when disable_validation is true"
+        );
+    }
+
     #[test]
     fn test_find_secrets_all_ignored() {
         let rules: Vec<SecretRule> = vec![SecretRule {
@@ -305,6 +585,7 @@ mod tests {
             validators_v2: None,
             match_validation: None,
             pattern_capture_groups: vec![],
+            is_supporting_rule: false,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Directive on line 1 means ignore entire file
