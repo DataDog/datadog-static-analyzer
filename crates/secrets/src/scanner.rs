@@ -79,7 +79,10 @@ pub fn find_secrets(
                 rule_index: sds_match.rule_index,
                 start,
                 end,
-                validation_status: SecretValidationStatus::from(&sds_match.match_status),
+                validation_status: SecretValidationStatus::from(
+                    &sds_match.match_status,
+                    sds_match.match_value.as_deref(),
+                ),
             })
         })
         .chunk_by(|v| v.rule_index)

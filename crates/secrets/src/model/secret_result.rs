@@ -16,32 +16,33 @@ pub enum SecretValidationStatus {
     NotAvailable,
 }
 
-impl From<&MatchStatus> for SecretValidationStatus {
-    fn from(value: &MatchStatus) -> Self {
-        match value {
+impl SecretValidationStatus {
+    pub fn from(status: &MatchStatus, match_value: Option<&str>) -> Self {
+        match status {
             MatchStatus::NotChecked => SecretValidationStatus::NotValidated,
             MatchStatus::Valid => SecretValidationStatus::Valid,
             MatchStatus::Invalid => SecretValidationStatus::Invalid,
             MatchStatus::ValidationError(validation_errors) => {
-                // Convert all validation errors to ValidationErrorInfo
                 let error_infos: Vec<ValidationErrorInfo> = validation_errors
                     .iter()
                     .map(|error| match error {
                         dd_sds::ValidationError::HttpError(http_error) => ValidationErrorInfo {
                             error_type: ValidationErrorType::HttpError,
                             status_code: http_error.status_code,
-                            message: http_error.message.clone(),
+                            message: redact_secret(&http_error.message, match_value),
                         },
                         dd_sds::ValidationError::UnknownResponseType(unknown_response) => {
-                            let message = format!(
-                                "Unknown response type (body_length: {}, body_prefix: '{}')",
-                                unknown_response.body_length,
-                                unknown_response.body_prefix.as_deref().unwrap_or("")
-                            );
                             ValidationErrorInfo {
                                 error_type: ValidationErrorType::UnknownResponseType,
                                 status_code: unknown_response.status_code,
-                                message,
+                                message: format!(
+                                    "Unknown response type (body_length: {}, body_prefix: '{}')",
+                                    unknown_response.body_length,
+                                    redact_secret(
+                                        unknown_response.body_prefix.as_deref().unwrap_or(""),
+                                        match_value
+                                    ),
+                                ),
                             }
                         }
                     })
@@ -99,10 +100,33 @@ impl ValidationErrorType {
     }
 }
 
+fn redact_secret(message: &str, secret: Option<&str>) -> String {
+    match secret {
+        Some(secret) if !secret.is_empty() => message.replace(secret, "[REDACTED]"),
+        _ => message.to_owned(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json;
+
+    #[test]
+    fn test_redact_secret_replaces_match_value() {
+        let msg = "Error making HTTP request: connection refused for MY_SECRET123";
+        let redacted = redact_secret(msg, Some("MY_SECRET123"));
+        assert_eq!(
+            redacted,
+            "Error making HTTP request: connection refused for [REDACTED]"
+        );
+    }
+
+    #[test]
+    fn test_redact_secret_no_match_value() {
+        let msg = "Error making HTTP request: connection refused";
+        assert_eq!(redact_secret(msg, None), msg);
+    }
 
     #[test]
     fn test_serialize_validation_error_info() {
