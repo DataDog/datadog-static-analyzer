@@ -41,6 +41,7 @@ const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "KOTLIN",
     "PYTHON",
     "RUBY",
+    "RUST",
     "TYPESCRIPT",
     "PHP",
     "YAML",
