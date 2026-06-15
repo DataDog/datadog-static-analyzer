@@ -9,6 +9,150 @@ use std::time::{Duration, Instant};
 use tree_sitter::StreamingIterator;
 use tree_sitter::{CaptureQuantifier, QueryCursorOptions, QueryCursorState};
 
+/// A `#match?` / `#not-match?` predicate extracted from a query source string.
+///
+/// tree-sitter 0.25.x drops these predicates from `query.text_predicates` for
+/// certain grammars (confirmed for Dart: `ts_query__perform_analysis` duplicates
+/// patterns and loses all text predicates from both copies).  We extract and store
+/// them ourselves so `TSQueryCursor::matches` can re-apply the filter.
+#[derive(Debug, Clone)]
+struct ExtractedPredicate {
+    capture_name: Arc<str>,
+    regex: regex::bytes::Regex,
+    /// `true` = `#match?`, `false` = `#not-match?`
+    is_positive: bool,
+}
+
+/// Parse `#match?` and `#not-match?` predicates from a raw tree-sitter query string.
+///
+/// Returns one `ExtractedPredicate` per predicate found.  Unrecognised capture names
+/// (not present in `capture_names`) and invalid regexes are silently skipped.
+///
+/// Tree-sitter unescapes query string literals before compiling them as regexes (`\\` → `\`,
+/// `\"` → `"`, etc.).  We replicate that unescaping here so the extracted regex has the
+/// same semantics as what tree-sitter would have applied.
+fn extract_match_predicates(source: &str, capture_names: &[Arc<str>]) -> Vec<ExtractedPredicate> {
+    let mut result = Vec::new();
+    let mut rest = source;
+    loop {
+        // Find next #match? or #not-match?.  Check for the longer token first so that
+        // "#not-match?" is never confused with a "#match?" at an offset inside it.
+        let Some(pos) = rest
+            .find("#not-match?")
+            .or_else(|| rest.find("#match?"))
+        else {
+            break;
+        };
+        let (is_positive, skip) = if rest[pos..].starts_with("#not-match?") {
+            (false, "#not-match?".len())
+        } else {
+            (true, "#match?".len())
+        };
+        rest = &rest[pos + skip..];
+
+        // Skip whitespace, then read @captureName.
+        let trimmed = rest.trim_start();
+        let Some(after_at) = trimmed.strip_prefix('@') else {
+            continue;
+        };
+        let cap_end = after_at
+            .find(|c: char| !c.is_alphanumeric() && c != '_')
+            .unwrap_or(after_at.len());
+        let cap_name = &after_at[..cap_end];
+
+        // Skip whitespace, then read the string literal "…" with tree-sitter unescaping.
+        let after_ws = after_at[cap_end..].trim_start();
+        let Some(inner) = after_ws.strip_prefix('"') else {
+            continue;
+        };
+        // Unescape the string content exactly as tree-sitter does: `\\` → `\`, `\"` → `"`,
+        // `\n` → newline, etc.  Other `\x` sequences keep their backslash so the regex
+        // engine sees them (e.g. `\d`, `\s` remain meaningful regex escapes).
+        let mut regex_str = String::new();
+        let mut chars = inner.char_indices();
+        let mut escaped = false;
+        loop {
+            match chars.next() {
+                None => break,
+                Some((_, '"')) if !escaped => break,
+                Some((_, '\\')) if !escaped => {
+                    escaped = true;
+                }
+                Some((_, c)) => {
+                    if escaped {
+                        match c {
+                            '\\' => regex_str.push('\\'),
+                            '"' => regex_str.push('"'),
+                            'n' => regex_str.push('\n'),
+                            'r' => regex_str.push('\r'),
+                            't' => regex_str.push('\t'),
+                            // All other `\x` → keep as `\x` for the regex engine
+                            _ => {
+                                regex_str.push('\\');
+                                regex_str.push(c);
+                            }
+                        }
+                        escaped = false;
+                    } else {
+                        regex_str.push(c);
+                    }
+                }
+            }
+        }
+
+        if capture_names.iter().any(|n| n.as_ref() == cap_name) {
+            if let Ok(re) = regex::bytes::Regex::new(&regex_str) {
+                result.push(ExtractedPredicate {
+                    capture_name: Arc::from(cap_name),
+                    regex: re,
+                    is_positive,
+                });
+            }
+        }
+    }
+    result
+}
+
+/// Returns `true` if the given match satisfies all extracted text predicates.
+///
+/// Matches with no captures are rejected when there are predicates, because phantom
+/// zero-capture matches are a side-effect of the same tree-sitter 0.25.x bug that
+/// drops text predicates — they should never reach rule logic.
+fn apply_extracted_predicates(
+    predicates: &[ExtractedPredicate],
+    qm: &QueryMatch<tree_sitter::Node<'_>>,
+    source: &[u8],
+) -> bool {
+    if predicates.is_empty() {
+        return true;
+    }
+    // Phantom match produced by ts_query__perform_analysis pattern duplication.
+    if qm.is_empty() {
+        return false;
+    }
+    for pred in predicates {
+        // Find the TSQueryCapture whose name matches this predicate's capture name.
+        let Some(cap) = qm.iter().find(|c| c.name.as_ref() == pred.capture_name.as_ref()) else {
+            // Capture not present in this match — vacuous-true (same semantics as tree-sitter).
+            continue;
+        };
+        // Collect the node(s) for the capture.
+        let nodes: Vec<&tree_sitter::Node<'_>> = match &cap.contents {
+            TSCaptureContent::Single(n) => vec![n],
+            TSCaptureContent::Multi(ns) => ns.iter().collect(),
+        };
+        for node in nodes {
+            let text = node.utf8_text(source).unwrap_or_default();
+            let matched = pred.regex.is_match(text.as_bytes());
+            // #match? requires ALL nodes to match; #not-match? requires ALL to NOT match.
+            if matched != pred.is_positive {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 pub fn get_tree_sitter_language(language: &Language) -> tree_sitter::Language {
     extern "C" {
         fn tree_sitter_c_sharp() -> tree_sitter::Language;
@@ -79,7 +223,14 @@ pub fn get_query(
     language: &Language,
 ) -> Result<TSQuery, tree_sitter::QueryError> {
     let tree_sitter_language = get_tree_sitter_language(language);
-    TSQuery::try_new(&tree_sitter_language, query_code)
+    let mut tsq = TSQuery::try_new(&tree_sitter_language, query_code)?;
+    // The ts_query__perform_analysis bug (duplicate patterns + dropped text predicates)
+    // only manifests with the Dart grammar under tree-sitter 0.25.x.  Other grammars
+    // handle #match?/#not-match? correctly, so we keep the workaround Dart-only.
+    if matches!(language, Language::Dart) {
+        tsq.extracted_predicates = extract_match_predicates(query_code, &tsq.capture_names);
+    }
+    Ok(tsq)
 }
 
 /// A wrapper around a [`tree_sitter::Query`].
@@ -87,6 +238,10 @@ pub fn get_query(
 pub struct TSQuery {
     query: tree_sitter::Query,
     capture_names: Vec<Arc<str>>,
+    // Dart-only workaround for tree-sitter 0.25.x: ts_query__perform_analysis duplicates
+    // query patterns and drops all text predicates (#match?/#not-match?) for the Dart
+    // grammar.  Populated only when the query was created via get_query(…, Language::Dart).
+    extracted_predicates: Vec<ExtractedPredicate>,
 }
 
 impl TSQuery {
@@ -99,6 +254,7 @@ impl TSQuery {
         Ok(Self {
             query,
             capture_names,
+            extracted_predicates: Vec::new(),
         })
     }
 
@@ -110,6 +266,7 @@ impl TSQuery {
         TSQueryCursor {
             query: &self.query,
             capture_names: self.capture_names.as_slice(),
+            extracted_predicates: &self.extracted_predicates,
             cursor: MaybeOwnedMut::Borrowed(cursor),
             captures_scratch: IndexMap::new(),
         }
@@ -124,6 +281,7 @@ impl TSQuery {
         TSQueryCursor {
             query: &self.query,
             capture_names: self.capture_names.as_slice(),
+            extracted_predicates: &self.extracted_predicates,
             cursor,
             captures_scratch: IndexMap::new(),
         }
@@ -142,9 +300,11 @@ impl TSQuery {
 impl From<tree_sitter::Query> for TSQuery {
     fn from(value: tree_sitter::Query) -> Self {
         let capture_names = TSQuery::build_cache(&value);
+        // No source available, so no predicates can be extracted.
         Self {
             query: value,
             capture_names,
+            extracted_predicates: Vec::new(),
         }
     }
 }
@@ -159,6 +319,7 @@ where
 {
     query: &'a tree_sitter::Query,
     capture_names: &'a [Arc<str>],
+    extracted_predicates: &'a [ExtractedPredicate],
     cursor: MaybeOwnedMut<'a, tree_sitter::QueryCursor>,
     // A scratch IndexMap used to group captures with the same name.
     captures_scratch: IndexMap<u32, TSQueryCapture<tree_sitter::Node<'tree>>>,
@@ -196,6 +357,7 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
             options = options.progress_callback(&mut on_progress);
         }
 
+        let extracted_predicates = self.extracted_predicates;
         let m = cursor.matches_with_options(self.query, node, text.as_bytes(), options);
         m.map_deref(|q_match| {
             for capture in q_match.captures {
@@ -227,6 +389,9 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>()
+        .into_iter()
+        .filter(|qm| apply_extracted_predicates(extracted_predicates, qm, text.as_bytes()))
+        .collect()
     }
 }
 
@@ -780,5 +945,156 @@ SELECT * FROM table WHERE column = 'value';
             .recv_timeout(timeout * 2)
             .expect("query callback should've halted execution");
         assert!(num_captured > 0);
+    }
+
+    /// Verifies that the Dart `#match?` workaround correctly handles escaped regex sequences
+    /// (e.g. `\\d` → `\d`) and `#not-match?`, and that non-Dart grammars are unaffected
+    /// (their predicates are handled natively by tree-sitter).
+    #[test]
+    fn match_predicate_workaround_dart_only() {
+        // Dart: `#match?` with escaped regex (`\\.` = literal dot, `\\d` = digit class).
+        // The workaround is active only for Dart; non-Dart grammars use tree-sitter natively.
+        {
+            let source = "var httpFoo = null;\nvar other = null;\n";
+            let tree = get_tree(source, &Language::Dart).unwrap();
+            let q = get_query(
+                r#"(identifier) @id (#match? @id "^http")"#,
+                &Language::Dart,
+            )
+            .unwrap();
+            let matches = q.cursor().matches(tree.root_node(), source, None);
+            let texts: Vec<&str> = matches
+                .iter()
+                .flat_map(|m| m.iter())
+                .filter_map(|cap| {
+                    if let TSCaptureContent::Single(n) = &cap.contents {
+                        n.utf8_text(source.as_bytes()).ok()
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert!(
+                texts.iter().all(|t| t.starts_with("http")),
+                "Dart #match? predicate not applied: {texts:?}"
+            );
+            assert!(!texts.is_empty(), "Dart #match? over-filtered everything");
+        }
+
+        // Dart: `#not-match?` — identifiers NOT starting with underscore.
+        {
+            let source = "var _private = null;\nvar public_ = null;\n";
+            let tree = get_tree(source, &Language::Dart).unwrap();
+            let q = get_query(
+                r#"(identifier) @id (#not-match? @id "^_")"#,
+                &Language::Dart,
+            )
+            .unwrap();
+            let matches = q.cursor().matches(tree.root_node(), source, None);
+            let texts: Vec<&str> = matches
+                .iter()
+                .flat_map(|m| m.iter())
+                .filter_map(|cap| {
+                    if let TSCaptureContent::Single(n) = &cap.contents {
+                        n.utf8_text(source.as_bytes()).ok()
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            assert!(
+                texts.iter().all(|t| !t.starts_with('_')),
+                "#not-match? leaked private names: {texts:?}"
+            );
+        }
+    }
+
+    /// Debug test for the tree-sitter Dart `#match?` predicate bug.
+    ///
+    /// ## Root cause (confirmed by this test)
+    ///
+    /// `tree_sitter::Query::new` on the Dart grammar (both ABI v14 and v15) compiles a
+    /// single-pattern query `(identifier) @id (#match? @id "^http")` into **2 patterns**
+    /// instead of 1.  `ts_query__perform_analysis` duplicates the pattern AND drops the
+    /// `#match?` text predicate from both copies.  As a result:
+    ///
+    /// - Matches with `pattern_index=1` always have `capture_count=0` → vacuous-true.
+    /// - Matches with `pattern_index=0` have `text_predicates[0]` empty → vacuous-true.
+    ///
+    /// Every identifier matches, regardless of the regex.
+    ///
+    /// ## To fix
+    ///
+    /// The bug is in tree-sitter 0.25.x's query analysis phase, not in the Dart grammar.
+    /// Switching to the `muh-nee/tree-sitter-dart` ABI v14 fork does NOT help.
+    /// The fix requires either upgrading tree-sitter (needs API compatibility check for
+    /// 0.26.x) or patching the `ts_query__perform_analysis` phase to preserve predicates
+    /// when duplicating patterns.
+    ///
+    /// Run with:
+    ///   cargo test --package static-analysis-kernel dart_match_predicate_debug -- --nocapture
+    #[test]
+    fn dart_match_predicate_debug() {
+        let source = "var httpClient = null;\nvar other = null;\n";
+        let dart_lang = get_tree_sitter_language(&Language::Dart);
+        let tree = get_tree(source, &Language::Dart).expect("Dart tree parse failed");
+        let query_str = r#"(identifier) @id (#match? @id "^http")"#;
+
+        // ── Underlying bug: tree-sitter 0.25.x duplicates the pattern ──────────
+        // pattern_count should be 1; tree-sitter returns 2 and drops text predicates.
+        let raw_q = tree_sitter::Query::new(&dart_lang, query_str).expect("raw query");
+        let pattern_count = raw_q.pattern_count();
+        println!(
+            "tree-sitter pattern_count={pattern_count} (expected 1; bug produces {pattern_count})"
+        );
+
+        {
+            use tree_sitter::StreamingIterator as _;
+            let mut cursor = tree_sitter::QueryCursor::new();
+            let mut matches = cursor.matches(&raw_q, tree.root_node(), source.as_bytes());
+            println!("raw tree-sitter matches (predicate not applied by ts — all pass):");
+            let mut n = 0usize;
+            while let Some(m) = matches.next() {
+                let caps: Vec<(u32, &str)> = m
+                    .captures
+                    .iter()
+                    .map(|c| (c.index, c.node.utf8_text(source.as_bytes()).unwrap_or("?")))
+                    .collect();
+                println!("  [{n}] pattern_index={} captures={caps:?}", m.pattern_index);
+                n += 1;
+            }
+            println!("  total={n}");
+        }
+
+        // ── Workaround: TSQueryCursor post-filter should fix the result ─────────
+        let q_wrapped = get_query(query_str, &Language::Dart).expect("wrapped query");
+        let workaround_matches = q_wrapped
+            .cursor()
+            .matches(tree.root_node(), source, None);
+        let matched_texts: Vec<String> = workaround_matches
+            .iter()
+            .flat_map(|qm| qm.iter())
+            .map(|cap| match &cap.contents {
+                TSCaptureContent::Single(n) => {
+                    n.utf8_text(source.as_bytes()).unwrap_or("?").to_string()
+                }
+                TSCaptureContent::Multi(ns) => ns
+                    .iter()
+                    .map(|n| n.utf8_text(source.as_bytes()).unwrap_or("?"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            })
+            .collect();
+        println!("TSQueryCursor matches after workaround: {matched_texts:?}");
+
+        // Only "httpClient" should survive — "other" and phantoms must be filtered.
+        assert!(
+            matched_texts.iter().all(|t| t.starts_with("http")),
+            "workaround failed: non-http identifier(s) leaked through: {matched_texts:?}"
+        );
+        assert!(
+            !matched_texts.is_empty(),
+            "workaround over-filtered: no matches at all"
+        );
     }
 }

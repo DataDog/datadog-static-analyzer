@@ -4368,6 +4368,7 @@ dependencies = [
  "globset",
  "graphviz-rust",
  "indexmap 2.13.0",
+ "regex",
  "sequence_trie",
  "serde",
  "serde-sarif",

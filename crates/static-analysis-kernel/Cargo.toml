@@ -19,6 +19,7 @@ tree-sitter = { workspace = true }
 
 # other
 deno_core = "0.330.0"
+regex = "1"
 globset = "0.4.16"
 graphviz-rust = "0.9.6"
 sequence_trie = "0.3.6"

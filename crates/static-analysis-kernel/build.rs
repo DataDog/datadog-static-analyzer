@@ -259,7 +259,7 @@ fn main() {
             compilation_unit: "tree-sitter-dart".to_string(),
             repository: "https://github.com/UserNobody14/tree-sitter-dart".to_string(),
             build_dir: "src".into(),
-            commit_hash: "02e9bb191c7cb6c73cbd9e09a5d089e4496f9cff".to_string(),
+            commit_hash: "a9bdfa3db2fbc9b9f12c93450d04a671f33a5102".to_string(),
             files: vec!["parser.c".to_string(), "scanner.c".to_string()],
             cpp: false,
         },
