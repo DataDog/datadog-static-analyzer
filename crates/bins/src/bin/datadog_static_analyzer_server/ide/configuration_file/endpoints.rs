@@ -48,7 +48,7 @@ pub fn post_ignore_rule(
     to_response_result(result, encoded)
 }
 
-/// Checks if onboarding is allowed for the configuration file (deprecated).
+/// Checks if onboarding is allowed for the configuration file (legacy route).
 ///
 /// # Arguments
 /// * `content` - The base64-encoded configuration file content, passed as a URL path segment.
