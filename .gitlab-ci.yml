@@ -7,19 +7,10 @@ stages:
 .jobs-resource-allocation:
   variables:
     # Sized resources using https://app.datadoghq.com/dashboard/xff-wqx-4a2/ci-reliability-kubernetes-runner-sizing-and-diagnotic
-    KUBERNETES_CPU_REQUEST: "6"
-    KUBERNETES_CPU_LIMIT: "6"
-    KUBERNETES_MEMORY_REQUEST: "12Gi"
-    KUBERNETES_MEMORY_LIMIT: "12Gi"
-    # Using non-integer CPU requests/limits to avoid the static CPU policy to be set on the helper container.
-    # Static CPU policy reserves full CPU cores for containers with integer requests. It is used to isolate
-    # CI job containers from each other and prevent noisy ones to starve resources on a CI node.
-    # By using non-integer CPU request and limits for the helper container, responsible for cloning,
-    # we can leverage multi-cores to speed-up git clones while preserving isolation for the build container.
-    KUBERNETES_HELPER_CPU_REQUEST: "200m"
-    KUBERNETES_HELPER_CPU_LIMIT: "200m"
-    KUBERNETES_HELPER_MEMORY_REQUEST: "1Gi"
-    KUBERNETES_HELPER_MEMORY_LIMIT: "1Gi"
+    KUBERNETES_POD_CPU_REQUEST: "6"
+    KUBERNETES_POD_CPU_LIMIT: "6"
+    KUBERNETES_POD_MEMORY_REQUEST: "12Gi"
+    KUBERNETES_POD_MEMORY_LIMIT: "12Gi"
 
 test-and-build-arm64:
   extends:
@@ -88,5 +79,3 @@ trigger_internal_image:
     TMPL_SRC_IMAGE: v${CI_PIPELINE_ID}-${CI_COMMIT_SHORT_SHA}
     RELEASE_STAGING: "true"
     RELEASE_PROD: "true"
-
-
