@@ -549,7 +549,7 @@ rulesets:
             ))
             .dispatch();
 
-        assert_eq!(response.status(), Status::InternalServerError);
+        assert_eq!(response.status(), Status::BadRequest);
     }
 
     #[test]

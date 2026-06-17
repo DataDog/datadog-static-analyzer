@@ -51,7 +51,7 @@ pub fn post_ignore_rule(
 /// Checks if onboarding is allowed for the configuration file (deprecated).
 ///
 /// # Arguments
-/// * `content` - The path to the configuration file.
+/// * `content` - The base64-encoded configuration file content, passed as a URL path segment.
 #[instrument()]
 #[rocket::get("/v1/config/can-onboard/<content..>")]
 pub fn get_can_onboard(content: PathBuf) -> Result<Json<bool>, Custom<ConfigFileError>> {
@@ -250,6 +250,9 @@ fn get_rulesets(mut content: String) -> Json<Vec<String>> {
 
 /// Converts the result to a response string, optionally encoding it in base64.
 ///
+/// `SchemaMismatch` is a client error and maps to `400 Bad Request`; all other
+/// failures map to `500 Internal Server Error`.
+///
 /// # Arguments
 /// * `result` - The result string or error.
 /// * `encode` - Whether to encode the result in base64.
@@ -259,5 +262,11 @@ fn to_response_result(
 ) -> Result<String, Custom<ConfigFileError>> {
     result
         .map(|r| if encode { encode_base64_string(r) } else { r })
-        .map_err(|e| Custom(Status::InternalServerError, e))
+        .map_err(|e| {
+            let status = match e {
+                ConfigFileError::SchemaMismatch => Status::BadRequest,
+                _ => Status::InternalServerError,
+            };
+            Custom(status, e)
+        })
 }
