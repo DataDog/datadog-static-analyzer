@@ -37,10 +37,7 @@ fn extract_match_predicates(source: &str, capture_names: &[Arc<str>]) -> Vec<Ext
     loop {
         // Find next #match? or #not-match?.  Check for the longer token first so that
         // "#not-match?" is never confused with a "#match?" at an offset inside it.
-        let Some(pos) = rest
-            .find("#not-match?")
-            .or_else(|| rest.find("#match?"))
-        else {
+        let Some(pos) = rest.find("#not-match?").or_else(|| rest.find("#match?")) else {
             break;
         };
         let (is_positive, skip) = if rest[pos..].starts_with("#not-match?") {
@@ -132,7 +129,10 @@ fn apply_extracted_predicates(
     }
     for pred in predicates {
         // Find the TSQueryCapture whose name matches this predicate's capture name.
-        let Some(cap) = qm.iter().find(|c| c.name.as_ref() == pred.capture_name.as_ref()) else {
+        let Some(cap) = qm
+            .iter()
+            .find(|c| c.name.as_ref() == pred.capture_name.as_ref())
+        else {
             // Capture not present in this match — vacuous-true (same semantics as tree-sitter).
             continue;
         };
@@ -957,11 +957,8 @@ SELECT * FROM table WHERE column = 'value';
         {
             let source = "var httpFoo = null;\nvar other = null;\n";
             let tree = get_tree(source, &Language::Dart).unwrap();
-            let q = get_query(
-                r#"(identifier) @id (#match? @id "^http")"#,
-                &Language::Dart,
-            )
-            .unwrap();
+            let q =
+                get_query(r#"(identifier) @id (#match? @id "^http")"#, &Language::Dart).unwrap();
             let matches = q.cursor().matches(tree.root_node(), source, None);
             let texts: Vec<&str> = matches
                 .iter()
@@ -1060,7 +1057,10 @@ SELECT * FROM table WHERE column = 'value';
                     .iter()
                     .map(|c| (c.index, c.node.utf8_text(source.as_bytes()).unwrap_or("?")))
                     .collect();
-                println!("  [{n}] pattern_index={} captures={caps:?}", m.pattern_index);
+                println!(
+                    "  [{n}] pattern_index={} captures={caps:?}",
+                    m.pattern_index
+                );
                 n += 1;
             }
             println!("  total={n}");
@@ -1068,9 +1068,7 @@ SELECT * FROM table WHERE column = 'value';
 
         // ── Workaround: TSQueryCursor post-filter should fix the result ─────────
         let q_wrapped = get_query(query_str, &Language::Dart).expect("wrapped query");
-        let workaround_matches = q_wrapped
-            .cursor()
-            .matches(tree.root_node(), source, None);
+        let workaround_matches = q_wrapped.cursor().matches(tree.root_node(), source, None);
         let matched_texts: Vec<String> = workaround_matches
             .iter()
             .flat_map(|qm| qm.iter())
