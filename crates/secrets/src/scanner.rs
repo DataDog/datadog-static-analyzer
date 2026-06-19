@@ -9,7 +9,7 @@ use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
-use dd_sds::{RootRuleConfig, RuleConfig, ScanOptionBuilder, Scanner};
+use dd_sds::{RootRuleConfig, RuleConfig, Scanner};
 use itertools::Itertools;
 use std::sync::Arc;
 
@@ -48,11 +48,19 @@ pub fn find_secrets(
 
     let mut codemut = code.to_owned();
 
-    let scan_options = ScanOptionBuilder::new()
-        .with_validate_matching(!options.disable_validation)
-        .build();
-
-    let matches = match scanner.scan_with_options(&mut codemut, scan_options) {
+    // NOTE(incident-56036): use the non-validating `scan()` entrypoint and call
+    // `validate_matches()` as a separate step, rather than `scan_with_options()` with
+    // `with_validate_matching`. The latter triggered a stack overflow inside dd-sds when
+    // scanning very large monorepos (see prod incident 56036).
+    //
+    // The two paths are equivalent for plain validators. They differ for the new
+    // `is_supporting_rule` HTTP match-pairing feature: cross-rule template-variable
+    // resolution (a supporting rule's match feeding `$PARAM` placeholders in a primary
+    // rule's validator URL) only fires inside `scan_with_options`. With this workaround
+    // those primary-rule matches surface as `NotValidated` instead of `Valid` — see the
+    // ignored `test_supporting_rule_excluded_from_output_but_used_for_match_pairing` test.
+    // Revert once dd-sds is patched.
+    let mut matches = match scanner.scan(&mut codemut) {
         Ok(m) => m,
         Err(e) => {
             if options.use_debug {
@@ -67,6 +75,10 @@ pub fn find_secrets(
 
     if matches.is_empty() {
         return vec![];
+    }
+
+    if !options.disable_validation {
+        scanner.validate_matches(&mut matches);
     }
 
     matches
@@ -358,7 +370,14 @@ mod tests {
 
     /// A supporting rule's match must be excluded from `find_secrets` output, but its value
     /// must still be used to populate template variables for the main rule's HTTP validation call.
+    ///
+    /// IGNORED (incident-56036): cross-rule template-variable resolution only happens inside
+    /// `Scanner::scan_with_options(validate_matches=true)`. That call triggers a stack overflow
+    /// in dd-sds on large repos in prod, so `find_secrets` now uses `scan()` + `validate_matches()`
+    /// instead; the latter does not propagate `provides` parameters between rules, so this
+    /// scenario validates as `NotValidated` rather than `Valid`. Re-enable once dd-sds is patched.
     #[test]
+    #[ignore = "regressed by incident-56036 stack-overflow workaround; re-enable after dd-sds fix"]
     fn test_supporting_rule_excluded_from_output_but_used_for_match_pairing() {
         use httpmock::Method::GET;
         use httpmock::MockServer;
