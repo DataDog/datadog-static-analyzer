@@ -191,7 +191,6 @@ pub fn post_add_rulesets(
     format = "application/json",
     data = "<request>"
 )]
-#[deprecated(note = "IDEs stopped supporting this flow")]
 pub fn post_add_rulesets_v2(
     request: Json<AddRuleSetsRequest>,
 ) -> Result<String, Custom<ConfigFileError>> {
