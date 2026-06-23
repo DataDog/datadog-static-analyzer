@@ -202,7 +202,7 @@ pub fn post_add_rulesets_v2(
 /// Adds rulesets to the configuration file.
 ///
 /// When no config content is supplied, creates a new file in the format implied by
-/// `schema_version` (unified when `"v1"`, legacy otherwise). When content is supplied,
+/// `schema_version` (unified when `"UNIFIED"`, legacy otherwise). When content is supplied,
 /// validates that the detected format matches the declared one before mutating.
 fn add_rulesets(request: Json<AddRuleSetsRequest>) -> Result<String, Custom<ConfigFileError>> {
     let AddRuleSetsRequest {

@@ -24,11 +24,16 @@ pub enum ConfigFormat {
 
 impl<'a> From<Option<&'a str>> for ConfigFormat {
     /// Maps the IDE-supplied `schema_version` string to a [`ConfigFormat`].
+    ///
+    /// Accepted values for [`ConfigFormat::Unified`]:
+    /// - `"v1"` — legacy wire value sent by older extension versions (kept for backward compat)
+    /// - `"UNIFIED"` — canonical value sent by newer extension versions
+    ///
     /// Absent or unrecognized values default to [`ConfigFormat::Legacy`] for backward
     /// compatibility with older extensions that never sent this field.
     fn from(schema_version: Option<&'a str>) -> Self {
         match schema_version {
-            Some("v1") => Self::Unified,
+            Some("v1") | Some("UNIFIED") => Self::Unified,
             _ => Self::Legacy,
         }
     }
@@ -378,7 +383,7 @@ impl StaticAnalysisConfigFile {
     }
 
     /// Returns an empty unified-format config, used as the new-file default when
-    /// the IDE declares `schema_version: "v1"` and no existing config is present.
+    /// the IDE declares `schema_version: "UNIFIED"` and no existing config is present.
     fn default_unified() -> Self {
         Self {
             config_file: WithVersion::CodeSecurity(Default::default()),
