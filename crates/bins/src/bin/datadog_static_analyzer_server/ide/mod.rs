@@ -478,7 +478,7 @@ rulesets:
             )
             .dispatch();
 
-        assert_eq!(response.status(), Status::BadRequest);
+        assert_eq!(response.status(), Status::UnprocessableEntity);
         assert!(response
             .into_string()
             .unwrap()
@@ -503,7 +503,7 @@ rulesets:
             .dispatch();
 
         // absent schema_version defaults to LEGACY; unified content is a mismatch
-        assert_eq!(response.status(), Status::BadRequest);
+        assert_eq!(response.status(), Status::UnprocessableEntity);
     }
 
     /// Backward compat: old extensions send legacy content without schema_version — must work.
@@ -549,7 +549,7 @@ rulesets:
             ))
             .dispatch();
 
-        assert_eq!(response.status(), Status::BadRequest);
+        assert_eq!(response.status(), Status::UnprocessableEntity);
     }
 
     #[test]

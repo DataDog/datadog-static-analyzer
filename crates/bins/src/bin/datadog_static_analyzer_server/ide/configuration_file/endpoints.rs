@@ -160,7 +160,7 @@ pub fn post_parse_config(
         .map_err(|e| Custom(Status::BadRequest, e))?;
     config
         .validate_format(format)
-        .map_err(|e| Custom(Status::BadRequest, e))?;
+        .map_err(|e| Custom(Status::UnprocessableEntity, e))?;
     Ok(Json(ParseConfigResponse {
         sast: SastParsedConfig {
             rulesets: config.sast_rulesets(),
@@ -249,8 +249,8 @@ fn get_rulesets(mut content: String) -> Json<Vec<String>> {
 
 /// Converts the result to a response string, optionally encoding it in base64.
 ///
-/// `SchemaMismatch` is a client error and maps to `400 Bad Request`; all other
-/// failures map to `500 Internal Server Error`.
+/// `SchemaMismatch` maps to `422 Unprocessable Entity` (content is syntactically valid but
+/// semantically wrong); all other failures map to `500 Internal Server Error`.
 ///
 /// # Arguments
 /// * `result` - The result string or error.
@@ -263,7 +263,7 @@ fn to_response_result(
         .map(|r| if encode { encode_base64_string(r) } else { r })
         .map_err(|e| {
             let status = match e {
-                ConfigFileError::SchemaMismatch => Status::BadRequest,
+                ConfigFileError::SchemaMismatch => Status::UnprocessableEntity,
                 _ => Status::InternalServerError,
             };
             Custom(status, e)
