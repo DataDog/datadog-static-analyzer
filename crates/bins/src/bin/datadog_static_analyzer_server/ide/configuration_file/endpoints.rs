@@ -61,8 +61,12 @@ pub fn get_can_onboard(content: PathBuf) -> Result<Json<bool>, Custom<ConfigFile
         // NOTE: this is needed due to how Rocket works with multiple segment captures.
         content_str = content_str.replace("\\", "/");
     }
+    // 400: any error here is a parse failure on client-supplied content (bad base64 or invalid
+    // YAML). SchemaMismatch cannot occur because no format is declared (None hint).
+    // Visual Studio — the only known caller of this deprecated route — uses a plain try/catch
+    // and does not inspect the specific HTTP status code, so this is safe to be 400.
     let config = StaticAnalysisConfigFile::try_from(WithHint(Base64String(content_str), None))
-        .map_err(|e| Custom(Status::InternalServerError, e))?;
+        .map_err(|e| Custom(Status::BadRequest, e))?;
 
     let can_onboard = config.is_onboarding_allowed();
     Ok(Json(can_onboard))
@@ -95,7 +99,7 @@ pub fn post_can_onboard_v2(
 
     config
         .validate_format(format)
-        .map_err(|e| Custom(Status::InternalServerError, e))?;
+        .map_err(|e| Custom(Status::UnprocessableEntity, e))?;
 
     let can_onboard = config.is_onboarding_allowed();
     Ok(Json(can_onboard))
