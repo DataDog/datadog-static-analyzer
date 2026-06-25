@@ -29,12 +29,16 @@ fn read_config_file(base_path: &Path, base_name: &str) -> anyhow::Result<Option<
     Ok(None)
 }
 
-fn get_local_config(base_path: &Path) -> anyhow::Result<Option<(file_v1::ConfigFile, String)>> {
+fn get_local_config(
+    base_path: &Path,
+    parse_sast: bool,
+    parse_secrets: bool,
+) -> anyhow::Result<Option<(file_v1::ConfigFile, String)>> {
     let mut local_config: Option<(file_v1::ConfigFile, String)> = None;
     // Code Security config
     if let Some(contents) = read_config_file(base_path, CS_CONFIG_FILE_WITHOUT_EXTENSION)? {
         if contents.chars().any(|c| !c.is_whitespace()) {
-            let parsed = file_v1::parse_yaml(&contents)?;
+            let parsed = file_v1::parse_yaml(&contents, parse_sast, parse_secrets)?;
             local_config = Some((parsed.into(), contents));
         }
     }
@@ -56,12 +60,17 @@ fn get_local_config(base_path: &Path) -> anyhow::Result<Option<(file_v1::ConfigF
 /// - If the user is a Datadog user (e.g. with API keys), we fetch the remote configuration
 ///   and merge it
 /// - If not, we just return the configuration
+///
+/// `parse_sast` and `parse_secrets` should match the enabled products: an invalid section
+/// causes a hard failure only when its product is enabled, and is silently skipped otherwise.
 pub fn get_config(
     path: &Path,
     debug: bool,
+    parse_sast: bool,
+    parse_secrets: bool,
 ) -> anyhow::Result<Option<(file_v1::ConfigFile, ConfigMethod)>> {
-    let (local_config, file_contents) =
-        get_local_config(path)?.map_or((None, None), |(cfg, contents)| (Some(cfg), Some(contents)));
+    let (local_config, file_contents) = get_local_config(path, parse_sast, parse_secrets)?
+        .map_or((None, None), |(cfg, contents)| (Some(cfg), Some(contents)));
 
     if !should_use_datadog_backend() {
         if debug {
@@ -95,7 +104,7 @@ pub fn get_config(
     let text = decode_base64_string(remote_config_base64)
         .context("error when decoding base64 remote config")?;
 
-    let res = file_v1::parse_yaml(&text).inspect_err(|err| {
+    let res = file_v1::parse_yaml(&text, parse_sast, parse_secrets).inspect_err(|err| {
         if debug {
             eprintln!("Error when parsing remote config: {err:?}");
             eprintln!("Proceeding with local config");
@@ -143,7 +152,7 @@ sast:
         for ext in EXTENSIONS {
             let test_dir = TempDir::new().unwrap();
 
-            let cfg = get_local_config(test_dir.path()).unwrap();
+            let cfg = get_local_config(test_dir.path(), true, false).unwrap();
             assert!(cfg.is_none());
 
             let file_path = test_dir
@@ -151,7 +160,9 @@ sast:
                 .join(format!("{LEGACY_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
             fs::write(&file_path, LEGACY).unwrap();
 
-            let (cfg, contents) = get_local_config(test_dir.path()).unwrap().unwrap();
+            let (cfg, contents) = get_local_config(test_dir.path(), true, false)
+                .unwrap()
+                .unwrap();
             assert_eq!(contents, LEGACY);
             assert_eq!(
                 cfg.sast().unwrap().explicit_rulesets().collect::<Vec<_>>(),
@@ -165,7 +176,7 @@ sast:
         for ext in EXTENSIONS {
             let test_dir = TempDir::new().unwrap();
 
-            let cfg = get_local_config(test_dir.path()).unwrap();
+            let cfg = get_local_config(test_dir.path(), true, false).unwrap();
             assert!(cfg.is_none());
 
             let file_path = test_dir
@@ -173,7 +184,9 @@ sast:
                 .join(format!("{CS_CONFIG_FILE_WITHOUT_EXTENSION}.{ext}"));
             fs::write(&file_path, V1).unwrap();
 
-            let (cfg, contents) = get_local_config(test_dir.path()).unwrap().unwrap();
+            let (cfg, contents) = get_local_config(test_dir.path(), true, false)
+                .unwrap()
+                .unwrap();
             assert_eq!(contents, V1);
             assert_eq!(
                 cfg.sast().unwrap().explicit_rulesets().collect::<Vec<_>>(),
@@ -193,7 +206,9 @@ sast:
             let file_path = test_dir.path().join(format!("{prefix}.yaml"));
             fs::write(&file_path, content).unwrap();
         }
-        let (_, contents) = get_local_config(test_dir.path()).unwrap().unwrap();
+        let (_, contents) = get_local_config(test_dir.path(), true, false)
+            .unwrap()
+            .unwrap();
 
         assert_eq!(contents, V1);
     }
@@ -209,7 +224,9 @@ sast:
                 let test_dir = TempDir::new().unwrap();
                 let file_path = test_dir.path().join(format!("{prefix}.yaml"));
                 fs::write(&file_path, content).unwrap();
-                assert!(get_local_config(test_dir.path()).unwrap().is_none());
+                assert!(get_local_config(test_dir.path(), true, false)
+                    .unwrap()
+                    .is_none());
             }
         }
     }

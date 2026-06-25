@@ -27,6 +27,7 @@ use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Plat
 use kernel::classifiers::ArtifactClassification;
 use kernel::config::common::{ConfigMethod, PathConfig};
 use kernel::config::file_v1;
+use kernel::config::file_v1::ParseError;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::rule::{Rule, RuleResult};
@@ -251,7 +252,12 @@ fn main() -> Result<()> {
         exit(EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS)
     }
 
-    let configuration_file_and_method = get_config(&directory_to_analyze, use_debug);
+    let configuration_file_and_method = get_config(
+        &directory_to_analyze,
+        use_debug,
+        static_analysis_enabled,
+        secrets_enabled,
+    );
 
     let (configuration_file, configuration_method): (
         Option<file_v1::ConfigFile>,
@@ -262,11 +268,19 @@ fn main() -> Result<()> {
             _ => (None, None),
         },
         Err(err) => {
-            eprintln!(
-                "Error reading configuration file from {}:\n  {}",
-                directory_to_analyze.display(),
-                err
-            );
+            match err.downcast_ref::<ParseError>() {
+                Some(ParseError::SastParse(e)) => {
+                    eprintln!("Error: invalid SAST configuration: {e}")
+                }
+                Some(ParseError::SecretsParse(e)) => {
+                    eprintln!("Error: invalid secrets configuration: {e}")
+                }
+                _ => eprintln!(
+                    "Error reading configuration file from {}:\n  {}",
+                    directory_to_analyze.display(),
+                    err
+                ),
+            }
             exit(EXIT_CODE_INVALID_CONFIGURATION)
         }
     };
