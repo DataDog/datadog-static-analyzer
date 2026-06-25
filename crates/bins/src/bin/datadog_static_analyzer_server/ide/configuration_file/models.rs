@@ -6,6 +6,8 @@ pub struct IgnoreRuleRequest {
     #[serde(rename = "configuration")]
     pub configuration_base64: String,
     pub encoded: bool,
+    #[serde(default)]
+    pub schema_version: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -14,6 +16,8 @@ pub struct AddRuleSetsRequest {
     #[serde(rename = "configuration")]
     pub configuration_base64: Option<String>,
     pub encoded: bool,
+    #[serde(default)]
+    pub schema_version: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
@@ -26,11 +30,15 @@ pub struct GetRulesetsRequest {
 pub struct CanOnboardRequest {
     #[serde(rename = "configuration")]
     pub configuration_base64: String,
+    #[serde(default)]
+    pub schema_version: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct ParseConfigRequest {
     pub configuration: String,
+    #[serde(default)]
+    pub schema_version: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
