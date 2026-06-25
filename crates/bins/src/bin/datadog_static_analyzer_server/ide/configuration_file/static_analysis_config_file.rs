@@ -44,7 +44,7 @@ pub struct StaticAnalysisConfigFile {
 impl Default for StaticAnalysisConfigFile {
     fn default() -> Self {
         Self {
-            config_file: WithVersion::Legacy(Default::default()),
+            config_file: WithVersion::CodeSecurity(Default::default()),
             original_content: None,
         }
     }
@@ -66,8 +66,8 @@ pub struct Base64String(pub String);
 
 /// Bundles content with an optional format hint for [`TryFrom`] parsing.
 ///
-/// `None` preserves the existing [`ConfigFormat::Legacy`] default for call sites that have
-/// no declared format (e.g. deprecated routes).
+/// `None` means no format was declared by the caller (e.g. deprecated routes); blank content
+/// will fall back to [`StaticAnalysisConfigFile::default_legacy`] in that case.
 #[derive(Debug)]
 pub struct WithHint<T>(pub T, pub Option<ConfigFormat>);
 
@@ -125,7 +125,7 @@ impl StaticAnalysisConfigFile {
         use serde::de::Error;
         if content.trim().is_empty() {
             return Ok(match hint {
-                Some(ConfigFormat::Unified) => Self::default_unified(),
+                Some(ConfigFormat::Legacy) | None => Self::default_legacy(),
                 _ => Self::default(),
             });
         }
@@ -300,8 +300,8 @@ impl StaticAnalysisConfigFile {
                 config
             }
             None => match declared_format {
-                ConfigFormat::Unified => Self::default_unified(),
-                ConfigFormat::Legacy => Self::default(),
+                ConfigFormat::Unified => Self::default(),
+                ConfigFormat::Legacy => Self::default_legacy(),
             },
         };
         config.add_rulesets(rulesets);
@@ -378,11 +378,11 @@ impl StaticAnalysisConfigFile {
         }
     }
 
-    /// Returns an empty unified-format config, used as the new-file default when
-    /// the IDE declares `schema_version: "v1"` and no existing config is present.
-    fn default_unified() -> Self {
+    /// Returns an empty legacy-format config, used as the fallback when the caller
+    /// has declared [`ConfigFormat::Legacy`] or provided no format hint at all.
+    fn default_legacy() -> Self {
         Self {
-            config_file: WithVersion::CodeSecurity(Default::default()),
+            config_file: WithVersion::Legacy(Default::default()),
             original_content: None,
         }
     }
@@ -1251,11 +1251,36 @@ sast:
     }
 
     #[test]
-    fn try_from_returns_default_config_file_if_empty_string() {
-        let expected = super::StaticAnalysisConfigFile::default();
+    fn default_is_unified() {
+        let config = super::StaticAnalysisConfigFile::default();
+        assert_eq!(config.detected_format(), super::ConfigFormat::Unified);
+    }
+
+    #[test]
+    fn try_from_empty_string_with_no_hint_returns_legacy() {
         let config =
             super::StaticAnalysisConfigFile::try_from(WithHint(String::new(), None)).unwrap();
-        assert_eq!(config, expected);
+        assert_eq!(config.detected_format(), super::ConfigFormat::Legacy);
+    }
+
+    #[test]
+    fn try_from_empty_string_with_legacy_hint_returns_legacy() {
+        let config = super::StaticAnalysisConfigFile::try_from(WithHint(
+            String::new(),
+            Some(super::ConfigFormat::Legacy),
+        ))
+        .unwrap();
+        assert_eq!(config.detected_format(), super::ConfigFormat::Legacy);
+    }
+
+    #[test]
+    fn try_from_empty_string_with_unified_hint_returns_unified() {
+        let config = super::StaticAnalysisConfigFile::try_from(WithHint(
+            String::new(),
+            Some(super::ConfigFormat::Unified),
+        ))
+        .unwrap();
+        assert_eq!(config.detected_format(), super::ConfigFormat::Unified);
     }
 
     #[test]
