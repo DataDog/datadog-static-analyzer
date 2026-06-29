@@ -19,6 +19,9 @@ pub enum ConfigFileError {
         #[from]
         source: ReconcileError,
     },
+
+    #[error("Config content does not match the declared schema version")]
+    SchemaMismatch,
 }
 
 impl From<anyhow::Error> for ConfigFileError {
@@ -45,6 +48,7 @@ impl ConfigFileError {
             Self::Parser { .. } => 1,
             Self::Decoder { .. } => 2,
             Self::CommentReconciler { .. } => 3,
+            Self::SchemaMismatch => 4,
         }
     }
 }

@@ -38,6 +38,19 @@ pub struct YamlConfigFile {
     pub(crate) iast: Option<serde_yaml::Value>,
 }
 
+impl Default for YamlConfigFile {
+    fn default() -> Self {
+        Self {
+            schema_version: YamlSchemaVersion::MajorMinor((1, 0)),
+            sast: None,
+            secrets: None,
+            iac: None,
+            sca: None,
+            iast: None,
+        }
+    }
+}
+
 impl<'de> Deserialize<'de> for YamlConfigFile {
     fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
     where

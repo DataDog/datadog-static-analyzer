@@ -7,7 +7,9 @@ use crate::datadog_static_analyzer_server::ide::configuration_file::models::{
 
 use super::error::ConfigFileError;
 use super::models::{AddRuleSetsRequest, IgnoreRuleRequest};
-use super::static_analysis_config_file::{Base64String, StaticAnalysisConfigFile};
+use super::static_analysis_config_file::{
+    Base64String, ConfigFormat, StaticAnalysisConfigFile, WithHint,
+};
 use kernel::utils::encode_base64_string;
 use rocket::http::Status;
 use rocket::response::status::Custom;
@@ -35,26 +37,39 @@ pub fn post_ignore_rule(
         rule,
         configuration_base64,
         encoded,
-        ..
+        schema_version,
     } = request.into_inner();
     tracing::debug!(rule, content = &configuration_base64);
     let result = StaticAnalysisConfigFile::with_ignored_rule(
         rule.into(),
         Base64String(configuration_base64),
+        ConfigFormat::from(schema_version.as_deref()),
     );
     to_response_result(result, encoded)
 }
 
-/// Checks if onboarding is allowed for the configuration file (deprecated).
+/// Checks if onboarding is allowed for the configuration file (legacy route).
 ///
 /// # Arguments
-/// * `content` - The path to the configuration file.
+/// * `content` - The base64-encoded configuration file content, passed as a URL path segment.
 #[instrument()]
 #[rocket::get("/v1/config/can-onboard/<content..>")]
-#[deprecated(note = "IDEs stopped supporting onboarding")]
 pub fn get_can_onboard(content: PathBuf) -> Result<Json<bool>, Custom<ConfigFileError>> {
-    let content_str = content.to_string_lossy().into_owned();
-    can_onboard(content_str)
+    // NOTE: this method is still used by Visual Studio.
+    let mut content_str = content.to_string_lossy().into_owned();
+    if cfg!(target_os = "windows") {
+        // NOTE: this is needed due to how Rocket works with multiple segment captures.
+        content_str = content_str.replace("\\", "/");
+    }
+    // 400: any error here is a parse failure on client-supplied content (bad base64 or invalid
+    // YAML). SchemaMismatch cannot occur because no format is declared (None hint).
+    // Visual Studio — the only known caller of this deprecated route — uses a plain try/catch
+    // and does not inspect the specific HTTP status code, so this is safe to be 400.
+    let config = StaticAnalysisConfigFile::try_from(WithHint(Base64String(content_str), None))
+        .map_err(|e| Custom(Status::BadRequest, e))?;
+
+    let can_onboard = config.is_onboarding_allowed();
+    Ok(Json(can_onboard))
 }
 
 /// Checks if onboarding is allowed for the configuration file (v2).
@@ -67,15 +82,27 @@ pub fn get_can_onboard(content: PathBuf) -> Result<Json<bool>, Custom<ConfigFile
     format = "application/json",
     data = "<request>"
 )]
-#[deprecated(note = "IDEs stopped supporting onboarding")]
 pub fn post_can_onboard_v2(
     request: Json<CanOnboardRequest>,
 ) -> Result<Json<bool>, Custom<ConfigFileError>> {
     let CanOnboardRequest {
         configuration_base64,
-        ..
+        schema_version,
     } = request.into_inner();
-    can_onboard(configuration_base64)
+
+    let format = ConfigFormat::from(schema_version.as_deref());
+    let config = StaticAnalysisConfigFile::try_from(WithHint(
+        Base64String(configuration_base64),
+        Some(format),
+    ))
+    .map_err(|e| Custom(Status::InternalServerError, e))?;
+
+    config
+        .validate_format(format)
+        .map_err(|e| Custom(Status::UnprocessableEntity, e))?;
+
+    let can_onboard = config.is_onboarding_allowed();
+    Ok(Json(can_onboard))
 }
 
 /// Gets the rulesets from the static analysis configuration file (deprecated).
@@ -117,6 +144,9 @@ pub fn post_get_rulesets_v2(request: Json<GetRulesetsRequest>) -> Json<Vec<Strin
 
 /// Parses the static analysis configuration YAML and returns per-product fields.
 ///
+/// Returns `400` when the content cannot be parsed or when the detected schema does not
+/// match the caller-declared `schema_version` — mirroring the CLI's filename-strict behavior.
+///
 /// # Arguments
 /// * `request` - The request containing the raw YAML string.
 #[instrument()]
@@ -124,10 +154,17 @@ pub fn post_get_rulesets_v2(request: Json<GetRulesetsRequest>) -> Json<Vec<Strin
 pub fn post_parse_config(
     request: Json<ParseConfigRequest>,
 ) -> Result<Json<ParseConfigResponse>, Custom<ConfigFileError>> {
-    let ParseConfigRequest { configuration } = request.into_inner();
+    let ParseConfigRequest {
+        configuration,
+        schema_version,
+    } = request.into_inner();
     tracing::debug!(%configuration);
-    let config = StaticAnalysisConfigFile::try_from(configuration)
+    let format = ConfigFormat::from(schema_version.as_deref());
+    let config = StaticAnalysisConfigFile::try_from(WithHint(configuration, Some(format)))
         .map_err(|e| Custom(Status::BadRequest, e))?;
+    config
+        .validate_format(format)
+        .map_err(|e| Custom(Status::UnprocessableEntity, e))?;
     Ok(Json(ParseConfigResponse {
         sast: SastParsedConfig {
             rulesets: config.sast_rulesets(),
@@ -158,7 +195,6 @@ pub fn post_add_rulesets(
     format = "application/json",
     data = "<request>"
 )]
-#[deprecated(note = "IDEs stopped supporting this flow")]
 pub fn post_add_rulesets_v2(
     request: Json<AddRuleSetsRequest>,
 ) -> Result<String, Custom<ConfigFileError>> {
@@ -169,22 +205,21 @@ pub fn post_add_rulesets_v2(
 
 /// Adds rulesets to the configuration file.
 ///
-/// # Arguments
-/// * `request` - The request containing rulesets and configuration file (base64).
+/// When no config content is supplied, creates a new file in the format implied by
+/// `schema_version` (unified when `"v1"`, legacy otherwise). When content is supplied,
+/// validates that the detected format matches the declared one before mutating.
 fn add_rulesets(request: Json<AddRuleSetsRequest>) -> Result<String, Custom<ConfigFileError>> {
     let AddRuleSetsRequest {
         rulesets,
         configuration_base64,
         encoded,
-        ..
+        schema_version,
     } = request.into_inner();
-    tracing::debug!(
-        rulesets=?&rulesets,
-        content=&configuration_base64
-    );
+    tracing::debug!(rulesets=?&rulesets, content=&configuration_base64);
     let result = StaticAnalysisConfigFile::with_added_rulesets(
         &rulesets,
         configuration_base64.map(Base64String),
+        ConfigFormat::from(schema_version.as_deref()),
     );
     to_response_result(result, encoded)
 }
@@ -207,7 +242,7 @@ fn get_rulesets(mut content: String) -> Json<Vec<String>> {
         content = content.replace("\\", "/");
     }
     tracing::debug!(%content);
-    let rulesets = StaticAnalysisConfigFile::try_from(Base64String(content))
+    let rulesets = StaticAnalysisConfigFile::try_from(WithHint(Base64String(content), None))
         .map(|config| config.sast_rulesets())
         .unwrap_or_else(|e| {
             tracing::error!(error = ?e, "Error trying to parse config file");
@@ -216,24 +251,10 @@ fn get_rulesets(mut content: String) -> Json<Vec<String>> {
     Json(rulesets)
 }
 
-/// Checks if onboarding is allowed for the configuration file.
-///
-/// # Arguments
-/// * `content` - The configuration file content (base64).
-fn can_onboard(mut content: String) -> Result<Json<bool>, Custom<ConfigFileError>> {
-    if cfg!(target_os = "windows") {
-        // NOTE: this is needed due to how Rocket works with multiple segment captures.
-        // we may get rid of this once v1 endpoints are no longer needed.
-        content = content.replace("\\", "/");
-    }
-    tracing::debug!(%content);
-    let config = StaticAnalysisConfigFile::try_from(Base64String(content))
-        .map_err(|e| Custom(Status::InternalServerError, e))?;
-    let can_onboard = config.is_onboarding_allowed();
-    Ok(Json(can_onboard))
-}
-
 /// Converts the result to a response string, optionally encoding it in base64.
+///
+/// `SchemaMismatch` maps to `422 Unprocessable Entity` (content is syntactically valid but
+/// semantically wrong); all other failures map to `500 Internal Server Error`.
 ///
 /// # Arguments
 /// * `result` - The result string or error.
@@ -244,5 +265,11 @@ fn to_response_result(
 ) -> Result<String, Custom<ConfigFileError>> {
     result
         .map(|r| if encode { encode_base64_string(r) } else { r })
-        .map_err(|e| Custom(Status::InternalServerError, e))
+        .map_err(|e| {
+            let status = match e {
+                ConfigFileError::SchemaMismatch => Status::UnprocessableEntity,
+                _ => Status::InternalServerError,
+            };
+            Custom(status, e)
+        })
 }

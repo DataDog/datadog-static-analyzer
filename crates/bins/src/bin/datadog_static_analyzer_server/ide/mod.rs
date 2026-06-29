@@ -61,6 +61,15 @@ rulesets:
 - java-1-??
 - java-security"#;
 
+    const UNIFIED_CONFIGURATION: &'static str = r#"schema-version: v1.0
+sast:
+  use-rulesets:
+    - python-security
+    - java-security
+"#;
+
+    const UNIFIED_CONFIGURATION_NO_RULESETS: &'static str = "schema-version: v1.0\n";
+
     #[test]
     fn post_ignore_rule() {
         let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
@@ -119,7 +128,7 @@ rulesets:
 
         let response = client.get(uri).dispatch();
 
-        assert_eq!(response.status(), Status::InternalServerError);
+        assert_eq!(response.status(), Status::BadRequest);
         assert!(response.into_string().contains("Error parsing yaml file"));
     }
 
@@ -423,5 +432,192 @@ rulesets:
 
         assert_eq!(response.status(), Status::Ok);
         assert_eq!(response.into_string().unwrap(), expected);
+    }
+
+    // --- schema_version strict validation ---
+
+    #[test]
+    fn parse_config_accepts_unified_content_with_v1_schema_version() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_parse_config
+            ))
+            .header(ContentType::JSON)
+            .body(
+                serde_json::json!({
+                    "configuration": UNIFIED_CONFIGURATION,
+                    "schema_version": "v1",
+                })
+                .to_string(),
+            )
+            .dispatch();
+
+        assert_eq!(response.status(), Status::Ok);
+        let body = response.into_string().unwrap();
+        assert!(body.contains("python-security"));
+        assert!(body.contains("java-security"));
+    }
+
+    #[test]
+    fn parse_config_rejects_legacy_content_declared_as_unified() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_parse_config
+            ))
+            .header(ContentType::JSON)
+            .body(
+                serde_json::json!({
+                    "configuration": NORMAL_CONFIGURATION,
+                    "schema_version": "v1",
+                })
+                .to_string(),
+            )
+            .dispatch();
+
+        assert_eq!(response.status(), Status::UnprocessableEntity);
+        assert!(response
+            .into_string()
+            .unwrap()
+            .contains("does not match the declared schema version"));
+    }
+
+    #[test]
+    fn parse_config_rejects_unified_content_with_no_schema_version() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_parse_config
+            ))
+            .header(ContentType::JSON)
+            .body(
+                serde_json::json!({
+                    "configuration": UNIFIED_CONFIGURATION,
+                })
+                .to_string(),
+            )
+            .dispatch();
+
+        // absent schema_version defaults to LEGACY; unified content is a mismatch
+        assert_eq!(response.status(), Status::UnprocessableEntity);
+    }
+
+    /// Backward compat: old extensions send legacy content without schema_version — must work.
+    #[test]
+    fn parse_config_backward_compat_legacy_content_no_schema_version() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_parse_config
+            ))
+            .header(ContentType::JSON)
+            .body(
+                serde_json::json!({
+                    "configuration": NORMAL_CONFIGURATION,
+                })
+                .to_string(),
+            )
+            .dispatch();
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(
+            response.into_string().unwrap(),
+            r#"{"sast":{"rulesets":["java-1","java-security"]}}"#
+        );
+    }
+
+    #[test]
+    fn ignore_rule_rejects_schema_version_mismatch() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
+
+        let response = client
+            .post(uri!(super::configuration_file::endpoints::post_ignore_rule))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{
+                "rule": "ruleset1/rule1",
+                "configuration": "{config}",
+                "encoded": false,
+                "schema_version": "v1"
+            }}"#
+            ))
+            .dispatch();
+
+        assert_eq!(response.status(), Status::UnprocessableEntity);
+    }
+
+    #[test]
+    fn can_onboard_v2_rejects_schema_version_mismatch() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+        let config = encode_base64_string(NORMAL_CONFIGURATION.to_string());
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_can_onboard_v2
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{
+                "configuration": "{config}",
+                "schema_version": "v1"
+            }}"#
+            ))
+            .dispatch();
+
+        assert_eq!(response.status(), Status::UnprocessableEntity);
+    }
+
+    #[test]
+    fn add_rulesets_creates_unified_file_when_schema_version_v1() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_add_rulesets_v2
+            ))
+            .header(ContentType::JSON)
+            .body(
+                serde_json::json!({
+                    "rulesets": ["python-security"],
+                    "encoded": false,
+                    "schema_version": "v1",
+                })
+                .to_string(),
+            )
+            .dispatch();
+
+        assert_eq!(response.status(), Status::Ok);
+        let body = response.into_string().unwrap();
+        // unified format uses schema-version: v1.0
+        assert!(body.contains("schema-version: v1.0"), "body: {body}");
+        assert!(body.contains("python-security"), "body: {body}");
+    }
+
+    #[test]
+    fn can_onboard_v2_accepts_unified_content_with_v1_schema_version() {
+        let client = Client::tracked(mount_rocket()).expect("valid rocket instance");
+        let config = encode_base64_string(UNIFIED_CONFIGURATION_NO_RULESETS.to_string());
+
+        let response = client
+            .post(uri!(
+                super::configuration_file::endpoints::post_can_onboard_v2
+            ))
+            .header(ContentType::JSON)
+            .body(format!(
+                r#"{{
+                "configuration": "{config}",
+                "schema_version": "v1"
+            }}"#
+            ))
+            .dispatch();
+
+        assert_eq!(response.status(), Status::Ok);
+        assert_eq!(response.into_string().unwrap(), "true");
     }
 }
