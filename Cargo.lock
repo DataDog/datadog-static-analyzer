@@ -37,6 +37,7 @@ dependencies = [
  "cfg-if",
  "getrandom 0.3.4",
  "once_cell",
+ "serde",
  "version_check",
  "zerocopy",
 ]
@@ -559,7 +560,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab"
 dependencies = [
  "memchr",
- "regex-automata 0.4.14",
+ "regex-automata",
  "serde",
 ]
 
@@ -1011,9 +1012,9 @@ dependencies = [
 ]
 
 [[package]]
-name = "dd-sds"
-version = "0.1.2"
-source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=51fc3d11b6b24c9b1b1d74f8285b47c3d7faa253#51fc3d11b6b24c9b1b1d74f8285b47c3d7faa253"
+name = "dd-sensitive-data-scanner"
+version = "0.0.0"
+source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=b2dca51b27a87ecb2d847ad4167a0537afca1972#b2dca51b27a87ecb2d847ad4167a0537afca1972"
 dependencies = [
  "ahash",
  "aws-sign-v4",
@@ -1023,7 +1024,7 @@ dependencies = [
  "chrono",
  "crc32fast",
  "ethaddr",
- "farmhash",
+ "farmhash2",
  "futures",
  "iban_validate",
  "iso_iec_7064",
@@ -1037,8 +1038,8 @@ dependencies = [
  "once_cell",
  "rayon",
  "regex",
- "regex-automata 0.4.14",
- "regex-automata 0.4.9",
+ "regex-automata",
+ "regex-pool",
  "regex-syntax 0.7.5",
  "reqwest",
  "serde",
@@ -1410,9 +1411,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "farmhash"
+name = "farmhash2"
 version = "1.1.5"
-source = "git+https://github.com/fuchsnj/rust-farmhash?rev=82d80b689d65fbd378b13deff10cdd07794df64e#82d80b689d65fbd378b13deff10cdd07794df64e"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c08c4e203d1ec89aa6b1c81b7c14ef14f1a985e2eee5e452c5c1abf66ccee9d2"
 
 [[package]]
 name = "fastrand"
@@ -1719,7 +1721,7 @@ dependencies = [
  "aho-corasick",
  "bstr",
  "log",
- "regex-automata 0.4.14",
+ "regex-automata",
  "regex-syntax 0.8.10",
 ]
 
@@ -2455,7 +2457,7 @@ version = "0.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "507460a910eb7b32ee961886ff48539633b788a36b65692b95f225b844c82553"
 dependencies = [
- "regex-automata 0.4.14",
+ "regex-automata",
 ]
 
 [[package]]
@@ -2614,7 +2616,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d1525a2a28c7f4fa0fc98bb91ae755d1e2d1505079e05539e35bc876b5d65ae9"
 dependencies = [
- "regex-automata 0.4.14",
+ "regex-automata",
 ]
 
 [[package]]
@@ -3531,18 +3533,8 @@ checksum = "e10754a14b9137dd7b1e3e5b0493cc9171fdd105e0ab477f51b72e7f3ac0e276"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.14",
+ "regex-automata",
  "regex-syntax 0.8.10",
-]
-
-[[package]]
-name = "regex-automata"
-version = "0.4.9"
-source = "git+https://github.com/fbryden/regex?rev=6952250af962ca3e364da47382b16dba9c703431#6952250af962ca3e364da47382b16dba9c703431"
-dependencies = [
- "aho-corasick",
- "memchr",
- "regex-syntax 0.8.5",
 ]
 
 [[package]]
@@ -3557,15 +3549,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-pool"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9d1c4e093793ea93da49df43979b94c6b73d94c00baba346eeda9f58e53e8e5"
+
+[[package]]
 name = "regex-syntax"
 version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dbb5fb1acd8a1a18b3dd5be62d25485eb770e05afb408a9627d14d451bae12da"
-
-[[package]]
-name = "regex-syntax"
-version = "0.8.5"
-source = "git+https://github.com/fbryden/regex?rev=6952250af962ca3e364da47382b16dba9c703431#6952250af962ca3e364da47382b16dba9c703431"
 
 [[package]]
 name = "regex-syntax"
@@ -3966,7 +3959,7 @@ version = "0.8.7"
 dependencies = [
  "anyhow",
  "common",
- "dd-sds",
+ "dd-sensitive-data-scanner",
  "futures",
  "httpmock",
  "itertools 0.14.0",
@@ -4954,7 +4947,7 @@ dependencies = [
  "matchers",
  "nu-ansi-term",
  "once_cell",
- "regex-automata 0.4.14",
+ "regex-automata",
  "serde",
  "serde_json",
  "sharded-slab",
