@@ -5,10 +5,10 @@ use std::path::PathBuf;
 
 use cli::config_file::get_config;
 use cli::constants::{
-    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_FAIL_ON_VIOLATION,
+    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, DEFAULT_TOOL_NAME, EXIT_CODE_FAIL_ON_VIOLATION,
     EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
     EXIT_CODE_NO_OUTPUT, EXIT_CODE_RULESET_NOT_FOUND, EXIT_CODE_RULE_FILE_WITH_CONFIGURATION,
-    EXIT_CODE_UNSAFE_SUBDIRECTORIES,
+    EXIT_CODE_UNSAFE_SUBDIRECTORIES, SECRETS_HISTORY_TOOL_NAME,
 };
 use cli::csv;
 use cli::datadog_utils::{
@@ -25,12 +25,14 @@ use cli::rule_utils::{
     convert_secret_result_to_rule_result, count_violations_by_severities, get_languages_for_rules,
     get_rulesets_from_file,
 };
-use cli::sarif::sarif_utils::{generate_sarif_file, SarifReportMetadata};
+use cli::sarif::sarif_utils::{generate_sarif_file, HistoricalSecretResult, SarifReportMetadata};
 use cli::utils::{choose_cpu_count, print_configuration};
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::diff_aware::DiffAware;
-use datadog_static_analyzer::{secret_analysis, static_analysis, CliResults};
+use datadog_static_analyzer::{
+    git_history_secret_analysis, secret_analysis, static_analysis, CliResults,
+};
 use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::classifiers::ArtifactClassification;
@@ -40,7 +42,7 @@ use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
-use secrets::model::secret_result::SecretValidationStatus;
+use secrets::model::secret_result::{SecretResult, SecretValidationStatus};
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::collections::HashMap;
 use std::io::prelude::*;
@@ -154,6 +156,14 @@ fn main() -> Result<()> {
         "how long a rule can run before being killed, in milliseconds",
         "1000",
     );
+    opts.optflag(
+        "",
+        "scan-git-history-only",
+        "scan the entire git history for secrets that are not present at the current HEAD. Every \
+         commit is scanned (not just what current refs point to); a finding is 'history-only' \
+         relative to HEAD, so a secret still live at the tip of another branch, tag, or remote may \
+         also be reported as history-only.",
+    );
 
     let matches = match opts.parse(&args[1..]) {
         Ok(m) => m,
@@ -227,6 +237,15 @@ fn main() -> Result<()> {
         .map(|value| value == "true" || value == "yes")
         .unwrap_or(false);
     let secrets_enabled = secrets_enabled_old_option || secrets_enabled_new_option;
+
+    let scan_git_history_only = matches.opt_present("scan-git-history-only");
+
+    // A git-history scan produces a historic-only secrets report, so it is meaningless
+    // without secrets enabled. Fail fast rather than silently running a no-op.
+    if scan_git_history_only && !secrets_enabled {
+        eprintln!("--scan-git-history-only requires secrets scanning; pass --enable-secrets true");
+        exit(EXIT_CODE_INVALID_CONFIGURATION);
+    }
 
     let output_file = matches
         .opt_str("o")
@@ -611,8 +630,9 @@ fn main() -> Result<()> {
     }
 
     // Secrets detection
-
-    if secrets_enabled {
+    //
+    // Skipped entirely for a git-history scan.
+    if secrets_enabled && !scan_git_history_only {
         let secrets_start = Instant::now();
 
         let secrets_files: Vec<PathBuf> = files_in_repository
@@ -671,6 +691,23 @@ fn main() -> Result<()> {
         result.secrets = Some(execution_results);
     }
 
+    // Git history scanning
+    //
+    // When `--scan-git-history-only` is set, the secrets results are replaced with the
+    // historical findings (the HEAD secret scan is skipped above). Static analysis is an
+    // independent product and is left untouched.
+    let mut historic_secrets: Vec<HistoricalSecretResult> = Vec::new();
+    if scan_git_history_only {
+        let history_start = std::time::Instant::now();
+        historic_secrets = git_history_secret_analysis(&configuration, &analysis_options)
+            .context("git history secret analysis failed")?;
+
+        let history_duration = history_start.elapsed().as_secs_f64();
+        println!("Git History Secrets Summary");
+        println!("  Historical secrets found: {}", historic_secrets.len());
+        println!("  Duration: {:.3}s", history_duration);
+    }
+
     let global_execution_time_secs = global_start_time.elapsed().as_secs();
 
     // if we have more than one static analysis violation and printing is enabled, show all
@@ -685,6 +722,15 @@ fn main() -> Result<()> {
     let secrets_violations = secrets_violations
         .map(|r| r.rule_results)
         .unwrap_or_default();
+
+    // Historic findings carry their commit provenance in `historic_secrets` (consumed by the SARIF
+    // output). For JSON/CSV, surface their base results alongside any HEAD secrets. HEAD and
+    // historic scans are mutually exclusive, so at most one of the two is non-empty.
+    let secrets_for_text_output: Vec<SecretResult> = secrets_violations
+        .iter()
+        .cloned()
+        .chain(historic_secrets.iter().map(|h| h.inner.clone()))
+        .collect();
 
     let nb_total_static_analysis_violations: usize = static_analysis_rule_results
         .iter()
@@ -705,7 +751,7 @@ fn main() -> Result<()> {
 
     let value = match configuration.output_format {
         OutputFormat::Csv => {
-            csv::generate_csv_results(&static_analysis_rule_results, &secrets_violations)
+            csv::generate_csv_results(&static_analysis_rule_results, &secrets_for_text_output)
         }
         OutputFormat::Json => {
             // make sure suppressed results are not included
@@ -717,8 +763,7 @@ fn main() -> Result<()> {
                     r
                 })
                 .collect();
-            let filtered_secrets: Vec<RuleResult> = secrets_violations
-                .clone()
+            let filtered_secrets: Vec<RuleResult> = secrets_for_text_output
                 .iter()
                 .map(convert_secret_result_to_rule_result)
                 .map(|mut r| {
@@ -733,12 +778,19 @@ fn main() -> Result<()> {
             &configuration,
             static_analysis_rule_results,
             secrets_violations,
+            historic_secrets,
             SarifReportMetadata {
                 add_git_info,
                 debug: configuration.use_debug,
                 config_digest: configuration.generate_diff_aware_digest(),
                 diff_aware_parameters,
                 execution_time_secs: global_execution_time_secs,
+                tool_name: if scan_git_history_only {
+                    SECRETS_HISTORY_TOOL_NAME.to_string()
+                } else {
+                    DEFAULT_TOOL_NAME.to_string()
+                },
+                split_runs_by_tool: scan_git_history_only,
             },
             &all_path_metadata,
         )
