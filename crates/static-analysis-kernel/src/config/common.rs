@@ -325,10 +325,12 @@ pub fn parse_any_schema_yaml(
             .map(WithVersion::Legacy)
             .map_err(ConfigError::Parse),
         YamlSchemaVersion::MajorMinor((1, _)) => {
-            file_v1::parse_yaml(config_contents)
+            file_v1::parse_yaml(config_contents, true, true)
                 .map(WithVersion::CodeSecurity)
                 .map_err(|err| match err {
-                    file_v1::ParseError::Parse(inner) => ConfigError::Parse(inner),
+                    file_v1::ParseError::Parse(inner)
+                    | file_v1::ParseError::SastParse(inner)
+                    | file_v1::ParseError::SecretsParse(inner) => ConfigError::Parse(inner),
                     // This is in a branch where major == 1, so this is impossible.
                     file_v1::ParseError::WrongSchema(_) => unreachable!(),
                 })

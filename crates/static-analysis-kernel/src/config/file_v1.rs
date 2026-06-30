@@ -17,6 +17,10 @@ pub enum ParseError {
     WrongSchema(YamlSchemaVersion),
     #[error(transparent)]
     Parse(#[from] serde_yaml::Error),
+    #[error("invalid `sast` configuration: {0}")]
+    SastParse(serde_yaml::Error),
+    #[error("invalid `secrets` configuration: {0}")]
+    SecretsParse(serde_yaml::Error),
 }
 
 /// Code Security v1.x configuration file.
@@ -27,9 +31,9 @@ pub struct YamlConfigFile {
     pub(crate) schema_version: YamlSchemaVersion,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sast: Option<YamlSastConfig>,
-    // Unparsed
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) secrets: Option<serde_yaml::Value>,
+    pub secrets: Option<YamlSecretsConfig>,
+    // Unparsed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) iac: Option<serde_yaml::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -82,11 +86,16 @@ impl YamlConfigFile {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ConfigFile {
     sast: Option<SastConfig>,
+    secrets: Option<SecretsConfig>,
 }
 
 impl ConfigFile {
     pub fn sast(&self) -> Option<&SastConfig> {
         self.sast.as_ref()
+    }
+
+    pub fn secrets(&self) -> Option<&SecretsConfig> {
+        self.secrets.as_ref()
     }
 }
 
@@ -94,6 +103,7 @@ impl From<YamlConfigFile> for ConfigFile {
     fn from(value: YamlConfigFile) -> Self {
         Self {
             sast: value.sast.map(Into::into),
+            secrets: value.secrets.map(Into::into),
         }
     }
 }
@@ -291,6 +301,75 @@ impl From<YamlGlobalConfig> for GlobalConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, Default, Eq, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct YamlSecretsGlobalConfig {
+    #[serde(flatten)]
+    pub path_config: YamlPathConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct YamlSecretsConfigMinor0 {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) global_config: Option<YamlSecretsGlobalConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum YamlSecretsConfig {
+    Minor0(YamlSecretsConfigMinor0),
+}
+
+impl Default for YamlSecretsConfig {
+    fn default() -> Self {
+        Self::Minor0(Default::default())
+    }
+}
+
+impl<'de> Deserialize<'de> for YamlSecretsConfig {
+    fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Err(serde::de::Error::custom("Use file_v1::parse_yaml()"))
+    }
+}
+
+impl Serialize for YamlSecretsConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            YamlSecretsConfig::Minor0(config) => config.serialize(serializer),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SecretsGlobalConfig {
+    pub paths: Option<PathConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SecretsConfig {
+    pub global_config: Option<SecretsGlobalConfig>,
+}
+
+impl From<YamlSecretsConfig> for SecretsConfig {
+    fn from(value: YamlSecretsConfig) -> Self {
+        match value {
+            YamlSecretsConfig::Minor0(cfg) => SecretsConfig {
+                global_config: cfg.global_config.map(|g| SecretsGlobalConfig {
+                    paths: g.path_config.into(),
+                }),
+            },
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Default, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
@@ -392,8 +471,17 @@ impl From<Option<PathConfig>> for YamlPathConfig {
     }
 }
 
-/// Parses a Code Security v1.x configuration file
-pub fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, ParseError> {
+/// Parses a Code Security v1.x configuration file.
+///
+/// `parse_sast` and `parse_secrets` control whether those sections are validated.
+/// When `false`, a section is silently skipped even if its contents are invalid.
+/// When `true`, an invalid section returns [`ParseError::SastParse`] or
+/// [`ParseError::SecretsParse`] respectively.
+pub fn parse_yaml(
+    config_contents: &str,
+    parse_sast: bool,
+    parse_secrets: bool,
+) -> Result<YamlConfigFile, ParseError> {
     /// The specification for Code Security v1.x (which will never change)
     #[derive(Deserialize)]
     #[serde(rename_all = "kebab-case")]
@@ -417,12 +505,22 @@ pub fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, ParseError> {
     match base.schema_version {
         YamlSchemaVersion::MajorMinor((1, minor)) => {
             let mut sast: Option<YamlSastConfig> = None;
+            let mut secrets: Option<YamlSecretsConfig> = None;
             match minor {
                 0.. => {
-                    if let Some(value) = base.sast {
-                        let config: YamlSastConfigMinor0 =
-                            serde_yaml::from_value(value).map_err(ParseError::Parse)?;
-                        let _ = sast.insert(YamlSastConfig::Minor0(config));
+                    if parse_sast {
+                        if let Some(value) = base.sast {
+                            let config: YamlSastConfigMinor0 =
+                                serde_yaml::from_value(value).map_err(ParseError::SastParse)?;
+                            let _ = sast.insert(YamlSastConfig::Minor0(config));
+                        }
+                    }
+                    if parse_secrets {
+                        if let Some(value) = base.secrets {
+                            let config: YamlSecretsConfigMinor0 =
+                                serde_yaml::from_value(value).map_err(ParseError::SecretsParse)?;
+                            let _ = secrets.insert(YamlSecretsConfig::Minor0(config));
+                        }
                     }
                 }
             }
@@ -430,7 +528,7 @@ pub fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, ParseError> {
             Ok(YamlConfigFile {
                 schema_version: base.schema_version,
                 sast,
-                secrets: base.secrets,
+                secrets,
                 iac: base.iac,
                 sca: base.sca,
                 iast: base.iast,
@@ -452,7 +550,7 @@ mod cs_tests {
         let config = r"
 schema-version: v1.0
 ";
-        let res = parse_yaml(config).unwrap();
+        let res = parse_yaml(config, true, true).unwrap();
         assert_eq!(
             res,
             YamlConfigFile {
@@ -471,31 +569,59 @@ schema-version: v1.0
         // language=yaml
         let config = r"
 ";
-        let err = parse_yaml(config).unwrap_err();
+        let err = parse_yaml(config, false, false).unwrap_err();
         assert!(
             matches!(err, ParseError::Parse(e) if e.to_string().contains("missing field `schema-version`"))
         );
     }
 
-    /// No validation of the properties outside of sast.
+    /// No validation of the properties outside of sast/secrets. When a product flag is false
+    /// its section is also skipped, so even invalid values don't fail the parse.
     #[test]
     fn parse_no_validation() {
         // language=yaml
         let config = r"
 schema-version: v1.0
-# sast:
 secrets: [123]
 iac: 1.23
 sca:
   one: true
 iast: null
 ";
-        let res = parse_yaml(config).expect("should pass validation");
+        let res = parse_yaml(config, false, false).expect("should pass when both flags are false");
         assert!(res.sast.is_none());
-        assert!(res.secrets.is_some());
+        assert!(res.secrets.is_none());
         assert!(res.iac.is_some());
         assert!(res.sca.is_some());
         assert!(res.iast.is_none());
+    }
+
+    /// When secrets scanning is enabled (parse_secrets=true), an invalid section is a hard error.
+    #[test]
+    fn parse_invalid_secrets_fails_when_enabled() {
+        let err = parse_yaml("schema-version: v1.0\nsecrets: [123]\n", false, true).unwrap_err();
+        assert!(matches!(err, ParseError::SecretsParse(_)));
+    }
+
+    /// When secrets scanning is disabled (parse_secrets=false), an invalid section is silently skipped.
+    #[test]
+    fn parse_invalid_secrets_skipped_when_disabled() {
+        let res = parse_yaml("schema-version: v1.0\nsecrets: [123]\n", false, false).unwrap();
+        assert!(res.secrets.is_none());
+    }
+
+    /// When static analysis is enabled (parse_sast=true), an invalid sast section is a hard error.
+    #[test]
+    fn parse_invalid_sast_fails_when_enabled() {
+        let err = parse_yaml("schema-version: v1.0\nsast: [123]\n", true, false).unwrap_err();
+        assert!(matches!(err, ParseError::SastParse(_)));
+    }
+
+    /// When static analysis is disabled (parse_sast=false), an invalid sast section is silently skipped.
+    #[test]
+    fn parse_invalid_sast_skipped_when_disabled() {
+        let res = parse_yaml("schema-version: v1.0\nsast: [123]\n", false, false).unwrap();
+        assert!(res.sast.is_none());
     }
 
     #[test]
@@ -505,27 +631,27 @@ iast: null
 schema-version: v1.0
 surely-this-is-not-in-the-schema: ...right?
 ";
-        let err = parse_yaml(config).unwrap_err();
+        let err = parse_yaml(config, false, false).unwrap_err();
         let err_msg = "unknown field `surely-this-is-not-in-the-schema`";
         assert!(matches!(err, ParseError::Parse(e) if e.to_string().contains(err_msg)));
     }
 
     #[test]
     fn parse_config_only_major1() {
-        let err = parse_yaml("schema-version: v1\n").unwrap_err();
+        let err = parse_yaml("schema-version: v1\n", false, false).unwrap_err();
         assert!(matches!(err, ParseError::WrongSchema(v) if v == YamlSchemaVersion::Legacy));
 
         // Unsupported major version
-        let err = parse_yaml("schema-version: v9.0\n").unwrap_err();
+        let err = parse_yaml("schema-version: v9.0\n", false, false).unwrap_err();
         assert!(matches!(
             err,
             ParseError::WrongSchema(YamlSchemaVersion::MajorMinor((9, 0)))
         ));
 
         // v1.x
-        assert!(parse_yaml("schema-version: v1.0\n").is_ok());
+        assert!(parse_yaml("schema-version: v1.0\n", false, false).is_ok());
         // (Some arbitrarily large minor version number that we'll never reach...hopefully)
-        assert!(parse_yaml("schema-version: v1.222\n").is_ok());
+        assert!(parse_yaml("schema-version: v1.222\n", false, false).is_ok());
     }
 }
 
@@ -564,7 +690,7 @@ schema-version: v1.0
 sast:
   use-rulesets: []
 "#;
-        let cfg = ConfigFile::from(parse_yaml(config).unwrap());
+        let cfg = ConfigFile::from(parse_yaml(config, true, false).unwrap());
         assert_eq!(cfg.sast.unwrap().use_rulesets, Some(Vec::default()));
     }
 
@@ -589,7 +715,7 @@ sast:
   global-config:
     max-file-size-kb: 2000
 "#;
-        let cfg = ConfigFile::from(parse_yaml(config).unwrap());
+        let cfg = ConfigFile::from(parse_yaml(config, true, false).unwrap());
 
         assert_eq!(
             cfg.sast.unwrap(),
@@ -678,8 +804,8 @@ sast:
             yaml_ruleset_config,
             yaml_rule_config,
         ] {
-            let err = parse_yaml(config).unwrap_err();
-            assert!(matches!(err, ParseError::Parse(e) if e.to_string().contains(err_msg)));
+            let err = parse_yaml(config, true, false).unwrap_err();
+            assert!(matches!(err, ParseError::SastParse(e) if e.to_string().contains(err_msg)));
         }
     }
 
@@ -735,5 +861,112 @@ sast:
 
         sast.add_rulesets(&["new-rs", "existing-rs", "new-rs"]);
         assert_eq!(sast.use_rulesets().unwrap(), &["existing-rs", "new-rs"][..]);
+    }
+}
+
+#[cfg(test)]
+mod secrets_tests {
+    use crate::config::common::PathConfig;
+    use crate::config::file_v1::{parse_yaml, ConfigFile, ParseError, SecretsConfig};
+
+    fn parse_secrets(yaml: &str) -> SecretsConfig {
+        let yaml_cfg = parse_yaml(yaml, false, true).expect("parse failed");
+        ConfigFile::from(yaml_cfg)
+            .secrets()
+            .cloned()
+            .expect("no secrets section")
+    }
+
+    #[test]
+    fn parse_empty_secrets_section() {
+        let cfg = parse_secrets("schema-version: v1.4\nsecrets: {}\n");
+        assert_eq!(cfg.global_config, None);
+    }
+
+    #[test]
+    fn parse_ignore_paths() {
+        let yaml = r#"
+schema-version: v1.4
+secrets:
+  global-config:
+    ignore-paths:
+      - "tests/**"
+      - "vendor/**"
+"#;
+        let cfg = parse_secrets(yaml);
+        let paths = cfg.global_config.as_ref().unwrap().paths.as_ref().unwrap();
+        assert!(paths.only.is_none());
+        assert_eq!(paths.ignore.len(), 2);
+    }
+
+    #[test]
+    fn parse_only_paths() {
+        let yaml = r#"
+schema-version: v1.4
+secrets:
+  global-config:
+    only-paths:
+      - "src/**"
+"#;
+        let cfg = parse_secrets(yaml);
+        let paths = cfg.global_config.as_ref().unwrap().paths.as_ref().unwrap();
+        assert_eq!(paths.only.as_ref().unwrap().len(), 1);
+        assert!(paths.ignore.is_empty());
+    }
+
+    #[test]
+    fn allows_file_ignore_paths() {
+        let yaml = r#"
+schema-version: v1.4
+secrets:
+  global-config:
+    ignore-paths:
+      - "tests/**"
+      - "vendor/**"
+"#;
+        let cfg = parse_secrets(yaml);
+        let paths: &PathConfig = cfg.global_config.as_ref().unwrap().paths.as_ref().unwrap();
+
+        assert!(paths.allows_file("src/config.py"));
+        assert!(!paths.allows_file("tests/test_config.py"));
+        assert!(!paths.allows_file("vendor/lib.py"));
+    }
+
+    #[test]
+    fn allows_file_only_paths() {
+        let yaml = r#"
+schema-version: v1.4
+secrets:
+  global-config:
+    only-paths:
+      - "src/**"
+"#;
+        let cfg = parse_secrets(yaml);
+        let paths: &PathConfig = cfg.global_config.as_ref().unwrap().paths.as_ref().unwrap();
+
+        assert!(paths.allows_file("src/config.py"));
+        assert!(!paths.allows_file("tests/test_config.py"));
+        assert!(!paths.allows_file("vendor/lib.py"));
+    }
+
+    #[test]
+    fn no_secrets_section_means_all_allowed() {
+        let yaml_cfg = parse_yaml("schema-version: v1.0\n", false, true).unwrap();
+        let cfg = ConfigFile::from(yaml_cfg);
+        assert!(cfg.secrets().is_none());
+    }
+
+    #[test]
+    fn parse_deny_unknown_field() {
+        let yaml = r#"
+schema-version: v1.4
+secrets:
+  global-config:
+    surely-not-a-field: true
+"#;
+        let err = parse_yaml(yaml, false, true).unwrap_err();
+        assert!(
+            matches!(err, ParseError::SecretsParse(e) if e.to_string().contains("unknown field"))
+        );
     }
 }

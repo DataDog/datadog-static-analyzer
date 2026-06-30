@@ -36,6 +36,7 @@ use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::classifiers::ArtifactClassification;
 use kernel::config::common::{ConfigMethod, PathConfig};
 use kernel::config::file_v1;
+use kernel::config::file_v1::ParseError;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
@@ -258,7 +259,12 @@ fn main() -> Result<()> {
         exit(EXIT_CODE_UNSAFE_SUBDIRECTORIES)
     }
 
-    let configuration_file_and_method = get_config(&directory_to_analyze, use_debug);
+    let configuration_file_and_method = get_config(
+        &directory_to_analyze,
+        use_debug,
+        static_analysis_enabled,
+        secrets_enabled,
+    );
 
     let (configuration_file, configuration_method): (
         Option<file_v1::ConfigFile>,
@@ -269,15 +275,24 @@ fn main() -> Result<()> {
             _ => (None, None),
         },
         Err(err) => {
-            eprintln!(
-                "Error reading configuration file from {}:\n  {}",
-                directory_to_analyze.display(),
-                err
-            );
+            match err.downcast_ref::<ParseError>() {
+                Some(ParseError::SastParse(e)) => {
+                    eprintln!("Error: invalid SAST configuration: {e}")
+                }
+                Some(ParseError::SecretsParse(e)) => {
+                    eprintln!("Error: invalid secrets configuration: {e}")
+                }
+                _ => eprintln!(
+                    "Error reading configuration file from {}:\n  {}",
+                    directory_to_analyze.display(),
+                    err
+                ),
+            }
             exit(EXIT_CODE_INVALID_CONFIGURATION)
         }
     };
     let sast_config = configuration_file.as_ref().and_then(|cfg| cfg.sast());
+    let secrets_config = configuration_file.as_ref().and_then(|cfg| cfg.secrets());
 
     if sast_config.is_none() && use_debug {
         eprintln!("INFO: no configuration detected locally or remotely")
@@ -615,9 +630,20 @@ fn main() -> Result<()> {
     if secrets_enabled {
         let secrets_start = Instant::now();
 
+        let secrets_path_config = secrets_config
+            .and_then(|c| c.global_config.as_ref())
+            .and_then(|g| g.paths.as_ref());
         let secrets_files: Vec<PathBuf> = files_in_repository
             .into_iter()
             .filter(|f| !should_ignore_file_for_secret(f))
+            .filter(|f| {
+                secrets_path_config.is_none_or(|paths| {
+                    f.strip_prefix(&directory_to_analyze)
+                        .ok()
+                        .and_then(|rel| rel.to_str())
+                        .is_none_or(|rel| paths.allows_file(rel))
+                })
+            })
             .collect();
 
         let execution_results = secret_analysis(&configuration, &analysis_options, &secrets_files)
