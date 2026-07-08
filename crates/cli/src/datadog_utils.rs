@@ -34,6 +34,7 @@ const DEFAULT_DATADOG_BASENAME: &str = "https://api.datadoghq.com";
 const DEFAULT_RULESETS_LANGUAGES: &[&str] = &[
     "BASH",
     "CSHARP",
+    "DART",
     "DOCKERFILE",
     "GO",
     "JAVA",
