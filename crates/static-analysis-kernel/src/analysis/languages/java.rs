@@ -4,3 +4,4 @@
 
 mod imports;
 pub use imports::*;
+pub mod methods;
