@@ -456,6 +456,26 @@ impl SecretRuleValidator {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
+pub struct SecretRuleSuppressions {
+    #[serde(default)]
+    pub starts_with: Vec<String>,
+    #[serde(default)]
+    pub ends_with: Vec<String>,
+    #[serde(default)]
+    pub exact_match: Vec<String>,
+}
+
+impl From<&SecretRuleSuppressions> for dd_sds::Suppressions {
+    fn from(v: &SecretRuleSuppressions) -> Self {
+        dd_sds::Suppressions {
+            starts_with: v.starts_with.clone(),
+            ends_with: v.ends_with.clone(),
+            exact_match: v.exact_match.clone(),
+        }
+    }
+}
+
 // This is the secret rule exposed by SDS
 #[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub struct SecretRule {
@@ -474,6 +494,8 @@ pub struct SecretRule {
     pub pattern_capture_groups: Vec<String>,
     #[serde(default)]
     pub is_supporting_rule: bool,
+    #[serde(default)]
+    pub suppressions: Option<SecretRuleSuppressions>,
 }
 
 impl SecretRule {
@@ -542,19 +564,104 @@ impl SecretRule {
             }
         }
 
+        if let Some(suppressions) = &self.suppressions {
+            rule_config = rule_config.suppressions(suppressions.into());
+        }
+
         rule_config
     }
 }
 
 impl DiffAware for SecretRule {
     fn generate_diff_aware_digest(&self) -> String {
-        format!("{}:{}", self.id, self.pattern).to_string()
+        let mut digest = format!("{}:{}", self.id, self.pattern);
+
+        match &self.suppressions {
+            None => digest,
+            Some(suppressions) => {
+                let mut starts_with = suppressions.starts_with.clone();
+                let mut ends_with = suppressions.ends_with.clone();
+                let mut exact_match = suppressions.exact_match.clone();
+
+                if starts_with.is_empty() && ends_with.is_empty() && exact_match.is_empty() {
+                    return digest;
+                }
+
+                // Suppression order does not affect matching behavior, so canonicalize the
+                // lists to avoid invalidating diff-aware results for ordering-only changes.
+                starts_with.sort();
+                ends_with.sort();
+                exact_match.sort();
+
+                digest.push_str(&format!(
+                    ":suppressions:{starts_with:?}:{ends_with:?}:{exact_match:?}",
+                ));
+                digest
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_diff_aware_digest_with_suppressions() {
+        fn rule_with_suppressions(suppressions: Option<SecretRuleSuppressions>) -> SecretRule {
+            SecretRule {
+                id: "secrets/example".to_string(),
+                sds_id: String::new(),
+                name: String::new(),
+                description: String::new(),
+                pattern: "pattern".to_string(),
+                priority: RulePriority::Medium,
+                default_included_keywords: vec![],
+                default_excluded_keywords: vec![],
+                look_ahead_character_count: None,
+                validators: None,
+                validators_v2: None,
+                match_validation: None,
+                pattern_capture_groups: vec![],
+                is_supporting_rule: false,
+                suppressions,
+            }
+        }
+
+        let legacy_digest = "secrets/example:pattern";
+        assert_eq!(
+            rule_with_suppressions(None).generate_diff_aware_digest(),
+            legacy_digest
+        );
+        assert_eq!(
+            rule_with_suppressions(Some(SecretRuleSuppressions::default()))
+                .generate_diff_aware_digest(),
+            legacy_digest
+        );
+
+        let with_suppressions = rule_with_suppressions(Some(SecretRuleSuppressions {
+            starts_with: vec!["prefix-b".to_string(), "prefix-a".to_string()],
+            ends_with: vec![],
+            exact_match: vec!["exact".to_string()],
+        }))
+        .generate_diff_aware_digest();
+        let reordered_suppressions = rule_with_suppressions(Some(SecretRuleSuppressions {
+            starts_with: vec!["prefix-a".to_string(), "prefix-b".to_string()],
+            ends_with: vec![],
+            exact_match: vec!["exact".to_string()],
+        }))
+        .generate_diff_aware_digest();
+        let changed_suppressions = rule_with_suppressions(Some(SecretRuleSuppressions {
+            starts_with: vec!["prefix-a".to_string()],
+            ends_with: vec![],
+            exact_match: vec!["exact".to_string()],
+        }))
+        .generate_diff_aware_digest();
+
+        assert_ne!(legacy_digest, with_suppressions);
+        assert_eq!(with_suppressions, reordered_suppressions);
+        assert_ne!(with_suppressions, changed_suppressions);
+    }
 
     #[test]
     fn test_try_to_secondary_validator_with_jwt_config() {
@@ -639,9 +746,37 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec!["sds_match".to_string()],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         // Validates that convert_to_sds_ruleconfig doesn't panic and returns a valid config.
+        let _config = rule.convert_to_sds_ruleconfig(false);
+    }
+
+    #[test]
+    fn test_convert_to_sds_ruleconfig_with_suppressions() {
+        let rule = SecretRule {
+            id: "test-rule".to_string(),
+            sds_id: "sds-123".to_string(),
+            name: "Test Rule".to_string(),
+            description: "Test description".to_string(),
+            pattern: "test.*pattern".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: None,
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: Some(SecretRuleSuppressions {
+                starts_with: vec!["test_".to_string()],
+                ends_with: vec![],
+                exact_match: vec!["placeholder".to_string()],
+            }),
+        };
+
         let _config = rule.convert_to_sds_ruleconfig(false);
     }
 
