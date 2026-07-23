@@ -1002,6 +1002,7 @@ dependencies = [
  "serde_yaml",
  "static-analysis-kernel",
  "static-analysis-server",
+ "tempfile",
  "terminal-emoji",
  "thiserror 2.0.18",
  "tracing",

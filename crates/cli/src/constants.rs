@@ -8,9 +8,13 @@ pub static HEADER_CONTENT_TYPE: &str = "Content-Type";
 pub static HEADER_CONTENT_TYPE_APPLICATION_JSON: &str = "application/json";
 pub static HEADER_USER_AGENT: &str = "User-Agent";
 pub static USER_AGENT_PRODUCT: &str = "datadog-static-analyzer";
+pub static DEFAULT_TOOL_NAME: &str = "datadog-static-analyzer";
+pub static SECRETS_HISTORY_TOOL_NAME: &str = "datadog-static-analyzer-secrets-history";
 pub static QUERY_PARAM_SCHEMA_VERSION: &str = "schema_version";
 pub static SARIF_PROPERTY_DATADOG_FINGERPRINT: &str = "DATADOG_FINGERPRINT";
 pub static SARIF_PROPERTY_SHA: &str = "SHA";
+pub static SARIF_PROPERTY_IS_GIT_HISTORY_ONLY: &str = "isGitHistoryOnly";
+pub static SARIF_PROPERTY_REMOVED_AT_SHA: &str = "removedAtSha";
 pub static DEFAULT_MAX_CPUS: usize = 8;
 pub static DEFAULT_MAX_FILE_SIZE_KB: u64 = 200;
 // See https://docs.gitlab.com/ee/ci/variables/predefined_variables.html

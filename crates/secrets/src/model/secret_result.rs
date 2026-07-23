@@ -76,6 +76,15 @@ pub struct SecretResult {
     pub matches: Vec<SecretResultMatch>,
 }
 
+impl SecretResult {
+    /// Clone with a different file path (used for blob fan-out in history scanning).
+    pub fn clone_with_path(&self, new_path: &str) -> Self {
+        let mut cloned = self.clone();
+        cloned.filename = new_path.to_string();
+        cloned
+    }
+}
+
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ValidationErrorInfo {

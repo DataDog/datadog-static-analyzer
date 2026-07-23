@@ -22,6 +22,9 @@ use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
 
+mod git_history;
+pub use git_history::git_history_secret_analysis;
+
 /// Read a file and if the file has some invalid UTF-8 characters, it returns a string with invalid
 /// characters.
 pub fn read_file(path: &Path) -> anyhow::Result<String> {

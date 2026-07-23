@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use cli::config_file::get_config;
 use cli::constants::{
-    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, EXIT_CODE_GITHOOK_FAILED,
+    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, DEFAULT_TOOL_NAME, EXIT_CODE_GITHOOK_FAILED,
     EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
     EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS, EXIT_CODE_RULESET_NOT_FOUND,
     EXIT_CODE_RULE_CHECKSUM_INVALID, EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
@@ -626,12 +626,15 @@ fn main() -> Result<()> {
             &configuration,
             all_rule_results,
             secrets_results,
+            Vec::new(),
             SarifReportMetadata {
                 add_git_info: false,
                 debug: configuration.use_debug,
                 config_digest: configuration.generate_diff_aware_digest(),
                 diff_aware_parameters: None,
                 execution_time_secs: analysis_start_instant.elapsed().as_secs(),
+                tool_name: DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &all_path_metadata,
         )

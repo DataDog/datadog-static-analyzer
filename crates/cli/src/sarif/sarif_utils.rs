@@ -2,12 +2,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
+use crate::constants::{
+    DEFAULT_TOOL_NAME, SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_IS_GIT_HISTORY_ONLY,
+    SARIF_PROPERTY_REMOVED_AT_SHA, SARIF_PROPERTY_SHA, SECRETS_HISTORY_TOOL_NAME,
+};
 use anyhow::Result;
 use base64::Engine;
 use common::model::position::Position;
 use common::model::position::PositionBuilder;
-use git2::{BlameOptions, Repository};
+use git2::{BlameOptions, Oid, Repository};
 use kernel::classifiers::ArtifactClassification;
 use kernel::constants::CARGO_VERSION;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
@@ -42,12 +45,18 @@ trait IntoSarif {
 /// The `SarifReportMetadata` structure contains all metadata being added to the sarif report.
 /// Those metadata is being added as property is being used to enhance the generation
 /// of the SARIF report.
+#[derive(Clone)]
 pub struct SarifReportMetadata {
     pub add_git_info: bool,
     pub debug: bool,
     pub config_digest: String,
     pub diff_aware_parameters: Option<DiffAwareData>,
     pub execution_time_secs: u64,
+    pub tool_name: String,
+    /// When true, static-analysis and secrets findings are emitted as separate SARIF runs (each
+    /// under its own tool driver name). When false, they share a single concatenated run. This is
+    /// independent of `tool_name`, which only sets the driver label.
+    pub split_runs_by_tool: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -121,6 +130,18 @@ impl From<SecretRule> for SarifRule {
     }
 }
 
+/// A secret found only in git history. Wraps the base [`SecretResult`] with the
+/// commits that introduced and (optionally) removed it. Owned by the SARIF layer
+/// so the `secrets` model stays free of git-history concepts. `introducing_commit_sha`
+/// is non-optional: a `HistoricalSecretResult` is only built once the introducing
+/// commit is known.
+#[derive(Debug, Clone)]
+pub struct HistoricalSecretResult {
+    pub inner: SecretResult,
+    pub introducing_commit_sha: Oid,
+    pub removed_at_sha: Option<Oid>,
+}
+
 /// Generic representation of a violation for both static analysis and secrets
 #[derive(Debug, Clone)]
 pub enum SarifViolation {
@@ -164,6 +185,38 @@ impl SarifViolation {
 pub enum SarifRuleResult {
     StaticAnalysis(RuleResult),
     Secret(SecretResult),
+    HistoricalSecret(HistoricalSecretResult),
+}
+
+/// Build the per-match [`SarifViolation`]s for a secret result (HEAD or historical).
+fn secret_violations(secret_result: &SecretResult) -> Vec<SarifViolation> {
+    secret_result
+        .matches
+        .iter()
+        .map(|r| {
+            let severity = match &r.validation_status {
+                SecretValidationStatus::NotValidated => RuleSeverity::Notice,
+                SecretValidationStatus::Valid => RuleSeverity::Error,
+                SecretValidationStatus::Invalid => RuleSeverity::None,
+                SecretValidationStatus::ValidationError(_) => RuleSeverity::Warning,
+                SecretValidationStatus::NotAvailable => RuleSeverity::Error,
+            };
+
+            Secret(
+                Violation {
+                    start: r.start,
+                    end: r.end,
+                    message: secret_result.message.clone(),
+                    severity,
+                    category: RuleCategory::Security,
+                    fixes: vec![],
+                    taint_flow: None,
+                    is_suppressed: r.is_suppressed,
+                },
+                r.validation_status.clone(),
+            )
+        })
+        .collect::<Vec<SarifViolation>>()
 }
 
 impl SarifRuleResult {
@@ -174,33 +227,8 @@ impl SarifRuleResult {
                 .iter()
                 .map(|v| StaticAnalysis(v.clone()))
                 .collect::<Vec<SarifViolation>>(),
-            SarifRuleResult::Secret(secret_result) => secret_result
-                .matches
-                .iter()
-                .map(|r| {
-                    let severity = match &r.validation_status {
-                        SecretValidationStatus::NotValidated => RuleSeverity::Notice,
-                        SecretValidationStatus::Valid => RuleSeverity::Error,
-                        SecretValidationStatus::Invalid => RuleSeverity::None,
-                        SecretValidationStatus::ValidationError(_) => RuleSeverity::Warning,
-                        SecretValidationStatus::NotAvailable => RuleSeverity::Error,
-                    };
-
-                    Secret(
-                        Violation {
-                            start: r.start,
-                            end: r.end,
-                            message: secret_result.message.clone(),
-                            severity,
-                            category: RuleCategory::Security,
-                            fixes: vec![],
-                            taint_flow: None,
-                            is_suppressed: r.is_suppressed,
-                        },
-                        r.validation_status.clone(),
-                    )
-                })
-                .collect::<Vec<SarifViolation>>(),
+            SarifRuleResult::Secret(secret_result) => secret_violations(secret_result),
+            SarifRuleResult::HistoricalSecret(h) => secret_violations(&h.inner),
         }
     }
 
@@ -209,6 +237,7 @@ impl SarifRuleResult {
         match self {
             SarifRuleResult::StaticAnalysis(r) => &r.filename,
             SarifRuleResult::Secret(r) => &r.filename,
+            SarifRuleResult::HistoricalSecret(h) => &h.inner.filename,
         }
     }
 
@@ -217,6 +246,7 @@ impl SarifRuleResult {
         as_slash_path(match self {
             SarifRuleResult::StaticAnalysis(r) => &r.filename,
             SarifRuleResult::Secret(r) => &r.filename,
+            SarifRuleResult::HistoricalSecret(h) => &h.inner.filename,
         })
     }
 
@@ -224,6 +254,7 @@ impl SarifRuleResult {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
             SarifRuleResult::Secret(r) => r.rule_name.as_str(),
+            SarifRuleResult::HistoricalSecret(h) => h.inner.rule_name.as_str(),
         }
     }
 
@@ -231,6 +262,7 @@ impl SarifRuleResult {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
             SarifRuleResult::Secret(r) => r.rule_id.as_str(),
+            SarifRuleResult::HistoricalSecret(h) => h.inner.rule_id.as_str(),
         }
     }
 }
@@ -271,6 +303,7 @@ pub struct SarifGenerationOptions {
     pub diff_aware_parameters: Option<DiffAwareData>,
     pub repository_directory: String,
     pub execution_time_secs: u64,
+    pub tool_name: String,
 }
 
 impl IntoSarif for &SecretRule {
@@ -465,7 +498,7 @@ fn generate_tool_section(rules: &[SarifRule], options: &SarifGenerationOptions) 
     }
 
     let driver: ToolComponent = ToolComponentBuilder::default()
-        .name("datadog-static-analyzer")
+        .name(options.tool_name.as_str())
         .version(CARGO_VERSION)
         .information_uri("https://www.datadoghq.com")
         .rules(
@@ -727,14 +760,21 @@ fn generate_results(
                         .transpose();
                     let taint_code_flow = taint_code_flow?;
 
-                    let sha_option = if options.add_git_info {
-                        get_sha_for_line(
+                    // For historical findings, use the introducing commit SHA
+                    // instead of git blame (file may not exist at HEAD).
+                    let historical = match rule_result {
+                        SarifRuleResult::HistoricalSecret(h) => Some(h),
+                        _ => None,
+                    };
+
+                    let sha_option = match historical {
+                        Some(h) => Some(h.introducing_commit_sha.to_string()),
+                        None if options.add_git_info => get_sha_for_line(
                             &rule_result.slash_path_str(),
                             violation.start.line as usize,
                             &options,
-                        )
-                    } else {
-                        None
+                        ),
+                        None => None,
                     };
 
                     let fingerprint_option = get_fingerprint_for_violation(
@@ -745,7 +785,7 @@ fn generate_results(
                         options.debug,
                     );
 
-                    let partial_fingerprints: BTreeMap<String, String> =
+                    let mut partial_fingerprints: BTreeMap<String, String> =
                         match (sha_option, fingerprint_option) {
                             (Some(sha), Some(fp)) => BTreeMap::from([
                                 (SARIF_PROPERTY_SHA.to_string(), sha),
@@ -760,6 +800,19 @@ fn generate_results(
                             }
                             _ => BTreeMap::new(),
                         };
+
+                    if let Some(h) = historical {
+                        partial_fingerprints.insert(
+                            SARIF_PROPERTY_IS_GIT_HISTORY_ONLY.to_string(),
+                            "true".to_string(),
+                        );
+                        if let Some(removed_at) = h.removed_at_sha {
+                            partial_fingerprints.insert(
+                                SARIF_PROPERTY_REMOVED_AT_SHA.to_string(),
+                                removed_at.to_string(),
+                            );
+                        }
+                    }
 
                     let mut sarif_result = result_builder.clone();
 
@@ -888,6 +941,7 @@ pub fn generate_sarif_report(
         diff_aware_parameters: tool_information.diff_aware_parameters.clone(),
         repository_directory: directory.clone(),
         execution_time_secs: tool_information.execution_time_secs,
+        tool_name: tool_information.tool_name.clone(),
     };
 
     let artifacts_kv = extract_artifacts(
@@ -914,6 +968,7 @@ pub fn generate_sarif_file(
     configuration: &CliConfiguration,
     static_analysis_rule_results: Vec<RuleResult>,
     secrets_rule_results: Vec<SecretResult>,
+    historic_secret_results: Vec<HistoricalSecretResult>,
     sarif_report_metadata: SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<String> {
@@ -934,24 +989,77 @@ pub fn generate_sarif_file(
         .map(SarifRuleResult::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
-    let secret_results = secrets_rule_results
+    let mut secret_results = secrets_rule_results
         .into_iter()
         .map(SarifRuleResult::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
+    // Historic secrets share the secrets run/rules; they carry their own commit provenance.
+    secret_results.extend(
+        historic_secret_results
+            .into_iter()
+            .map(SarifRuleResult::HistoricalSecret),
+    );
 
-    match generate_sarif_report(
-        &[static_rules_sarif, secrets_rules_sarif].concat(),
-        &[static_analysis_results, secret_results].concat(),
-        &configuration.source_directory,
-        sarif_report_metadata,
-        path_metadata,
-    ) {
-        Ok(report) => {
-            Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
+    // In normal mode both kinds of findings share a single concatenated run. In git-history mode
+    // the caller requests split runs so static-analysis and historic-secret findings are each
+    // attributed to their own tool driver.
+    let report = if !sarif_report_metadata.split_runs_by_tool {
+        generate_sarif_report(
+            &[static_rules_sarif, secrets_rules_sarif].concat(),
+            &[static_analysis_results, secret_results].concat(),
+            &configuration.source_directory,
+            sarif_report_metadata,
+            path_metadata,
+        )?
+    } else {
+        merge_sarif_runs(
+            &static_rules_sarif,
+            &static_analysis_results,
+            &secrets_rules_sarif,
+            &secret_results,
+            &configuration.source_directory,
+            &sarif_report_metadata,
+            path_metadata,
+        )?
+    };
+
+    Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
+}
+
+/// Builds a SARIF report with up to two runs: a static-analysis run named [`DEFAULT_TOOL_NAME`]
+/// and a historic-secrets run named [`SECRETS_HISTORY_TOOL_NAME`]. A group with no results is
+/// skipped so we never emit an empty run.
+fn merge_sarif_runs(
+    static_rules: &[SarifRule],
+    static_results: &[SarifRuleResult],
+    secrets_rules: &[SarifRule],
+    secret_results: &[SarifRuleResult],
+    source_directory: &String,
+    base_metadata: &SarifReportMetadata,
+    path_metadata: &HashMap<String, ArtifactClassification>,
+) -> Result<Sarif> {
+    let groups = [
+        (static_rules, static_results, DEFAULT_TOOL_NAME),
+        (secrets_rules, secret_results, SECRETS_HISTORY_TOOL_NAME),
+    ];
+
+    let mut runs = vec![];
+    for (rules, results, tool_name) in groups {
+        if results.is_empty() {
+            continue;
         }
-        Err(err) => Err(err),
+        let mut metadata = base_metadata.clone();
+        metadata.tool_name = tool_name.to_string();
+        let report =
+            generate_sarif_report(rules, results, source_directory, metadata, path_metadata)?;
+        runs.extend(report.runs);
     }
+
+    Ok(SarifBuilder::default()
+        .version("2.1.0")
+        .runs(runs)
+        .build()?)
 }
 
 /// Returns the file path for this result as a slash path, a path whose components are.
@@ -1176,6 +1284,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1298,6 +1408,191 @@ mod tests {
         assert!(validate_data(&sarif_report_to_string));
     }
 
+    // The `tool_name` from the report metadata is surfaced as the SARIF tool driver name.
+    // This is what lets a git-history scan produce a distinctly-named report.
+    #[test]
+    fn test_tool_driver_name_from_metadata() {
+        for name in [
+            crate::constants::DEFAULT_TOOL_NAME,
+            crate::constants::SECRETS_HISTORY_TOOL_NAME,
+        ] {
+            let sarif_report = generate_sarif_report(
+                &[],
+                &vec![],
+                &"mydir".to_string(),
+                SarifReportMetadata {
+                    add_git_info: false,
+                    debug: false,
+                    config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                    diff_aware_parameters: None,
+                    execution_time_secs: 42,
+                    tool_name: name.to_string(),
+                    split_runs_by_tool: false,
+                },
+                &Default::default(),
+            )
+            .expect("generate sarif report");
+
+            let sarif_json = serde_json::to_value(sarif_report).unwrap();
+            assert_eq!(
+                sarif_json
+                    .pointer("/runs/0/tool/driver/name")
+                    .and_then(|v| v.as_str()),
+                Some(name)
+            );
+        }
+    }
+
+    /// A git-history report keeps static-analysis and historic-secret findings in two separate
+    /// runs, each named after its own tool. A group with no results is not emitted. Normal mode
+    /// keeps everything in a single `datadog-static-analyzer` run.
+    #[test]
+    fn test_git_history_report_splits_runs_by_tool() {
+        let static_rule: SarifRule = RuleBuilder::default()
+            .name("my-rule".to_string())
+            .description_base64(None)
+            .language(Language::Python)
+            .checksum("blabla".to_string())
+            .pattern(None)
+            .tree_sitter_query_base64(None)
+            .category(RuleCategory::BestPractices)
+            .code_base64("Zm9vYmFyYmF6".to_string())
+            .short_description_base64(None)
+            .entity_checked(None)
+            .rule_type(RuleType::TreeSitterQuery)
+            .severity(RuleSeverity::Error)
+            .cwe(None)
+            .arguments(vec![])
+            .tests(vec![])
+            .is_testing(false)
+            .documentation_url(None)
+            .build()
+            .unwrap()
+            .into();
+        let static_result: SarifRuleResult = RuleResultBuilder::default()
+            .rule_name("my-rule".to_string())
+            .filename("myfile.py".to_string())
+            .violations(vec![ViolationBuilder::default()
+                .start(PositionBuilder::default().line(1).col(2).build().unwrap())
+                .end(PositionBuilder::default().line(3).col(4).build().unwrap())
+                .message("violation message".to_string())
+                .severity(RuleSeverity::Error)
+                .category(RuleCategory::BestPractices)
+                .fixes(vec![])
+                .taint_flow(None)
+                .build()
+                .unwrap()])
+            .output(None)
+            .errors(vec![])
+            .execution_time_ms(0)
+            .parsing_time_ms(0)
+            .query_node_time_ms(0)
+            .execution_error(None)
+            .build()
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        let secret_rule: SarifRule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        }
+        .into();
+        let secret_result: SarifRuleResult =
+            SarifRuleResult::HistoricalSecret(HistoricalSecretResult {
+                inner: SecretResult {
+                    rule_id: "secret-rule".to_string(),
+                    rule_name: "secret-rule".to_string(),
+                    filename: "myfile.py".to_string(),
+                    message: "some secret".to_string(),
+                    priority: RulePriority::Medium,
+                    matches: vec![SecretResultMatch {
+                        start: Position { line: 1, col: 1 },
+                        end: Position { line: 2, col: 2 },
+                        validation_status: SecretValidationStatus::NotValidated,
+                        is_suppressed: false,
+                    }],
+                },
+                introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
+                    .unwrap(),
+                removed_at_sha: None,
+            });
+
+        let base_metadata = || SarifReportMetadata {
+            add_git_info: false,
+            debug: false,
+            config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+            diff_aware_parameters: None,
+            execution_time_secs: 42,
+            tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
+            split_runs_by_tool: true,
+        };
+
+        let run_tool_names = |report: &Sarif| -> Vec<String> {
+            report
+                .runs
+                .iter()
+                .map(|r| r.tool.driver.name.clone())
+                .collect()
+        };
+
+        // Both kinds present -> two runs, each named after its own tool.
+        let report = merge_sarif_runs(
+            std::slice::from_ref(&static_rule),
+            std::slice::from_ref(&static_result),
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            &"mydir".to_string(),
+            &base_metadata(),
+            &Default::default(),
+        )
+        .expect("merge sarif runs");
+        let names = run_tool_names(&report);
+        assert_eq!(names.len(), 2);
+        assert!(names.iter().any(|n| n == DEFAULT_TOOL_NAME));
+        assert!(names.iter().any(|n| n == SECRETS_HISTORY_TOOL_NAME));
+        assert!(validate_data(&serde_json::to_value(&report).unwrap()));
+
+        // Only historic secrets present -> a single secrets-history run (empty static group is skipped).
+        let report = merge_sarif_runs(
+            &[],
+            &[],
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            &"mydir".to_string(),
+            &base_metadata(),
+            &Default::default(),
+        )
+        .expect("merge sarif runs");
+        assert_eq!(run_tool_names(&report), vec![SECRETS_HISTORY_TOOL_NAME]);
+
+        // Normal mode keeps everything under a single default-named run.
+        let report = generate_sarif_report(
+            &[static_rule, secret_rule],
+            &[static_result, secret_result],
+            &"mydir".to_string(),
+            SarifReportMetadata {
+                tool_name: DEFAULT_TOOL_NAME.to_string(),
+                ..base_metadata()
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+        assert_eq!(run_tool_names(&report), vec![DEFAULT_TOOL_NAME]);
+    }
+
     // Ensure that diff-aware scanning information are correctly surfaced
     #[test]
     fn test_generate_sarif_diff_aware_scanning() {
@@ -1316,6 +1611,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: Some(diff_aware_infos),
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1413,6 +1710,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1519,6 +1818,8 @@ mod tests {
                     config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
+                    tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                    split_runs_by_tool: false,
                 },
                 &Default::default(),
             )
@@ -1655,6 +1956,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1744,6 +2047,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1837,6 +2142,8 @@ mod tests {
                     config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
+                    tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                    split_runs_by_tool: false,
                 },
                 &Default::default(),
             )
@@ -1923,6 +2230,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1989,6 +2298,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -2087,6 +2398,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &path_metadata,
         )
@@ -2187,6 +2500,8 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 0,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
             },
             &Default::default(),
         )
