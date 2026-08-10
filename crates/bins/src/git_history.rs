@@ -72,7 +72,7 @@ fn collect_head_blob_paths(repo: &Repository) -> HashSet<(Oid, String)> {
 /// content for free: there is no commit or tree walk. Every unique blob is scanned
 /// (including blobs whose content also exists at HEAD): a blob present at HEAD may
 /// also live at a historical path, and HEAD exclusion is applied per-(blob, path) in
-/// pass 2. Returns the blobs that contained at least one secret, keyed by blob OID.
+/// pass 2. Returns the secrets found, keyed by blob OID.
 fn scan_all_blobs_for_secrets(
     repo: &Repository,
     cli_config: CliConfigurationSecrets<'_>,
@@ -389,6 +389,7 @@ pub fn git_history_secret_analysis(
                     inner: secret.clone_with_path(path),
                     introducing_commit_sha: introduced_at,
                     removed_at_sha: occurrence.removed_at,
+                    blob_oid: *blob_oid,
                 });
             }
         }
@@ -609,6 +610,18 @@ mod git_history_tests {
         assert!(
             results.iter().all(|x| x.inner.filename != "keep.txt"),
             "a secret still present at HEAD must not be reported as historical"
+        );
+        assert!(
+            !r.blob_oid.is_zero(),
+            "historical result must carry its blob OID"
+        );
+        let blob = repo
+            .find_blob(r.blob_oid)
+            .expect("historical blob present in ODB");
+        assert_eq!(
+            std::str::from_utf8(blob.content()).unwrap(),
+            "SECRETVALUE123\n",
+            "blob_oid must point to the historical (pre-scrub) secret content"
         );
     }
 

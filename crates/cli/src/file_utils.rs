@@ -416,6 +416,16 @@ pub fn get_fingerprint_for_violation(
         return None;
     };
 
+    get_fingerprint_from_contents(rule_name, violation, filename, &file_contents)
+}
+
+/// Generate a fingerprint for a violation from an in-memory copy of the file's contents.
+pub fn get_fingerprint_from_contents(
+    rule_name: String,
+    violation: &Violation,
+    filename: &str,
+    file_contents: &str,
+) -> Option<String> {
     let violations_lines = violation
         .taint_flow
         .as_ref()

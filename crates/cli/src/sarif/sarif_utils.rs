@@ -30,7 +30,7 @@ use serde_sarif::sarif::{
     SarifBuilder, SuppressionBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
-use crate::file_utils::get_fingerprint_for_violation;
+use crate::file_utils::{get_fingerprint_for_violation, get_fingerprint_from_contents};
 use crate::model::datadog_api::DiffAwareData;
 use crate::model::sast_configuration::CliConfigurationSast;
 use crate::model::secrets_configuration::CliConfigurationSecrets;
@@ -136,11 +136,14 @@ impl From<SecretRule> for SarifRule {
 /// so the `secrets` model stays free of git-history concepts. `introducing_commit_sha`
 /// is non-optional: a `HistoricalSecretResult` is only built once the introducing
 /// commit is known.
+///
+/// `blob_oid` is the OID of the historical blob the secret was matched in.
 #[derive(Debug, Clone)]
 pub struct HistoricalSecretResult {
     pub inner: SecretResult,
     pub introducing_commit_sha: Oid,
     pub removed_at_sha: Option<Oid>,
+    pub blob_oid: Oid,
 }
 
 /// Generic representation of a violation for both static analysis and secrets
@@ -778,13 +781,26 @@ fn generate_results(
                         None => None,
                     };
 
-                    let fingerprint_option = get_fingerprint_for_violation(
-                        rule_result.rule_name().to_string(),
-                        violation,
-                        Path::new(options.repository_directory.as_str()),
-                        Path::new(rule_result.slash_path_str().as_ref()),
-                        options.debug,
-                    );
+                    let fingerprint_option = match historical {
+                        Some(h) => options.git_repo.as_ref().and_then(|repo| {
+                            let odb = repo.odb().ok()?;
+                            let blob = odb.read(h.blob_oid).ok()?;
+                            let content = std::str::from_utf8(blob.data()).ok()?;
+                            get_fingerprint_from_contents(
+                                rule_result.rule_name().to_string(),
+                                violation,
+                                rule_result.slash_path_str().as_ref(),
+                                content,
+                            )
+                        }),
+                        None => get_fingerprint_for_violation(
+                            rule_result.rule_name().to_string(),
+                            violation,
+                            Path::new(options.repository_directory.as_str()),
+                            Path::new(rule_result.slash_path_str().as_ref()),
+                            options.debug,
+                        ),
+                    };
 
                     let mut partial_fingerprints: BTreeMap<String, String> =
                         match (sha_option, fingerprint_option) {
@@ -921,9 +937,14 @@ pub fn generate_sarif_report(
     tool_information: SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<Sarif> {
-    // if we enable git info, we are then getting the repository object. We put that
-    // into an `Arc` object to be able to clone the object.
-    let repository: Option<Rc<Repository>> = if tool_information.add_git_info {
+    // Open the repository when git info is requested (for violation SHAs) or when
+    // there are history-only secrets, whose fingerprints are derived by re-reading
+    // their blob from the object database.
+    let repository: Option<Rc<Repository>> = if tool_information.add_git_info
+        || rules_results
+            .iter()
+            .any(|r| matches!(r, SarifRuleResult::HistoricalSecret(_)))
+    {
         let repo = Repository::open(directory.as_str());
         if repo.is_err() {
             eprintln!("Invalid Git repository in {}", directory);
@@ -1536,6 +1557,7 @@ mod tests {
                 introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
                     .unwrap(),
                 removed_at_sha: None,
+                blob_oid: Oid::zero(),
             });
 
         let base_metadata = || SarifReportMetadata {
@@ -1556,13 +1578,17 @@ mod tests {
                 .collect()
         };
 
+        let tmp = tempfile::tempdir().unwrap();
+        git2::Repository::init(tmp.path()).unwrap();
+        let repo_dir = tmp.path().to_str().unwrap().to_string();
+
         // Both kinds present -> two runs, each named after its own tool.
         let report = merge_sarif_runs(
             std::slice::from_ref(&static_rule),
             std::slice::from_ref(&static_result),
             std::slice::from_ref(&secret_rule),
             std::slice::from_ref(&secret_result),
-            &"mydir".to_string(),
+            &repo_dir,
             &base_metadata(),
             &Default::default(),
         )
@@ -1579,7 +1605,7 @@ mod tests {
             &[],
             std::slice::from_ref(&secret_rule),
             std::slice::from_ref(&secret_result),
-            &"mydir".to_string(),
+            &repo_dir,
             &base_metadata(),
             &Default::default(),
         )
@@ -1590,7 +1616,7 @@ mod tests {
         let report = generate_sarif_report(
             &[static_rule, secret_rule],
             &[static_result, secret_result],
-            &"mydir".to_string(),
+            &repo_dir,
             SarifReportMetadata {
                 tool_name: DEFAULT_TOOL_NAME.to_string(),
                 ..base_metadata()
@@ -1599,6 +1625,118 @@ mod tests {
         )
         .expect("generate sarif report");
         assert_eq!(run_tool_names(&report), vec![DEFAULT_TOOL_NAME]);
+    }
+
+    /// A history-only secret (whose file/line no longer exist at HEAD) must still
+    /// get a non-empty `DATADOG_FINGERPRINT`, computed from the historical blob
+    /// content, and that fingerprint must be byte-for-byte identical to the one the
+    /// HEAD path would compute for the same rule, path and line content.
+    #[test]
+    fn test_history_only_secret_gets_fingerprint_from_blob() {
+        let secret_line = "api_key = \"foobarbaz\"";
+        let blob_content = format!("{secret_line}\nsome other line\n");
+        let relative_path = "config/secrets.py";
+
+        let secret_rule: SarifRule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        }
+        .into();
+
+        let inner = SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: relative_path.to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 1, col: 22 },
+                validation_status: SecretValidationStatus::NotValidated,
+                is_suppressed: false,
+            }],
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(tmp.path()).unwrap();
+        let blob_oid = repo.blob(blob_content.as_bytes()).unwrap();
+
+        let secret_result: SarifRuleResult =
+            SarifRuleResult::HistoricalSecret(HistoricalSecretResult {
+                inner,
+                introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
+                    .unwrap(),
+                removed_at_sha: None,
+                blob_oid,
+            });
+
+        let repository_directory = tmp.path().to_str().unwrap().to_string();
+        let report = generate_sarif_report(
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            &repository_directory,
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+                tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        let emitted_fingerprint = report.runs[0].results.as_ref().unwrap()[0]
+            .partial_fingerprints
+            .as_ref()
+            .expect("partial fingerprints present")
+            .get(SARIF_PROPERTY_DATADOG_FINGERPRINT)
+            .expect("DATADOG_FINGERPRINT present")
+            .to_string();
+        assert!(
+            !emitted_fingerprint.is_empty(),
+            "history-only secret must get a non-empty fingerprint"
+        );
+
+        let file_path = tmp.path().join(relative_path);
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, &blob_content).unwrap();
+        let violation = Violation {
+            start: Position { line: 1, col: 1 },
+            end: Position { line: 1, col: 22 },
+            message: "some secret".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Security,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+        };
+        let expected_fingerprint = get_fingerprint_for_violation(
+            "secret-rule".to_string(),
+            &violation,
+            tmp.path(),
+            Path::new(relative_path),
+            false,
+        )
+        .expect("HEAD fingerprint for reference content");
+
+        assert_eq!(
+            emitted_fingerprint, expected_fingerprint,
+            "history fingerprint must match the HEAD algorithm for identical rule/path/line"
+        );
     }
 
     // Ensure that diff-aware scanning information are correctly surfaced
