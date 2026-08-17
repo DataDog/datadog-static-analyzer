@@ -1,2 +1,5 @@
 **/*                                                              @DataDog/k9-vm-ast
 /crates/bins/src/bin/datadog_static_analyzer_server/ide/**/*      @DataDog/ide-integration
+/versions.json                                                    @DataDog/k9-vm-ast @DataDog/k9-iac @DataDog/sensitive-data-scanner @DataDog/sensitive-data-scanner-operators
+/Cargo.toml                                                       @DataDog/k9-vm-ast @DataDog/k9-iac @DataDog/sensitive-data-scanner @DataDog/sensitive-data-scanner-operators
+/Cargo.lock                                                       @DataDog/k9-vm-ast @DataDog/k9-iac @DataDog/sensitive-data-scanner @DataDog/sensitive-data-scanner-operators
