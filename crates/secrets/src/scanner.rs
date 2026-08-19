@@ -117,7 +117,7 @@ mod tests {
         SecretRuleHttpResponseConfig, SecretRuleMatchPairingConfig, SecretRuleMatchValidation,
         SecretRuleMatchValidationHttpMethod, SecretRuleMatchValidationHttpV2,
         SecretRulePairedValidatorConfig, SecretRuleResponseCondition,
-        SecretRuleResponseConditionType, SecretRuleStatusCodeMatcher,
+        SecretRuleResponseConditionType, SecretRuleStatusCodeMatcher, SecretRuleSuppressions,
     };
 
     #[test]
@@ -151,6 +151,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
@@ -198,6 +199,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: true,
+            suppressions: None,
         };
         let primary_rule = SecretRule {
             id: "primary".to_string(),
@@ -214,6 +216,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let rules = vec![supporting_rule, primary_rule];
@@ -250,6 +253,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
@@ -289,6 +293,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
@@ -338,6 +343,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
@@ -398,6 +404,7 @@ mod tests {
             )),
             pattern_capture_groups: vec![],
             is_supporting_rule: true,
+            suppressions: None,
         };
 
         let mut parameters = BTreeMap::new();
@@ -449,6 +456,7 @@ mod tests {
             )),
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let rules = vec![supporting_rule, primary_rule];
@@ -540,6 +548,7 @@ mod tests {
             )),
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let rules = vec![rule];
@@ -589,6 +598,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Directive on line 1 means ignore entire file
@@ -607,5 +617,46 @@ mod tests {
         let first = matches.first().unwrap().matches.first().unwrap();
         assert_eq!(first.start, Position { line: 2, col: 1 });
         assert!(first.is_suppressed);
+    }
+
+    #[test]
+    fn test_find_secrets_with_rule_suppressions() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "SECRET_[A-Z]+".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: Some(SecretRuleSuppressions {
+                starts_with: vec![],
+                ends_with: vec![],
+                exact_match: vec!["SECRET_PLACEHOLDER".to_string()],
+            }),
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        let text = "SECRET_VALUE\nSECRET_PLACEHOLDER\n";
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+        );
+
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches.first().unwrap().matches.len(), 1);
+        assert_eq!(
+            matches.first().unwrap().matches.first().unwrap().start,
+            Position { line: 1, col: 1 }
+        );
     }
 }

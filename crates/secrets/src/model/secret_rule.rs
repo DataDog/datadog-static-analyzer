@@ -456,6 +456,26 @@ impl SecretRuleValidator {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
+pub struct SecretRuleSuppressions {
+    #[serde(default)]
+    pub starts_with: Vec<String>,
+    #[serde(default)]
+    pub ends_with: Vec<String>,
+    #[serde(default)]
+    pub exact_match: Vec<String>,
+}
+
+impl From<SecretRuleSuppressions> for dd_sds::Suppressions {
+    fn from(v: SecretRuleSuppressions) -> Self {
+        dd_sds::Suppressions {
+            starts_with: v.starts_with,
+            ends_with: v.ends_with,
+            exact_match: v.exact_match,
+        }
+    }
+}
+
 // This is the secret rule exposed by SDS
 #[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub struct SecretRule {
@@ -474,6 +494,8 @@ pub struct SecretRule {
     pub pattern_capture_groups: Vec<String>,
     #[serde(default)]
     pub is_supporting_rule: bool,
+    #[serde(default)]
+    pub suppressions: Option<SecretRuleSuppressions>,
 }
 
 impl SecretRule {
@@ -542,13 +564,66 @@ impl SecretRule {
             }
         }
 
+        if let Some(suppressions) = &self.suppressions {
+            rule_config = rule_config.suppressions(suppressions.clone().into());
+        }
+
         rule_config
     }
 }
 
 impl DiffAware for SecretRule {
     fn generate_diff_aware_digest(&self) -> String {
-        format!("{}:{}", self.id, self.pattern).to_string()
+        let mut digest = format!("{}:{}", self.id, self.pattern);
+
+        match &self.suppressions {
+            None => digest,
+            Some(suppressions) => {
+                let mut starts_with = suppressions.starts_with.clone();
+                let mut ends_with = suppressions.ends_with.clone();
+                let mut exact_match = suppressions.exact_match.clone();
+
+                if starts_with.is_empty() && ends_with.is_empty() && exact_match.is_empty() {
+                    return digest;
+                }
+
+                // Suppression order does not affect matching behavior, so canonicalize the
+                // lists to avoid invalidating diff-aware results for ordering-only changes.
+                starts_with.sort();
+                ends_with.sort();
+                exact_match.sort();
+
+                // We escape colons in the suppression strings to ensure uniqueness.
+                // Otherwise, the following would be equivalent:
+                //   starts_with=["a:b"], ends_with=["c"] → ...:a:b:c:
+                //   starts_with=["a"], ends_with=["b:c"] → ...:a:b:c:
+                digest.push_str(":suppressions:");
+                digest.push_str(
+                    &starts_with
+                        .iter()
+                        .map(|s| s.replace(':', "\\:"))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                digest.push(':');
+                digest.push_str(
+                    &ends_with
+                        .iter()
+                        .map(|s| s.replace(':', "\\:"))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                digest.push(':');
+                digest.push_str(
+                    &exact_match
+                        .iter()
+                        .map(|s| s.replace(':', "\\:"))
+                        .collect::<Vec<_>>()
+                        .join(","),
+                );
+                digest
+            }
+        }
     }
 }
 
@@ -639,6 +714,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec!["sds_match".to_string()],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         // Validates that convert_to_sds_ruleconfig doesn't panic and returns a valid config.

@@ -1776,6 +1776,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         #[rustfmt::skip]
@@ -1917,6 +1918,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let secret_results = vec![SecretResult {
@@ -2008,6 +2010,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let secret_results = vec![SecretResult {
@@ -2109,6 +2112,7 @@ mod tests {
                 match_validation: None,
                 pattern_capture_groups: vec![],
                 is_supporting_rule: false,
+                suppressions: None,
             };
             let expected_level = get_level_from_severity(map_priority_to_severity(rule.priority));
 
@@ -2451,6 +2455,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let secret_results = vec![SecretResult {

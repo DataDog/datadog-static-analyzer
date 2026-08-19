@@ -5,7 +5,8 @@ use kernel::model::ruleset::RuleSet;
 use secrets::model::secret_rule::{
     SecretRule, SecretRuleMatchValidation, SecretRuleMatchValidationHttp,
     SecretRuleMatchValidationHttpCode, SecretRuleMatchValidationHttpMethod,
-    SecretRuleMatchValidationHttpV2, SecretRulePairedValidatorConfig, SecretRuleValidator,
+    SecretRuleMatchValidationHttpV2, SecretRulePairedValidatorConfig, SecretRuleSuppressions,
+    SecretRuleValidator,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -382,6 +383,7 @@ pub struct SecretRuleApiAttributes {
     pub paired_validator_config: Option<SecretRulePairedValidatorConfig>,
     pub pattern_capture_groups: Option<Vec<String>>,
     pub is_supporting_rule: Option<bool>,
+    pub suppressions: Option<SecretRuleSuppressions>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -426,6 +428,7 @@ impl TryFrom<SecretRuleApiType> for SecretRule {
             match_validation,
             pattern_capture_groups: val.attributes.pattern_capture_groups.unwrap_or_default(),
             is_supporting_rule: val.attributes.is_supporting_rule.unwrap_or(false),
+            suppressions: val.attributes.suppressions,
         })
     }
 }
@@ -582,6 +585,7 @@ mod tests {
                 paired_validator_config: None,
                 pattern_capture_groups: None,
                 is_supporting_rule: None,
+                suppressions: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -620,6 +624,7 @@ mod tests {
                 paired_validator_config: None,
                 pattern_capture_groups: None,
                 is_supporting_rule: None,
+                suppressions: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -657,6 +662,7 @@ mod tests {
                 paired_validator_config: None,
                 pattern_capture_groups: None,
                 is_supporting_rule: Some(true),
+                suppressions: None,
             },
         };
 
@@ -694,6 +700,7 @@ mod tests {
                 paired_validator_config: None,
                 pattern_capture_groups: None,
                 is_supporting_rule: None,
+                suppressions: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -737,6 +744,7 @@ mod tests {
                 paired_validator_config: None,
                 pattern_capture_groups: None,
                 is_supporting_rule: None,
+                suppressions: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -780,6 +788,7 @@ mod tests {
                 paired_validator_config: None,
                 pattern_capture_groups: None,
                 is_supporting_rule: None,
+                suppressions: None,
             },
         };
         let converted = <SecretRuleApiType as TryInto<SecretRule>>::try_into(
@@ -1092,5 +1101,42 @@ mod tests {
                 assert!(!rule.is_supporting_rule);
             }
         }
+    }
+
+    #[test]
+    fn convert_secrets_rules_with_suppressions() {
+        let json_data = json!({
+            "data": [
+                {
+                    "id": "secrets/example-with-suppressions",
+                    "type": "secret_rule",
+                    "attributes": {
+                        "description": "test",
+                        "name": "Example Rule",
+                        "pattern": "\\bsecret\\b",
+                        "priority": "high",
+                        "sds_id": "some-sds-id",
+                        "suppressions": {
+                            "starts_with": ["test_"],
+                            "ends_with": ["_placeholder"],
+                            "exact_match": ["fake_secret"]
+                        }
+                    }
+                }
+            ]
+        });
+
+        let api_response: StaticAnalysisSecretsAPIResponse =
+            serde_json::from_value(json_data).expect("Failed to deserialize JSON");
+        let rule: SecretRule = api_response.data[0]
+            .clone()
+            .try_into()
+            .expect("Failed to convert rule");
+
+        assert_eq!(rule.id, "secrets/example-with-suppressions");
+        let suppressions = rule.suppressions.expect("expected suppressions");
+        assert_eq!(suppressions.starts_with, vec!["test_".to_string()]);
+        assert_eq!(suppressions.ends_with, vec!["_placeholder".to_string()]);
+        assert_eq!(suppressions.exact_match, vec!["fake_secret".to_string()]);
     }
 }
