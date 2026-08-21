@@ -33,6 +33,7 @@ use serde_sarif::sarif::{
 use crate::file_utils::get_fingerprint_for_violation;
 use crate::model::datadog_api::DiffAwareData;
 use crate::model::sast_configuration::CliConfigurationSast;
+use crate::model::secrets_configuration::CliConfigurationSecrets;
 use crate::rule_utils::map_priority_to_severity;
 use crate::sarif::sarif_utils::SarifViolation::{Secret, StaticAnalysis};
 
@@ -967,23 +968,30 @@ pub fn generate_sarif_report(
 #[allow(clippy::too_many_arguments)]
 pub fn generate_sarif_file(
     sast_cli_config: CliConfigurationSast<'_>,
-    secrets_rules: &[SecretRule],
+    secrets_cli_config: CliConfigurationSecrets<'_>,
     static_analysis_rule_results: Vec<RuleResult>,
     secrets_rule_results: Vec<SecretResult>,
     historic_secret_results: Vec<HistoricalSecretResult>,
     sarif_report_metadata: SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<String> {
+    // Both bundles borrow the same run configuration, so use either
+    // sast_cli_config.run or secrets_cli_config.run.
     let run_config = sast_cli_config.run;
     let sast_config = sast_cli_config.sast;
+    let secrets_config = secrets_cli_config.secrets;
     let static_rules_sarif: Vec<SarifRule> = sast_config
         .rules
         .iter()
         .cloned()
         .map(|r| r.into())
         .collect();
-    let secrets_rules_sarif: Vec<SarifRule> =
-        secrets_rules.iter().cloned().map(|r| r.into()).collect();
+    let secrets_rules_sarif: Vec<SarifRule> = secrets_config
+        .rules
+        .clone()
+        .into_iter()
+        .map(|r| r.into())
+        .collect();
     let static_analysis_results = static_analysis_rule_results
         .into_iter()
         .map(SarifRuleResult::try_from)

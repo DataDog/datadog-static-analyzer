@@ -1,7 +1,7 @@
 use cli::constants::EXIT_CODE_RULE_CHECKSUM_INVALID;
 use cli::file_utils::{filter_files_for_language, get_language_for_file};
-use cli::model::run_configuration::RunConfiguration;
 use cli::model::sast_configuration::CliConfigurationSast;
+use cli::model::secrets_configuration::CliConfigurationSecrets;
 use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal};
 use common::analysis_options::AnalysisOptions;
 use indicatif::ProgressBar;
@@ -14,7 +14,6 @@ use kernel::model::common::Language;
 use kernel::model::rule::{RuleInternal, RuleResult};
 use rayon::prelude::*;
 use secrets::model::secret_result::SecretResult;
-use secrets::model::secret_rule::SecretRule;
 use secrets::scanner::{build_sds_scanner, find_secrets};
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -271,11 +270,15 @@ pub fn static_analysis(
 /// Run secrets detection. This is run only for secrets in both the main binary
 /// and git hooks.
 pub fn secret_analysis(
-    run_config: &RunConfiguration,
-    secrets_rules: &[SecretRule],
+    cli_config: CliConfigurationSecrets<'_>,
     options: &AnalysisOptions,
     files_to_analyze: &[PathBuf],
 ) -> anyhow::Result<AnalysisResult<SecretResult>> {
+    let CliConfigurationSecrets {
+        run: run_config,
+        secrets: secrets_config,
+    } = cli_config;
+    let secrets_rules = &secrets_config.rules;
     let sds_scanner =
         build_sds_scanner(secrets_rules, run_config.use_debug).map_err(|e| anyhow::anyhow!(e))?;
 
@@ -301,7 +304,7 @@ pub fn secret_analysis(
                     let file_content = Arc::from(file_content);
                     let secrets = find_secrets(
                         &sds_scanner,
-                        &secrets_rules,
+                        secrets_rules,
                         relative_path,
                         &file_content,
                         options,

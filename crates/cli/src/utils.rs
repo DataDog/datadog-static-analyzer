@@ -1,6 +1,7 @@
 use crate::constants::DEFAULT_MAX_CPUS;
 use crate::model::run_configuration::RunConfiguration;
 use crate::model::sast_configuration::SastConfiguration;
+use crate::model::secrets_configuration::SecretsConfiguration;
 use crate::rule_utils::get_languages_for_rules;
 use common::model::config_method::ConfigMethod;
 use kernel::constants::{CARGO_VERSION, VERSION};
@@ -92,4 +93,9 @@ pub fn print_sast_configuration(sast_config: &SastConfiguration) {
         "max file size           : {} kb",
         sast_config.max_file_size_kb
     );
+}
+
+/// Prints secrets' own settings. Only meaningful (and only called) when secrets is enabled.
+pub fn print_secrets_configuration(secrets_config: &SecretsConfiguration) {
+    println!("#secrets rules loaded   : {}", secrets_config.rules.len());
 }

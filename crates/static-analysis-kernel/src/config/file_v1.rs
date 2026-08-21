@@ -2,12 +2,11 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-use crate::config::common::{
-    PathConfig, PathPattern, RuleConfig, RulesetConfig, YamlSchemaVersion,
-};
+use crate::config::common::{RuleConfig, RulesetConfig, YamlSchemaVersion};
 use crate::config::file_legacy;
 use crate::config::file_legacy::{AnyAsString, UniqueKeyMap};
 use crate::model::rule::RuleSeverity;
+use common::model::path_config::{PathConfig, PathPattern};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize, Serializer};
 

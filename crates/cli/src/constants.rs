@@ -17,6 +17,7 @@ pub static SARIF_PROPERTY_IS_GIT_HISTORY_ONLY: &str = "isGitHistoryOnly";
 pub static SARIF_PROPERTY_REMOVED_AT_SHA: &str = "removedAtSha";
 pub static DEFAULT_MAX_CPUS: usize = 8;
 pub static DEFAULT_MAX_FILE_SIZE_KB: u64 = 200;
+pub static DEFAULT_SECRETS_MAX_FILE_SIZE_KB: u64 = 10240;
 // See https://docs.gitlab.com/ee/ci/variables/predefined_variables.html
 pub static GITLAB_ENVIRONMENT_VARIABLE_COMMIT_BRANCH: &str = "CI_COMMIT_BRANCH";
 pub static GIT_HEAD: &str = "HEAD";

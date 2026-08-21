@@ -713,8 +713,10 @@ dependencies = [
  "anyhow",
  "bstr",
  "derive_builder",
+ "globset",
  "line-index",
  "serde",
+ "serde_yaml",
 ]
 
 [[package]]
@@ -3995,7 +3997,9 @@ dependencies = [
  "lazy_static",
  "serde",
  "serde_json",
+ "serde_yaml",
  "strum",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

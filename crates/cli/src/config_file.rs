@@ -9,6 +9,8 @@ use common::model::config_method::ConfigMethod;
 use kernel::config::common::ConfigError;
 use kernel::config::{file_legacy, file_v1};
 use kernel::utils::decode_base64_string;
+use secrets::config::common::ConfigError as SecretsConfigError;
+use secrets::config::file_v1 as secrets_file_v1;
 use std::path::Path;
 
 /// Returns the contents of the configuration file with the given base name.
@@ -86,6 +88,28 @@ pub fn parse_sast_config(
     Ok(config.sast().cloned())
 }
 
+/// Reads Secrets' own `secrets` section out of a configuration text, parsed against `schema`.
+/// Returns `None` when the configuration has no section for Secrets.
+pub fn parse_secrets_config(
+    config_contents: &str,
+    schema: ConfigFileSchema,
+) -> Result<Option<secrets_file_v1::SecretsConfig>, SecretsConfigError> {
+    let yaml: secrets_file_v1::YamlConfigFile = match schema {
+        ConfigFileSchema::CodeSecurity => {
+            secrets_file_v1::parse_yaml(config_contents).map_err(|err| match err {
+                secrets_file_v1::ParseError::Parse(inner) => SecretsConfigError::Parse(inner),
+                secrets_file_v1::ParseError::WrongSchema(version) => {
+                    SecretsConfigError::UnsupportedSchema(version.to_string())
+                }
+            })?
+        }
+        // The legacy schema didn’t have a `secrets` section.
+        ConfigFileSchema::Legacy => return Ok(None),
+    };
+    let config: secrets_file_v1::ConfigFile = yaml.into();
+    Ok(config.secrets().cloned())
+}
+
 /// Get the final configuration for the analyzer
 /// First, try to get the configuration from the file
 /// - If the user is a Datadog user (e.g. with API keys), we fetch the remote configuration
@@ -155,7 +179,9 @@ pub fn get_config(
 
 #[cfg(test)]
 mod tests {
-    use crate::config_file::{get_local_config, parse_sast_config, ConfigFileSchema};
+    use crate::config_file::{
+        get_local_config, parse_sast_config, parse_secrets_config, ConfigFileSchema,
+    };
     use crate::constants::{
         CS_CONFIG_FILE_WITHOUT_EXTENSION, LEGACY_CONFIG_FILE_WITHOUT_EXTENSION,
     };
@@ -206,6 +232,8 @@ sast:
                 explicit_rulesets(&contents, schema),
                 &["java-best-practices"]
             );
+            // The legacy schema has no `secrets` section.
+            assert!(parse_secrets_config(&contents, schema).unwrap().is_none());
         }
     }
 

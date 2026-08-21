@@ -17,6 +17,7 @@ base64 = { workspace = true }
 git2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 derive_builder = { workspace = true }
 num_cpus = { workspace = true }
 serde-sarif = { workspace = true }
@@ -32,7 +33,6 @@ prettytable-rs = "0.10.0"
 reqwest = { version = "0.12", default-features = false, features = ["default-tls", "macos-system-configuration", "blocking", "json"] }
 valico = "4.0.0"
 walkdir = "2.5.0"
-serde_yaml.workspace = true
 
 [dev-dependencies]
 assert-json-diff = "2.0.2"

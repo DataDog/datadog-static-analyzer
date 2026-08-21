@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
-use cli::config_file::{get_config, parse_sast_config, ConfigFileSchema};
+use cli::config_file::{get_config, parse_sast_config, parse_secrets_config, ConfigFileSchema};
 use cli::constants::{
-    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, DEFAULT_TOOL_NAME, EXIT_CODE_GITHOOK_FAILED,
-    EXIT_CODE_INVALID_CONFIGURATION, EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY,
-    EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS, EXIT_CODE_RULESET_NOT_FOUND,
-    EXIT_CODE_RULE_CHECKSUM_INVALID, EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
+    DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, DEFAULT_SECRETS_MAX_FILE_SIZE_KB,
+    DEFAULT_TOOL_NAME, EXIT_CODE_GITHOOK_FAILED, EXIT_CODE_INVALID_CONFIGURATION,
+    EXIT_CODE_INVALID_DIRECTORY, EXIT_CODE_NO_DIRECTORY, EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS,
+    EXIT_CODE_RULESET_NOT_FOUND, EXIT_CODE_RULE_CHECKSUM_INVALID, EXIT_CODE_SHA_OR_DEFAULT_BRANCH,
 };
 use cli::datadog_utils::{
     get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules, DatadogApiError,
@@ -16,10 +16,13 @@ use cli::git_utils::{
 use cli::model::run_configuration::RunConfiguration;
 use cli::model::sast_configuration::CliConfigurationSast;
 use cli::model::sast_configuration::SastConfiguration;
+use cli::model::secrets_configuration::CliConfigurationSecrets;
+use cli::model::secrets_configuration::SecretsConfiguration;
 use cli::rule_utils::{check_rules_checksum, get_languages_for_rules};
 use cli::sarif::sarif_utils::{generate_sarif_file, SarifReportMetadata};
 use cli::utils::{
     choose_cpu_count, get_num_threads_to_use, print_run_configuration, print_sast_configuration,
+    print_secrets_configuration,
 };
 use common::analysis_options::AnalysisOptions;
 use common::model::config_method::ConfigMethod;
@@ -273,7 +276,7 @@ fn main() -> Result<()> {
         }
     };
 
-    // SAST only reads its own section, and only when it is enabled: an invalid section for a
+    // Each product reads its own section, and only when it is enabled: an invalid section for a
     // product that isn't running cannot fail the run.
     let sast_config_file = match (&config_contents, static_analysis_enabled) {
         (Some((contents, schema)), true) => {
@@ -284,7 +287,17 @@ fn main() -> Result<()> {
         }
         _ => None,
     };
+    let secrets_config_file = match (&config_contents, secrets_enabled) {
+        (Some((contents, schema)), true) => {
+            parse_secrets_config(contents, *schema).unwrap_or_else(|err| {
+                eprintln!("Error: invalid Secrets configuration: {err}");
+                exit(EXIT_CODE_INVALID_CONFIGURATION)
+            })
+        }
+        _ => None,
+    };
     let sast_config = sast_config_file.as_ref();
+    let secrets_config = secrets_config_file.as_ref();
 
     let mut rules: Vec<Rule> = Vec::new();
     let rule_config_provider = sast_config
@@ -363,8 +376,8 @@ fn main() -> Result<()> {
         vec![]
     };
 
-    // Read .gitignore patterns.
-    // `select_files` call below decides for itself (via `ignore_gitignore`) whether to apply them.
+    // Read .gitignore patterns once. Each product's `select_files` call below decides for
+    // itself (via `ignore_gitignore`) whether to apply them.
     let gitignore_patterns = read_files_from_gitignore(&directory_to_analyze).unwrap_or_else(|e| {
         eprintln!("Warning: error when reading .gitignore file: {}", e);
         eprintln!("Continuing without .gitignore patterns");
@@ -381,7 +394,7 @@ fn main() -> Result<()> {
     // Select the number of cores to use based on the user's CLI arg (or lack of one)
     let num_cpus = get_num_threads_to_use(choose_cpu_count(num_cores_requested));
 
-    // Build the run/SAST configuration objects that describe how the CLI should behave.
+    // Build the run/SAST/secrets configuration objects that describe how the CLI should behave.
     let run_config = RunConfiguration {
         use_debug,
         configuration_method,
@@ -406,16 +419,53 @@ fn main() -> Result<()> {
         should_verify_checksum: true,
         debug_java_dfa: false,
     };
+    let mut secrets_path_config = PathConfig {
+        ignore: Vec::new(),
+        only: None,
+    };
+    if let Some(pc) = secrets_config
+        .and_then(|c| c.global_config.as_ref())
+        .and_then(|g| g.paths.as_ref())
+    {
+        secrets_path_config.ignore.extend_from_slice(&pc.ignore);
+        secrets_path_config.only = pc.only.clone();
+    }
+    let secrets_ignore_gitignore = secrets_config
+        .and_then(|c| c.global_config.as_ref())
+        .and_then(|g| g.use_gitignore.map(|b| !b))
+        .unwrap_or(false);
+    let secrets_ignore_generated_files = secrets_config
+        .and_then(|c| c.global_config.as_ref())
+        .and_then(|g| g.ignore_generated_files)
+        .unwrap_or(true);
+    let secrets_max_file_size_kb = secrets_config
+        .and_then(|c| c.global_config.as_ref())
+        .and_then(|g| g.max_file_size_kb)
+        .unwrap_or(DEFAULT_SECRETS_MAX_FILE_SIZE_KB);
+    let secrets_config = SecretsConfiguration {
+        ignore_gitignore: secrets_ignore_gitignore,
+        ignore_generated_files: secrets_ignore_generated_files,
+        path_config: secrets_path_config,
+        rules: secrets_rules.clone(),
+        max_file_size_kb: secrets_max_file_size_kb,
+    };
 
     let sast_cli_config = CliConfigurationSast {
         run: &run_config,
         sast: &sast_config,
+    };
+    let secrets_cli_config = CliConfigurationSecrets {
+        run: &run_config,
+        secrets: &secrets_config,
     };
 
     if run_config.use_debug {
         print_run_configuration(&run_config);
         if run_config.static_analysis_enabled {
             print_sast_configuration(&sast_config);
+        }
+        if run_config.secrets_enabled {
+            print_secrets_configuration(&secrets_config);
         }
     }
 
@@ -480,10 +530,10 @@ fn main() -> Result<()> {
             &[],
             &gitignore_patterns,
             &ProductFileSelection {
-                ignore_gitignore: false,
-                ignore_generated_files: false,
-                path_config: PathConfig::default(),
-                max_file_size_kb: None,
+                ignore_gitignore: secrets_config.ignore_gitignore,
+                ignore_generated_files: secrets_config.ignore_generated_files,
+                path_config: secrets_config.path_config.clone(),
+                max_file_size_kb: Some(secrets_config.max_file_size_kb),
             },
             use_debug,
         )
@@ -628,13 +678,9 @@ fn main() -> Result<()> {
             .filter(|f| !should_ignore_file_for_secret(f))
             .collect();
 
-        let execution_result = secret_analysis(
-            &run_config,
-            &secrets_rules,
-            &analysis_options,
-            &files_to_analyze,
-        )
-        .context("secrets should execute with success")?;
+        let execution_result =
+            secret_analysis(secrets_cli_config, &analysis_options, &files_to_analyze)
+                .context("secrets should execute with success")?;
 
         for (k, v) in &execution_result.metadata {
             if !all_path_metadata.contains_key(k) {
@@ -678,7 +724,7 @@ fn main() -> Result<()> {
     if let Some(output_file) = output_opt {
         let sarif_content = generate_sarif_file(
             sast_cli_config,
-            &secrets_rules,
+            secrets_cli_config,
             all_rule_results,
             secrets_results,
             Vec::new(),
