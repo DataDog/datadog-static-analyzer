@@ -16,15 +16,15 @@ pub struct RuleConfigProvider {
 }
 
 impl RuleConfigProvider {
-    pub fn from_config(cfg: &file_v1::ConfigFile) -> RuleConfigProvider {
+    pub fn from_sast_config(sast_config: &file_v1::SastConfig) -> RuleConfigProvider {
         RuleConfigProvider {
-            path_restrictions: cfg
-                .sast()
-                .and_then(|sast| sast.ruleset_configs.as_ref())
+            path_restrictions: sast_config
+                .ruleset_configs
+                .as_ref()
                 .map(PathRestrictions::from_ruleset_configs)
                 .unwrap_or_default(),
-            argument_provider: ArgumentProvider::from(cfg),
-            rule_overrides: RuleOverrides::from_config_file(cfg),
+            argument_provider: ArgumentProvider::from(sast_config),
+            rule_overrides: RuleOverrides::from_config_file(sast_config),
         }
     }
 

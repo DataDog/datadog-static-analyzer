@@ -3,7 +3,6 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
-use common::model::diff_aware::DiffAware;
 use dd_sds::SecondaryValidator;
 use dd_sds::{
     AwsConfig, AwsType, BodyMatcher, CustomHttpConfig, CustomHttpConfigV2, HttpCallConfig,
@@ -543,12 +542,6 @@ impl SecretRule {
         }
 
         rule_config
-    }
-}
-
-impl DiffAware for SecretRule {
-    fn generate_diff_aware_digest(&self) -> String {
-        format!("{}:{}", self.id, self.pattern).to_string()
     }
 }
 
