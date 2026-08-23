@@ -17,6 +17,7 @@ base64 = { workspace = true }
 git2 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 derive_builder = { workspace = true }
 num_cpus = { workspace = true }
 serde-sarif = { workspace = true }

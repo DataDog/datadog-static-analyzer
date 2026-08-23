@@ -1,6 +1,7 @@
 use cli::constants::EXIT_CODE_RULE_CHECKSUM_INVALID;
 use cli::file_utils::{filter_files_for_language, get_language_for_file};
-use cli::model::cli_configuration::CliConfiguration;
+use cli::model::sast_configuration::CliConfigurationSast;
+use cli::model::secrets_configuration::CliConfigurationSecrets;
 use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal};
 use common::analysis_options::AnalysisOptions;
 use indicatif::ProgressBar;
@@ -53,24 +54,28 @@ pub struct AnalysisResult<T> {
 /// Run the static analysis pipeline. This is called for both the main binary and git hooks.
 pub fn static_analysis(
     v8: V8Platform<Initialized>,
-    config: &CliConfiguration,
+    cli_config: CliConfigurationSast<'_>,
     options: &AnalysisOptions,
     files_to_analyze: &[PathBuf],
     languages: &[Language],
 ) -> anyhow::Result<AnalysisResult<RuleResult>> {
+    let CliConfigurationSast {
+        run: run_config,
+        sast: sast_config,
+    } = cli_config;
     let mut all_rule_results = Vec::<RuleResult>::new();
     let mut all_stats = AnalysisStatistics::new();
 
     let mut all_path_metadata_static_analysis =
         HashMap::<String, Option<ArtifactClassification>>::new();
-    if config.should_verify_checksum {
-        if let Err(e) = check_rules_checksum(config.rules.as_slice()) {
+    if sast_config.should_verify_checksum {
+        if let Err(e) = check_rules_checksum(sast_config.rules.as_slice()) {
             eprintln!("error when checking rules checksum: {e}");
             exit(EXIT_CODE_RULE_CHECKSUM_INVALID)
         }
     }
 
-    let directory_path = Path::new(config.source_directory.as_str());
+    let directory_path = Path::new(run_config.source_directory.as_str());
 
     // Finally run the analysis
     for language in languages {
@@ -82,14 +87,14 @@ pub fn static_analysis(
 
         // we only use the progress bar when the debug mode is not active, otherwise, it puts
         // too much information on the screen.
-        let progress_bar = if !config.use_debug {
+        let progress_bar = if !run_config.use_debug {
             Some(ProgressBar::new(files_for_language.len() as u64))
         } else {
             None
         };
 
         let rules_for_language: Vec<RuleInternal> =
-            convert_rules_to_rules_internal(config, language)?;
+            convert_rules_to_rules_internal(sast_config, language)?;
 
         println!(
             "Analyzing {} {:?} files using {} rules",
@@ -98,7 +103,7 @@ pub fn static_analysis(
             rules_for_language.len()
         );
 
-        if config.use_debug {
+        if run_config.use_debug {
             println!(
                 "Analyzing {}, {} files detected",
                 language,
@@ -123,7 +128,7 @@ pub fn static_analysis(
                         .to_str()
                         .expect("path contains non-Unicode characters");
                     let relative_path: Arc<str> = Arc::from(relative_path);
-                    let rule_config = config
+                    let rule_config = sast_config
                         .rule_config_provider
                         .config_for_file(relative_path.as_ref());
                     let res = if let Ok(file_content) = read_file(&path) {
@@ -170,7 +175,7 @@ pub fn static_analysis(
                             should_retain
                         });
 
-                        if config.debug_java_dfa && *language == Language::Java {
+                        if sast_config.debug_java_dfa && *language == Language::Java {
                             if let Some(graph) = generate_flow_graph_dot(
                                 runtime_ref,
                                 *language,
@@ -246,7 +251,7 @@ pub fn static_analysis(
         }
     }
 
-    if config.show_performance_statistics {
+    if sast_config.show_performance_statistics {
         show_performance_statistics(&all_stats);
     }
 
@@ -265,17 +270,21 @@ pub fn static_analysis(
 /// Run secrets detection. This is run only for secrets in both the main binary
 /// and git hooks.
 pub fn secret_analysis(
-    config: &CliConfiguration,
+    cli_config: CliConfigurationSecrets<'_>,
     options: &AnalysisOptions,
     files_to_analyze: &[PathBuf],
 ) -> anyhow::Result<AnalysisResult<SecretResult>> {
-    let secrets_rules = &config.secrets_rules;
+    let CliConfigurationSecrets {
+        run: run_config,
+        secrets: secrets_config,
+    } = cli_config;
+    let secrets_rules = &secrets_config.rules;
     let sds_scanner =
-        build_sds_scanner(secrets_rules, config.use_debug).map_err(|e| anyhow::anyhow!(e))?;
+        build_sds_scanner(secrets_rules, run_config.use_debug).map_err(|e| anyhow::anyhow!(e))?;
 
     let nb_secrets_files = files_to_analyze.len();
-    let directory_path = Path::new(config.source_directory.as_str());
-    let progress_bar = if !config.use_debug {
+    let directory_path = Path::new(run_config.source_directory.as_str());
+    let progress_bar = if !run_config.use_debug {
         Some(ProgressBar::new(nb_secrets_files as u64))
     } else {
         None
@@ -323,7 +332,7 @@ pub fn secret_analysis(
                     secrets
                 } else {
                     // this is generally because the file is binary.
-                    if config.use_debug {
+                    if run_config.use_debug {
                         eprintln!("error when getting content of path {}", path.display());
                     }
                     vec![]

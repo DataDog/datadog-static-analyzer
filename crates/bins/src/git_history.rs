@@ -2,7 +2,7 @@
 // (pass 1), then attribute only the secret-bearing blobs back to their
 // introducing/removal commits via a single `git log` pass (pass 2).
 
-use cli::model::cli_configuration::CliConfiguration;
+use cli::model::secrets_configuration::CliConfigurationSecrets;
 use cli::sarif::sarif_utils::HistoricalSecretResult;
 use common::analysis_options::AnalysisOptions;
 use git2::{ObjectType, Oid, Repository, TreeWalkMode, TreeWalkResult};
@@ -75,13 +75,17 @@ fn collect_head_blob_paths(repo: &Repository) -> HashSet<(Oid, String)> {
 /// pass 2. Returns the blobs that contained at least one secret, keyed by blob OID.
 fn scan_all_blobs_for_secrets(
     repo: &Repository,
-    config: &CliConfiguration,
+    cli_config: CliConfigurationSecrets<'_>,
     options: &AnalysisOptions,
 ) -> anyhow::Result<HashMap<Oid, Vec<SecretResult>>> {
-    let secrets_rules = &config.secrets_rules;
+    let CliConfigurationSecrets {
+        run: run_config,
+        secrets: secrets_config,
+    } = cli_config;
+    let secrets_rules = &secrets_config.rules;
     let sds_scanner =
-        build_sds_scanner(secrets_rules, config.use_debug).map_err(|e| anyhow::anyhow!(e))?;
-    let max_blob_bytes = (config.max_file_size_kb * 1024) as usize;
+        build_sds_scanner(secrets_rules, run_config.use_debug).map_err(|e| anyhow::anyhow!(e))?;
+    let max_blob_bytes = secrets_config.max_file_size_kb as usize * 1024;
 
     // Enumerate every object OID (the callback only yields the OID; cheap, reads
     // the pack index without decompressing).
@@ -96,7 +100,7 @@ fn scan_all_blobs_for_secrets(
         "[git-history] pass1: enumerated {} objects in {:.1}s; scanning blobs on {} threads",
         total_objects,
         t_enum.elapsed().as_secs_f64(),
-        config.get_num_threads(),
+        run_config.num_cpus,
     );
 
     use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -104,12 +108,16 @@ fn scan_all_blobs_for_secrets(
     let blobs_scanned = AtomicU64::new(0);
     let secret_blobs = AtomicUsize::new(0);
     let t_scan = std::time::Instant::now();
-    let source_directory = config.source_directory.clone();
+    let source_directory = run_config.source_directory.clone();
 
     // git2 types are not `Send`, so each rayon worker opens (and reuses) its own
-    // `Repository` handle via a thread-local.
+    // `Repository` handle via a thread-local. Rayon's global thread pool outlives any
+    // single call to this function (e.g. across tests in the same process), so the cache
+    // is keyed by source directory and re-opened whenever it doesn't match: otherwise a
+    // worker thread that previously scanned a *different* repo would silently keep using
+    // that stale handle, reading zero (or the wrong) blobs for the current repo.
     thread_local! {
-        static TL_REPO: std::cell::RefCell<Option<Repository>> =
+        static TL_REPO: std::cell::RefCell<Option<(String, Repository)>> =
             const { std::cell::RefCell::new(None) };
     }
 
@@ -137,10 +145,12 @@ fn scan_all_blobs_for_secrets(
             // the borrow scope free of any rayon re-entry.
             let content: Option<String> = TL_REPO.with(|cell| {
                 let mut slot = cell.borrow_mut();
-                if slot.is_none() {
-                    *slot = Repository::open(&source_directory).ok();
+                if slot.as_ref().is_none_or(|(dir, _)| dir != &source_directory) {
+                    *slot = Repository::open(&source_directory)
+                        .ok()
+                        .map(|repo| (source_directory.clone(), repo));
                 }
-                let repo = slot.as_ref()?;
+                let (_, repo) = slot.as_ref()?;
                 let odb = repo.odb().ok()?;
 
                 // `read_header` reads only the object header (type + size) without
@@ -338,20 +348,21 @@ fn attribute_blobs_to_paths(
 ///
 /// HEAD findings are already covered by the normal secret_analysis(), so (blob, path) pairs present at HEAD are excluded here.
 pub fn git_history_secret_analysis(
-    config: &CliConfiguration,
+    cli_config: CliConfigurationSecrets<'_>,
     options: &AnalysisOptions,
 ) -> anyhow::Result<Vec<HistoricalSecretResult>> {
-    let repo = Repository::open(&config.source_directory)?;
+    let run_config = cli_config.run;
+    let repo = Repository::open(&run_config.source_directory)?;
 
     // Pass 1: scan all unique blobs.
-    let secret_blobs = scan_all_blobs_for_secrets(&repo, config, options)?;
+    let secret_blobs = scan_all_blobs_for_secrets(&repo, cli_config, options)?;
     if secret_blobs.is_empty() {
         return Ok(Vec::new());
     }
 
     // Pass 2: attribute the secret-bearing blobs to their (path, commit) pairs.
     let targets: HashSet<Oid> = secret_blobs.keys().copied().collect();
-    let registry = attribute_blobs_to_paths(&config.source_directory, &targets)?;
+    let registry = attribute_blobs_to_paths(&run_config.source_directory, &targets)?;
     let head_blob_paths = collect_head_blob_paths(&repo);
 
     let mut results: Vec<HistoricalSecretResult> = Vec::new();
@@ -389,6 +400,10 @@ pub fn git_history_secret_analysis(
 #[cfg(test)]
 mod git_history_tests {
     use super::*;
+    use cli::constants::DEFAULT_SECRETS_MAX_FILE_SIZE_KB;
+    use cli::model::run_configuration::RunConfiguration;
+    use cli::model::secrets_configuration::SecretsConfiguration;
+    use common::model::path_config::PathConfig;
     use git2::{Oid, Repository};
     use std::collections::HashSet;
     use std::path::Path;
@@ -426,10 +441,8 @@ mod git_history_tests {
         repo.blob(content.as_bytes()).unwrap()
     }
 
-    fn config_with_rule(repo_dir: &str) -> CliConfiguration {
-        use kernel::config::common::PathConfig;
+    fn config_with_rule(repo_dir: &str) -> (RunConfiguration, SecretsConfiguration) {
         use kernel::model::common::OutputFormat;
-        use kernel::rule_config::RuleConfigProvider;
         use secrets::model::secret_rule::{RulePriority, SecretRule};
 
         let rule = SecretRule {
@@ -448,29 +461,26 @@ mod git_history_tests {
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
         };
-        CliConfiguration {
+        let run_config = RunConfiguration {
             use_debug: false,
             configuration_method: None,
-            ignore_gitignore: true,
             source_directory: repo_dir.to_string(),
             source_subdirectories: vec![],
-            path_config: PathConfig::default(),
-            rules_file: None,
             output_format: OutputFormat::Sarif,
             output_file: String::new(),
             num_cpus: 2,
-            rules: vec![],
-            rule_config_provider: RuleConfigProvider::default(),
-            max_file_size_kb: 200,
             use_staging: false,
-            show_performance_statistics: false,
-            ignore_generated_files: false,
             static_analysis_enabled: false,
             secrets_enabled: true,
-            secrets_rules: vec![rule],
-            should_verify_checksum: false,
-            debug_java_dfa: false,
-        }
+        };
+        let secrets_config = SecretsConfiguration {
+            ignore_gitignore: false,
+            ignore_generated_files: true,
+            path_config: PathConfig::default(),
+            rules: vec![rule],
+            max_file_size_kb: DEFAULT_SECRETS_MAX_FILE_SIZE_KB,
+        };
+        (run_config, secrets_config)
     }
 
     /// A blob removed before HEAD is attributed to the single path/commit that
@@ -582,9 +592,13 @@ mod git_history_tests {
         // Scrub secret.txt; keep.txt (with its secret) stays at HEAD.
         let c2 = commit(&repo, &[("secret.txt", "clean\n")], &[], "scrub");
 
-        let config = config_with_rule(dir.path().to_str().unwrap());
+        let (run_config, secrets_config) = config_with_rule(dir.path().to_str().unwrap());
         let options = AnalysisOptions::default();
-        let results = git_history_secret_analysis(&config, &options).unwrap();
+        let cli_config = CliConfigurationSecrets {
+            run: &run_config,
+            secrets: &secrets_config,
+        };
+        let results = git_history_secret_analysis(cli_config, &options).unwrap();
 
         assert_eq!(results.len(), 1, "only the removed secret is historical");
         let r = &results[0];
@@ -595,6 +609,30 @@ mod git_history_tests {
         assert!(
             results.iter().all(|x| x.inner.filename != "keep.txt"),
             "a secret still present at HEAD must not be reported as historical"
+        );
+    }
+
+    /// A configured `max-file-size-kb` excludes oversized blobs from history scanning.
+    #[test]
+    fn max_file_size_kb_excludes_oversized_blobs() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = init_repo(dir.path());
+        let big_content = format!("{}SECRETVALUE123\n", "a".repeat(2048));
+        commit(&repo, &[("big.txt", &big_content)], &[], "add");
+        commit(&repo, &[("big.txt", "clean\n")], &[], "scrub");
+
+        let (run_config, mut secrets_config) = config_with_rule(dir.path().to_str().unwrap());
+        secrets_config.max_file_size_kb = 1;
+        let options = AnalysisOptions::default();
+        let cli_config = CliConfigurationSecrets {
+            run: &run_config,
+            secrets: &secrets_config,
+        };
+        let results = git_history_secret_analysis(cli_config, &options).unwrap();
+
+        assert!(
+            results.is_empty(),
+            "a blob larger than the configured limit must not be scanned"
         );
     }
 }

@@ -56,7 +56,8 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
     // Extract the rule configuration from the configuration file.
     let rule_config_provider = configuration
         .as_ref()
-        .map(RuleConfigProvider::from_config)
+        .and_then(|c| c.sast())
+        .map(RuleConfigProvider::from_sast_config)
         .unwrap_or_default();
     let rule_config = rule_config_provider.config_for_file(&request.filename);
 

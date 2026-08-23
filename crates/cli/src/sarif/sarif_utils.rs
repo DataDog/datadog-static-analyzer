@@ -31,8 +31,9 @@ use serde_sarif::sarif::{
 };
 
 use crate::file_utils::get_fingerprint_for_violation;
-use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
+use crate::model::sast_configuration::CliConfigurationSast;
+use crate::model::secrets_configuration::CliConfigurationSecrets;
 use crate::rule_utils::map_priority_to_severity;
 use crate::sarif::sarif_utils::SarifViolation::{Secret, StaticAnalysis};
 
@@ -964,22 +965,29 @@ pub fn generate_sarif_report(
         .build()?)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate_sarif_file(
-    configuration: &CliConfiguration,
+    sast_cli_config: CliConfigurationSast<'_>,
+    secrets_cli_config: CliConfigurationSecrets<'_>,
     static_analysis_rule_results: Vec<RuleResult>,
     secrets_rule_results: Vec<SecretResult>,
     historic_secret_results: Vec<HistoricalSecretResult>,
     sarif_report_metadata: SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<String> {
-    let static_rules_sarif: Vec<SarifRule> = configuration
+    // Both bundles borrow the same run configuration, so use either
+    // sast_cli_config.run or secrets_cli_config.run.
+    let run_config = sast_cli_config.run;
+    let sast_config = sast_cli_config.sast;
+    let secrets_config = secrets_cli_config.secrets;
+    let static_rules_sarif: Vec<SarifRule> = sast_config
         .rules
         .iter()
         .cloned()
         .map(|r| r.into())
         .collect();
-    let secrets_rules_sarif: Vec<SarifRule> = configuration
-        .secrets_rules
+    let secrets_rules_sarif: Vec<SarifRule> = secrets_config
+        .rules
         .clone()
         .into_iter()
         .map(|r| r.into())
@@ -1008,7 +1016,7 @@ pub fn generate_sarif_file(
         generate_sarif_report(
             &[static_rules_sarif, secrets_rules_sarif].concat(),
             &[static_analysis_results, secret_results].concat(),
-            &configuration.source_directory,
+            &run_config.source_directory,
             sarif_report_metadata,
             path_metadata,
         )?
@@ -1018,7 +1026,7 @@ pub fn generate_sarif_file(
             &static_analysis_results,
             &secrets_rules_sarif,
             &secret_results,
-            &configuration.source_directory,
+            &run_config.source_directory,
             &sarif_report_metadata,
             path_metadata,
         )?

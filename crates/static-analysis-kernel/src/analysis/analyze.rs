@@ -1211,7 +1211,10 @@ rulesets:
         .unwrap();
 
         let analysis_options = AnalysisOptions::default();
-        let rule_config_provider = RuleConfigProvider::from_config(&local_config);
+        let rule_config_provider = local_config
+            .sast()
+            .map(RuleConfigProvider::from_sast_config)
+            .unwrap_or_default();
         let rule_config = rule_config_provider.config_for_file("myfile.py");
 
         let results = analyze(
@@ -1342,7 +1345,10 @@ rulesets:
         })
         .unwrap();
 
-        let rule_config_provider = RuleConfigProvider::from_config(&local_config);
+        let rule_config_provider = local_config
+            .sast()
+            .map(RuleConfigProvider::from_sast_config)
+            .unwrap_or_default();
         let rules = vec![rule1, rule2];
 
         let results = analyze(
