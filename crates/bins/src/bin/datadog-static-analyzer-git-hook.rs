@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use cli::config_file::{get_config, parse_sast_config, parse_secrets_config, ConfigFileSchema};
+use cli::config_file;
 use cli::constants::{
     DEFAULT_MAX_CPUS, DEFAULT_MAX_FILE_SIZE_KB, DEFAULT_SECRETS_MAX_FILE_SIZE_KB,
     DEFAULT_TOOL_NAME, EXIT_CODE_GITHOOK_FAILED, EXIT_CODE_INVALID_CONFIGURATION,
@@ -34,11 +34,13 @@ use itertools::Itertools;
 use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use kernel::classifiers::ArtifactClassification;
 use kernel::config::common::PathConfig;
+use kernel::config::file_v1 as sast_file_v1;
 use kernel::constants::{CARGO_VERSION, VERSION};
 use kernel::model::common::OutputFormat::Json;
 use kernel::model::rule::{Rule, RuleResult};
 use kernel::rule_config::RuleConfigProvider;
 use rocket::yansi::Paint;
+use secrets::config::file_v1 as secrets_file_v1;
 use secrets::secret_files::should_ignore_file_for_secret;
 use std::collections::HashMap;
 use std::io::Write;
@@ -258,46 +260,49 @@ fn main() -> Result<()> {
         exit(EXIT_CODE_NO_SECRET_OR_STATIC_ANALYSIS)
     }
 
-    let (config_contents, configuration_method): (
-        Option<(String, ConfigFileSchema)>,
+    // Each product's configuration is only read when that product runs, so a configuration one
+    // product cannot use never fails a run of the other.
+    let (sast_config_file, sast_config_method): (
+        Option<sast_file_v1::ConfigFile>,
         Option<ConfigMethod>,
-    ) = match get_config(&directory_to_analyze, use_debug) {
-        Ok(Some((contents, schema, config_method))) => {
-            (Some((contents, schema)), Some(config_method))
+    ) = if static_analysis_enabled {
+        match config_file::sast::get_config(&directory_to_analyze, use_debug) {
+            Ok(Some((config_file, config_method))) => (Some(config_file), Some(config_method)),
+            Ok(None) => (None, None),
+            Err(err) => {
+                eprintln!(
+                    "Error reading configuration file from {}:\n  {}",
+                    directory_to_analyze.display(),
+                    err
+                );
+                exit(EXIT_CODE_INVALID_CONFIGURATION)
+            }
         }
-        Ok(None) => (None, None),
-        Err(err) => {
-            eprintln!(
-                "Error reading configuration file from {}:\n  {}",
-                directory_to_analyze.display(),
-                err
-            );
-            exit(EXIT_CODE_INVALID_CONFIGURATION)
-        }
+    } else {
+        (None, None)
     };
+    let sast_config = sast_config_file.as_ref().and_then(|cfg| cfg.sast());
 
-    // Each product reads its own section, and only when it is enabled: an invalid section for a
-    // product that isn't running cannot fail the run.
-    let sast_config_file = match (&config_contents, static_analysis_enabled) {
-        (Some((contents, schema)), true) => {
-            parse_sast_config(contents, *schema).unwrap_or_else(|err| {
-                eprintln!("Error: invalid SAST configuration: {err}");
+    let (secrets_config_file, secrets_config_method): (
+        Option<secrets_file_v1::ConfigFile>,
+        Option<ConfigMethod>,
+    ) = if secrets_enabled {
+        match config_file::secrets::get_config(&directory_to_analyze, use_debug) {
+            Ok(Some((config_file, config_method))) => (Some(config_file), Some(config_method)),
+            Ok(None) => (None, None),
+            Err(err) => {
+                eprintln!(
+                    "Error reading configuration file from {}:\n  {}",
+                    directory_to_analyze.display(),
+                    err
+                );
                 exit(EXIT_CODE_INVALID_CONFIGURATION)
-            })
+            }
         }
-        _ => None,
+    } else {
+        (None, None)
     };
-    let secrets_config_file = match (&config_contents, secrets_enabled) {
-        (Some((contents, schema)), true) => {
-            parse_secrets_config(contents, *schema).unwrap_or_else(|err| {
-                eprintln!("Error: invalid Secrets configuration: {err}");
-                exit(EXIT_CODE_INVALID_CONFIGURATION)
-            })
-        }
-        _ => None,
-    };
-    let sast_config = sast_config_file.as_ref();
-    let secrets_config = secrets_config_file.as_ref();
+    let secrets_config = secrets_config_file.as_ref().and_then(|cfg| cfg.secrets());
 
     let mut rules: Vec<Rule> = Vec::new();
     let rule_config_provider = sast_config
@@ -397,7 +402,7 @@ fn main() -> Result<()> {
     // Build the run/SAST/secrets configuration objects that describe how the CLI should behave.
     let run_config = RunConfiguration {
         use_debug,
-        configuration_method,
+        configuration_method: sast_config_method.or(secrets_config_method),
         source_directory: directory_to_analyze.to_string_lossy().to_string(),
         source_subdirectories: vec![],
         output_format: Json,
