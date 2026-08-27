@@ -143,8 +143,6 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::{AnalysisRequest, RuleResponse};
     use crate::constants::{
         ERROR_CHECKSUM_MISMATCH, ERROR_CODE_LANGUAGE_MISMATCH, ERROR_CODE_NOT_BASE64,
@@ -152,14 +150,15 @@ mod tests {
         ERROR_PARSING_RULE,
     };
     use crate::model::analysis_request::{AnalysisRequestOptions, ServerRule};
+    use common::model::language::Language;
     use kernel::analysis::ddsa_lib;
     use kernel::model::rule::{compute_sha256, RuleInternal};
     use kernel::model::{
         analysis::ERROR_RULE_TIMEOUT,
-        common::Language,
         rule::{RuleCategory, RuleSeverity, RuleType},
     };
     use kernel::utils::encode_base64_string;
+    use std::time::Duration;
 
     /// A shorthand helper function to call [`process_analysis_request`](super::process_analysis_request)
     /// without requiring a `ServerRule` -> `RuleInternal` conversion or an explicitly-created [`JsRuntime`].

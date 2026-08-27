@@ -2,8 +2,9 @@ use crate::constants::{ERROR_CODE_NOT_BASE64, ERROR_CODE_NO_ROOT_NODE};
 use crate::model::tree_sitter_tree_node::ServerTreeSitterNode;
 use crate::model::tree_sitter_tree_request::TreeSitterRequest;
 use crate::model::tree_sitter_tree_response::TreeSitterResponse;
+use common::tree_sitter::tree_sitter::{get_tree};
 use common::utils::position_utils::LineColumnIndex;
-use kernel::analysis::tree_sitter::{get_tree, map_node};
+use kernel::analysis::tree_sitter::map_node;
 use kernel::utils::decode_base64_string;
 
 // Return the tree for the language and code sent as parameter.
@@ -56,7 +57,7 @@ pub fn process_tree_sitter_tree_request(request: TreeSitterRequest) -> TreeSitte
 
 #[cfg(test)]
 mod tests {
-    use kernel::model::common::Language;
+    use common::model::language::Language;
 
     use super::*;
 

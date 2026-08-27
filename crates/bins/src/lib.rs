@@ -4,13 +4,13 @@ use cli::model::sast_configuration::CliConfigurationSast;
 use cli::model::secrets_configuration::CliConfigurationSecrets;
 use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal};
 use common::analysis_options::AnalysisOptions;
+use common::model::language::Language;
 use indicatif::ProgressBar;
 use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
 use kernel::analysis::ddsa_lib::v8_platform::{Initialized, V8Platform};
 use kernel::analysis::ddsa_lib::JsRuntime;
 use kernel::classifiers::{is_test_file, ArtifactClassification};
 use kernel::model::analysis::ERROR_RULE_TIMEOUT;
-use kernel::model::common::Language;
 use kernel::model::rule::{RuleInternal, RuleResult};
 use rayon::prelude::*;
 use secrets::model::secret_result::SecretResult;
@@ -25,6 +25,7 @@ use std::time::Duration;
 
 mod git_history;
 pub use git_history::git_history_secret_analysis;
+
 
 /// Read a file and if the file has some invalid UTF-8 characters, it returns a string with invalid
 /// characters.
@@ -314,7 +315,11 @@ pub fn secret_analysis(
                         let cloned_path_str = relative_path.to_string();
                         let language_opt = get_language_for_file(path);
 
+
+
                         if let Some(language) = language_opt {
+
+
                             let metadata = if is_test_file(
                                 language,
                                 file_content.as_ref(),

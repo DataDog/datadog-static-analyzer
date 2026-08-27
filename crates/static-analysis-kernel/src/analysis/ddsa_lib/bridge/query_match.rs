@@ -7,6 +7,7 @@ use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError, NodeId, Stell
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
 use crate::analysis::tree_sitter::QueryMatch;
+use crate::analysis::tree_sitter::TSCaptureContent;
 use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
@@ -89,10 +90,11 @@ mod tests {
     use crate::analysis::ddsa_lib::js;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
-    use crate::analysis::tree_sitter::{get_tree, QueryMatch, TSCaptureContent, TSQuery};
-    use crate::model::common::Language;
+    use common::model::language::Language;
+    use common::tree_sitter::tree_sitter::{get_tree};
     use common::utils::position_utils::LineColumnIndex;
     use deno_core::JsRuntime;
+    use crate::analysis::tree_sitter::{QueryMatch, TSCaptureContent, TSQuery};
 
     fn setup_bridge() -> (JsRuntime, QueryMatchBridge, TsNodeBridge) {
         let mut runtime = cfg_test_v8().deno_core_rt();

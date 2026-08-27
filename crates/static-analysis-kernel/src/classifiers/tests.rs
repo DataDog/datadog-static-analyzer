@@ -2,8 +2,8 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis::tree_sitter::get_tree;
-use crate::model::common::Language;
+use common::model::language::Language;
+use common::tree_sitter::tree_sitter::get_tree;
 use std::path::Path;
 
 /// Returns `true` if the file is considered to contain unit tests. If not (or a detection
@@ -103,7 +103,7 @@ macro_rules! trie_from {
 /// Returns `true` if the provided file path is "test-like"--that is, it suggests that the
 /// file contains unit tests or is associated with those that do--or `false` if not.
 fn has_test_like_path(language: Language, path: &Path) -> bool {
-    use Language::*;
+    use common::model::language::Language::*;
     let globset = match language {
         Csharp => globset_from!([DEFAULT_PATHS, &["**/*Test.cs", "**/*Tests.cs"]]),
         Go => globset_from!([&[
@@ -152,7 +152,7 @@ fn has_test_like_import(
     code: &str,
     pre_parsed_tree: Option<&tree_sitter::Tree>,
 ) -> bool {
-    use Language::*;
+    use common::model::language::Language::*;
     let mut new_tree: Option<tree_sitter::Tree> = None;
     let tree = if pre_parsed_tree.is_none() {
         let _ = std::mem::replace(&mut new_tree, get_tree(code, &language));
@@ -474,7 +474,7 @@ where
 #[cfg(test)]
 mod cfg_test_tests {
     use super::{is_test_file, trie_has_prefix};
-    use crate::model::common::Language;
+    use common::model::language::Language;
     use std::path::{Path, PathBuf};
 
     /// For tests where [`Language`] doesn't affect the behavior.
@@ -645,7 +645,7 @@ package pkg
 
     #[test]
     fn language_java() {
-        use Language::Java;
+        use common::model::language::Language::Java;
         let shoulds = &[
             "import static org.junit.Assert.assertArrayEquals;",
             "import org.mockito.MockitoAnnotations;",
@@ -661,7 +661,7 @@ package pkg
 
     #[test]
     fn language_javascript_typescript() {
-        use Language::{JavaScript, TypeScript};
+        use common::model::language::Language::{JavaScript, TypeScript};
         for (language, base_ext) in [(JavaScript, "js"), (TypeScript, "ts")] {
             let path_based = per_os_paths(&[
                 &format!("cypress/e2e/{NON_TEST_FOLDER}/file.{base_ext}"),
@@ -693,7 +693,7 @@ package pkg
 
     #[test]
     fn language_python() {
-        use Language::Python;
+        use common::model::language::Language::Python;
         let path_based = per_os_paths(&[
             "f1/features/steps/file.py",
             "f1/features/environment.py",

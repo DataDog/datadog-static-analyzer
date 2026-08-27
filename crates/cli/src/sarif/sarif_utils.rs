@@ -1101,10 +1101,10 @@ fn as_slash_path(path_str: &str) -> std::borrow::Cow<'_, str> {
 mod tests {
     use super::*;
     use assert_json_diff::{assert_json_eq, assert_json_include};
+    use common::model::language::Language;
     use common::model::position::{Position, PositionBuilder, Region};
     use kernel::model::violation::{Fix, Violation};
     use kernel::model::{
-        common::Language,
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };

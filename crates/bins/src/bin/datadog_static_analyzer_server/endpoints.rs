@@ -105,7 +105,7 @@ fn shutdown_post(state: &State<ServerState>, shutdown: Shutdown) -> Status {
 #[rocket::get("/languages", format = "application/json")]
 fn languages(span: TraceSpan) -> Value {
     let _entered = span.enter();
-    let languages: Vec<Value> = kernel::model::common::ALL_LANGUAGES
+    let languages: Vec<Value> = common::model::language::ALL_LANGUAGES
         .iter()
         .map(|x| json!(x))
         .collect();

@@ -5,8 +5,11 @@ version.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-serde = { version = "1.0.219", features = ["derive"] }
 derive_builder = { workspace = true }
+indexmap = { workspace = true }
+serde = { version = "1.0.219", features = ["derive"] }
+tree-sitter = { workspace = true }
+
 
 # other
 bstr = "1.12.0"

@@ -42,6 +42,7 @@ use cli::utils::{
 };
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
+use common::model::language::Language;
 use common::model::config_method::ConfigMethod;
 use common::model::diff_aware::DiffAware;
 use datadog_static_analyzer::{git_history_secret_analysis, secret_analysis, static_analysis};
@@ -50,7 +51,7 @@ use kernel::classifiers::ArtifactClassification;
 use kernel::config::common::PathConfig;
 use kernel::config::file_v1 as sast_file_v1;
 use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::common::{Language, OutputFormat};
+use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use secrets::config::file_v1 as secrets_file_v1;

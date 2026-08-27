@@ -153,8 +153,8 @@ where
 mod tests {
     use crate::analysis::ddsa_lib::context::ts_lang;
     use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_v8, try_execute};
-    use crate::analysis::tree_sitter::get_tree_sitter_language;
-    use crate::model::common::Language;
+    use common::model::language::Language;
+    use common::tree_sitter::tree_sitter::get_tree_sitter_language;
 
     /// Tests the metadata mapping for a tree-sitter language's "node kind"
     #[test]

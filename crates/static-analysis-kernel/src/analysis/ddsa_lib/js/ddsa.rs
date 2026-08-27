@@ -12,8 +12,8 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::{
         cfg_test_v8, js_class_eq, js_instance_eq, shorthand_execute_rule,
     };
-    use crate::analysis::tree_sitter::get_tree_sitter_language;
-    use crate::model::common::Language::Python;
+    use common::model::language::Language::Python;
+    use common::tree_sitter::tree_sitter::get_tree_sitter_language;
 
     #[test]
     fn js_properties_canary() {
@@ -87,7 +87,7 @@ function visit(query, filename, code) {
 
     /// NOTE: This is temporary scaffolding used during the transition to `ddsa_lib`.
     fn compat_helper_op_ts_node_named_children(get_children: &str) {
-        use crate::model::common::Language::JavaScript;
+        use common::model::language::Language::JavaScript;
         let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo(a, b, c) {}";
         let ts_query = r#"
@@ -126,7 +126,7 @@ function visit(captures) {{
     /// Tests that a child node can have a `fieldName`, but that not all child nodes do.
     #[test]
     fn child_node_with_field() {
-        use crate::model::common::Language::JavaScript;
+        use common::model::language::Language::JavaScript;
         // (Assertion included to alert if upstream tree-sitter grammar unexpectedly alters metadata)
         let ts_lang = get_tree_sitter_language(&JavaScript);
         assert_eq!(ts_lang.field_name_for_id(26).unwrap(), "name");
@@ -161,7 +161,7 @@ function visit(captures) {{
     /// `op_ts_node_parent` returns the node's parent. Calling the op on the tree's root node returns `undefined`.
     #[test]
     fn op_ts_node_parent() {
-        use crate::model::common::Language::JavaScript;
+        use common::model::language::Language::JavaScript;
         let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo() { /* code */ }";
         let ts_query = r#"
@@ -190,7 +190,7 @@ function visit(captures) {
     /// entire root-to-node path, and we want to ensure we aren't pushing it all to JavaScript at once).
     #[test]
     fn op_ts_node_parent_lazy_serialization() {
-        use crate::model::common::Language::JavaScript;
+        use common::model::language::Language::JavaScript;
         let mut rt = cfg_test_v8().new_runtime();
         let text = "function echo() { /* code */ }";
         let ts_query = r#"

@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use super::models::{Comment, Line};
-use kernel::analysis::tree_sitter::get_tree;
-use kernel::model::common::Language;
+use common::model::language::Language;
+use common::tree_sitter::tree_sitter::get_tree;
 use thiserror::Error;
 use tree_sitter::Node;
 

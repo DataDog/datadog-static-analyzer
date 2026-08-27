@@ -96,13 +96,9 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::{cfg_test_v8, try_execute, TsTree};
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
     use crate::analysis::ddsa_lib::{js, JsRuntime};
-    use crate::analysis::tree_sitter::get_tree;
-    use crate::model::analysis::TreeSitterNode;
-    use crate::model::common::Language;
-    use crate::model::rule::{RuleCategory, RuleSeverity};
-    use common::model::position;
+    use common::model::language::Language;
+    use common::tree_sitter::tree_sitter::get_tree;
     use common::utils::position_utils::LineColumnIndex;
-    use deno_core::v8;
     use std::sync::Arc;
 
     /// The name of the class that implements the graph creation logic.
@@ -1318,7 +1314,7 @@ strict digraph full { }
 /// Graph fidelity reductions that were artificially introduced for implementation simplicity.
 #[cfg(test)]
 mod tests_artificial_limitations {
-    use crate::{assert_digraph, assert_subgraph};
+    use crate::assert_digraph;
 
     /// Anonymous classes are not parsed.
     #[test]

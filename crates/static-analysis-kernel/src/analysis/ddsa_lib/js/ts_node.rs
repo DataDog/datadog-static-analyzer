@@ -100,16 +100,15 @@ const FIELD_CHILD_NODE_CLASS_NAME: &str = "TreeSitterFieldChildNode";
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{v8_interned, v8_string, Class, Instance};
-    use crate::analysis::ddsa_lib::context::ts_lang;
+    use crate::analysis::ddsa_lib::common::{v8_interned, Class, Instance};
     use crate::analysis::ddsa_lib::js::ts_node::FIELD_CHILD_NODE_CLASS_NAME;
     use crate::analysis::ddsa_lib::js::{TreeSitterNode, TreeSitterNodeFn};
     use crate::analysis::ddsa_lib::test_utils::{
         attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_root_context,
         try_execute,
     };
-    use crate::analysis::tree_sitter::get_tree_sitter_language;
-    use crate::model::common::Language;
+    use common::model::language::Language;
+    use common::tree_sitter::tree_sitter::get_tree_sitter_language;
     use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
     use std::marker::PhantomData;
