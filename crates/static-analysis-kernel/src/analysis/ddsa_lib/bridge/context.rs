@@ -121,7 +121,7 @@ impl ContextBridge {
             // For now, in the interest of simplicity, we just clear all file contexts when the
             // language changes (as opposed to only clearing the context for the preceding language).
             // This really has no performance impact, as the number of times we'll change languages
-            // has an upper bound of the count of [`crate::model::language::Language`] variants.
+            // has an upper bound of the count of [`common::model::language::Language`] variants.
             self.clear_file_contexts(scope);
         }
         // Because trees and file contents go hand-in-hand, we can avoid a relatively expensive string
