@@ -83,6 +83,46 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
     Err(anyhow::anyhow!("cannot find position"))
 }
 
+/// Get the byte offset of a [Position] in a code string. Inverse of [get_position_in_string].
+pub fn position_to_byte_offset(content: &str, position: &Position) -> Option<usize> {
+    let bstr = BStr::new(&content);
+
+    let mut line_number: u32 = 1;
+    for line in bstr.lines_with_terminator() {
+        if line_number != position.line {
+            line_number += 1;
+            continue;
+        }
+
+        let start_index = line.as_ptr() as usize - content.as_ptr() as usize;
+
+        let mut col_number: u32 = 1;
+        for (grapheme_start, _, _) in line.grapheme_indices() {
+            if col_number == position.col {
+                return Some(start_index + grapheme_start);
+            }
+            col_number += 1;
+        }
+
+        // The position points one past the last grapheme of the line (e.g. an exclusive
+        // end position), so it resolves to the end of the line content, before its terminator.
+        if col_number == position.col {
+            let mut line_len = line.len();
+            if line_len > 0 && line[line_len - 1] == b'\n' {
+                line_len -= 1;
+                if line_len > 0 && line[line_len - 1] == b'\r' {
+                    line_len -= 1;
+                }
+            }
+            return Some(start_index + line_len);
+        }
+
+        return None;
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,6 +213,30 @@ mod tests {
             get_position_in_string(text, text.len() - 1).unwrap(),
             Position::new(3, 13)
         );
+    }
+
+    #[test]
+    fn test_position_to_byte_offset_roundtrip() {
+        let text = "The quick brown\n🦊 jumps over\nthe lazy 🐕\n";
+        for offset in [0usize, 6, 7, 8, 16, 18, 41, 43] {
+            let position = get_position_in_string(text, offset).unwrap();
+            assert_eq!(position_to_byte_offset(text, &position), Some(offset));
+        }
+    }
+
+    #[test]
+    fn test_position_to_byte_offset_end_of_line() {
+        let text = "foo\nbar\n";
+        assert_eq!(
+            position_to_byte_offset(text, &Position::new(1, 4)),
+            Some(3)
+        );
+    }
+
+    #[test]
+    fn test_position_to_byte_offset_out_of_bounds() {
+        let text = "foo\nbar\n";
+        assert_eq!(position_to_byte_offset(text, &Position::new(5, 1)), None);
     }
 
     #[test]
