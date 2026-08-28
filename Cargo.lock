@@ -715,7 +715,6 @@ dependencies = [
  "cc",
  "derive_builder",
  "globset",
- "indexmap 2.13.0",
  "line-index",
  "serde",
  "serde_yaml",

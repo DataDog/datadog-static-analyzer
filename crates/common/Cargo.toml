@@ -6,7 +6,6 @@ version.workspace = true
 [dependencies]
 anyhow = { workspace = true }
 derive_builder = { workspace = true }
-indexmap = { workspace = true }
 serde = { version = "1.0.219", features = ["derive"] }
 tree-sitter = { workspace = true }
 
@@ -18,7 +17,6 @@ line-index = "0.1.2"
 
 [dev-dependencies]
 serde_yaml = { workspace = true }
-
 
 [build-dependencies]
 cc = "1.2.21"
