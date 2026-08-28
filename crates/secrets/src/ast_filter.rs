@@ -27,12 +27,11 @@ lazy_static! {
     };
 }
 
-/// The function `filter_secrets_for_ast` filters all initial results and only keep the one that
-/// are contained in a string or in a comment. The function checks each results and check
-/// what AST element contains the match. The match can only be in comments or string.
+/// `filter_secrets_for_ast` post-filters secret-detection results, keeping only matches that are
+/// contained within a string literal or a comment.
 ///
-/// This function only works for JavaScript and TypeScript. For other languages, tha initial results
-/// are being returned.
+/// This currently applies only to JavaScript and TypeScript. For other languages, the initial
+/// results are returned unchanged.
 pub fn filter_secrets_for_ast(
     initial_results: Vec<SecretResult>,
     file_content: &str,
