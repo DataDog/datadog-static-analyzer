@@ -217,8 +217,11 @@ mod tests {
 
     #[test]
     fn test_position_to_byte_offset_roundtrip() {
+        // Offsets are all grapheme-cluster boundaries; `position_to_byte_offset` cannot
+        // reconstruct a mid-grapheme byte offset since `Position` doesn't encode one (e.g. 18 or
+        // 43 would land inside the 4-byte 🦊/🐕 encodings, so they're intentionally excluded).
         let text = "The quick brown\n🦊 jumps over\nthe lazy 🐕\n";
-        for offset in [0usize, 6, 7, 8, 16, 18, 41, 43] {
+        for offset in [0usize, 6, 7, 8, 16, 20, 32, 41] {
             let position = get_position_in_string(text, offset).unwrap();
             assert_eq!(position_to_byte_offset(text, &position), Some(offset));
         }

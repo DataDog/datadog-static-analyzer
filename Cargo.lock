@@ -678,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "cli"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -696,6 +696,7 @@ dependencies = [
  "serde",
  "serde-sarif",
  "serde_json",
+ "serde_yaml",
  "sha2",
  "static-analysis-kernel",
  "tempfile",
@@ -707,13 +708,18 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "bstr",
+ "cc",
  "derive_builder",
+ "globset",
+ "indexmap 2.13.0",
  "line-index",
  "serde",
+ "serde_yaml",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -994,7 +1000,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "datadog-static-analyzer"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "cargo-husky",
@@ -3983,18 +3989,20 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "common",
  "dd-sensitive-data-scanner",
- "futures",
  "httpmock",
  "itertools 0.14.0",
  "lazy_static",
  "serde",
  "serde_json",
+ "serde_yaml",
  "strum",
+ "thiserror 2.0.18",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -4378,11 +4386,10 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-kernel"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "cc",
  "common",
  "deno_core",
  "derive_builder",
@@ -4402,7 +4409,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-server"
-version = "0.9.1"
+version = "0.9.3"
 dependencies = [
  "anyhow",
  "assert-json-diff",
