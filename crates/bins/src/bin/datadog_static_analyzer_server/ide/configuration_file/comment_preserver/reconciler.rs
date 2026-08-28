@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use super::models::{Comment, Line};
 use common::model::language::Language;
-use common::tree_sitter::tree_sitter::get_tree;
+use common::tree_sitter::get_tree;
 use thiserror::Error;
 use tree_sitter::Node;
 

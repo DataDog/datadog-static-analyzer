@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use common::model::language::Language;
-use common::tree_sitter::tree_sitter::get_tree;
+use common::tree_sitter::get_tree;
 use std::path::Path;
 
 /// Returns `true` if the file is considered to contain unit tests. If not (or a detection

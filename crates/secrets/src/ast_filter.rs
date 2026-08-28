@@ -5,7 +5,7 @@
 use crate::model::secret_result::SecretResult;
 use common::model::language::Language;
 use common::model::position::Position;
-use common::tree_sitter::tree_sitter::get_tree;
+use common::tree_sitter::get_tree;
 use common::utils::position_utils::position_to_byte_offset;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
@@ -121,8 +121,7 @@ mod tests {
     fn test_keeps_match_but_empty_code() {
         let code = "";
         let result = make_result(Position::new(1, 16), Position::new(1, 36));
-        let filtered =
-            filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 0);
     }
 
@@ -131,8 +130,7 @@ mod tests {
         let code = r#"const token = "AKIAABCDEFGHIJKLMNOP";"#;
         // "AKIAABCDEFGHIJKLMNOP" starts at column 16 (1-based, right after the opening quote).
         let result = make_result(Position::new(1, 16), Position::new(1, 36));
-        let filtered =
-            filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
     }
 
@@ -141,8 +139,7 @@ mod tests {
         let code = r#"const token = `AKIAABCDEFGHIJKLMNOP`;"#;
         // "AKIAABCDEFGHIJKLMNOP" starts at column 16 (1-based, right after the opening quote).
         let result = make_result(Position::new(1, 16), Position::new(1, 36));
-        let filtered =
-            filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
     }
 
@@ -150,8 +147,7 @@ mod tests {
     fn test_keeps_match_is_string_literal() {
         let code = r#""AKIAABCDEFGHIJKLMNOP""#;
         let result = make_result(Position::new(1, 2), Position::new(1, 22));
-        let filtered =
-            filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
     }
 
@@ -160,8 +156,7 @@ mod tests {
         // the code is an identifier and therefore, should fail
         let code = "AKIAABCDEFGHIJKLMNOP";
         let result = make_result(Position::new(1, 1), Position::new(1, 21));
-        let filtered =
-            filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 0);
     }
 
@@ -169,8 +164,7 @@ mod tests {
     fn test_keeps_match_in_comment() {
         let code = "// token AKIAABCDEFGHIJKLMNOP\nconst x = 1;";
         let result = make_result(Position::new(1, 10), Position::new(1, 30));
-        let filtered =
-            filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
     }
 
@@ -178,8 +172,7 @@ mod tests {
     fn test_discards_match_outside_string_or_comment() {
         let code = "const token = AKIAABCDEFGHIJKLMNOP;";
         let result = make_result(Position::new(1, 15), Position::new(1, 35));
-        let filtered =
-            filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert!(filtered.is_empty());
     }
 
@@ -187,8 +180,7 @@ mod tests {
     fn test_returns_initial_results_for_unsupported_language() {
         let code = "token = 'AKIAABCDEFGHIJKLMNOP'";
         let result = make_result(Position::new(1, 1), Position::new(1, 5));
-        let filtered =
-            filter_secrets_for_ast(vec![result.clone()], code, &Language::Python);
+        let filtered = filter_secrets_for_ast(vec![result.clone()], code, &Language::Python);
         assert_eq!(filtered, vec![result]);
     }
 }

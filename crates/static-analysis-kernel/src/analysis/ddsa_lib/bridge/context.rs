@@ -236,7 +236,7 @@ mod tests {
         KEY_TS_LANGUAGE_PTR,
     };
     use common::model::language::Language;
-    use common::tree_sitter::tree_sitter::get_tree;
+    use common::tree_sitter::get_tree;
     use deno_core::v8;
     use std::cell::RefCell;
     use std::collections::HashMap;

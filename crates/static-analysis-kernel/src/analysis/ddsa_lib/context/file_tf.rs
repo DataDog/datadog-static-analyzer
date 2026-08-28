@@ -9,7 +9,7 @@ use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError};
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
 use common::model::language::Language;
-use common::tree_sitter::tree_sitter::get_tree_sitter_language;
+use common::tree_sitter::get_tree_sitter_language;
 
 /// Terraform-specific file context
 #[derive(Debug)]
@@ -99,7 +99,7 @@ mod tests {
     use crate::analysis::ddsa_lib::context::file_tf::Resource;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use common::model::language::Language;
-    use common::tree_sitter::tree_sitter::get_tree;
+    use common::tree_sitter::get_tree;
 
     #[test]
     fn test_get_file_context_tf() {

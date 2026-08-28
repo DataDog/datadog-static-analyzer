@@ -42,9 +42,9 @@ use cli::utils::{
 };
 use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
-use common::model::language::Language;
 use common::model::config_method::ConfigMethod;
 use common::model::diff_aware::DiffAware;
+use common::model::language::Language;
 use datadog_static_analyzer::{git_history_secret_analysis, secret_analysis, static_analysis};
 use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use kernel::classifiers::ArtifactClassification;

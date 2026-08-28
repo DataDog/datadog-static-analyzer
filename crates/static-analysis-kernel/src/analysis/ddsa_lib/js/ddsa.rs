@@ -13,7 +13,7 @@ mod tests {
         cfg_test_v8, js_class_eq, js_instance_eq, shorthand_execute_rule,
     };
     use common::model::language::Language::Python;
-    use common::tree_sitter::tree_sitter::get_tree_sitter_language;
+    use common::tree_sitter::get_tree_sitter_language;
 
     #[test]
     fn js_properties_canary() {

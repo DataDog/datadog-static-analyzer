@@ -141,8 +141,8 @@ pub fn check_rules_checksum(rules: &[Rule]) -> anyhow::Result<()> {
 mod tests {
     use common::model::language::Language;
     use common::model::position::Position;
-    use kernel::model::violation::Violation;
     use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
+    use kernel::model::violation::Violation;
 
     use super::*;
 

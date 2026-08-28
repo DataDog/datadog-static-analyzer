@@ -165,7 +165,7 @@ impl RootContext {
 mod tests {
     use crate::analysis::ddsa_lib::RootContext;
     use common::model::language::Language;
-    use common::tree_sitter::tree_sitter::get_tree;
+    use common::tree_sitter::get_tree;
     use std::collections::HashMap;
     use std::sync::Arc;
 

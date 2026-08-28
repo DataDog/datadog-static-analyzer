@@ -61,8 +61,8 @@ mod tests {
         make_stub_tsn_bridge, try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::RustConverter;
-    use std::sync::Arc;
     use crate::analysis::tree_sitter::TSQueryCapture;
+    use std::sync::Arc;
 
     /// Sample contents of a file to test the compatibility layer
     const COMPAT_FILE_CONTENTS: &str = "\

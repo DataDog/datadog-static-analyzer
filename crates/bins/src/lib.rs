@@ -26,7 +26,6 @@ use std::time::Duration;
 mod git_history;
 pub use git_history::git_history_secret_analysis;
 
-
 /// Read a file and if the file has some invalid UTF-8 characters, it returns a string with invalid
 /// characters.
 pub fn read_file(path: &Path) -> anyhow::Result<String> {
@@ -315,11 +314,7 @@ pub fn secret_analysis(
                         let cloned_path_str = relative_path.to_string();
                         let language_opt = get_language_for_file(path);
 
-
-
                         if let Some(language) = language_opt {
-
-
                             let metadata = if is_test_file(
                                 language,
                                 file_content.as_ref(),

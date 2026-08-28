@@ -97,7 +97,7 @@ mod tests {
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
     use crate::analysis::ddsa_lib::{js, JsRuntime};
     use common::model::language::Language;
-    use common::tree_sitter::tree_sitter::get_tree;
+    use common::tree_sitter::get_tree;
     use common::utils::position_utils::LineColumnIndex;
     use std::sync::Arc;
 

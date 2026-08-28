@@ -639,14 +639,14 @@ mod tests {
         cfg_test_v8, shorthand_execute_rule, try_execute, ExecuteOptions,
     };
     use crate::analysis::ddsa_lib::{js, resource_watchdog, JsRuntime};
+    use crate::analysis::tree_sitter::TSQuery;
     use common::model::language::Language;
-    use common::tree_sitter::tree_sitter::{get_tree, get_tree_sitter_language};
+    use common::tree_sitter::{get_tree, get_tree_sitter_language};
     use deno_core::v8;
     use std::collections::HashMap;
     use std::marker::PhantomData;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
-    use crate::analysis::tree_sitter::TSQuery;
 
     /// Executes the given JavaScript rule against the given Tree, handling test-related setup boilerplate.
     fn execute_rule_internal_with_tree(

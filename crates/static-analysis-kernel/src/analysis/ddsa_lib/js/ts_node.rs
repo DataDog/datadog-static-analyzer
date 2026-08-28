@@ -108,7 +108,7 @@ mod tests {
         try_execute,
     };
     use common::model::language::Language;
-    use common::tree_sitter::tree_sitter::get_tree_sitter_language;
+    use common::tree_sitter::get_tree_sitter_language;
     use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
     use std::marker::PhantomData;

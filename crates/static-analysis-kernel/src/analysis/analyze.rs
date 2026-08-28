@@ -3,6 +3,7 @@ use crate::analysis::ddsa_lib::js::flow::java::{ClassGraph, FileGraph};
 use crate::analysis::ddsa_lib::runtime::ExecutionResult;
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::analysis::generated_content::{is_generated_file, is_minified_file};
+use crate::analysis::tree_sitter::TSQuery;
 use crate::model::analysis::{
     FileIgnoreBehavior, LinesToIgnore, ERROR_RULE_EXECUTION, ERROR_RULE_TIMEOUT,
 };
@@ -10,12 +11,11 @@ use crate::model::rule::{RuleCategory, RuleInternal, RuleResult, RuleSeverity};
 use crate::rule_config::RuleConfig;
 use common::analysis_options::AnalysisOptions;
 use common::model::language::Language;
-use common::tree_sitter::tree_sitter::{get_tree, get_tree_sitter_language};
+use common::tree_sitter::{get_tree, get_tree_sitter_language};
 use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use crate::analysis::tree_sitter::TSQuery;
 
 /// The duration an individual execution of a rule may run before it will be forcefully halted.
 /// This includes the time it takes for the tree-sitter query to collect its matches, as well as
@@ -403,12 +403,12 @@ function visit(captures) {
 mod tests {
     use super::*;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
+    use crate::analysis::tree_sitter::get_query;
     use crate::config::common::{parse_any_schema_yaml, WithVersion};
     use crate::config::file_v1;
     use crate::model::rule::{RuleCategory, RuleSeverity};
     use crate::rule_config::RuleConfigProvider;
     use common::model::language::Language;
-    use crate::analysis::tree_sitter::get_query;
 
     const QUERY_CODE: &str = r#"
 (function_definition

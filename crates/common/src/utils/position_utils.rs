@@ -230,10 +230,7 @@ mod tests {
     #[test]
     fn test_position_to_byte_offset_end_of_line() {
         let text = "foo\nbar\n";
-        assert_eq!(
-            position_to_byte_offset(text, &Position::new(1, 4)),
-            Some(3)
-        );
+        assert_eq!(position_to_byte_offset(text, &Position::new(1, 4)), Some(3));
     }
 
     #[test]

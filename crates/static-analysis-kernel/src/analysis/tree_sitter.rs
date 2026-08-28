@@ -1,15 +1,14 @@
 use crate::model::analysis::{MatchNode, MatchNodeContext, TreeSitterNode};
+use common::model::position::Position;
 use common::utils::position_utils::LineColumnIndex;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use indexmap::IndexMap;
-use common::model::position::Position;
 
-
-use tree_sitter::{CaptureQuantifier, QueryCursorOptions, QueryCursorState, StreamingIterator};
 use common::model::language::Language;
-use common::tree_sitter::tree_sitter::get_tree_sitter_language;
+use common::tree_sitter::get_tree_sitter_language;
+use tree_sitter::{CaptureQuantifier, QueryCursorOptions, QueryCursorState, StreamingIterator};
 
 /// A wrapper around a [`tree_sitter::Query`].
 #[derive(Debug)]
@@ -155,7 +154,7 @@ impl<'a, 'tree> TSQueryCursor<'a, 'tree> {
                 .map(|(_, query_capture)| query_capture)
                 .collect::<Vec<_>>()
         })
-            .collect::<Vec<_>>()
+        .collect::<Vec<_>>()
     }
 }
 
@@ -210,7 +209,6 @@ pub enum TSCaptureContent<T> {
     Single(T),
     Multi(Vec<T>),
 }
-
 
 // Get all the match nodes based on a query. For each match, we build a `MatchNode`
 // object. This object is deserialized and this is what is passed to the visit function.
@@ -341,10 +339,10 @@ pub fn get_query(
 
 #[cfg(test)]
 mod tests {
-    use common::model::language::Language;
-    use crate::analysis::tree_sitter::{get_query};
-    use common::tree_sitter::tree_sitter::get_tree;
     use super::*;
+    use crate::analysis::tree_sitter::get_query;
+    use common::model::language::Language;
+    use common::tree_sitter::get_tree;
 
     #[test]
     fn test_map_node_simple() {
@@ -381,7 +379,6 @@ def func():
                 .unwrap()
         );
     }
-
 
     // test the number of node we should retrieve when executing a rule
     #[test]
@@ -423,7 +420,6 @@ def func():
         assert_eq!(None, superclasses.field_name);
         assert!(query_node.captures.contains_key("classname"));
     }
-
 
     #[test]
     fn ts_query_cursor_matches_timeout() {

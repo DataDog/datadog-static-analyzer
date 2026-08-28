@@ -2,6 +2,7 @@ use base64::engine::general_purpose;
 use base64::Engine;
 use common::model::language::Language;
 
+use crate::analysis::tree_sitter::{get_query, TSQuery};
 use crate::model::rule_test::RuleTest;
 use crate::model::violation::Violation;
 use common::model::diff_aware::DiffAware;
@@ -10,7 +11,6 @@ use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use std::fmt;
 use std::path::Path;
-use crate::analysis::tree_sitter::{get_query, TSQuery};
 
 /// In the RuleCategory, we keep unknown. Old rules keep putting
 /// whatever they want as category. As a matter of fact, old rules that

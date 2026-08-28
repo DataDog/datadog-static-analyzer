@@ -15,7 +15,7 @@ use crate::analysis::ddsa_lib::v8_platform::{Uninitialized, Unprotected, V8Platf
 use crate::analysis::ddsa_lib::JsRuntime;
 use crate::model::rule::{RuleCategory, RuleInternal, RuleSeverity};
 use common::model::language::Language;
-use common::tree_sitter::tree_sitter::{get_tree, get_tree_sitter_language};
+use common::tree_sitter::{get_tree, get_tree_sitter_language};
 use deno_core::v8::HandleScope;
 use deno_core::{v8, ExtensionFileSource};
 use std::borrow::Cow;
@@ -147,7 +147,7 @@ pub(crate) fn try_execute<'s>(
 
 /// Creates a [`tree_sitter::Tree`] from the given input and language.
 pub(crate) fn parse_code(code: impl AsRef<str>, language: Language) -> tree_sitter::Tree {
-    use common::tree_sitter::tree_sitter::get_tree_sitter_language;
+    use common::tree_sitter::get_tree_sitter_language;
     let mut parser = tree_sitter::Parser::new();
     parser
         .set_language(&get_tree_sitter_language(&language))
