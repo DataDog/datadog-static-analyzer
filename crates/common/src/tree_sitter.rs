@@ -68,7 +68,6 @@ pub fn get_tree(code: &str, language: &Language) -> Option<tree_sitter::Tree> {
 mod tests {
     use super::*;
     use crate::tree_sitter::get_tree;
-    use std::time::Duration;
 
     #[test]
     fn test_python_get_tree() {
