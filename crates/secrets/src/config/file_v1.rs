@@ -59,13 +59,13 @@ impl YamlConfigFile {
     /// Extracts and unwraps the secrets configuration
     ///
     /// # Panics
-    /// Panics if the underlying isn't a [`YamlSecretsConfigMinor5`].
+    /// Panics if the underlying isn't a [`YamlSecretsConfigMinor6`].
     #[cfg(test)]
-    pub fn secrets5(&self) -> &YamlSecretsConfigMinor5 {
+    pub fn secrets6(&self) -> &YamlSecretsConfigMinor6 {
         self.secrets
             .as_ref()
             .and_then(|s| match s {
-                YamlSecretsConfig::Minor5(secrets) => Some(secrets),
+                YamlSecretsConfig::Minor6(secrets) => Some(secrets),
                 #[allow(unreachable_patterns)]
                 _ => None,
             })
@@ -99,28 +99,30 @@ impl From<YamlConfigFile> for ConfigFile {
 #[serde(deny_unknown_fields)]
 pub struct YamlSecretsConfigMinor0 {}
 
-/// Secrets configuration for v1.5-v1.x (until schema changes)
-/// This represents the initial Secrets schema. When Secrets adds/changes fields in a future
+/// Secrets configuration for v1.5+ (until schema changes)
+/// This represents the Secrets schema. When Secrets adds/changes fields in a future
 /// minor version, a new YamlSecretsConfigMinorN struct should be created.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 #[serde(deny_unknown_fields)]
-pub struct YamlSecretsConfigMinor5 {
+pub struct YamlSecretsConfigMinor6 {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) global_config: Option<YamlSecretsGlobalConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) experimental_ast_filter: Option<bool>,
 }
 
 /// All the different schemas that the "secrets" property in the v1.x configuration file can take.
 #[derive(Debug, Clone, PartialEq)]
 pub enum YamlSecretsConfig {
     /// Secrets schema used from v1.5+
-    Minor5(YamlSecretsConfigMinor5),
+    Minor6(YamlSecretsConfigMinor6),
 }
 
 impl Default for YamlSecretsConfig {
     fn default() -> Self {
         // This should always be the latest minor version implemented
-        Self::Minor5(Default::default())
+        Self::Minor6(Default::default())
     }
 }
 
@@ -128,7 +130,14 @@ impl YamlSecretsConfig {
     /// Returns a reference to the `global-config`.
     pub fn global_config(&self) -> Option<&YamlSecretsGlobalConfig> {
         match self {
-            YamlSecretsConfig::Minor5(cfg) => cfg.global_config.as_ref(),
+            YamlSecretsConfig::Minor6(cfg) => cfg.global_config.as_ref(),
+        }
+    }
+
+    /// Returns the `experimental-ast-filter` flag.
+    pub fn experimental_ast_filter(&self) -> Option<bool> {
+        match self {
+            YamlSecretsConfig::Minor6(cfg) => cfg.experimental_ast_filter,
         }
     }
 }
@@ -148,7 +157,7 @@ impl Serialize for YamlSecretsConfig {
         S: Serializer,
     {
         match self {
-            YamlSecretsConfig::Minor5(config) => config.serialize(serializer),
+            YamlSecretsConfig::Minor6(config) => config.serialize(serializer),
         }
     }
 }
@@ -156,13 +165,15 @@ impl Serialize for YamlSecretsConfig {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SecretsConfig {
     pub global_config: Option<SecretsGlobalConfig>,
+    pub experimental_ast_filter: bool,
 }
 
 impl From<YamlSecretsConfig> for SecretsConfig {
     fn from(value: YamlSecretsConfig) -> Self {
         match value {
-            YamlSecretsConfig::Minor5(cfg) => SecretsConfig {
+            YamlSecretsConfig::Minor6(cfg) => SecretsConfig {
                 global_config: cfg.global_config.map(Into::into),
+                experimental_ast_filter: cfg.experimental_ast_filter.unwrap_or(false),
             },
         }
     }
@@ -283,9 +294,9 @@ pub fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, ParseError> {
                 }
                 5.. => {
                     if let Some(value) = base.secrets {
-                        let config: YamlSecretsConfigMinor5 =
+                        let config: YamlSecretsConfigMinor6 =
                             serde_yaml::from_value(value).map_err(ParseError::Parse)?;
-                        let _ = secrets.insert(YamlSecretsConfig::Minor5(config));
+                        let _ = secrets.insert(YamlSecretsConfig::Minor6(config));
                     }
                 }
             }
@@ -424,11 +435,11 @@ mod secrets_tests {
     };
     use common::model::path_config::{PathConfig, PathPattern};
 
-    /// All fields in v1.5 Secrets config
+    /// All fields in v1.6 Secrets config
     #[test]
     fn parse_fields() {
         let config = r#"
-schema-version: v1.5
+schema-version: v1.6
 secrets:
   global-config:
     only-paths:
@@ -439,6 +450,7 @@ secrets:
     use-gitignore: false
     max-file-size-kb: 2000
     ignore-generated-files: true
+  experimental-ast-filter: true
 "#;
         let cfg = ConfigFile::from(parse_yaml(config).unwrap());
 
@@ -457,8 +469,42 @@ secrets:
                     max_file_size_kb: Some(2000),
                     ignore_generated_files: Some(true),
                 }),
+                experimental_ast_filter: true,
             }
         )
+    }
+
+    /// All fields in v1.6 Secrets config
+    #[test]
+    fn parse_fields_no_global_config() {
+        let config = r#"
+schema-version: v1.6
+secrets:
+  experimental-ast-filter: true
+"#;
+        let cfg = ConfigFile::from(parse_yaml(config).unwrap());
+
+        assert_eq!(
+            cfg.secrets.unwrap(),
+            SecretsConfig {
+                global_config: None,
+                experimental_ast_filter: true,
+            }
+        )
+    }
+
+    /// `experimental-ast-filter` defaults to `false` when absent.
+    #[test]
+    fn parse_experimental_ast_filter_defaults_to_false() {
+        let config = r"
+schema-version: v1.5
+secrets:
+  global-config:
+    only-paths:
+      - src
+";
+        let cfg = ConfigFile::from(parse_yaml(config).unwrap());
+        assert!(!cfg.secrets.unwrap().experimental_ast_filter);
     }
 
     /// All relevant Yaml* structs fail if an unknown field is present.

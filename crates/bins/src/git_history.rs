@@ -480,6 +480,7 @@ mod git_history_tests {
             path_config: PathConfig::default(),
             rules: vec![rule],
             max_file_size_kb: DEFAULT_SECRETS_MAX_FILE_SIZE_KB,
+            ast_filter: false,
         };
         (run_config, secrets_config)
     }

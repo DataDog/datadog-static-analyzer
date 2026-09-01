@@ -508,13 +508,15 @@ fn resolve_secrets_config(
         .and_then(|c| c.global_config.as_ref())
         .and_then(|g| g.max_file_size_kb)
         .unwrap_or(DEFAULT_SECRETS_MAX_FILE_SIZE_KB);
-
     Ok(SecretsConfiguration {
         ignore_gitignore,
         ignore_generated_files,
         path_config,
         rules,
         max_file_size_kb,
+        ast_filter: secrets_config
+            .map(|v| v.experimental_ast_filter)
+            .unwrap_or(false),
     })
 }
 
@@ -907,6 +909,7 @@ fn main() -> Result<()> {
     } else {
         (None, None)
     };
+
     let secrets_config = resolve_secrets_config(
         secrets_config_file.as_ref().and_then(|cfg| cfg.secrets()),
         &args,

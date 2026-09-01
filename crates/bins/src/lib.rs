@@ -25,6 +25,7 @@ use std::time::Duration;
 
 mod git_history;
 pub use git_history::git_history_secret_analysis;
+use secrets::ast_filter::filter_secrets_for_ast;
 
 /// Read a file and if the file has some invalid UTF-8 characters, it returns a string with invalid
 /// characters.
@@ -310,9 +311,10 @@ pub fn secret_analysis(
                         options,
                     );
 
+                    let language_opt = get_language_for_file(path);
+
                     if !secrets.is_empty() {
                         let cloned_path_str = relative_path.to_string();
-                        let language_opt = get_language_for_file(path);
 
                         if let Some(language) = language_opt {
                             let metadata = if is_test_file(
@@ -329,7 +331,15 @@ pub fn secret_analysis(
                         }
                     }
 
-                    secrets
+                    if let Some(language) = language_opt {
+                        if cli_config.secrets.ast_filter {
+                            filter_secrets_for_ast(secrets, file_content.as_ref(), &language)
+                        } else {
+                            secrets
+                        }
+                    } else {
+                        secrets
+                    }
                 } else {
                     // this is generally because the file is binary.
                     if run_config.use_debug {

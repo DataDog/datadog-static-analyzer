@@ -453,6 +453,9 @@ fn main() -> Result<()> {
         path_config: secrets_path_config,
         rules: secrets_rules.clone(),
         max_file_size_kb: secrets_max_file_size_kb,
+        ast_filter: secrets_config
+            .map(|c| c.experimental_ast_filter)
+            .unwrap_or(false),
     };
 
     let sast_cli_config = CliConfigurationSast {

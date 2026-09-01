@@ -10,6 +10,7 @@ pub struct SecretsConfiguration {
     pub path_config: PathConfig,
     pub rules: Vec<SecretRule>,
     pub max_file_size_kb: u64,
+    pub ast_filter: bool,
 }
 
 /// Everything a secrets run is configured by: the settings shared across products and secrets'
