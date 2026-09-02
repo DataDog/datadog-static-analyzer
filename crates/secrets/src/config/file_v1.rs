@@ -149,7 +149,7 @@ impl YamlSecretsConfig {
     pub fn experimental_ast_filter(&self) -> Option<bool> {
         match self {
             YamlSecretsConfig::Minor6(cfg) => cfg.experimental_ast_filter,
-            YamlSecretsConfig::Minor5(cfg) => None,
+            YamlSecretsConfig::Minor5(_) => None,
         }
     }
 }
