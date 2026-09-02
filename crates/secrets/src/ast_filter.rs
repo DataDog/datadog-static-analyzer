@@ -68,7 +68,8 @@ pub fn filter_secrets_for_ast(
 }
 
 /// Returns true if the range delimited by `start` and `end` is contained in a node whose kind
-/// is in `allowed_node_kinds`.
+/// is in `allowed_node_kinds`, or in an ERROR/MISSING node. ERROR and MISSING nodes signal an
+/// incomplete or malformed parse, so we don't trust the AST enough to filter those matches out.
 fn is_in_allowed_node(
     root_node: &Node,
     file_content: &str,
@@ -89,8 +90,10 @@ fn is_in_allowed_node(
 
     let mut current_node = Some(node);
     while let Some(n) = current_node {
-        let node_kind = n.kind();
-        if allowed_node_kinds.contains(&node_kind) {
+        if n.is_error() || n.is_missing() {
+            return true;
+        }
+        if allowed_node_kinds.contains(&n.kind()) {
             return true;
         }
         current_node = n.parent();
@@ -188,6 +191,21 @@ mod tests {
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].matches, vec![string_match]);
+    }
+
+    #[test]
+    fn test_keeps_match_in_error_node() {
+        // Malformed syntax: tree-sitter wraps the bare identifier in an ERROR node. Since the
+        // parse is broken here, we should not trust the AST enough to filter the match out.
+        let code = "function foo( { AKIAABCDEFGHIJKLMNOP";
+        let tree = get_tree(code, &Language::JavaScript);
+        // ensure the node is error
+        assert!(tree.is_some());
+        assert!(tree.unwrap().root_node().child(0).unwrap().is_error());
+        // assert!(tree.unwrap().root_node().is_error());
+        let result = make_result(Position::new(1, 17), Position::new(1, 37));
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        assert_eq!(filtered.len(), 1);
     }
 
     #[test]
