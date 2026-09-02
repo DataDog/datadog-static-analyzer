@@ -112,10 +112,20 @@ pub struct YamlSecretsConfigMinor6 {
     pub(crate) experimental_ast_filter: Option<bool>,
 }
 
+/// Secrets configuration for v1.5
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+#[serde(deny_unknown_fields)]
+pub struct YamlSecretsConfigMinor5 {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) global_config: Option<YamlSecretsGlobalConfig>,
+}
+
 /// All the different schemas that the "secrets" property in the v1.x configuration file can take.
 #[derive(Debug, Clone, PartialEq)]
 pub enum YamlSecretsConfig {
-    /// Secrets schema used from v1.5+
+    Minor5(YamlSecretsConfigMinor5),
+    /// Secrets schema used from v1.6+
     Minor6(YamlSecretsConfigMinor6),
 }
 
@@ -131,6 +141,7 @@ impl YamlSecretsConfig {
     pub fn global_config(&self) -> Option<&YamlSecretsGlobalConfig> {
         match self {
             YamlSecretsConfig::Minor6(cfg) => cfg.global_config.as_ref(),
+            YamlSecretsConfig::Minor5(cfg) => cfg.global_config.as_ref(),
         }
     }
 
@@ -138,6 +149,7 @@ impl YamlSecretsConfig {
     pub fn experimental_ast_filter(&self) -> Option<bool> {
         match self {
             YamlSecretsConfig::Minor6(cfg) => cfg.experimental_ast_filter,
+            YamlSecretsConfig::Minor5(cfg) => None,
         }
     }
 }
@@ -157,6 +169,7 @@ impl Serialize for YamlSecretsConfig {
         S: Serializer,
     {
         match self {
+            YamlSecretsConfig::Minor5(config) => config.serialize(serializer),
             YamlSecretsConfig::Minor6(config) => config.serialize(serializer),
         }
     }
@@ -171,6 +184,10 @@ pub struct SecretsConfig {
 impl From<YamlSecretsConfig> for SecretsConfig {
     fn from(value: YamlSecretsConfig) -> Self {
         match value {
+            YamlSecretsConfig::Minor5(cfg) => SecretsConfig {
+                global_config: cfg.global_config.map(Into::into),
+                experimental_ast_filter: false,
+            },
             YamlSecretsConfig::Minor6(cfg) => SecretsConfig {
                 global_config: cfg.global_config.map(Into::into),
                 experimental_ast_filter: cfg.experimental_ast_filter.unwrap_or(false),

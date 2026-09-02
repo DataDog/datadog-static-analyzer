@@ -48,8 +48,8 @@ pub fn filter_secrets_for_ast(
 
     initial_results
         .into_iter()
-        .filter(|result| {
-            result.matches.iter().all(|m| {
+        .filter_map(|mut result| {
+            result.matches.retain(|m| {
                 is_in_allowed_node(
                     &root_node,
                     file_content,
@@ -57,7 +57,12 @@ pub fn filter_secrets_for_ast(
                     &m.end,
                     allowed_node_kinds,
                 )
-            })
+            });
+            if result.matches.is_empty() {
+                None
+            } else {
+                Some(result)
+            }
         })
         .collect()
 }
@@ -157,6 +162,32 @@ mod tests {
         let result = make_result(Position::new(1, 1), Position::new(1, 21));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 0);
+    }
+
+    #[test]
+    fn test_filters_out_only_the_identifier_match() {
+        let code = "const token = \"AKIAABCDEFGHIJKLMNOP\";\nAKIAABCDEFGHIJKLMNOP;";
+        // "AKIAABCDEFGHIJKLMNOP" in the string starts at column 16 (1-based, right after the
+        // opening quote) on line 1.
+        let string_match = SecretResultMatch {
+            start: Position::new(1, 16),
+            end: Position::new(1, 36),
+            validation_status: SecretValidationStatus::NotValidated,
+            is_suppressed: false,
+        };
+        // "AKIAABCDEFGHIJKLMNOP" as a bare identifier on line 2.
+        let identifier_match = SecretResultMatch {
+            start: Position::new(2, 1),
+            end: Position::new(2, 21),
+            validation_status: SecretValidationStatus::NotValidated,
+            is_suppressed: false,
+        };
+        let mut result = make_result(Position::new(1, 16), Position::new(1, 36));
+        result.matches = vec![string_match.clone(), identifier_match];
+
+        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].matches, vec![string_match]);
     }
 
     #[test]
