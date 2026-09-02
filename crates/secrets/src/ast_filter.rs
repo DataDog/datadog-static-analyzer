@@ -27,8 +27,8 @@ lazy_static! {
     };
 }
 
-/// `filter_secrets_for_ast` post-filters secret-detection results, keeping only matches that are
-/// contained within a string literal or a comment.
+/// `filter_secrets_for_ast` marks matches that are not contained within a string literal or a
+/// comment by setting `is_filtered_by_ast` to true. Matches are never removed from the result.
 ///
 /// This currently applies only to JavaScript and TypeScript. For other languages, the initial
 /// results are returned unchanged.
@@ -48,21 +48,19 @@ pub fn filter_secrets_for_ast(
 
     initial_results
         .into_iter()
-        .filter_map(|mut result| {
-            result.matches.retain(|m| {
-                is_in_allowed_node(
+        .map(|mut result| {
+            for m in &mut result.matches {
+                if !is_in_allowed_node(
                     &root_node,
                     file_content,
                     &m.start,
                     &m.end,
                     allowed_node_kinds,
-                )
-            });
-            if result.matches.is_empty() {
-                None
-            } else {
-                Some(result)
+                ) {
+                    m.is_filtered_by_ast = true;
+                }
             }
+            result
         })
         .collect()
 }
@@ -120,16 +118,18 @@ mod tests {
                 end,
                 validation_status: SecretValidationStatus::NotValidated,
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         }
     }
 
     #[test]
-    fn test_keeps_match_but_empty_code() {
+    fn test_flags_match_but_empty_code() {
         let code = "";
         let result = make_result(Position::new(1, 16), Position::new(1, 36));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
-        assert_eq!(filtered.len(), 0);
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -139,6 +139,7 @@ mod tests {
         let result = make_result(Position::new(1, 16), Position::new(1, 36));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -148,6 +149,7 @@ mod tests {
         let result = make_result(Position::new(1, 16), Position::new(1, 36));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -156,19 +158,21 @@ mod tests {
         let result = make_result(Position::new(1, 2), Position::new(1, 22));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
-    fn test_no_match_identifier() {
-        // the code is an identifier and therefore, should fail
+    fn test_flags_match_identifier() {
+        // the code is an identifier and therefore, should be flagged as filtered
         let code = "AKIAABCDEFGHIJKLMNOP";
         let result = make_result(Position::new(1, 1), Position::new(1, 21));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
-        assert_eq!(filtered.len(), 0);
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
-    fn test_filters_out_only_the_identifier_match() {
+    fn test_flags_only_the_identifier_match() {
         let code = "const token = \"AKIAABCDEFGHIJKLMNOP\";\nAKIAABCDEFGHIJKLMNOP;";
         // "AKIAABCDEFGHIJKLMNOP" in the string starts at column 16 (1-based, right after the
         // opening quote) on line 1.
@@ -177,6 +181,7 @@ mod tests {
             end: Position::new(1, 36),
             validation_status: SecretValidationStatus::NotValidated,
             is_suppressed: false,
+            is_filtered_by_ast: false,
         };
         // "AKIAABCDEFGHIJKLMNOP" as a bare identifier on line 2.
         let identifier_match = SecretResultMatch {
@@ -184,28 +189,31 @@ mod tests {
             end: Position::new(2, 21),
             validation_status: SecretValidationStatus::NotValidated,
             is_suppressed: false,
+            is_filtered_by_ast: false,
         };
         let mut result = make_result(Position::new(1, 16), Position::new(1, 36));
-        result.matches = vec![string_match.clone(), identifier_match];
+        result.matches = vec![string_match, identifier_match];
 
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].matches, vec![string_match]);
+        assert_eq!(filtered[0].matches.len(), 2);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
+        assert!(filtered[0].matches[1].is_filtered_by_ast);
     }
 
     #[test]
     fn test_keeps_match_in_error_node() {
         // Malformed syntax: tree-sitter wraps the bare identifier in an ERROR node. Since the
-        // parse is broken here, we should not trust the AST enough to filter the match out.
+        // parse is broken here, we should not trust the AST enough to flag the match as filtered.
         let code = "function foo( { AKIAABCDEFGHIJKLMNOP";
         let tree = get_tree(code, &Language::JavaScript);
         // ensure the node is error
         assert!(tree.is_some());
         assert!(tree.unwrap().root_node().child(0).unwrap().is_error());
-        // assert!(tree.unwrap().root_node().is_error());
         let result = make_result(Position::new(1, 17), Position::new(1, 37));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -214,14 +222,16 @@ mod tests {
         let result = make_result(Position::new(1, 10), Position::new(1, 30));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
-    fn test_discards_match_outside_string_or_comment() {
+    fn test_flags_match_outside_string_or_comment() {
         let code = "const token = AKIAABCDEFGHIJKLMNOP;";
         let result = make_result(Position::new(1, 15), Position::new(1, 35));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
-        assert!(filtered.is_empty());
+        assert_eq!(filtered.len(), 1);
+        assert!(filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]

@@ -102,6 +102,7 @@ pub fn find_secrets(
                     start: v.start,
                     end: v.end,
                     validation_status: v.validation_status,
+                    is_filtered_by_ast: false,
                 })
                 .collect(),
         })

@@ -725,6 +725,16 @@ fn run_secrets(
                 .len() as u32
         })
         .sum();
+    let nb_secrets_filtered_by_ast: u32 = secrets_rules_results
+        .iter()
+        .map(|x| {
+            x.matches
+                .iter()
+                .filter(|m| m.is_filtered_by_ast)
+                .collect::<Vec<_>>()
+                .len() as u32
+        })
+        .sum();
 
     let files_with_secrets = secrets_rules_results
         .iter()
@@ -739,13 +749,14 @@ fn run_secrets(
     let secrets_duration = secrets_start.elapsed().as_secs_f64();
 
     println!("Secrets Summary");
-    println!("  Files scanned: {}", secrets_files.len());
-    println!("  Files with secrets: {}", files_with_secrets);
-    println!("  Total secrets: {}", nb_secrets_found);
-    println!("  Valid secrets: {}", nb_secrets_validated);
-    println!("  Rules evaluated: {}", secrets_config.rules.len());
-    println!("  Rules with matches: {}", rules_with_matches);
-    println!("  Duration: {:.3}s", secrets_duration);
+    println!("  Files scanned       : {}", secrets_files.len());
+    println!("  Files with secrets  : {}", files_with_secrets);
+    println!("  Total secrets       : {}", nb_secrets_found);
+    println!("  Secrets filtered    : {}", nb_secrets_filtered_by_ast);
+    println!("  Valid secrets       : {}", nb_secrets_validated);
+    println!("  Rules evaluated     : {}", secrets_config.rules.len());
+    println!("  Rules with matches  : {}", rules_with_matches);
+    println!("  Duration            : {:.3}s", secrets_duration);
 
     Ok(SecretsRunSummary {
         rule_results: execution_results.rule_results,

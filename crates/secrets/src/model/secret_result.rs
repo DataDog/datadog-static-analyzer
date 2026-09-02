@@ -64,6 +64,8 @@ pub struct SecretResultMatch {
     pub validation_status: SecretValidationStatus,
     #[serde(default)]
     pub is_suppressed: bool,
+    #[serde(default)]
+    pub is_filtered_by_ast: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
