@@ -282,6 +282,10 @@ fn main() {
 
             env::set_current_dir(&project_dir).unwrap();
             assert!(run("git", |cmd| { cmd.args(["init", "-q"]) }));
+            // Disable auto-gc: it can run as a detached background process past the
+            // fetch/checkout call, still writing into .git when we remove it below,
+            // causing an intermittent `ENOTEMPTY` on the removal.
+            assert!(run("git", |cmd| { cmd.args(["config", "gc.auto", "0"]) }));
             assert!(run("git", |cmd| {
                 cmd.args(["remote", "add", "origin", &proj.repository])
             }));
