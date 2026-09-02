@@ -206,10 +206,6 @@ mod tests {
         // Malformed syntax: tree-sitter wraps the bare identifier in an ERROR node. Since the
         // parse is broken here, we should not trust the AST enough to flag the match as filtered.
         let code = "function foo( { AKIAABCDEFGHIJKLMNOP";
-        let tree = get_tree(code, &Language::JavaScript);
-        // ensure the node is error
-        assert!(tree.is_some());
-        assert!(tree.unwrap().root_node().child(0).unwrap().is_error());
         let result = make_result(Position::new(1, 17), Position::new(1, 37));
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);

@@ -309,7 +309,14 @@ pub fn parse_yaml(config_contents: &str) -> Result<YamlConfigFile, ParseError> {
                             serde_yaml::from_value(value).map_err(ParseError::Parse)?;
                     }
                 }
-                5.. => {
+                5 => {
+                    if let Some(value) = base.secrets {
+                        let config: YamlSecretsConfigMinor5 =
+                            serde_yaml::from_value(value).map_err(ParseError::Parse)?;
+                        let _ = secrets.insert(YamlSecretsConfig::Minor5(config));
+                    }
+                }
+                6.. => {
                     if let Some(value) = base.secrets {
                         let config: YamlSecretsConfigMinor6 =
                             serde_yaml::from_value(value).map_err(ParseError::Parse)?;
@@ -448,7 +455,7 @@ surely-this-is-not-in-the-schema: ...right?
 #[cfg(test)]
 mod secrets_tests {
     use crate::config::file_v1::{
-        parse_yaml, ConfigFile, ParseError, SecretsConfig, SecretsGlobalConfig,
+        parse_yaml, ConfigFile, ParseError, SecretsConfig, SecretsGlobalConfig, YamlSecretsConfig,
     };
     use common::model::path_config::{PathConfig, PathPattern};
 
@@ -522,6 +529,28 @@ secrets:
 ";
         let cfg = ConfigFile::from(parse_yaml(config).unwrap());
         assert!(!cfg.secrets.unwrap().experimental_ast_filter);
+    }
+
+    /// `parse_yaml` selects the `YamlSecretsConfig` variant based on the schema's minor version.
+    #[test]
+    fn parse_yaml_selects_secrets_schema_variant() {
+        let v1_5 = r"
+schema-version: v1.5
+secrets:
+  global-config:
+    only-paths:
+      - src
+";
+        let cfg = parse_yaml(v1_5).unwrap();
+        assert!(matches!(cfg.secrets, Some(YamlSecretsConfig::Minor5(_))));
+
+        let v1_6 = r"
+schema-version: v1.6
+secrets:
+  experimental-ast-filter: true
+";
+        let cfg = parse_yaml(v1_6).unwrap();
+        assert!(matches!(cfg.secrets, Some(YamlSecretsConfig::Minor6(_))));
     }
 
     /// All relevant Yaml* structs fail if an unknown field is present.
