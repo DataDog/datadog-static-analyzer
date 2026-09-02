@@ -7,7 +7,7 @@ on:
       - "**/Cargo.toml"
       - ".github/workflows/docker-build.yml"
     branches:
-      - "**"
+      - main
   pull_request:
     paths:
       - "Dockerfile"
@@ -16,6 +16,10 @@ on:
       - "**/Cargo.toml"
       - ".github/workflows/docker-build.yml"
   workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 name: Test Docker Container
 

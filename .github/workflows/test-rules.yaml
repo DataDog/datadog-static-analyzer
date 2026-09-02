@@ -3,12 +3,16 @@ name: Test Rules
 on:
   push:
     branches:
-      - "**"
+      - main
   pull_request:
   schedule:
     # run every day at 9am UTC
     - cron:  '0 9 * * *'
   workflow_call:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   extract-languages:
