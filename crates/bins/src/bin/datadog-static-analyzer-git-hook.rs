@@ -713,17 +713,19 @@ fn main() -> Result<()> {
             let path = PathBuf::from(&secret_result.filename);
 
             for secret_match in &secret_result.matches {
-                println!(
-                    "{}",
-                    format_error(
-                        path.display().to_string().as_str(),
-                        secret_match.start.line,
-                        &secret_result.rule_name,
-                        IssueType::Secret,
-                    )
-                );
+                if !secret_match.is_filtered_by_ast {
+                    println!(
+                        "{}",
+                        format_error(
+                            path.display().to_string().as_str(),
+                            secret_match.start.line,
+                            &secret_result.rule_name,
+                            IssueType::Secret,
+                        )
+                    );
 
-                fail_for_secrets = true;
+                    fail_for_secrets = true;
+                }
             }
         }
     }

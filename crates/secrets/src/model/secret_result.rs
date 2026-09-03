@@ -68,6 +68,15 @@ pub struct SecretResultMatch {
     pub is_filtered_by_ast: bool,
 }
 
+// crates/secrets/src/model/secret_result.rs
+impl SecretResultMatch {
+    /// A match that should not appear in a report, either suppressed in source
+    /// or discarded by the AST filter.
+    pub fn is_reportable(&self) -> bool {
+        !self.is_suppressed && !self.is_filtered_by_ast
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct SecretResult {
     pub rule_id: String,
