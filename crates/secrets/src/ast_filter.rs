@@ -30,8 +30,8 @@ lazy_static! {
 /// `filter_secrets_for_ast` marks matches that are not contained within a string literal or a
 /// comment by setting `is_filtered_by_ast` to true. Matches are never removed from the result.
 ///
-/// This currently applies only to JavaScript and TypeScript. For other languages, the initial
-/// results are returned unchanged.
+/// This applies only to language in the ALLOWED_NODE_KINDS_BY_LANGUAGE map.
+/// For other languages, the initial results are returned unchanged.
 pub fn filter_secrets_for_ast(
     initial_results: Vec<SecretResult>,
     file_content: &str,
