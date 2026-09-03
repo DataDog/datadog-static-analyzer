@@ -17,6 +17,7 @@ pub fn generate_csv_results(
         "start_col",
         "end_line",
         "end_col",
+        "is_filtered_by_ast",
     ])
     .expect("csv serialization without issue");
 
@@ -32,6 +33,7 @@ pub fn generate_csv_results(
                 v.start.col.to_string(),
                 v.end.line.to_string(),
                 v.end.col.to_string(),
+                "N/A".to_string(),
             ])
             .expect("csv serialization without issue for violation");
         }
@@ -49,6 +51,7 @@ pub fn generate_csv_results(
                 v.start.col.to_string(),
                 v.end.line.to_string(),
                 v.end.col.to_string(),
+                v.is_filtered_by_ast.to_string(),
             ])
             .expect("csv serialization without issue for violation");
         }
@@ -63,6 +66,8 @@ mod tests {
 
     use kernel::model::rule::{RuleCategory, RuleSeverity};
     use kernel::model::violation::Violation;
+    use secrets::model::secret_result::{SecretResultMatch, SecretValidationStatus};
+    use secrets::model::secret_rule::RulePriority;
 
     // execution time must be more than 0
     #[test]
@@ -70,7 +75,7 @@ mod tests {
         let res_no_result = generate_csv_results(&vec![], &vec![]);
         assert_eq!(
             res_no_result,
-            "filename,rule,category,severity,message,start_line,start_col,end_line,end_col\n"
+            "filename,rule,category,severity,message,start_line,start_col,end_line,end_col,is_filtered_by_ast\n"
         );
         let res_with_result = generate_csv_results(
             &vec![RuleResult {
@@ -95,6 +100,42 @@ mod tests {
             }],
             &vec![],
         );
-        assert_eq!(res_with_result, "filename,rule,category,severity,message,start_line,start_col,end_line,end_col\nfilename,myrule,performance,error,message,10,12,12,10\n");
+        assert_eq!(res_with_result, "filename,rule,category,severity,message,start_line,start_col,end_line,end_col,is_filtered_by_ast\nfilename,myrule,performance,error,message,10,12,12,10,N/A\n");
+    }
+
+    #[test]
+    fn test_export_csv_secrets() {
+        let res = generate_csv_results(
+            &vec![],
+            &vec![SecretResult {
+                rule_id: "rule-id".to_string(),
+                rule_name: "secret-rule".to_string(),
+                filename: "filename".to_string(),
+                message: "message".to_string(),
+                priority: RulePriority::High,
+                matches: vec![
+                    SecretResultMatch {
+                        start: common::model::position::Position { line: 10, col: 12 },
+                        end: common::model::position::Position { line: 12, col: 10 },
+                        validation_status: SecretValidationStatus::NotValidated,
+                        is_suppressed: false,
+                        is_filtered_by_ast: true,
+                    },
+                    SecretResultMatch {
+                        start: common::model::position::Position { line: 20, col: 5 },
+                        end: common::model::position::Position { line: 20, col: 30 },
+                        validation_status: SecretValidationStatus::NotValidated,
+                        is_suppressed: false,
+                        is_filtered_by_ast: false,
+                    },
+                ],
+            }],
+        );
+        assert_eq!(
+            res,
+            "filename,rule,category,severity,message,start_line,start_col,end_line,end_col,is_filtered_by_ast\n\
+filename,secret-rule,security,error,message,10,12,12,10,true\n\
+filename,secret-rule,security,error,message,20,5,20,30,false\n"
+        );
     }
 }
