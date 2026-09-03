@@ -69,8 +69,8 @@ pub struct SecretResultMatch {
 }
 
 impl SecretResultMatch {
-    /// A match that should not appear in a report, either suppressed in source
-    /// or discarded by the AST filter.
+    /// True when the match should appear in a report. False when it was either
+    /// suppressed in source or discarded by the AST filter.
     pub fn is_reportable(&self) -> bool {
         !self.is_suppressed && !self.is_filtered_by_ast
     }
