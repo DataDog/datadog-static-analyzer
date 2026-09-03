@@ -83,6 +83,9 @@ pub fn print_sast_configuration(sast_config: &SastConfiguration) {
         None => "all paths".to_string(),
     };
 
+    println!();
+    println!("Static analysis");
+    println!("---------------");
     println!("#static analysis rules    : {}", sast_config.rules.len());
     println!("ignore paths              : {}", ignore_paths_str);
     println!("only paths                : {}", only_paths_str);
@@ -103,6 +106,33 @@ pub fn print_sast_configuration(sast_config: &SastConfiguration) {
 
 /// Prints secrets' own settings. Only meaningful (and only called) when secrets is enabled.
 pub fn print_secrets_configuration(secrets_config: &SecretsConfiguration) {
+    let ignore_paths_str = if secrets_config.path_config.ignore.is_empty() {
+        "no ignore path".to_string()
+    } else {
+        secrets_config.path_config.ignore.join(",")
+    };
+    let only_paths_str = match &secrets_config.path_config.only {
+        Some(x) => x.join(","),
+        None => "all paths".to_string(),
+    };
+
+    println!();
+    println!("Secrets");
+    println!("-------");
     println!("#secrets rules loaded     : {}", secrets_config.rules.len());
+    println!("ignore paths              : {}", ignore_paths_str);
+    println!("only paths                : {}", only_paths_str);
+    println!(
+        "ignore gitignore          : {}",
+        secrets_config.ignore_gitignore
+    );
+    println!(
+        "ignore gen files          : {}",
+        secrets_config.ignore_generated_files
+    );
+    println!(
+        "max file size             : {} kb",
+        secrets_config.max_file_size_kb
+    );
     println!("[experimental] ast filter : {}", secrets_config.ast_filter);
 }
