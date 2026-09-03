@@ -1671,6 +1671,7 @@ mod tests {
                 end: Position { line: 1, col: 22 },
                 validation_status: SecretValidationStatus::NotValidated,
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         };
         let tmp = tempfile::tempdir().unwrap();
