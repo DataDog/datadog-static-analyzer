@@ -99,7 +99,7 @@ impl From<YamlConfigFile> for ConfigFile {
 #[serde(deny_unknown_fields)]
 pub struct YamlSecretsConfigMinor0 {}
 
-/// Secrets configuration for v1.5+ (until schema changes)
+/// Secrets configuration for v1.6+ (until schema changes)
 /// This represents the Secrets schema. When Secrets adds/changes fields in a future
 /// minor version, a new YamlSecretsConfigMinorN struct should be created.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
