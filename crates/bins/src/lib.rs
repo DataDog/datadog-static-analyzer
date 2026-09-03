@@ -331,12 +331,8 @@ pub fn secret_analysis(
                         }
                     }
 
-                    if let Some(language) = language_opt {
-                        if cli_config.secrets.ast_filter {
-                            filter_secrets_for_ast(secrets, file_content.as_ref(), &language)
-                        } else {
-                            secrets
-                        }
+                    if let (Some(language), true) = (language_opt, cli_config.secrets.ast_filter) {
+                        filter_secrets_for_ast(secrets, file_content.as_ref(), &language)
                     } else {
                         secrets
                     }
