@@ -2,6 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::ast_filter::filter_secrets_for_ast;
 use crate::file_mgmt::get_lines_to_ignore;
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
 use crate::model::secret_rule::SecretRule;
@@ -14,7 +15,6 @@ use dd_sds::{RootRuleConfig, RuleConfig, ScanOptionBuilder, Scanner};
 use itertools::Itertools;
 use std::path::Path;
 use std::sync::Arc;
-use crate::ast_filter::filter_secrets_for_ast;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from
 /// our API.
@@ -122,7 +122,6 @@ pub fn find_secrets(
 
 #[cfg(test)]
 mod tests {
-    use common::model::position::Position;
     use super::*;
     use crate::model::secret_result::SecretValidationStatus;
     use crate::model::secret_rule::{
@@ -132,6 +131,7 @@ mod tests {
         SecretRulePairedValidatorConfig, SecretRuleResponseCondition,
         SecretRuleResponseConditionType, SecretRuleStatusCodeMatcher,
     };
+    use common::model::position::Position;
 
     #[test]
     fn test_get_position_in_string() {
