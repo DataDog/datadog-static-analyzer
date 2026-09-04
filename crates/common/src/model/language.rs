@@ -151,7 +151,7 @@ pub fn get_extensions_for_language(language: &Language) -> Option<Vec<String>> {
     None
 }
 
-// if a langauge only match a file for an exact match, return it
+// if a language only match a file for an exact match, return it
 pub fn get_exact_filename_for_language(language: &Language) -> Option<Vec<String>> {
     for fe in FILE_EXACT_MATCH_PER_LANGUAGE_LIST {
         if fe.0 == *language {
