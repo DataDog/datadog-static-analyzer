@@ -2,19 +2,19 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::ast_filter::filter_secrets_for_ast;
 use crate::file_mgmt::get_lines_to_ignore;
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
 use crate::model::secret_rule::SecretRule;
+use crate::InternalResult;
 use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
 use common::model::language::get_language_for_file;
-use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
 use dd_sds::{RootRuleConfig, RuleConfig, ScanOptionBuilder, Scanner};
 use itertools::Itertools;
 use std::path::Path;
 use std::sync::Arc;
+use crate::ast_filter::filter_secrets_for_ast;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from
 /// our API.
@@ -40,13 +40,6 @@ pub fn find_secrets(
     options: &AnalysisOptions,
     should_filter_using_ast: bool,
 ) -> Vec<SecretResult> {
-    struct Result {
-        rule_index: usize,
-        start: Position,
-        end: Position,
-        validation_status: SecretValidationStatus,
-    }
-
     // Get lines to ignore based on no-dd-secrets directives
     let lines_to_ignore = get_lines_to_ignore(code);
 
@@ -73,13 +66,15 @@ pub fn find_secrets(
         return vec![];
     }
 
-    let results = matches
+    let language = get_language_for_file(Path::new(filename));
+
+    let results: Vec<InternalResult> = matches
         .iter()
         .flat_map(|sds_match| {
             let start = get_position_in_string(code, sds_match.start_index)?;
             let end = get_position_in_string(code, sds_match.end_index_exclusive)?;
 
-            Ok::<Result, Error>(Result {
+            Ok::<InternalResult, Error>(InternalResult {
                 rule_index: sds_match.rule_index,
                 start,
                 end,
@@ -87,8 +82,20 @@ pub fn find_secrets(
                     &sds_match.match_status,
                     sds_match.match_value.as_deref(),
                 ),
+                start_index: sds_match.start_index,
+                end_index: sds_match.end_index_exclusive,
+                filtered_by_ast: false,
             })
         })
+        .collect();
+
+    let results = match (should_filter_using_ast, language) {
+        (true, Some(language)) => filter_secrets_for_ast(results, code, &language),
+        _ => results,
+    };
+
+    results
+        .into_iter()
         .chunk_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
@@ -106,23 +113,16 @@ pub fn find_secrets(
                     start: v.start,
                     end: v.end,
                     validation_status: v.validation_status,
-                    is_filtered_by_ast: false,
+                    is_filtered_by_ast: v.filtered_by_ast,
                 })
                 .collect(),
         })
-        .collect();
-
-    if should_filter_using_ast {
-        if let Some(language) = get_language_for_file(Path::new(filename)) {
-            return filter_secrets_for_ast(results, code, &language);
-        }
-    }
-
-    results
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
+    use common::model::position::Position;
     use super::*;
     use crate::model::secret_result::SecretValidationStatus;
     use crate::model::secret_rule::{
@@ -630,7 +630,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_secrets_applies_ast_filter_when_enabled() {
+    fn test_find_secrets_applies_ast_filter_when_enabled_negative() {
         let rules: Vec<SecretRule> = vec![SecretRule {
             id: "secret_rule".to_string(),
             sds_id: "sds_id".to_string(),
@@ -662,6 +662,41 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert!(matches[0].matches[0].is_filtered_by_ast);
+    }
+
+    #[test]
+    fn test_find_secrets_applies_ast_filter_when_enabled_positive() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        // FOOBAR appears as a bare identifier, not inside a string or comment.
+        let text = "const token = \"FOOBAR\";";
+
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile.js",
+            text,
+            &AnalysisOptions::default(),
+            true,
+        );
+
+        assert_eq!(matches.len(), 1);
+        assert!(!matches[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]

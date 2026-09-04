@@ -2,11 +2,9 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-use crate::model::secret_result::SecretResult;
+use crate::InternalResult;
 use common::model::language::Language;
-use common::model::position::Position;
 use common::tree_sitter::get_tree;
-use common::utils::position_utils::position_to_byte_offset;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use tree_sitter::Node;
@@ -32,11 +30,11 @@ lazy_static! {
 ///
 /// This applies only to language in the ALLOWED_NODE_KINDS_BY_LANGUAGE map.
 /// For other languages, the initial results are returned unchanged.
-pub fn filter_secrets_for_ast(
-    initial_results: Vec<SecretResult>,
+pub(crate) fn filter_secrets_for_ast(
+    initial_results: Vec<InternalResult>,
     file_content: &str,
     language: &Language,
-) -> Vec<SecretResult> {
+) -> Vec<InternalResult> {
     let Some(allowed_node_kinds) = ALLOWED_NODE_KINDS_BY_LANGUAGE.get(language) else {
         return initial_results;
     };
@@ -49,16 +47,13 @@ pub fn filter_secrets_for_ast(
     initial_results
         .into_iter()
         .map(|mut result| {
-            for m in &mut result.matches {
-                if !is_in_allowed_node(
-                    &root_node,
-                    file_content,
-                    &m.start,
-                    &m.end,
-                    allowed_node_kinds,
-                ) {
-                    m.is_filtered_by_ast = true;
-                }
+            if !is_in_allowed_node(
+                &root_node,
+                result.start_index,
+                result.end_index,
+                allowed_node_kinds,
+            ) {
+                result.filtered_by_ast = true;
             }
             result
         })
@@ -70,19 +65,11 @@ pub fn filter_secrets_for_ast(
 /// incomplete or malformed parse, so we don't trust the AST enough to filter those matches out.
 fn is_in_allowed_node(
     root_node: &Node,
-    file_content: &str,
-    start: &Position,
-    end: &Position,
+    start_index: usize,
+    end_index: usize,
     allowed_node_kinds: &[&str],
 ) -> bool {
-    let (Some(start_byte), Some(end_byte)) = (
-        position_to_byte_offset(file_content, start),
-        position_to_byte_offset(file_content, end),
-    ) else {
-        return false;
-    };
-
-    let Some(node) = root_node.descendant_for_byte_range(start_byte, end_byte) else {
+    let Some(node) = root_node.descendant_for_byte_range(start_index, end_index) else {
         return false;
     };
 
@@ -103,102 +90,85 @@ fn is_in_allowed_node(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::secret_result::{SecretResultMatch, SecretValidationStatus};
-    use crate::model::secret_rule::RulePriority;
+    use crate::model::secret_result::SecretValidationStatus;
+    use common::model::position::Position;
 
-    fn make_result(start: Position, end: Position) -> SecretResult {
-        SecretResult {
-            rule_id: "rule-id".to_string(),
-            rule_name: "rule-name".to_string(),
-            filename: "file.js".to_string(),
-            message: "message".to_string(),
-            priority: RulePriority::Low,
-            matches: vec![SecretResultMatch {
-                start,
-                end,
-                validation_status: SecretValidationStatus::NotValidated,
-                is_suppressed: false,
-                is_filtered_by_ast: false,
-            }],
+    fn make_result(start_index: usize, end_index: usize) -> InternalResult {
+        InternalResult {
+            rule_index: 0,
+            start: Position::new(0, 0),
+            end: Position::new(0, 0),
+            start_index,
+            end_index,
+            validation_status: SecretValidationStatus::NotValidated,
+            filtered_by_ast: false,
         }
     }
 
     #[test]
     fn test_flags_match_but_empty_code() {
         let code = "";
-        let result = make_result(Position::new(1, 16), Position::new(1, 36));
+        let result = make_result(15, 35);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(filtered[0].matches[0].is_filtered_by_ast);
+        assert!(filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_keeps_match_in_string_literal() {
         let code = r#"const token = "AKIAABCDEFGHIJKLMNOP";"#;
-        // "AKIAABCDEFGHIJKLMNOP" starts at column 16 (1-based, right after the opening quote).
-        let result = make_result(Position::new(1, 16), Position::new(1, 36));
+        // "AKIAABCDEFGHIJKLMNOP" starts right after the opening quote, at byte 15.
+        let result = make_result(15, 35);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].matches[0].is_filtered_by_ast);
+        assert!(!filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_keeps_match_in_template_string() {
         let code = r#"const token = `AKIAABCDEFGHIJKLMNOP`;"#;
-        // "AKIAABCDEFGHIJKLMNOP" starts at column 16 (1-based, right after the opening quote).
-        let result = make_result(Position::new(1, 16), Position::new(1, 36));
+        // "AKIAABCDEFGHIJKLMNOP" starts right after the opening backtick, at byte 15.
+        let result = make_result(15, 35);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].matches[0].is_filtered_by_ast);
+        assert!(!filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_keeps_match_is_string_literal() {
         let code = r#""AKIAABCDEFGHIJKLMNOP""#;
-        let result = make_result(Position::new(1, 2), Position::new(1, 22));
+        let result = make_result(1, 21);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].matches[0].is_filtered_by_ast);
+        assert!(!filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_flags_match_identifier() {
         // the code is an identifier and therefore, should be flagged as filtered
         let code = "AKIAABCDEFGHIJKLMNOP";
-        let result = make_result(Position::new(1, 1), Position::new(1, 21));
+        let result = make_result(0, 20);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(filtered[0].matches[0].is_filtered_by_ast);
+        assert!(filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_flags_only_the_identifier_match() {
         let code = "const token = \"AKIAABCDEFGHIJKLMNOP\";\nAKIAABCDEFGHIJKLMNOP;";
-        // "AKIAABCDEFGHIJKLMNOP" in the string starts at column 16 (1-based, right after the
-        // opening quote) on line 1.
-        let string_match = SecretResultMatch {
-            start: Position::new(1, 16),
-            end: Position::new(1, 36),
-            validation_status: SecretValidationStatus::NotValidated,
-            is_suppressed: false,
-            is_filtered_by_ast: false,
-        };
-        // "AKIAABCDEFGHIJKLMNOP" as a bare identifier on line 2.
-        let identifier_match = SecretResultMatch {
-            start: Position::new(2, 1),
-            end: Position::new(2, 21),
-            validation_status: SecretValidationStatus::NotValidated,
-            is_suppressed: false,
-            is_filtered_by_ast: false,
-        };
-        let mut result = make_result(Position::new(1, 16), Position::new(1, 36));
-        result.matches = vec![string_match, identifier_match];
+        // "AKIAABCDEFGHIJKLMNOP" in the string, on line 1.
+        let string_match = make_result(15, 35);
+        // "AKIAABCDEFGHIJKLMNOP" as a bare identifier, on line 2.
+        let identifier_match = make_result(38, 58);
 
-        let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
-        assert_eq!(filtered.len(), 1);
-        assert_eq!(filtered[0].matches.len(), 2);
-        assert!(!filtered[0].matches[0].is_filtered_by_ast);
-        assert!(filtered[0].matches[1].is_filtered_by_ast);
+        let filtered = filter_secrets_for_ast(
+            vec![string_match, identifier_match],
+            code,
+            &Language::JavaScript,
+        );
+        assert_eq!(filtered.len(), 2);
+        assert!(!filtered[0].filtered_by_ast);
+        assert!(filtered[1].filtered_by_ast);
     }
 
     #[test]
@@ -210,34 +180,34 @@ mod tests {
         // ensure the node is error
         assert!(tree.is_some());
         assert!(tree.unwrap().root_node().child(0).unwrap().is_error());
-        let result = make_result(Position::new(1, 17), Position::new(1, 37));
+        let result = make_result(16, 36);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].matches[0].is_filtered_by_ast);
+        assert!(!filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_keeps_match_in_comment() {
         let code = "// token AKIAABCDEFGHIJKLMNOP\nconst x = 1;";
-        let result = make_result(Position::new(1, 10), Position::new(1, 30));
+        let result = make_result(9, 29);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].matches[0].is_filtered_by_ast);
+        assert!(!filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_flags_match_outside_string_or_comment() {
         let code = "const token = AKIAABCDEFGHIJKLMNOP;";
-        let result = make_result(Position::new(1, 15), Position::new(1, 35));
+        let result = make_result(14, 34);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(filtered[0].matches[0].is_filtered_by_ast);
+        assert!(filtered[0].filtered_by_ast);
     }
 
     #[test]
     fn test_returns_initial_results_for_unsupported_language() {
         let code = "token = 'AKIAABCDEFGHIJKLMNOP'";
-        let result = make_result(Position::new(1, 1), Position::new(1, 5));
+        let result = make_result(0, 5);
         let filtered = filter_secrets_for_ast(vec![result.clone()], code, &Language::Python);
         assert_eq!(filtered, vec![result]);
     }
