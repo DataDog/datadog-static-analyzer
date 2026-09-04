@@ -11,8 +11,8 @@ on:
   workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: test-rules-${{ github.head_ref || github.ref_name }}
+  queue: max
 
 jobs:
   extract-languages:
