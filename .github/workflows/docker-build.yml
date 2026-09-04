@@ -18,8 +18,8 @@ on:
   workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
-  cancel-in-progress: true
+  group: docker-build-${{ github.head_ref || github.ref_name }}
+  queue: max
 
 name: Test Docker Container
 
