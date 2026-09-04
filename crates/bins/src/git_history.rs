@@ -183,6 +183,7 @@ fn scan_all_blobs_for_secrets(
                 GIT_HISTORY_BLOB_PLACEHOLDER,
                 &content,
                 options,
+                false,
             );
             if secrets.is_empty() {
                 None

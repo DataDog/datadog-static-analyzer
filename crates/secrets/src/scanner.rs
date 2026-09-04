@@ -2,15 +2,18 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
+use crate::ast_filter::filter_secrets_for_ast;
 use crate::file_mgmt::get_lines_to_ignore;
 use crate::model::secret_result::{SecretResult, SecretResultMatch, SecretValidationStatus};
 use crate::model::secret_rule::SecretRule;
 use anyhow::Error;
 use common::analysis_options::AnalysisOptions;
+use common::model::language::get_language_for_file;
 use common::model::position::Position;
 use common::utils::position_utils::get_position_in_string;
 use dd_sds::{RootRuleConfig, RuleConfig, ScanOptionBuilder, Scanner};
 use itertools::Itertools;
+use std::path::Path;
 use std::sync::Arc;
 
 /// Build the SDS scanner used to scan all code using the rules fetched from
@@ -35,6 +38,7 @@ pub fn find_secrets(
     filename: &str,
     code: &str,
     options: &AnalysisOptions,
+    should_filter_using_ast: bool,
 ) -> Vec<SecretResult> {
     struct Result {
         rule_index: usize,
@@ -69,7 +73,7 @@ pub fn find_secrets(
         return vec![];
     }
 
-    matches
+    let results = matches
         .iter()
         .flat_map(|sds_match| {
             let start = get_position_in_string(code, sds_match.start_index)?;
@@ -106,7 +110,15 @@ pub fn find_secrets(
                 })
                 .collect(),
         })
-        .collect()
+        .collect();
+
+    if should_filter_using_ast {
+        if let Some(language) = get_language_for_file(Path::new(filename)) {
+            return filter_secrets_for_ast(results, code, &language);
+        }
+    }
+
+    results
 }
 
 #[cfg(test)]
@@ -161,6 +173,7 @@ mod tests {
             "myfile",
             text,
             &AnalysisOptions::default(),
+            false,
         );
 
         assert_eq!(matches.first().unwrap().matches.len(), 2);
@@ -227,6 +240,7 @@ mod tests {
             "myfile",
             text,
             &AnalysisOptions::default(),
+            false,
         );
 
         assert_eq!(results.len(), 1);
@@ -263,6 +277,7 @@ mod tests {
             "myfile",
             text,
             &AnalysisOptions::default(),
+            false,
         );
 
         // FOOBAR at line 1 is found and not suppressed (directive on line 2 covers line 3)
@@ -305,6 +320,7 @@ mod tests {
             "myfile",
             text,
             &AnalysisOptions::default(),
+            false,
         );
 
         // 3 matches total: FOOBAR(line 1) and FOOBAR(line 4) are not suppressed;
@@ -347,7 +363,7 @@ mod tests {
             disable_validation: true,
             ..Default::default()
         };
-        let matches = find_secrets(&scanner, rules.as_slice(), "myfile", text, &options);
+        let matches = find_secrets(&scanner, rules.as_slice(), "myfile", text, &options, false);
 
         assert_eq!(matches.len(), 1);
         let result_matches = &matches.first().unwrap().matches;
@@ -461,6 +477,7 @@ mod tests {
             "myfile",
             "subdomain: acme_corp, key: api_key_abc123\n",
             &AnalysisOptions::default(),
+            false,
         );
 
         // The supporting rule match must not appear in output
@@ -556,6 +573,7 @@ mod tests {
             "myfile",
             "key: api_key_abc123\n",
             &options,
+            false,
         );
 
         assert_eq!(results.len(), 1);
@@ -600,6 +618,7 @@ mod tests {
             "myfile",
             text,
             &AnalysisOptions::default(),
+            false,
         );
 
         // FOOBAR at line 2 is found and suppressed (directive on line 1 covers line 2)
@@ -608,5 +627,75 @@ mod tests {
         let first = matches.first().unwrap().matches.first().unwrap();
         assert_eq!(first.start, Position { line: 2, col: 1 });
         assert!(first.is_suppressed);
+    }
+
+    #[test]
+    fn test_find_secrets_applies_ast_filter_when_enabled() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        // FOOBAR appears as a bare identifier, not inside a string or comment.
+        let text = "const token = FOOBAR;";
+
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile.js",
+            text,
+            &AnalysisOptions::default(),
+            true,
+        );
+
+        assert_eq!(matches.len(), 1);
+        assert!(matches[0].matches[0].is_filtered_by_ast);
+    }
+
+    #[test]
+    fn test_find_secrets_skips_ast_filter_when_disabled() {
+        let rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "FOO(BAR|BAZ)".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        }];
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        // Same match as above, but with AST filtering disabled it must not be flagged.
+        let text = "const token = FOOBAR;";
+
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile.js",
+            text,
+            &AnalysisOptions::default(),
+            false,
+        );
+
+        assert_eq!(matches.len(), 1);
+        assert!(!matches[0].matches[0].is_filtered_by_ast);
     }
 }

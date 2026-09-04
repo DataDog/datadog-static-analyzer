@@ -206,6 +206,7 @@ fn process_secret_scan_request(
         &request.filename,
         &request.data,
         &options,
+        false,
     );
 
     // Filter out suppressed matches and drop results with no remaining matches

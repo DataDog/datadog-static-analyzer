@@ -1,10 +1,10 @@
 use cli::constants::EXIT_CODE_RULE_CHECKSUM_INVALID;
-use cli::file_utils::{filter_files_for_language, get_language_for_file};
+use cli::file_utils::filter_files_for_language;
 use cli::model::sast_configuration::CliConfigurationSast;
 use cli::model::secrets_configuration::CliConfigurationSecrets;
 use cli::rule_utils::{check_rules_checksum, convert_rules_to_rules_internal};
 use common::analysis_options::AnalysisOptions;
-use common::model::language::Language;
+use common::model::language::{get_language_for_file, Language};
 use indicatif::ProgressBar;
 use kernel::analysis::analyze::{analyze_with, generate_flow_graph_dot};
 use kernel::analysis::ddsa_lib::v8_platform::{Initialized, V8Platform};
@@ -25,7 +25,6 @@ use std::time::Duration;
 
 mod git_history;
 pub use git_history::git_history_secret_analysis;
-use secrets::ast_filter::filter_secrets_for_ast;
 
 /// Read a file and if the file has some invalid UTF-8 characters, it returns a string with invalid
 /// characters.
@@ -309,6 +308,7 @@ pub fn secret_analysis(
                         relative_path,
                         &file_content,
                         options,
+                        secrets_config.ast_filter,
                     );
 
                     let language_opt = get_language_for_file(path);
@@ -331,11 +331,7 @@ pub fn secret_analysis(
                         }
                     }
 
-                    if let (Some(language), true) = (language_opt, cli_config.secrets.ast_filter) {
-                        filter_secrets_for_ast(secrets, file_content.as_ref(), &language)
-                    } else {
-                        secrets
-                    }
+                    secrets
                 } else {
                     // this is generally because the file is binary.
                     if run_config.use_debug {
