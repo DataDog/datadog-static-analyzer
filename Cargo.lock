@@ -712,11 +712,13 @@ version = "0.9.4"
 dependencies = [
  "anyhow",
  "bstr",
+ "cc",
  "derive_builder",
  "globset",
  "line-index",
  "serde",
  "serde_yaml",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -3991,7 +3993,6 @@ dependencies = [
  "anyhow",
  "common",
  "dd-sensitive-data-scanner",
- "futures",
  "httpmock",
  "itertools 0.14.0",
  "lazy_static",
@@ -4000,6 +4001,7 @@ dependencies = [
  "serde_yaml",
  "strum",
  "thiserror 2.0.18",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -4387,7 +4389,6 @@ version = "0.9.4"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "cc",
  "common",
  "deno_core",
  "derive_builder",

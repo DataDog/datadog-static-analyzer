@@ -44,13 +44,14 @@ use cli::violations_table;
 use common::analysis_options::AnalysisOptions;
 use common::model::config_method::ConfigMethod;
 use common::model::diff_aware::DiffAware;
+use common::model::language::Language;
 use datadog_static_analyzer::{git_history_secret_analysis, secret_analysis, static_analysis};
 use kernel::analysis::ddsa_lib::v8_platform::{initialize_v8, Initialized, V8Platform};
 use kernel::classifiers::ArtifactClassification;
 use kernel::config::common::PathConfig;
 use kernel::config::file_v1 as sast_file_v1;
 use kernel::constants::{CARGO_VERSION, VERSION};
-use kernel::model::common::{Language, OutputFormat};
+use kernel::model::common::OutputFormat;
 use kernel::model::rule::{Rule, RuleResult, RuleSeverity};
 use kernel::rule_config::RuleConfigProvider;
 use secrets::config::file_v1 as secrets_file_v1;
@@ -507,13 +508,15 @@ fn resolve_secrets_config(
         .and_then(|c| c.global_config.as_ref())
         .and_then(|g| g.max_file_size_kb)
         .unwrap_or(DEFAULT_SECRETS_MAX_FILE_SIZE_KB);
-
     Ok(SecretsConfiguration {
         ignore_gitignore,
         ignore_generated_files,
         path_config,
         rules,
         max_file_size_kb,
+        ast_filter: secrets_config
+            .map(|v| v.experimental_ast_filter)
+            .unwrap_or(false),
     })
 }
 
@@ -722,6 +725,16 @@ fn run_secrets(
                 .len() as u32
         })
         .sum();
+    let nb_secrets_filtered_by_ast: u32 = secrets_rules_results
+        .iter()
+        .map(|x| {
+            x.matches
+                .iter()
+                .filter(|m| m.is_filtered_by_ast)
+                .collect::<Vec<_>>()
+                .len() as u32
+        })
+        .sum();
 
     let files_with_secrets = secrets_rules_results
         .iter()
@@ -736,13 +749,14 @@ fn run_secrets(
     let secrets_duration = secrets_start.elapsed().as_secs_f64();
 
     println!("Secrets Summary");
-    println!("  Files scanned: {}", secrets_files.len());
-    println!("  Files with secrets: {}", files_with_secrets);
-    println!("  Total secrets: {}", nb_secrets_found);
-    println!("  Valid secrets: {}", nb_secrets_validated);
-    println!("  Rules evaluated: {}", secrets_config.rules.len());
-    println!("  Rules with matches: {}", rules_with_matches);
-    println!("  Duration: {:.3}s", secrets_duration);
+    println!("  Files scanned       : {}", secrets_files.len());
+    println!("  Files with secrets  : {}", files_with_secrets);
+    println!("  Total secrets       : {}", nb_secrets_found);
+    println!("  Secrets filtered    : {}", nb_secrets_filtered_by_ast);
+    println!("  Valid secrets       : {}", nb_secrets_validated);
+    println!("  Rules evaluated     : {}", secrets_config.rules.len());
+    println!("  Rules with matches  : {}", rules_with_matches);
+    println!("  Duration            : {:.3}s", secrets_duration);
 
     Ok(SecretsRunSummary {
         rule_results: execution_results.rule_results,
@@ -906,6 +920,7 @@ fn main() -> Result<()> {
     } else {
         (None, None)
     };
+
     let secrets_config = resolve_secrets_config(
         secrets_config_file.as_ref().and_then(|cfg| cfg.secrets()),
         &args,

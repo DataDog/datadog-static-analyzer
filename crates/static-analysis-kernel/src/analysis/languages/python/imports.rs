@@ -3,8 +3,8 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::languages::ts_node_text;
-use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
-use crate::model::common::Language;
+use common::model::language::Language;
+use common::tree_sitter::{get_tree, get_tree_sitter_language};
 use std::sync::LazyLock;
 use tree_sitter::StreamingIterator;
 
@@ -370,8 +370,8 @@ fn parse_field_child_node<'text>(
 #[cfg(test)]
 mod tests {
     use super::{parse_imports, parse_imports_with_tree, Entity, Import, ImportEntities};
-    use crate::analysis::tree_sitter::get_tree;
-    use crate::model::common::Language;
+    use common::model::language::Language;
+    use common::tree_sitter::get_tree;
 
     /// A shorthand to build an [`Entity`] without an alias.
     pub fn ent(name: &str) -> Entity<'_> {

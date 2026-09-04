@@ -1,4 +1,4 @@
-use kernel::model::common::Language;
+use common::model::language::Language;
 use kernel::model::rule::{Argument, EntityChecked, Rule, RuleCategory, RuleSeverity, RuleType};
 use kernel::model::rule_test::RuleTest;
 use kernel::model::ruleset::RuleSet;
@@ -462,10 +462,8 @@ impl StaticAnalysisRulesAPIResponse {
 mod tests {
     use super::*;
     use crate::model::datadog_api::SecretRuleApiMatchValidationHttpMethod::Get;
-    use kernel::model::{
-        common::Language,
-        rule::{RuleCategory, RuleSeverity, RuleType},
-    };
+    use common::model::language::Language;
+    use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
     use serde_json::json;
 
     // correctly map all the data from the API

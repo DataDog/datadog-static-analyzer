@@ -4,10 +4,9 @@
 
 use crate::analysis;
 use crate::analysis::ddsa_lib::common::{
-    load_function, swallow_v8_error, v8_interned, Class, DDSAJsRuntimeError, NodeId, StellaCompat,
+    load_function, swallow_v8_error, Class, DDSAJsRuntimeError, NodeId,
 };
 use crate::analysis::ddsa_lib::js::capture::{MultiCaptureTemplate, SingleCaptureTemplate};
-use crate::analysis::ddsa_lib::js::TreeSitterNodeFn;
 use crate::analysis::ddsa_lib::v8_ds::RustConverter;
 use crate::analysis::tree_sitter::TSCaptureContent;
 use crate::rust_converter;
@@ -31,7 +30,7 @@ rust_converter!(
         let values = value
             .iter()
             .map(|tsq_cap| {
-                use TSCaptureContent::{Multi, Single};
+                use crate::analysis::tree_sitter::TSCaptureContent::{Multi, Single};
                 let name = tsq_cap.name.as_ref();
                 let obj = match &tsq_cap.contents {
                     Single(id) => self.single_capture.new_instance(scope, name, *id),
@@ -74,9 +73,8 @@ impl QueryMatch<Class> {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis;
-    use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, NodeId};
-    use crate::analysis::ddsa_lib::js::{MultiCaptureTemplate, QueryMatch, SingleCaptureTemplate};
+    use crate::analysis::ddsa_lib::common::{v8_interned, NodeId};
+    use crate::analysis::ddsa_lib::js::QueryMatch;
     use crate::analysis::ddsa_lib::test_utils::{
         attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_tsn_bridge,
         try_execute,
@@ -109,7 +107,10 @@ mod tests {
         let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
-        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
+        let single_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_single(
+            Arc::<str>::from("cap_name"),
+            10,
+        );
         let captures = vec![single_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
@@ -130,8 +131,10 @@ mod tests {
         let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
-        let multi_cap =
-            TSQueryCapture::<NodeId>::new_multi(Arc::<str>::from("cap_name"), vec![10, 20, 30]);
+        let multi_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_multi(
+            Arc::<str>::from("cap_name"),
+            vec![10, 20, 30],
+        );
         let captures = vec![multi_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
@@ -146,7 +149,10 @@ mod tests {
         let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
-        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
+        let single_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_single(
+            Arc::<str>::from("cap_name"),
+            10,
+        );
         let captures = vec![single_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
@@ -172,8 +178,10 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
-        let multi_cap =
-            TSQueryCapture::<NodeId>::new_multi(Arc::<str>::from("cap_name"), vec![10, 20, 30]);
+        let multi_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_multi(
+            Arc::<str>::from("cap_name"),
+            vec![10, 20, 30],
+        );
         let captures = vec![multi_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
@@ -195,7 +203,10 @@ assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
         let mut runtime = cfg_test_v8().deno_core_rt();
         let scope = &mut runtime.handle_scope();
         let js_class = QueryMatch::try_new(scope).unwrap();
-        let multi_cap = TSQueryCapture::<NodeId>::new_multi(Arc::<str>::from("cap_name"), vec![10]);
+        let multi_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_multi(
+            Arc::<str>::from("cap_name"),
+            vec![10],
+        );
         let captures = vec![multi_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
@@ -237,7 +248,10 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
         let js_class = QueryMatch::try_new(scope).unwrap();
-        let single_cap = TSQueryCapture::<NodeId>::new_single(Arc::<str>::from("cap_name"), 10);
+        let single_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_single(
+            Arc::<str>::from("cap_name"),
+            10,
+        );
         let captures = vec![single_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");
@@ -257,8 +271,10 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
         let js_class = QueryMatch::try_new(scope).unwrap();
-        let multi_cap =
-            TSQueryCapture::<NodeId>::new_multi(Arc::<str>::from("cap_name"), vec![10, 20]);
+        let multi_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_multi(
+            Arc::<str>::from("cap_name"),
+            vec![10, 20],
+        );
         let captures = vec![multi_cap];
         let v8_query_match = js_class.convert_to(scope, &captures);
         attach_as_global(scope, v8_query_match, "QUERY_MATCH");

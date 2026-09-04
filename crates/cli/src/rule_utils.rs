@@ -1,6 +1,6 @@
 use crate::model::sast_configuration::SastConfiguration;
 use anyhow::{anyhow, Context, Result};
-use kernel::model::common::Language;
+use common::model::language::Language;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleResult, RuleSeverity};
 use kernel::model::ruleset::RuleSet;
 use kernel::model::violation::Violation;
@@ -71,7 +71,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
         violations: secret_result
             .matches
             .iter()
-            .filter(|v| !v.is_suppressed)
+            .filter(|v| v.is_reportable())
             .map(|v| Violation {
                 start: v.start,
                 end: v.end,
@@ -139,12 +139,10 @@ pub fn check_rules_checksum(rules: &[Rule]) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use common::model::language::Language;
     use common::model::position::Position;
+    use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
     use kernel::model::violation::Violation;
-    use kernel::model::{
-        common::Language,
-        rule::{RuleCategory, RuleSeverity, RuleType},
-    };
 
     use super::*;
 

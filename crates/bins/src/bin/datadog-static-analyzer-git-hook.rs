@@ -453,6 +453,9 @@ fn main() -> Result<()> {
         path_config: secrets_path_config,
         rules: secrets_rules.clone(),
         max_file_size_kb: secrets_max_file_size_kb,
+        ast_filter: secrets_config
+            .map(|c| c.experimental_ast_filter)
+            .unwrap_or(false),
     };
 
     let sast_cli_config = CliConfigurationSast {
@@ -710,17 +713,19 @@ fn main() -> Result<()> {
             let path = PathBuf::from(&secret_result.filename);
 
             for secret_match in &secret_result.matches {
-                println!(
-                    "{}",
-                    format_error(
-                        path.display().to_string().as_str(),
-                        secret_match.start.line,
-                        &secret_result.rule_name,
-                        IssueType::Secret,
-                    )
-                );
+                if !secret_match.is_filtered_by_ast {
+                    println!(
+                        "{}",
+                        format_error(
+                            path.display().to_string().as_str(),
+                            secret_match.start.line,
+                            &secret_result.rule_name,
+                            IssueType::Secret,
+                        )
+                    );
 
-                fail_for_secrets = true;
+                    fail_for_secrets = true;
+                }
             }
         }
     }

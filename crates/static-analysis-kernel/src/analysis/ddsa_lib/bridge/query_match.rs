@@ -89,8 +89,9 @@ mod tests {
     use crate::analysis::ddsa_lib::js;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
     use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
-    use crate::analysis::tree_sitter::{get_tree, QueryMatch, TSCaptureContent, TSQuery};
-    use crate::model::common::Language;
+    use crate::analysis::tree_sitter::{QueryMatch, TSCaptureContent, TSQuery};
+    use common::model::language::Language;
+    use common::tree_sitter::get_tree;
     use common::utils::position_utils::LineColumnIndex;
     use deno_core::JsRuntime;
 

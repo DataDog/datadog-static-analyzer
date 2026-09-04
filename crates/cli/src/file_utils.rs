@@ -9,10 +9,10 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::model::datadog_api::DiffAwareData;
+use common::model::language::Language;
+use common::model::language::Language::Dockerfile;
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::config::common::PathConfig;
-use kernel::model::common::Language;
-use kernel::model::common::Language::Dockerfile;
 use kernel::model::violation::Violation;
 
 static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[

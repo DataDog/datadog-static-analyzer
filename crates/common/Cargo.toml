@@ -5,8 +5,10 @@ version.workspace = true
 
 [dependencies]
 anyhow = { workspace = true }
-serde = { version = "1.0.219", features = ["derive"] }
 derive_builder = { workspace = true }
+serde = { version = "1.0.219", features = ["derive"] }
+tree-sitter = { workspace = true }
+
 
 # other
 bstr = "1.12.0"
@@ -15,3 +17,6 @@ line-index = "0.1.2"
 
 [dev-dependencies]
 serde_yaml = { workspace = true }
+
+[build-dependencies]
+cc = "1.2.21"

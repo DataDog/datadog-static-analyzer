@@ -1,3 +1,4 @@
+pub mod ast_filter;
 pub mod config;
 pub mod file_mgmt;
 pub mod model;

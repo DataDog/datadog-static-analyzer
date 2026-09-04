@@ -64,6 +64,16 @@ pub struct SecretResultMatch {
     pub validation_status: SecretValidationStatus,
     #[serde(default)]
     pub is_suppressed: bool,
+    #[serde(default)]
+    pub is_filtered_by_ast: bool,
+}
+
+impl SecretResultMatch {
+    /// True when the match should appear in a report. False when it was either
+    /// suppressed in source or discarded by the AST filter.
+    pub fn is_reportable(&self) -> bool {
+        !self.is_suppressed && !self.is_filtered_by_ast
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]

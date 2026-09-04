@@ -67,8 +67,8 @@ impl<'de> Deserialize<'de> for RuleSet {
 #[cfg(test)]
 mod tests {
     use super::RuleSet;
-    use crate::model::common::Language;
     use crate::model::rule::{Rule, RuleCategory, RuleSeverity, RuleType};
+    use common::model::language::Language;
 
     /// A shorthand function to create a rule with the given name.
     fn rule_with_name(name: &str) -> Rule {

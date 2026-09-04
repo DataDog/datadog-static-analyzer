@@ -1,6 +1,6 @@
-use crate::model::common::Language;
 use base64::engine::general_purpose;
 use base64::Engine;
+use common::model::language::Language;
 
 use crate::analysis::tree_sitter::{get_query, TSQuery};
 use crate::model::rule_test::RuleTest;

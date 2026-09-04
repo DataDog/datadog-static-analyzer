@@ -1020,6 +1020,10 @@ pub fn generate_sarif_file(
         .map_err(anyhow::Error::msg)?;
     let mut secret_results = secrets_rule_results
         .into_iter()
+        .map(|mut r| {
+            r.matches.retain(|m| !m.is_filtered_by_ast);
+            r
+        })
         .map(SarifRuleResult::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
@@ -1101,10 +1105,10 @@ fn as_slash_path(path_str: &str) -> std::borrow::Cow<'_, str> {
 mod tests {
     use super::*;
     use assert_json_diff::{assert_json_eq, assert_json_include};
+    use common::model::language::Language;
     use common::model::position::{Position, PositionBuilder, Region};
     use kernel::model::violation::{Fix, Violation};
     use kernel::model::{
-        common::Language,
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
@@ -1552,6 +1556,7 @@ mod tests {
                         end: Position { line: 2, col: 2 },
                         validation_status: SecretValidationStatus::NotValidated,
                         is_suppressed: false,
+                        is_filtered_by_ast: false,
                     }],
                 },
                 introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
@@ -1666,6 +1671,7 @@ mod tests {
                 end: Position { line: 1, col: 22 },
                 validation_status: SecretValidationStatus::NotValidated,
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         };
         let tmp = tempfile::tempdir().unwrap();
@@ -1944,6 +1950,7 @@ mod tests {
                     end: Position { line: 2, col: 2 },
                     validation_status: case.0,
                     is_suppressed: false,
+                    is_filtered_by_ast: false,
                 }],
             }];
 
@@ -2082,6 +2089,7 @@ mod tests {
                     },
                 ]),
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         }];
 
@@ -2173,6 +2181,7 @@ mod tests {
                     },
                 ]),
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         }];
 
@@ -2269,6 +2278,7 @@ mod tests {
                     end: Position { line: 1, col: 5 },
                     validation_status: SecretValidationStatus::Valid,
                     is_suppressed: false,
+                    is_filtered_by_ast: false,
                 }],
             }];
             let sarif_secret_results = secret_results
@@ -2626,6 +2636,7 @@ mod tests {
                     },
                 ]),
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         }];
 
@@ -2691,5 +2702,131 @@ mod tests {
         // validate the schema
         let sarif_json = serde_json::to_value(sarif_report).unwrap();
         assert!(validate_data(&sarif_json));
+    }
+
+    #[test]
+    fn test_generate_sarif_file_drops_matches_filtered_by_ast() {
+        use crate::model::run_configuration::RunConfiguration;
+        use crate::model::sast_configuration::SastConfiguration;
+        use crate::model::secrets_configuration::SecretsConfiguration;
+        use kernel::model::common::OutputFormat;
+        use kernel::rule_config::RuleConfigProvider;
+
+        let run = RunConfiguration {
+            use_debug: false,
+            configuration_method: None,
+            source_directory: "mydir".to_string(),
+            source_subdirectories: vec![],
+            output_format: OutputFormat::Sarif,
+            output_file: String::new(),
+            num_cpus: 1,
+            use_staging: false,
+            static_analysis_enabled: false,
+            secrets_enabled: true,
+        };
+        let sast = SastConfiguration {
+            ignore_gitignore: true,
+            path_config: Default::default(),
+            rules_file: None,
+            rules: vec![],
+            rule_config_provider: RuleConfigProvider::default(),
+            max_file_size_kb: 1,
+            show_performance_statistics: false,
+            ignore_generated_files: false,
+            should_verify_checksum: true,
+            debug_java_dfa: false,
+        };
+        let rule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        };
+        let secrets_config = SecretsConfiguration {
+            ignore_gitignore: true,
+            ignore_generated_files: false,
+            path_config: Default::default(),
+            rules: vec![rule],
+            max_file_size_kb: 1,
+            ast_filter: true,
+        };
+
+        // One match is kept (not filtered by AST), the other is dropped from the report because
+        // it was flagged as filtered by the AST-based post-filter.
+        let secret_results = vec![SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: "myfile.js".to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![
+                SecretResultMatch {
+                    start: Position { line: 3, col: 5 },
+                    end: Position { line: 3, col: 15 },
+                    validation_status: SecretValidationStatus::NotValidated,
+                    is_suppressed: false,
+                    is_filtered_by_ast: false,
+                },
+                SecretResultMatch {
+                    start: Position { line: 8, col: 2 },
+                    end: Position { line: 9, col: 4 },
+                    validation_status: SecretValidationStatus::NotValidated,
+                    is_suppressed: false,
+                    is_filtered_by_ast: true,
+                },
+            ],
+        }];
+
+        let sarif_str = generate_sarif_file(
+            CliConfigurationSast {
+                run: &run,
+                sast: &sast,
+            },
+            CliConfigurationSecrets {
+                run: &run,
+                secrets: &secrets_config,
+            },
+            vec![],
+            secret_results,
+            vec![],
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 0,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif file");
+
+        let sarif_json: Value = serde_json::from_str(&sarif_str).unwrap();
+        let results = sarif_json["runs"][0]["results"].as_array().unwrap();
+        assert_eq!(results.len(), 1);
+
+        // The kept match's position (line 3, cols 5-15) is the one reported...
+        let region = &results[0]["locations"][0]["physicalLocation"]["region"];
+        assert_eq!(region["startLine"], 3);
+        assert_eq!(region["startColumn"], 5);
+        assert_eq!(region["endLine"], 3);
+        assert_eq!(region["endColumn"], 15);
+
+        // ...while the AST-filtered match's position (line 8-9, cols 2/4) never shows up.
+        assert_ne!(region["startLine"], 8);
+        assert_ne!(region["startColumn"], 2);
+        assert_ne!(region["endLine"], 9);
+        assert_ne!(region["endColumn"], 4);
     }
 }

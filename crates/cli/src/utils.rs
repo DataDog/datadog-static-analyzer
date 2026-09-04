@@ -45,25 +45,28 @@ pub fn print_run_configuration(run_config: &RunConfiguration) {
 
     println!("Configuration");
     println!("=============");
-    println!("version                 : {}", CARGO_VERSION);
-    println!("revision                : {}", VERSION);
-    println!("config method           : {}", configuration_method);
-    println!("cores available         : {}", num_cpus::get());
-    println!("cores used              : {}", run_config.num_cpus);
-    println!("source directory        : {}", run_config.source_directory);
+    println!("version                   : {}", CARGO_VERSION);
+    println!("revision                  : {}", VERSION);
+    println!("config method             : {}", configuration_method);
+    println!("cores available           : {}", num_cpus::get());
+    println!("cores used                : {}", run_config.num_cpus);
     println!(
-        "subdirectories          : {}",
+        "source directory          : {}",
+        run_config.source_directory
+    );
+    println!(
+        "subdirectories            : {}",
         run_config.source_subdirectories.clone().join(",")
     );
-    println!("output file             : {}", run_config.output_file);
+    println!("output file               : {}", run_config.output_file);
     println!(
-        "static analysis enabled:  {}",
+        "static analysis enabled   :  {}",
         run_config.static_analysis_enabled
     );
-    println!("secrets enabled         : {}", run_config.secrets_enabled);
-    println!("output format           : {}", output_format_str);
-    println!("use debug               : {}", run_config.use_debug);
-    println!("use staging             : {}", run_config.use_staging);
+    println!("secrets enabled           : {}", run_config.secrets_enabled);
+    println!("output format             : {}", output_format_str);
+    println!("use debug                 : {}", run_config.use_debug);
+    println!("use staging               : {}", run_config.use_staging);
 }
 
 /// Prints SAST's own settings. Only meaningful (and only called) when SAST is enabled.
@@ -80,22 +83,26 @@ pub fn print_sast_configuration(sast_config: &SastConfiguration) {
         None => "all paths".to_string(),
     };
 
-    println!("#static analysis rules  : {}", sast_config.rules.len());
-    println!("ignore paths            : {}", ignore_paths_str);
-    println!("only paths              : {}", only_paths_str);
-    println!("ignore gitignore        : {}", sast_config.ignore_gitignore);
+    println!("#static analysis rules    : {}", sast_config.rules.len());
+    println!("ignore paths              : {}", ignore_paths_str);
+    println!("only paths                : {}", only_paths_str);
     println!(
-        "ignore gen files        : {}",
+        "ignore gitignore          : {}",
+        sast_config.ignore_gitignore
+    );
+    println!(
+        "ignore gen files          : {}",
         sast_config.ignore_generated_files
     );
-    println!("rules languages         : {}", languages_string.join(","));
+    println!("rules languages           : {}", languages_string.join(","));
     println!(
-        "max file size           : {} kb",
+        "max file size             : {} kb",
         sast_config.max_file_size_kb
     );
 }
 
 /// Prints secrets' own settings. Only meaningful (and only called) when secrets is enabled.
 pub fn print_secrets_configuration(secrets_config: &SecretsConfiguration) {
-    println!("#secrets rules loaded   : {}", secrets_config.rules.len());
+    println!("#secrets rules loaded     : {}", secrets_config.rules.len());
+    println!("[experimental] ast filter : {}", secrets_config.ast_filter);
 }

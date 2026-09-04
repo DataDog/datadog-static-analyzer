@@ -121,7 +121,8 @@ impl CliConfigurationSast<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kernel::model::common::{Language, OutputFormat};
+    use common::model::language::Language;
+    use kernel::model::common::OutputFormat;
     use kernel::model::rule::{Rule, RuleCategory, RuleSeverity, RuleType};
     use kernel::rule_config::RuleConfigProvider;
 

@@ -120,8 +120,8 @@ pub(crate) fn cached_analysis_request(
 #[cfg(test)]
 mod tests {
     use crate::datadog_static_analyzer_server::rule_cache::{cached_analysis_request, RuleCache};
+    use common::model::language::Language;
     use kernel::analysis::ddsa_lib;
-    use kernel::model::common::Language;
     use kernel::model::rule::{compute_sha256, RuleCategory, RuleSeverity, RuleType};
     use kernel::utils::encode_base64_string;
     use server::model::analysis_request::{AnalysisRequest, AnalysisRequestOptions, ServerRule};

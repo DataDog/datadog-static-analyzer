@@ -2,7 +2,6 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use crate::analysis;
 use crate::analysis::ddsa_lib::bridge::{
     ContextBridge, QueryMatchBridge, TsNodeBridge, ViolationBridge,
 };
@@ -12,9 +11,9 @@ use crate::analysis::ddsa_lib::common::{
 use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::js::{VisitArgCodeCompat, VisitArgFilenameCompat};
 use crate::analysis::ddsa_lib::resource_watchdog::V8ResourceWatchdog;
-use crate::model::common::Language;
 use crate::model::rule::RuleInternal;
 use crate::model::violation;
+use common::model::language::Language;
 use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
@@ -239,7 +238,7 @@ impl JsRuntime {
         file_name: &Arc<str>,
         language: Language,
         rule_script: &v8::Global<v8::UnboundScript>,
-        query_matches: &[analysis::tree_sitter::QueryMatch<tree_sitter::Node>],
+        query_matches: &[crate::analysis::tree_sitter::QueryMatch<tree_sitter::Node>],
         rule_arguments: &HashMap<String, String>,
         timeout: Option<Duration>,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
@@ -640,8 +639,9 @@ mod tests {
         cfg_test_v8, shorthand_execute_rule, try_execute, ExecuteOptions,
     };
     use crate::analysis::ddsa_lib::{js, resource_watchdog, JsRuntime};
-    use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language, TSQuery};
-    use crate::model::common::Language;
+    use crate::analysis::tree_sitter::TSQuery;
+    use common::model::language::Language;
+    use common::tree_sitter::{get_tree, get_tree_sitter_language};
     use deno_core::v8;
     use std::collections::HashMap;
     use std::marker::PhantomData;
@@ -692,7 +692,7 @@ mod tests {
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let tree = Arc::new(get_tree(source_text.as_ref(), &Language::JavaScript).unwrap());
 
-        let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
+        let ts_query = TSQuery::try_new(&ts_lang, ts_query).unwrap();
 
         let now = Instant::now();
         let mut curs = ts_query.cursor();
@@ -1648,8 +1648,8 @@ function visit(captures) {
     /// The stack trace from a rule execution JavaScript error filters out references to template code.
     #[test]
     fn rule_execution_stack_trace_filter() {
-        use crate::model::common::Language;
         use crate::model::rule::{RuleCategory, RuleInternal, RuleSeverity};
+        use common::model::language::Language;
 
         let mut rt = cfg_test_v8().new_runtime();
         let filename = Arc::<str>::from("unused_for_test.js");
