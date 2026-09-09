@@ -141,43 +141,34 @@ pub static FILE_PREFIX_PER_LANGUAGE_LIST: &[(Language, &[&str])] =
     &[(Language::Dockerfile, &["Dockerfile"])];
 
 // get all extensions for a language.
-pub fn get_extensions_for_language(language: &Language) -> Option<Vec<String>> {
-    for fe in FILE_EXTENSIONS_PER_LANGUAGE_LIST {
-        if fe.0 == *language {
-            let extensions = fe.1.to_vec();
-            return Some(extensions.iter().map(|x| x.to_string()).collect());
-        }
-    }
-    None
+pub fn get_extensions_for_language(language: &Language) -> Option<&'static [&'static str]> {
+    FILE_EXTENSIONS_PER_LANGUAGE_LIST
+        .iter()
+        .find(|fe| fe.0 == *language)
+        .map(|fe| fe.1)
 }
 
 // if a language only match a file for an exact match, return it
-pub fn get_exact_filename_for_language(language: &Language) -> Option<Vec<String>> {
-    for fe in FILE_EXACT_MATCH_PER_LANGUAGE_LIST {
-        if fe.0 == *language {
-            let extensions = fe.1.to_vec();
-            return Some(extensions.iter().map(|x| x.to_string()).collect());
-        }
-    }
-    None
+pub fn get_exact_filename_for_language(language: &Language) -> Option<&'static [&'static str]> {
+    FILE_EXACT_MATCH_PER_LANGUAGE_LIST
+        .iter()
+        .find(|fe| fe.0 == *language)
+        .map(|fe| fe.1)
 }
 
 // get the prefix for a file that needs to be analyzed for a language
-pub fn get_prefix_for_language(language: &Language) -> Option<Vec<String>> {
-    for fe in FILE_PREFIX_PER_LANGUAGE_LIST {
-        if fe.0 == *language {
-            let extensions = fe.1.to_vec();
-            return Some(extensions.iter().map(|x| x.to_string()).collect());
-        }
-    }
-    None
+pub fn get_prefix_for_language(language: &Language) -> Option<&'static [&'static str]> {
+    FILE_PREFIX_PER_LANGUAGE_LIST
+        .iter()
+        .find(|fe| fe.0 == *language)
+        .map(|fe| fe.1)
 }
 
 // filter the file according to a list of extensions
-fn match_extension(path: &Path, extensions: &[String]) -> bool {
+pub fn match_extension(path: &Path, extensions: &[&str]) -> bool {
     match path.extension() {
         Some(ext) => match ext.to_str() {
-            Some(e) => extensions.contains(&e.to_string().to_lowercase()),
+            Some(e) => extensions.iter().any(|x| x.eq_ignore_ascii_case(e)),
             None => false,
         },
         None => false,
@@ -185,20 +176,29 @@ fn match_extension(path: &Path, extensions: &[String]) -> bool {
 }
 
 // filter a file based on its name
-fn match_exact_filename(path: &Path, filename_list: &[String]) -> bool {
+pub fn match_exact_filename(path: &Path, filename_list: &[&str]) -> bool {
     match path.file_name() {
         Some(p) => match p.to_str() {
-            Some(s) => filename_list.contains(&s.to_string()),
+            Some(s) => filename_list.iter().any(|f| *f == s),
             None => false,
         },
         None => false,
     }
 }
 
-fn match_prefix_filename(path: &Path, prefixes_list: &[String]) -> bool {
+/// A `.dockerignore` file (e.g. `Dockerfile.foobar.dockerignore`) shares the `Dockerfile` prefix
+/// but is not itself a Dockerfile, so it is excluded here rather than in each caller — this is
+/// the single place `get_language_for_file` and `filter_files_for_language` both go through for
+/// prefix matching, so they can't disagree on it.
+pub fn match_prefix_filename(path: &Path, prefixes_list: &[&str]) -> bool {
     match path.file_name() {
         Some(p) => match p.to_str() {
-            Some(s) => prefixes_list.iter().any(|p| s.to_string().starts_with(p)),
+            Some(s) => {
+                if s.ends_with("dockerignore") {
+                    return false;
+                }
+                prefixes_list.iter().any(|p| s.starts_with(p))
+            }
             None => false,
         },
         None => false,
@@ -209,49 +209,21 @@ fn match_prefix_filename(path: &Path, prefixes_list: &[String]) -> bool {
 pub fn get_language_for_file(path: &Path) -> Option<Language> {
     // match for extensions (myfile.c, myfile.php, etc).
     for (language, extensions) in FILE_EXTENSIONS_PER_LANGUAGE_LIST {
-        let extensions_string = extensions
-            .to_vec()
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        if match_extension(path, extensions_string.as_slice()) {
+        if match_extension(path, extensions) {
             return Some(*language);
         }
     }
 
     // match for exact match (e.g. BUILD.bazel, Dockerfile, etc)
     for (language, filenames) in FILE_EXACT_MATCH_PER_LANGUAGE_LIST {
-        let filename_strings = filenames
-            .to_vec()
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        if match_exact_filename(path, filename_strings.as_slice()) {
+        if match_exact_filename(path, filenames) {
             return Some(*language);
         }
     }
 
     // match for prefix (e.g. Dockerfile.something)
     for (language, prefixes) in FILE_PREFIX_PER_LANGUAGE_LIST {
-        let prefix_string = prefixes
-            .to_vec()
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        if match_prefix_filename(path, prefix_string.as_slice()) {
-            // If we have a file such as Dockerfile.<something>.dockerignore, we just ignore it
-            if *language == Language::Dockerfile {
-                if let Some(ext) = path.extension() {
-                    if ext
-                        .to_str()
-                        .map(|s| s.ends_with("dockerignore"))
-                        .unwrap_or(false)
-                    {
-                        return None;
-                    }
-                }
-            }
-
+        if match_prefix_filename(path, prefixes) {
             return Some(*language);
         }
     }

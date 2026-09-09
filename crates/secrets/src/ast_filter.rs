@@ -2,12 +2,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-use crate::InternalResult;
 use common::model::language::Language;
 use common::tree_sitter::get_tree;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use tree_sitter::Node;
+use crate::model::secret_result::SecretResult;
 
 /// AST node kinds (shared by the JavaScript and TSX tree-sitter grammars) that represent a
 /// string literal, a piece of one, or a comment.
@@ -30,11 +30,11 @@ lazy_static! {
 ///
 /// This applies only to language in the ALLOWED_NODE_KINDS_BY_LANGUAGE map.
 /// For other languages, the initial results are returned unchanged.
-pub(crate) fn filter_secrets_for_ast(
-    initial_results: Vec<InternalResult>,
+pub fn filter_secrets_for_ast(
+    initial_results: Vec<SecretResult>,
     file_content: &str,
     language: &Language,
-) -> Vec<InternalResult> {
+) -> Vec<SecretResult> {
     let Some(allowed_node_kinds) = ALLOWED_NODE_KINDS_BY_LANGUAGE.get(language) else {
         return initial_results;
     };
@@ -47,13 +47,11 @@ pub(crate) fn filter_secrets_for_ast(
     initial_results
         .into_iter()
         .map(|mut result| {
-            if !is_in_allowed_node(
-                &root_node,
-                result.start_index,
-                result.end_index,
-                allowed_node_kinds,
-            ) {
-                result.filtered_by_ast = true;
+            for m in result.matches.iter_mut() {
+                if !is_in_allowed_node(&root_node, m.start_index, m.end_index, allowed_node_kinds)
+                {
+                    m.is_filtered_by_ast = true;
+                }
             }
             result
         })
@@ -90,18 +88,26 @@ fn is_in_allowed_node(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::secret_result::SecretValidationStatus;
+    use crate::model::secret_result::{SecretResultMatch, SecretValidationStatus};
+    use crate::model::secret_rule::RulePriority;
     use common::model::position::Position;
 
-    fn make_result(start_index: usize, end_index: usize) -> InternalResult {
-        InternalResult {
-            rule_index: 0,
-            start: Position::new(0, 0),
-            end: Position::new(0, 0),
-            start_index,
-            end_index,
-            validation_status: SecretValidationStatus::NotValidated,
-            filtered_by_ast: false,
+    fn make_result(start_index: usize, end_index: usize) -> SecretResult {
+        SecretResult {
+            rule_id: "rule".to_string(),
+            rule_name: "rule".to_string(),
+            filename: "file".to_string(),
+            message: "message".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start: Position::new(0, 0),
+                start_index,
+                end: Position::new(0, 0),
+                end_index,
+                validation_status: SecretValidationStatus::NotValidated,
+                is_suppressed: false,
+                is_filtered_by_ast: false,
+            }],
         }
     }
 
@@ -111,7 +117,7 @@ mod tests {
         let result = make_result(15, 35);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(filtered[0].filtered_by_ast);
+        assert!(filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -121,7 +127,7 @@ mod tests {
         let result = make_result(15, 35);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].filtered_by_ast);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -131,7 +137,7 @@ mod tests {
         let result = make_result(15, 35);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].filtered_by_ast);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -140,7 +146,7 @@ mod tests {
         let result = make_result(1, 21);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].filtered_by_ast);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -150,7 +156,7 @@ mod tests {
         let result = make_result(0, 20);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(filtered[0].filtered_by_ast);
+        assert!(filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -167,8 +173,8 @@ mod tests {
             &Language::JavaScript,
         );
         assert_eq!(filtered.len(), 2);
-        assert!(!filtered[0].filtered_by_ast);
-        assert!(filtered[1].filtered_by_ast);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
+        assert!(filtered[1].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -183,7 +189,7 @@ mod tests {
         let result = make_result(16, 36);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].filtered_by_ast);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -192,7 +198,7 @@ mod tests {
         let result = make_result(9, 29);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(!filtered[0].filtered_by_ast);
+        assert!(!filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]
@@ -201,7 +207,7 @@ mod tests {
         let result = make_result(14, 34);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::JavaScript);
         assert_eq!(filtered.len(), 1);
-        assert!(filtered[0].filtered_by_ast);
+        assert!(filtered[0].matches[0].is_filtered_by_ast);
     }
 
     #[test]

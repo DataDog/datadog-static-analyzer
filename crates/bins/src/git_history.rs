@@ -177,13 +177,17 @@ fn scan_all_blobs_for_secrets(
                 );
             }
 
+            // set should_filter_using_ast to false because we do not pass the file today
+            // and cannot infer the language.
+            // TODO(juli1): see https://github.com/DataDog/datadog-static-analyzer/pull/958#discussion_r3971300664
+            // for fixing it.
             let secrets = find_secrets(
                 &sds_scanner,
                 secrets_rules,
                 GIT_HISTORY_BLOB_PLACEHOLDER,
                 &content,
                 options,
-                secrets_config.ast_filter,
+                false,
             );
             if secrets.is_empty() {
                 None

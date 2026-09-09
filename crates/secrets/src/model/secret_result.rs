@@ -60,7 +60,9 @@ impl SecretValidationStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct SecretResultMatch {
     pub start: Position,
+    pub start_index: usize,
     pub end: Position,
+    pub end_index: usize,
     pub validation_status: SecretValidationStatus,
     #[serde(default)]
     pub is_suppressed: bool,

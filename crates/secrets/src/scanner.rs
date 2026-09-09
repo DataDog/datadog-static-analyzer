@@ -66,9 +66,7 @@ pub fn find_secrets(
         return vec![];
     }
 
-    let language = get_language_for_file(Path::new(filename));
-
-    let results: Vec<InternalResult> = matches
+    let results: Vec<SecretResult> = matches
         .iter()
         .flat_map(|sds_match| {
             let start = get_position_in_string(code, sds_match.start_index)?;
@@ -87,15 +85,6 @@ pub fn find_secrets(
                 filtered_by_ast: false,
             })
         })
-        .collect();
-
-    let results = match (should_filter_using_ast, language) {
-        (true, Some(language)) => filter_secrets_for_ast(results, code, &language),
-        _ => results,
-    };
-
-    results
-        .into_iter()
         .chunk_by(|v| v.rule_index)
         .into_iter()
         .map(|(k, vals)| SecretResult {
@@ -111,13 +100,22 @@ pub fn find_secrets(
                 .map(|v| SecretResultMatch {
                     is_suppressed: lines_to_ignore.contains(&v.start.line),
                     start: v.start,
+                    start_index: v.start_index,
                     end: v.end,
+                    end_index: v.end_index,
                     validation_status: v.validation_status,
                     is_filtered_by_ast: v.filtered_by_ast,
                 })
                 .collect(),
         })
-        .collect()
+        .collect();
+
+    let language = get_language_for_file(Path::new(filename));
+
+    match (should_filter_using_ast, language) {
+        (true, Some(language)) => filter_secrets_for_ast(results, code, &language),
+        _ => results,
+    }
 }
 
 #[cfg(test)]

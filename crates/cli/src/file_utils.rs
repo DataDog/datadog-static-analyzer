@@ -9,9 +9,7 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::model::datadog_api::DiffAwareData;
-use common::model::language::{
-    get_exact_filename_for_language, get_extensions_for_language, get_prefix_for_language, Language,
-};
+use common::model::language::{get_exact_filename_for_language, get_extensions_for_language, get_prefix_for_language, match_exact_filename, match_extension, match_prefix_filename, Language};
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::config::common::PathConfig;
 use kernel::model::violation::Violation;
@@ -156,38 +154,6 @@ pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String])
     })
 }
 
-// filter the file according to a list of extensions
-fn match_extension(path: &Path, extensions: &[String]) -> bool {
-    match path.extension() {
-        Some(ext) => match ext.to_str() {
-            Some(e) => extensions.contains(&e.to_string().to_lowercase()),
-            None => false,
-        },
-        None => false,
-    }
-}
-
-// filter a file based on its name
-fn match_exact_filename(path: &Path, filename_list: &[String]) -> bool {
-    match path.file_name() {
-        Some(p) => match p.to_str() {
-            Some(s) => filename_list.contains(&s.to_string()),
-            None => false,
-        },
-        None => false,
-    }
-}
-
-fn match_prefix_filename(path: &Path, prefixes_list: &[String]) -> bool {
-    match path.file_name() {
-        Some(p) => match p.to_str() {
-            Some(s) => prefixes_list.iter().any(|p| s.to_string().starts_with(p)),
-            None => false,
-        },
-        None => false,
-    }
-}
-
 // filter files to analyze for a language. It will filter the files based on the prefix or suffix.
 pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<PathBuf> {
     let extensions = get_extensions_for_language(language).unwrap_or_default();
@@ -201,9 +167,9 @@ pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<
     let result = files
         .iter()
         .filter(|p| {
-            let extension_match = match_extension(p, &extensions);
-            let filename_match = match_exact_filename(p, &exact_matches);
-            let prefix_match = match_prefix_filename(p, &prefixes);
+            let extension_match = match_extension(p, extensions);
+            let filename_match = match_exact_filename(p, exact_matches);
+            let prefix_match = match_prefix_filename(p, prefixes);
 
             extension_match || filename_match || prefix_match
         })
@@ -857,6 +823,21 @@ mod tests {
             0,
             filter_files_for_language(
                 &[PathBuf::from("path").join(PathBuf::from("Dock3rfile.foobar"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
+    }
+
+    // `Dockerfile.<something>.dockerignore` shares the `Dockerfile` prefix but is not a
+    // Dockerfile; `get_language_for_file` excludes it, and `filter_files_for_language` must
+    // agree since they go through the same `match_prefix_filename` helper.
+    #[test]
+    fn test_filter_files_for_language_excludes_dockerignore() {
+        assert_eq!(
+            0,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("Dockerfile.foobar.dockerignore"))],
                 &Language::Dockerfile
             )
             .len()
