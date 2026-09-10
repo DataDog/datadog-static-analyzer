@@ -61,10 +61,8 @@ impl DiffAware for CliConfigurationSast<'_> {
         // not depend on the order the API returned the rules.
         rules_string.sort();
 
-        let path_config = effective_path_config(
-            self.gitignore_patterns,
-            &self.sast.file_selection(),
-        );
+        let path_config =
+            effective_path_config(self.gitignore_patterns, &self.sast.file_selection());
 
         let full_config_string = format!(
             "{}:{}:{}:{}:{}:{}:{}",
