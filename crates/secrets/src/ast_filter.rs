@@ -2,12 +2,12 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
+use crate::model::secret_result::SecretResult;
 use common::model::language::Language;
 use common::tree_sitter::get_tree;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 use tree_sitter::Node;
-use crate::model::secret_result::SecretResult;
 
 /// AST node kinds (shared by the JavaScript and TSX tree-sitter grammars) that represent a
 /// string literal, a piece of one, or a comment.
@@ -48,8 +48,7 @@ pub fn filter_secrets_for_ast(
         .into_iter()
         .map(|mut result| {
             for m in result.matches.iter_mut() {
-                if !is_in_allowed_node(&root_node, m.start_index, m.end_index, allowed_node_kinds)
-                {
+                if !is_in_allowed_node(&root_node, m.start_index, m.end_index, allowed_node_kinds) {
                     m.is_filtered_by_ast = true;
                 }
             }

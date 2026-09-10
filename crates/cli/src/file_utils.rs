@@ -9,7 +9,10 @@ use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
 use crate::model::datadog_api::DiffAwareData;
-use common::model::language::{get_exact_filename_for_language, get_extensions_for_language, get_prefix_for_language, match_exact_filename, match_extension, match_prefix_filename, Language};
+use common::model::language::{
+    get_exact_filename_for_language, get_extensions_for_language, get_prefix_for_language,
+    match_exact_filename, match_extension, match_prefix_filename, Language,
+};
 use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::config::common::PathConfig;
 use kernel::model::violation::Violation;
