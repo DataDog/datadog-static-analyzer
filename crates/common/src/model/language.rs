@@ -179,7 +179,7 @@ pub fn match_extension(path: &Path, extensions: &[&str]) -> bool {
 pub fn match_exact_filename(path: &Path, filename_list: &[&str]) -> bool {
     match path.file_name() {
         Some(p) => match p.to_str() {
-            Some(s) => filename_list.iter().any(|f| *f == s),
+            Some(s) => filename_list.contains(&s),
             None => false,
         },
         None => false,
