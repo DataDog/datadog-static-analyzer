@@ -1554,6 +1554,8 @@ mod tests {
                     matches: vec![SecretResultMatch {
                         start: Position { line: 1, col: 1 },
                         end: Position { line: 2, col: 2 },
+                        start_index: 0,
+                        end_index: 1,
                         validation_status: SecretValidationStatus::NotValidated,
                         is_suppressed: false,
                         is_filtered_by_ast: false,
@@ -1667,6 +1669,8 @@ mod tests {
             message: "some secret".to_string(),
             priority: RulePriority::Medium,
             matches: vec![SecretResultMatch {
+                start_index: 0,
+                end_index: 1,
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 1, col: 22 },
                 validation_status: SecretValidationStatus::NotValidated,
@@ -1946,6 +1950,8 @@ mod tests {
                 message: "some secret".to_string(),
                 priority: RulePriority::Medium,
                 matches: vec![SecretResultMatch {
+                    start_index: 0,
+                    end_index: 1,
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 2, col: 2 },
                     validation_status: case.0,
@@ -2081,6 +2087,8 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
+                start_index: 0,
+                end_index: 1,
                 validation_status: SecretValidationStatus::ValidationError(vec![
                     ValidationErrorInfo {
                         error_type: ValidationErrorType::HttpError,
@@ -2171,6 +2179,8 @@ mod tests {
             message: "some secret".to_string(),
             priority: RulePriority::Medium,
             matches: vec![SecretResultMatch {
+                start_index: 0,
+                end_index: 1,
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
                 validation_status: SecretValidationStatus::ValidationError(vec![
@@ -2274,6 +2284,8 @@ mod tests {
                 message: "some secret".to_string(),
                 priority,
                 matches: vec![SecretResultMatch {
+                    start_index: 0,
+                    end_index: 1,
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 1, col: 5 },
                     validation_status: SecretValidationStatus::Valid,
@@ -2618,6 +2630,8 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
+                start_index: 0,
+                end_index: 1,
                 validation_status: SecretValidationStatus::ValidationError(vec![
                     ValidationErrorInfo {
                         error_type: ValidationErrorType::HttpError,
@@ -2773,6 +2787,8 @@ mod tests {
                 SecretResultMatch {
                     start: Position { line: 3, col: 5 },
                     end: Position { line: 3, col: 15 },
+                    start_index: 0,
+                    end_index: 1,
                     validation_status: SecretValidationStatus::NotValidated,
                     is_suppressed: false,
                     is_filtered_by_ast: false,
@@ -2780,6 +2796,8 @@ mod tests {
                 SecretResultMatch {
                     start: Position { line: 8, col: 2 },
                     end: Position { line: 9, col: 4 },
+                    start_index: 0,
+                    end_index: 1,
                     validation_status: SecretValidationStatus::NotValidated,
                     is_suppressed: false,
                     is_filtered_by_ast: true,

@@ -62,6 +62,7 @@ fn scan(request: ScanSecretsRequest) -> Result<Vec<SecretResult>, String> {
         &request.filename,
         &request.code,
         &options,
+        false,
     );
 
     let results = results

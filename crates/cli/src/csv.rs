@@ -117,6 +117,8 @@ mod tests {
                     SecretResultMatch {
                         start: common::model::position::Position { line: 10, col: 12 },
                         end: common::model::position::Position { line: 12, col: 10 },
+                        start_index: 0,
+                        end_index: 1,
                         validation_status: SecretValidationStatus::NotValidated,
                         is_suppressed: false,
                         is_filtered_by_ast: true,
@@ -124,6 +126,8 @@ mod tests {
                     SecretResultMatch {
                         start: common::model::position::Position { line: 20, col: 5 },
                         end: common::model::position::Position { line: 20, col: 30 },
+                        start_index: 0,
+                        end_index: 1,
                         validation_status: SecretValidationStatus::NotValidated,
                         is_suppressed: false,
                         is_filtered_by_ast: false,
