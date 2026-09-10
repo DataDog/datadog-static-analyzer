@@ -461,6 +461,7 @@ fn main() -> Result<()> {
     let sast_cli_config = CliConfigurationSast {
         run: &run_config,
         sast: &sast_config,
+        gitignore_patterns: &gitignore_patterns,
     };
     let secrets_cli_config = CliConfigurationSecrets {
         run: &run_config,

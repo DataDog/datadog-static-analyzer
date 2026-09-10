@@ -2791,6 +2791,7 @@ mod tests {
             CliConfigurationSast {
                 run: &run,
                 sast: &sast,
+                gitignore_patterns: &[],
             },
             CliConfigurationSecrets {
                 run: &run,

@@ -227,16 +227,10 @@ pub struct ProductFileSelection {
     pub max_file_size_kb: Option<u64>,
 }
 
-/// Build the final `PathConfig` for one product (base `path_config` plus conditionally
-/// gitignore patterns and `DEFAULT_IGNORED_GLOBS`), walk the tree with `get_files`, then
-/// apply file-size filtering (if configured for this product).
-pub fn select_files(
-    directory: &Path,
-    subdirectories_to_analyze: &[String],
+pub fn effective_path_config(
     gitignore_patterns: &[String],
     selection: &ProductFileSelection,
-    use_debug: bool,
-) -> Result<Vec<PathBuf>> {
+) -> PathConfig {
     let mut path_config = selection.path_config.clone();
     if !selection.ignore_gitignore {
         path_config
@@ -248,6 +242,20 @@ pub fn select_files(
             .ignore
             .extend(DEFAULT_IGNORED_GLOBS.iter().map(|&p| p.to_string().into()));
     }
+    path_config
+}
+
+/// Build the final `PathConfig` for one product (base `path_config` plus conditionally
+/// gitignore patterns and `DEFAULT_IGNORED_GLOBS`), walk the tree with `get_files`, then
+/// apply file-size filtering (if configured for this product).
+pub fn select_files(
+    directory: &Path,
+    subdirectories_to_analyze: &[String],
+    gitignore_patterns: &[String],
+    selection: &ProductFileSelection,
+    use_debug: bool,
+) -> Result<Vec<PathBuf>> {
+    let path_config = effective_path_config(gitignore_patterns, selection);
     let files = get_files(directory, subdirectories_to_analyze.to_vec(), &path_config)?;
     Ok(match selection.max_file_size_kb {
         Some(kb) => filter_files_by_size(&files, kb, use_debug),

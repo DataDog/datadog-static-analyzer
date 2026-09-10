@@ -63,6 +63,7 @@ pub fn static_analysis(
     let CliConfigurationSast {
         run: run_config,
         sast: sast_config,
+        ..
     } = cli_config;
     let mut all_rule_results = Vec::<RuleResult>::new();
     let mut all_stats = AnalysisStatistics::new();

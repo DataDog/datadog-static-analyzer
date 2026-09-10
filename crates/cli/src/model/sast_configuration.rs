@@ -1,3 +1,4 @@
+use crate::file_utils::{effective_path_config, ProductFileSelection};
 use crate::git_utils::{get_branch, ORIGIN};
 use crate::model::datadog_api::DiffAwareRequestArguments;
 use crate::model::run_configuration::RunConfiguration;
@@ -24,12 +25,24 @@ pub struct SastConfiguration {
     pub debug_java_dfa: bool,
 }
 
+impl SastConfiguration {
+    pub fn file_selection(&self) -> ProductFileSelection {
+        ProductFileSelection {
+            ignore_gitignore: self.ignore_gitignore,
+            ignore_generated_files: self.ignore_generated_files,
+            path_config: self.path_config.clone(),
+            max_file_size_kb: Some(self.max_file_size_kb),
+        }
+    }
+}
+
 /// Everything a static analysis run is configured by: the settings shared across products and
 /// SAST's own.
 #[derive(Clone, Copy)]
 pub struct CliConfigurationSast<'a> {
     pub run: &'a RunConfiguration,
     pub sast: &'a SastConfiguration,
+    pub gitignore_patterns: &'a [String],
 }
 
 impl DiffAware for CliConfigurationSast<'_> {
@@ -48,11 +61,15 @@ impl DiffAware for CliConfigurationSast<'_> {
         // not depend on the order the API returned the rules.
         rules_string.sort();
 
+        let path_config = effective_path_config(
+            self.gitignore_patterns,
+            &self.sast.file_selection(),
+        );
+
         let full_config_string = format!(
             "{}:{}:{}:{}:{}:{}:{}",
-            self.sast.path_config.ignore.join(","),
-            self.sast
-                .path_config
+            path_config.ignore.join(","),
+            path_config
                 .only
                 .as_ref()
                 .map_or("".to_string(), |v| v.join(",")),
@@ -181,6 +198,7 @@ mod tests {
         let cli_config = CliConfigurationSast {
             run: &run,
             sast: &sast,
+            gitignore_patterns: &[],
         };
         assert_eq!(
             cli_config.generate_diff_aware_digest(),
@@ -198,14 +216,87 @@ mod tests {
         let digest_root = CliConfigurationSast {
             run: &run_root,
             sast: &sast,
+            gitignore_patterns: &[],
         }
         .generate_diff_aware_digest();
         let digest_subdir = CliConfigurationSast {
             run: &run_subdir,
             sast: &sast,
+            gitignore_patterns: &[],
         }
         .generate_diff_aware_digest();
 
         assert_ne!(digest_root, digest_subdir);
+    }
+
+    #[test]
+    fn diff_aware_hash_depends_on_gitignore_patterns() {
+        let run = run_configuration(vec![]);
+        let mut sast = sast_configuration();
+        sast.ignore_gitignore = false;
+        let first_patterns = vec!["first/**".to_string()];
+        let second_patterns = vec!["second/**".to_string()];
+
+        let first_digest = CliConfigurationSast {
+            run: &run,
+            sast: &sast,
+            gitignore_patterns: &first_patterns,
+        }
+        .generate_diff_aware_digest();
+        let second_digest = CliConfigurationSast {
+            run: &run,
+            sast: &sast,
+            gitignore_patterns: &second_patterns,
+        }
+        .generate_diff_aware_digest();
+
+        assert_ne!(first_digest, second_digest);
+    }
+
+    #[test]
+    fn diff_aware_hash_ignores_gitignore_patterns_when_disabled() {
+        let run = run_configuration(vec![]);
+        let sast = sast_configuration();
+        let first_patterns = vec!["first/**".to_string()];
+        let second_patterns = vec!["second/**".to_string()];
+
+        let first_digest = CliConfigurationSast {
+            run: &run,
+            sast: &sast,
+            gitignore_patterns: &first_patterns,
+        }
+        .generate_diff_aware_digest();
+        let second_digest = CliConfigurationSast {
+            run: &run,
+            sast: &sast,
+            gitignore_patterns: &second_patterns,
+        }
+        .generate_diff_aware_digest();
+
+        assert_eq!(first_digest, second_digest);
+    }
+
+    #[test]
+    fn diff_aware_hash_depends_on_generated_file_setting() {
+        let run = run_configuration(vec![]);
+        let mut includes_generated = sast_configuration();
+        includes_generated.ignore_generated_files = false;
+        let mut excludes_generated = includes_generated.clone();
+        excludes_generated.ignore_generated_files = true;
+
+        let includes_digest = CliConfigurationSast {
+            run: &run,
+            sast: &includes_generated,
+            gitignore_patterns: &[],
+        }
+        .generate_diff_aware_digest();
+        let excludes_digest = CliConfigurationSast {
+            run: &run,
+            sast: &excludes_generated,
+            gitignore_patterns: &[],
+        }
+        .generate_diff_aware_digest();
+
+        assert_ne!(includes_digest, excludes_digest);
     }
 }

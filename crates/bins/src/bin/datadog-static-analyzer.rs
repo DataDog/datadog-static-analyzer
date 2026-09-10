@@ -532,12 +532,7 @@ fn select_sast_files(
         &args.directory_to_analyze,
         &args.subdirectories_to_analyze,
         gitignore_patterns,
-        &ProductFileSelection {
-            ignore_gitignore: sast_config.ignore_gitignore,
-            ignore_generated_files: sast_config.ignore_generated_files,
-            path_config: sast_config.path_config.clone(),
-            max_file_size_kb: Some(sast_config.max_file_size_kb),
-        },
+        &sast_config.file_selection(),
         args.use_debug,
     )
     .context("unable to get the list of files to analyze for SAST")
@@ -970,6 +965,7 @@ fn main() -> Result<()> {
     let sast_cli_config = CliConfigurationSast {
         run: &run_config,
         sast: &sast_config,
+        gitignore_patterns: &gitignore_patterns,
     };
     let secrets_cli_config = CliConfigurationSecrets {
         run: &run_config,
