@@ -855,7 +855,6 @@ fn build_report(
                 } else {
                     DEFAULT_TOOL_NAME.to_string()
                 },
-                split_runs_by_tool: args.scan_git_history_only,
             },
             all_path_metadata,
         )

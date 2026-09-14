@@ -745,7 +745,6 @@ fn main() -> Result<()> {
                 diff_aware_parameters: None,
                 execution_time_secs: analysis_start_instant.elapsed().as_secs(),
                 tool_name: DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &all_path_metadata,
         )
