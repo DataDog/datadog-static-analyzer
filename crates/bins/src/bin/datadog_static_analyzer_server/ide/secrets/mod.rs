@@ -145,4 +145,61 @@ mod tests {
             "result with no surviving matches should be dropped"
         );
     }
+
+    /// Covers `configuration_base64` decoding + `should_filter_using_ast` derivation: with no
+    /// `configuration` field, matches are never flagged by the AST filter, regardless of whether
+    /// they sit inside a string literal.
+    #[test]
+    fn scan_secrets_without_configuration_does_not_filter_using_ast() {
+        let body = format!(
+            r#"{{ "filename": "myfile.js", "code": "FOOBAR\nconst s = \"FOOBAZ\";", "rules": [{}] }}"#,
+            foo_bar_rule_json()
+        );
+        let response = dispatch_scan(body);
+
+        assert!(response["errors"].as_array().unwrap().is_empty());
+        let matches = response["rule_responses"][0]["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 2);
+        assert!(matches.iter().all(|m| m["is_filtered_by_ast"] == false));
+    }
+
+    /// A `configuration` with `secrets.experimental-ast-filter: true` must flag matches that sit
+    /// outside a string literal/comment, while leaving matches inside a string literal alone.
+    #[test]
+    fn scan_secrets_with_ast_filter_configuration_filters_secrets_not_in_strings() {
+        let config = "\
+schema-version: v1.6
+secrets:
+  experimental-ast-filter: true
+";
+        let configuration_base64 = kernel::utils::encode_base64_string(config.to_string());
+        let body = format!(
+            r#"{{ "filename": "myfile.js", "code": "FOOBAR\nconst s = \"FOOBAZ\";", "rules": [{}], "configuration": "{}" }}"#,
+            foo_bar_rule_json(),
+            configuration_base64
+        );
+        let response = dispatch_scan(body);
+
+        assert!(response["errors"].as_array().unwrap().is_empty());
+        let matches = response["rule_responses"][0]["matches"].as_array().unwrap();
+        assert_eq!(matches.len(), 2);
+
+        let outside_string_match = matches
+            .iter()
+            .find(|m| m["start"]["line"] == 1)
+            .expect("match on line 1");
+        assert_eq!(
+            outside_string_match["is_filtered_by_ast"], true,
+            "match outside a string literal should be filtered"
+        );
+
+        let inside_string_match = matches
+            .iter()
+            .find(|m| m["start"]["line"] == 2)
+            .expect("match on line 2");
+        assert_eq!(
+            inside_string_match["is_filtered_by_ast"], false,
+            "match inside a string literal should not be filtered"
+        );
+    }
 }
