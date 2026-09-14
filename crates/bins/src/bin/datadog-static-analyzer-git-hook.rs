@@ -236,7 +236,7 @@ fn main() -> Result<()> {
         .map(|value| value == "yes" || value == "true")
         .get_or_insert(env::var_os("DD_SA_DEBUG").is_some());
 
-    let mut path_config = PathConfig {
+    let mut sast_path_config = PathConfig {
         ignore: Vec::new(),
         only: None,
     };
@@ -339,8 +339,8 @@ fn main() -> Result<()> {
 
         // copy the only and ignore paths from the configuration file
         if let Some(pc) = conf.global_config.as_ref().and_then(|g| g.paths.as_ref()) {
-            path_config.ignore.extend_from_slice(&pc.ignore);
-            path_config.only = pc.only.clone();
+            sast_path_config.ignore.extend_from_slice(&pc.ignore);
+            sast_path_config.only = pc.only.clone();
         }
 
         // Get the max file size from the configuration or default to the default constant.
@@ -413,14 +413,14 @@ fn main() -> Result<()> {
         secrets_enabled,
     };
     extend_path_config_ignores(
-        &mut path_config,
+        &mut sast_path_config,
         &gitignore_patterns,
         ignore_gitignore,
         ignore_generated_files,
     );
     let sast_config = SastConfiguration {
         ignore_gitignore,
-        path_config: path_config.clone(),
+        path_config: sast_path_config,
         rules_file: None,
         rules: rules.clone(),
         rule_config_provider,
