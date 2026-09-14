@@ -22,8 +22,8 @@ use cli::datadog_utils::{
     get_secrets_rules, DatadogApiError,
 };
 use cli::file_utils::{
-    are_subdirectories_safe, filter_files_by_diff_aware_info, read_files_from_gitignore,
-    select_files, ProductFileSelection,
+    are_subdirectories_safe, extend_path_config_ignores, filter_files_by_diff_aware_info,
+    read_files_from_gitignore, select_files, ProductFileSelection,
 };
 use cli::model::datadog_api::DiffAwareData;
 use cli::model::run_configuration::RunConfiguration;
@@ -347,6 +347,7 @@ fn parse_cli_args(raw_args: &[String]) -> Result<CliArgs> {
 fn resolve_sast_config(
     sast_config: Option<&sast_file_v1::SastConfig>,
     args: &CliArgs,
+    gitignore_patterns: &[String],
 ) -> Result<SastConfiguration> {
     if sast_config.is_none() && args.use_debug {
         eprintln!("INFO: no configuration detected locally or remotely")
@@ -435,8 +436,7 @@ fn resolve_sast_config(
         }
     }
 
-    // Build SAST's own PathConfig from SAST's own settings only, so secrets' configuration can
-    // never silently affect it (and vice-versa).
+    // Build SAST's PathConfig independently from secrets.
     let mut sast_path_config = PathConfig {
         ignore: Vec::new(),
         only: None,
@@ -452,6 +452,12 @@ fn resolve_sast_config(
         args.ignore_paths_from_options
             .iter()
             .map(|p| p.clone().into()),
+    );
+    extend_path_config_ignores(
+        &mut sast_path_config,
+        gitignore_patterns,
+        ignore_gitignore,
+        ignore_generated_files,
     );
 
     Ok(SastConfiguration {
@@ -472,6 +478,7 @@ fn resolve_sast_config(
 fn resolve_secrets_config(
     secrets_config: Option<&secrets_file_v1::SecretsConfig>,
     args: &CliArgs,
+    gitignore_patterns: &[String],
 ) -> Result<SecretsConfiguration> {
     let rules = if args.secrets_enabled {
         get_secrets_rules(args.use_staging)?
@@ -508,6 +515,12 @@ fn resolve_secrets_config(
         .and_then(|c| c.global_config.as_ref())
         .and_then(|g| g.max_file_size_kb)
         .unwrap_or(DEFAULT_SECRETS_MAX_FILE_SIZE_KB);
+    extend_path_config_ignores(
+        &mut path_config,
+        gitignore_patterns,
+        ignore_gitignore,
+        ignore_generated_files,
+    );
     Ok(SecretsConfiguration {
         ignore_gitignore,
         ignore_generated_files,
@@ -520,18 +533,13 @@ fn resolve_secrets_config(
     })
 }
 
-fn select_sast_files(
-    args: &CliArgs,
-    sast_config: &SastConfiguration,
-    gitignore_patterns: &[String],
-) -> Result<Vec<PathBuf>> {
+fn select_sast_files(args: &CliArgs, sast_config: &SastConfiguration) -> Result<Vec<PathBuf>> {
     if !args.static_analysis_enabled {
         return Ok(vec![]);
     }
     select_files(
         &args.directory_to_analyze,
         &args.subdirectories_to_analyze,
-        gitignore_patterns,
         &sast_config.file_selection(),
         args.use_debug,
     )
@@ -541,7 +549,6 @@ fn select_sast_files(
 fn select_secrets_files(
     args: &CliArgs,
     secrets_config: &SecretsConfiguration,
-    gitignore_patterns: &[String],
 ) -> Result<Vec<PathBuf>> {
     if !args.secrets_enabled {
         return Ok(vec![]);
@@ -549,10 +556,7 @@ fn select_secrets_files(
     select_files(
         &args.directory_to_analyze,
         &args.subdirectories_to_analyze,
-        gitignore_patterns,
         &ProductFileSelection {
-            ignore_gitignore: secrets_config.ignore_gitignore,
-            ignore_generated_files: secrets_config.ignore_generated_files,
             path_config: secrets_config.path_config.clone(),
             max_file_size_kb: Some(secrets_config.max_file_size_kb),
         },
@@ -871,6 +875,12 @@ fn decide_exit_code(
 fn main() -> Result<()> {
     let raw_args: Vec<String> = env::args().collect();
     let args = parse_cli_args(&raw_args)?;
+    let gitignore_patterns =
+        read_files_from_gitignore(&args.directory_to_analyze).unwrap_or_else(|e| {
+            eprintln!("Warning: error when reading .gitignore file: {}", e);
+            eprintln!("Continuing without .gitignore patterns");
+            vec![]
+        });
 
     // Each product's configuration is only read when that product runs, so a configuration one
     // product cannot use never fails a run of the other.
@@ -893,8 +903,11 @@ fn main() -> Result<()> {
     } else {
         (None, None)
     };
-    let sast_config =
-        resolve_sast_config(sast_config_file.as_ref().and_then(|cfg| cfg.sast()), &args)?;
+    let sast_config = resolve_sast_config(
+        sast_config_file.as_ref().and_then(|cfg| cfg.sast()),
+        &args,
+        &gitignore_patterns,
+    )?;
 
     let (secrets_config_file, secrets_config_method): (
         Option<secrets_file_v1::ConfigFile>,
@@ -919,6 +932,7 @@ fn main() -> Result<()> {
     let secrets_config = resolve_secrets_config(
         secrets_config_file.as_ref().and_then(|cfg| cfg.secrets()),
         &args,
+        &gitignore_patterns,
     )?;
 
     let run_config = RunConfiguration {
@@ -950,22 +964,14 @@ fn main() -> Result<()> {
         ..Default::default()
     };
 
-    let gitignore_patterns =
-        read_files_from_gitignore(&args.directory_to_analyze).unwrap_or_else(|e| {
-            eprintln!("Warning: error when reading .gitignore file: {}", e);
-            eprintln!("Continuing without .gitignore patterns");
-            vec![]
-        });
-
     let languages = get_languages_for_rules(&sast_config.rules);
 
-    let sast_files = select_sast_files(&args, &sast_config, &gitignore_patterns)?;
-    let secrets_files = select_secrets_files(&args, &secrets_config, &gitignore_patterns)?;
+    let sast_files = select_sast_files(&args, &sast_config)?;
+    let secrets_files = select_secrets_files(&args, &secrets_config)?;
 
     let sast_cli_config = CliConfigurationSast {
         run: &run_config,
         sast: &sast_config,
-        gitignore_patterns: &gitignore_patterns,
     };
     let secrets_cli_config = CliConfigurationSecrets {
         run: &run_config,
