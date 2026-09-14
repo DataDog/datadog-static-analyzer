@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::fs::{read_to_string, File};
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -255,7 +255,7 @@ pub fn get_fingerprint_for_violation(
     if !path.exists() || !path.is_file() {
         return None;
     }
-    let Ok(file_contents) = read_to_string(&path) else {
+    let Ok(file_bytes) = fs::read(&path) else {
         if use_debug {
             eprintln!(
                 "Error when trying to read file {}",
@@ -265,7 +265,7 @@ pub fn get_fingerprint_for_violation(
         return None;
     };
 
-    get_fingerprint_from_contents(rule_name, violation, filename, &file_contents)
+    get_fingerprint_from_contents(rule_name, violation, filename, &file_bytes)
 }
 
 /// Generate a fingerprint for a violation from an in-memory copy of the file's contents.
@@ -273,8 +273,9 @@ pub fn get_fingerprint_from_contents(
     rule_name: String,
     violation: &Violation,
     filename: &str,
-    file_contents: &str,
+    file_contents: &[u8],
 ) -> Option<String> {
+    let file_contents = String::from_utf8_lossy(file_contents);
     let violations_lines = violation
         .taint_flow
         .as_ref()
@@ -375,6 +376,47 @@ mod tests {
             false,
         );
         assert!(fingerprint_unknown_file.is_none());
+    }
+
+    #[test]
+    fn get_fingerprint_for_violation_non_utf8_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("latin1.txt");
+        // "café" encoded as Latin-1: the 'é' (0xE9) is not valid UTF-8 on its own.
+        let contents: &[u8] = b"line one\ncaf\xe9 secret here\nline three\n";
+        fs::write(&file_path, contents).unwrap();
+
+        let violation = Violation {
+            start: Position { line: 2, col: 1 },
+            end: Position { line: 2, col: 10 },
+            message: "something bad happened".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Performance,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+        };
+
+        let fingerprint = get_fingerprint_for_violation(
+            "my_rule".to_string(),
+            &violation,
+            dir.path(),
+            Path::new("latin1.txt"),
+            false,
+        );
+        assert_eq!(
+            fingerprint,
+            get_fingerprint_from_contents(
+                "my_rule".to_string(),
+                &violation,
+                "latin1.txt",
+                contents
+            )
+        );
+        assert_eq!(
+            fingerprint,
+            Some("48b0b8601af8f1bd309c619b184a5955f6633f315f26ed5f4b6e1203a971241c".to_string())
+        );
     }
 
     #[test]

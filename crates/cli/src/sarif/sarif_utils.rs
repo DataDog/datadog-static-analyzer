@@ -785,12 +785,11 @@ fn generate_results(
                         Some(h) => options.git_repo.as_ref().and_then(|repo| {
                             let odb = repo.odb().ok()?;
                             let blob = odb.read(h.blob_oid).ok()?;
-                            let content = std::str::from_utf8(blob.data()).ok()?;
                             get_fingerprint_from_contents(
                                 rule_result.rule_name().to_string(),
                                 violation,
                                 rule_result.slash_path_str().as_ref(),
-                                content,
+                                blob.data(),
                             )
                         }),
                         None => get_fingerprint_for_violation(
@@ -1746,6 +1745,109 @@ mod tests {
         assert_eq!(
             emitted_fingerprint, expected_fingerprint,
             "history fingerprint must match the HEAD algorithm for identical rule/path/line"
+        );
+    }
+
+    #[test]
+    fn test_history_only_secret_non_utf8_blob_gets_fingerprint() {
+        let relative_path = "config/secrets.py";
+        // "café" encoded as Latin-1: the 'é' (0xE9) is not valid UTF-8 on its own.
+        let blob_content: &[u8] = b"api_key = \"caf\xe9\"\nsome other line\n";
+
+        let secret_rule: SarifRule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+        }
+        .into();
+
+        let inner = SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: relative_path.to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start_index: 0,
+                end_index: 1,
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 1, col: 22 },
+                validation_status: SecretValidationStatus::NotValidated,
+                is_suppressed: false,
+                is_filtered_by_ast: false,
+            }],
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(tmp.path()).unwrap();
+        let blob_oid = repo.blob(blob_content).unwrap();
+
+        let secret_result: SarifRuleResult =
+            SarifRuleResult::HistoricalSecret(HistoricalSecretResult {
+                inner,
+                introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
+                    .unwrap(),
+                removed_at_sha: None,
+                blob_oid,
+            });
+
+        let repository_directory = tmp.path().to_str().unwrap().to_string();
+        let report = generate_sarif_report(
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            &repository_directory,
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+                tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
+                split_runs_by_tool: false,
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        let emitted_fingerprint = report.runs[0].results.as_ref().unwrap()[0]
+            .partial_fingerprints
+            .as_ref()
+            .expect("partial fingerprints present")
+            .get(SARIF_PROPERTY_DATADOG_FINGERPRINT)
+            .expect("DATADOG_FINGERPRINT present")
+            .to_string();
+
+        let violation = Violation {
+            start: Position { line: 1, col: 1 },
+            end: Position { line: 1, col: 22 },
+            message: "some secret".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Security,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+        };
+        let expected_fingerprint = get_fingerprint_from_contents(
+            "secret-rule".to_string(),
+            &violation,
+            relative_path,
+            blob_content,
+        )
+        .expect("fingerprint for lossy-decoded blob");
+
+        assert_eq!(
+            emitted_fingerprint, expected_fingerprint,
+            "history fingerprint must match the lossy-decoded blob content"
         );
     }
 
