@@ -9,7 +9,9 @@ use cli::constants::{
 use cli::datadog_utils::{
     get_all_default_rulesets, get_rules_from_rulesets, get_secrets_rules, DatadogApiError,
 };
-use cli::file_utils::{read_files_from_gitignore, select_files, ProductFileSelection};
+use cli::file_utils::{
+    extend_path_config_ignores, read_files_from_gitignore, select_files, ProductFileSelection,
+};
 use cli::git_utils::{
     get_changed_files_between_shas, get_changed_files_with_branch, get_default_branch,
 };
@@ -234,7 +236,7 @@ fn main() -> Result<()> {
         .map(|value| value == "yes" || value == "true")
         .get_or_insert(env::var_os("DD_SA_DEBUG").is_some());
 
-    let mut path_config = PathConfig {
+    let mut sast_path_config = PathConfig {
         ignore: Vec::new(),
         only: None,
     };
@@ -337,8 +339,8 @@ fn main() -> Result<()> {
 
         // copy the only and ignore paths from the configuration file
         if let Some(pc) = conf.global_config.as_ref().and_then(|g| g.paths.as_ref()) {
-            path_config.ignore.extend_from_slice(&pc.ignore);
-            path_config.only = pc.only.clone();
+            sast_path_config.ignore.extend_from_slice(&pc.ignore);
+            sast_path_config.only = pc.only.clone();
         }
 
         // Get the max file size from the configuration or default to the default constant.
@@ -381,8 +383,6 @@ fn main() -> Result<()> {
         vec![]
     };
 
-    // Read .gitignore patterns once. Each product's `select_files` call below decides for
-    // itself (via `ignore_gitignore`) whether to apply them.
     let gitignore_patterns = read_files_from_gitignore(&directory_to_analyze).unwrap_or_else(|e| {
         eprintln!("Warning: error when reading .gitignore file: {}", e);
         eprintln!("Continuing without .gitignore patterns");
@@ -412,9 +412,15 @@ fn main() -> Result<()> {
         static_analysis_enabled,
         secrets_enabled,
     };
+    extend_path_config_ignores(
+        &mut sast_path_config,
+        &gitignore_patterns,
+        ignore_gitignore,
+        ignore_generated_files,
+    );
     let sast_config = SastConfiguration {
         ignore_gitignore,
-        path_config: path_config.clone(),
+        path_config: sast_path_config,
         rules_file: None,
         rules: rules.clone(),
         rule_config_provider,
@@ -447,6 +453,12 @@ fn main() -> Result<()> {
         .and_then(|c| c.global_config.as_ref())
         .and_then(|g| g.max_file_size_kb)
         .unwrap_or(DEFAULT_SECRETS_MAX_FILE_SIZE_KB);
+    extend_path_config_ignores(
+        &mut secrets_path_config,
+        &gitignore_patterns,
+        secrets_ignore_gitignore,
+        secrets_ignore_generated_files,
+    );
     let secrets_config = SecretsConfiguration {
         ignore_gitignore: secrets_ignore_gitignore,
         ignore_generated_files: secrets_ignore_generated_files,
@@ -519,11 +531,8 @@ fn main() -> Result<()> {
         select_files(
             &directory_to_analyze,
             &[],
-            &gitignore_patterns,
             &ProductFileSelection {
-                ignore_gitignore,
-                ignore_generated_files,
-                path_config: path_config.clone(),
+                path_config: sast_config.path_config.clone(),
                 max_file_size_kb: Some(max_file_size_kb),
             },
             use_debug,
@@ -536,10 +545,7 @@ fn main() -> Result<()> {
         select_files(
             &directory_to_analyze,
             &[],
-            &gitignore_patterns,
             &ProductFileSelection {
-                ignore_gitignore: secrets_config.ignore_gitignore,
-                ignore_generated_files: secrets_config.ignore_generated_files,
                 path_config: secrets_config.path_config.clone(),
                 max_file_size_kb: Some(secrets_config.max_file_size_kb),
             },

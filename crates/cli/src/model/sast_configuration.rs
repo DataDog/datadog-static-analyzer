@@ -1,3 +1,4 @@
+use crate::file_utils::ProductFileSelection;
 use crate::git_utils::{get_branch, ORIGIN};
 use crate::model::datadog_api::DiffAwareRequestArguments;
 use crate::model::run_configuration::RunConfiguration;
@@ -22,6 +23,15 @@ pub struct SastConfiguration {
     pub ignore_generated_files: bool,
     pub should_verify_checksum: bool,
     pub debug_java_dfa: bool,
+}
+
+impl SastConfiguration {
+    pub fn file_selection(&self) -> ProductFileSelection {
+        ProductFileSelection {
+            path_config: self.path_config.clone(),
+            max_file_size_kb: Some(self.max_file_size_kb),
+        }
+    }
 }
 
 /// Everything a static analysis run is configured by: the settings shared across products and

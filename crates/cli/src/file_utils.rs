@@ -98,38 +98,40 @@ pub fn get_files(
     Ok(files_to_return)
 }
 
-/// Per-product settings that determine which files a product analyzes. Each product (SAST,
-/// secrets) builds its own selection independently, so one product's settings can never
-/// silently affect another's file list.
 pub struct ProductFileSelection {
-    pub ignore_gitignore: bool,
-    pub ignore_generated_files: bool,
     pub path_config: PathConfig,
     pub max_file_size_kb: Option<u64>,
 }
 
-/// Build the final `PathConfig` for one product (base `path_config` plus conditionally
-/// gitignore patterns and `DEFAULT_IGNORED_GLOBS`), walk the tree with `get_files`, then
-/// apply file-size filtering (if configured for this product).
-pub fn select_files(
-    directory: &Path,
-    subdirectories_to_analyze: &[String],
+pub fn extend_path_config_ignores(
+    path_config: &mut PathConfig,
     gitignore_patterns: &[String],
-    selection: &ProductFileSelection,
-    use_debug: bool,
-) -> Result<Vec<PathBuf>> {
-    let mut path_config = selection.path_config.clone();
-    if !selection.ignore_gitignore {
+    ignore_gitignore: bool,
+    ignore_generated_files: bool,
+) {
+    if !ignore_gitignore {
         path_config
             .ignore
             .extend(gitignore_patterns.iter().map(|p| p.clone().into()));
     }
-    if selection.ignore_generated_files {
+    if ignore_generated_files {
         path_config
             .ignore
             .extend(DEFAULT_IGNORED_GLOBS.iter().map(|&p| p.to_string().into()));
     }
-    let files = get_files(directory, subdirectories_to_analyze.to_vec(), &path_config)?;
+}
+
+pub fn select_files(
+    directory: &Path,
+    subdirectories_to_analyze: &[String],
+    selection: &ProductFileSelection,
+    use_debug: bool,
+) -> Result<Vec<PathBuf>> {
+    let files = get_files(
+        directory,
+        subdirectories_to_analyze.to_vec(),
+        &selection.path_config,
+    )?;
     Ok(match selection.max_file_size_kb {
         Some(kb) => filter_files_by_size(&files, kb, use_debug),
         None => files,
@@ -694,95 +696,69 @@ mod tests {
         assert_not_contains_files!(&base_path, files, ["src/b/main.rs", "test/a/main.rs"]);
     }
 
-    // `select_files` respects the gitignore patterns it is given unless `ignore_gitignore` is set,
-    // in which case an ignored file is selected anyway.
     #[test]
-    fn select_files_honors_ignore_gitignore() {
-        let test_dir = TestDir::new();
-        test_dir.add_file("src/main.rs");
-        test_dir.add_file("ignored.rs");
-        let base_path = test_dir.base_path();
-        let gitignore_patterns = vec!["ignored.rs".to_string()];
+    fn test_extend_path_config_ignores_adds_gitignore_patterns() {
+        let mut path_config = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
 
-        let respects_gitignore = select_files(
-            base_path,
-            &[],
-            &gitignore_patterns,
-            &ProductFileSelection {
-                ignore_gitignore: false,
-                ignore_generated_files: false,
-                path_config: PathConfig::default(),
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(&base_path, respects_gitignore, ["src/main.rs"]);
-        assert_not_contains_files!(&base_path, respects_gitignore, ["ignored.rs"]);
+        let gitignore_patterns = vec!["ignore/**".to_string()];
 
-        let ignores_gitignore = select_files(
-            base_path,
-            &[],
-            &gitignore_patterns,
-            &ProductFileSelection {
-                ignore_gitignore: true,
-                ignore_generated_files: false,
-                path_config: PathConfig::default(),
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(&base_path, ignores_gitignore, ["src/main.rs", "ignored.rs"]);
+        extend_path_config_ignores(&mut path_config, &gitignore_patterns, false, false);
+
+        assert_eq!(
+            path_config.ignore,
+            vec![
+                "configured/**".to_string().into(),
+                "ignore/**".to_string().into()
+            ]
+        );
     }
 
-    // `select_files` excludes a file matching one of `DEFAULT_IGNORED_GLOBS` when
-    // `ignore_generated_files` is set, and selects it otherwise.
     #[test]
-    fn select_files_honors_ignore_generated_files() {
-        let test_dir = TestDir::new();
-        test_dir.add_file("src/main.rs");
-        test_dir.add_file("node_modules/pkg/index.js");
-        let base_path = test_dir.base_path();
+    fn test_extend_path_config_ignores_skips_gitignore_patterns() {
+        let expected = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
+        let mut path_config = expected.clone();
 
-        let excludes_generated = select_files(
-            base_path,
-            &[],
-            &[],
-            &ProductFileSelection {
-                ignore_gitignore: true,
-                ignore_generated_files: true,
-                path_config: PathConfig::default(),
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(&base_path, excludes_generated, ["src/main.rs"]);
-        assert_not_contains_files!(
-            &base_path,
-            excludes_generated,
-            ["node_modules/pkg/index.js"]
-        );
+        let gitignore_patterns = vec!["ignore/**".to_string()];
 
-        let includes_generated = select_files(
-            base_path,
-            &[],
-            &[],
-            &ProductFileSelection {
-                ignore_gitignore: true,
-                ignore_generated_files: false,
-                path_config: PathConfig::default(),
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(
-            &base_path,
-            includes_generated,
-            ["src/main.rs", "node_modules/pkg/index.js"]
-        );
+        extend_path_config_ignores(&mut path_config, &gitignore_patterns, true, false);
+
+        assert_eq!(path_config, expected);
+    }
+
+    #[test]
+    fn test_extend_path_config_ignores_adds_generated_file_patterns() {
+        let mut path_config = PathConfig::default();
+
+        let expected = PathConfig {
+            ignore: DEFAULT_IGNORED_GLOBS
+                .iter()
+                .map(|pattern| pattern.to_string().into())
+                .collect(),
+            only: None,
+        };
+
+        extend_path_config_ignores(&mut path_config, &[], true, true);
+
+        assert_eq!(path_config, expected);
+    }
+
+    #[test]
+    fn test_extend_path_config_ignores_skips_generated_file_patterns() {
+        let expected = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
+        let mut path_config = expected.clone();
+
+        extend_path_config_ignores(&mut path_config, &[], true, false);
+
+        assert_eq!(path_config, expected);
     }
 
     #[test]
