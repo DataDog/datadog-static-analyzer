@@ -80,7 +80,7 @@ const PHP_STRING_OR_COMMENT_NODE_KINDS: &[&str] = &[
     "string",
     "string_content",
     "encapsed_string",
-    "nowdoc_string",
+    "nowdoc_body",
     "heredoc",
     "heredoc_start",
     "heredoc_body",
