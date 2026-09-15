@@ -13,6 +13,7 @@ use kernel::config::file_v1;
 use kernel::model::rule::RuleInternal;
 use kernel::rule_config::RuleConfigProvider;
 use kernel::utils::decode_base64_string;
+use secrets::config::file_v1 as secrets_file_v1;
 use std::borrow::Borrow;
 use std::sync::Arc;
 use std::time::Duration;
@@ -139,6 +140,20 @@ pub fn process_analysis_request<T: Borrow<RuleInternal>>(
     );
 
     Ok(rule_responses)
+}
+
+/// Decodes an optional base64-encoded secrets configuration file.
+pub fn decode_secrets_configuration(
+    configuration_base64: Option<String>,
+) -> Result<Option<secrets_file_v1::ConfigFile>, String> {
+    let Some(config_b64) = configuration_base64 else {
+        return Ok(None);
+    };
+    let config = decode_base64_string(config_b64)
+        .map_err(|_| "Configuration is not valid base64".to_string())?;
+    let yaml = secrets_file_v1::parse_yaml(&config)
+        .map_err(|_| "Could not parse configuration".to_string())?;
+    Ok(Some(secrets_file_v1::ConfigFile::from(yaml)))
 }
 
 #[cfg(test)]
@@ -746,5 +761,47 @@ rulesets:
         assert_eq!(rule_responses.len(), 1);
         assert_eq!(rule_responses[0].errors.len(), 1);
         assert_eq!(rule_responses[0].errors[0], ERROR_RULE_TIMEOUT.to_string());
+    }
+
+    mod decode_secrets_configuration {
+        use super::super::decode_secrets_configuration;
+        use kernel::utils::encode_base64_string;
+
+        #[test]
+        fn none_returns_none() {
+            assert!(decode_secrets_configuration(None).unwrap().is_none());
+        }
+
+        #[test]
+        fn invalid_base64_is_rejected() {
+            let err =
+                decode_secrets_configuration(Some("not-valid-base64!!".to_string())).unwrap_err();
+            assert!(err.contains("base64"));
+        }
+
+        #[test]
+        fn invalid_yaml_is_rejected() {
+            let err =
+                decode_secrets_configuration(Some(encode_base64_string(":: not yaml".to_string())))
+                    .unwrap_err();
+            assert!(err.contains("parse"));
+        }
+
+        #[test]
+        fn valid_configuration_is_decoded() {
+            let config = "\
+schema-version: v1.6
+secrets:
+  experimental-ast-filter: true
+";
+            let configuration =
+                decode_secrets_configuration(Some(encode_base64_string(config.to_string())))
+                    .unwrap()
+                    .expect("configuration should be present");
+            assert!(configuration
+                .secrets()
+                .map(|s| s.experimental_ast_filter)
+                .unwrap_or(false));
+        }
     }
 }
