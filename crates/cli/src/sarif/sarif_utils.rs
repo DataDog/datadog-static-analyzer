@@ -100,6 +100,13 @@ impl SarifRule {
         format!("DATADOG_RULE_TYPE:{}", kind)
     }
 
+    fn severity_tag(&self) -> Option<String> {
+        match self {
+            SarifRule::StaticAnalysis(_) => None,
+            SarifRule::SecretRule(r) => Some(format!("DATADOG_SEVERITY:{}", r.priority)),
+        }
+    }
+
     fn is_testing(&self) -> bool {
         match self {
             SarifRule::StaticAnalysis(r) => r.is_testing,
@@ -650,6 +657,10 @@ fn generate_results(
                 // If there is a CWE, add it
                 if let Some(cwe) = rule.cwe() {
                     tags.push(format!("CWE:{}", cwe));
+                }
+
+                if let Some(severity_tag) = rule.severity_tag() {
+                    tags.push(severity_tag);
                 }
 
                 // If the rule is a test, add a tag
@@ -2116,6 +2127,7 @@ mod tests {
                       "properties": {
                         "tags": [
                           "DATADOG_CATEGORY:SECURITY",
+                          "DATADOG_SEVERITY:medium",
                           case.1,
                         ]
                       },
@@ -2427,6 +2439,92 @@ mod tests {
                 actual_level, expected_level,
                 "priority {:?} should map to {}",
                 priority, expected_level
+            );
+        }
+    }
+
+    #[test]
+    fn test_secret_severity_tag_carries_original_priority() {
+        // A DATADOG_SEVERITY tag must carry the rule's original severity, to avoid
+        // mapping 5 priority levels down to SARIF's 3 severity levels.
+        let priorities = [
+            (RulePriority::Info, "DATADOG_SEVERITY:info"),
+            (RulePriority::Low, "DATADOG_SEVERITY:low"),
+            (RulePriority::Medium, "DATADOG_SEVERITY:medium"),
+            (RulePriority::High, "DATADOG_SEVERITY:high"),
+            (RulePriority::Critical, "DATADOG_SEVERITY:critical"),
+        ];
+
+        for (priority, expected_tag) in priorities {
+            let rule = secrets::model::secret_rule::SecretRule {
+                id: "secret-rule".to_string(),
+                name: "secret-rule".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+                description: "secret-description".to_string(),
+                pattern: "foobarbaz".to_string(),
+                priority,
+                default_included_keywords: vec![],
+                default_excluded_keywords: vec![],
+                look_ahead_character_count: Some(30),
+                validators: Some(vec![]),
+                validators_v2: None,
+                match_validation: None,
+                pattern_capture_groups: vec![],
+                is_supporting_rule: false,
+            };
+            let secret_results = vec![SecretResult {
+                rule_id: rule.id.clone(),
+                rule_name: rule.name.clone(),
+                filename: "myfile.py".to_string(),
+                message: "some secret".to_string(),
+                priority,
+                matches: vec![SecretResultMatch {
+                    start_index: 0,
+                    end_index: 1,
+                    start: Position { line: 1, col: 1 },
+                    end: Position { line: 1, col: 5 },
+                    validation_status: SecretValidationStatus::Valid,
+                    is_suppressed: false,
+                    is_filtered_by_ast: false,
+                }],
+            }];
+            let sarif_secret_results = secret_results
+                .into_iter()
+                .map(SarifRuleResult::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)
+                .expect("getting results");
+
+            let sarif_report = generate_sarif_report(
+                &[rule.clone().into()],
+                &sarif_secret_results,
+                &"mydir".to_string(),
+                SarifReportMetadata {
+                    add_git_info: false,
+                    debug: false,
+                    config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                    diff_aware_parameters: None,
+                    execution_time_secs: 42,
+                    tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                    split_runs_by_tool: false,
+                },
+                &Default::default(),
+            )
+            .expect("generate sarif report");
+
+            let sarif_json = serde_json::to_value(&sarif_report).unwrap();
+            let tags = sarif_json["runs"][0]["results"][0]["properties"]["tags"]
+                .as_array()
+                .expect("sarif result should contain tags")
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+            assert!(
+                tags.contains(&expected_tag.to_string()),
+                "priority {:?} should produce tag {}, got {:?}",
+                priority,
+                expected_tag,
+                tags
             );
         }
     }
