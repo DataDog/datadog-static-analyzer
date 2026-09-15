@@ -124,6 +124,7 @@ const KOTLIN_STRING_OR_COMMENT_NODE_KINDS: &[&str] = &[
     "character_literal",
     "line_comment",
     "block_comment",
+    "multiline_comment",
 ];
 
 /// AST node kinds for Elixir: strings, charlists, sigils and their fragments, char literals,
