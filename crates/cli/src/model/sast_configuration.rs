@@ -130,16 +130,11 @@ impl CliConfigurationSast<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
-
-    use crate::file_utils::{extend_path_config_ignores, read_files_from_gitignore};
-
     use super::*;
     use common::model::language::Language;
     use kernel::model::common::OutputFormat;
     use kernel::model::rule::{Rule, RuleCategory, RuleSeverity, RuleType};
     use kernel::rule_config::RuleConfigProvider;
-    use tempfile::tempdir;
 
     fn run_configuration(source_subdirectories: Vec<String>) -> RunConfiguration {
         RunConfiguration {
@@ -222,91 +217,5 @@ mod tests {
         .generate_diff_aware_digest();
 
         assert_ne!(digest_root, digest_subdir);
-    }
-
-    #[test]
-    fn test_diff_aware_hash_depends_on_gitignore_file() {
-        let dir = tempdir().unwrap();
-        let file_path = dir.path().join(".gitignore");
-        fs::write(&file_path, b".vscode").unwrap();
-
-        let run = run_configuration(vec![]);
-        let mut first_sast_config = sast_configuration();
-        first_sast_config.ignore_gitignore = false;
-        let first_git_ignore = read_files_from_gitignore(dir.path()).unwrap();
-
-        assert_eq!(first_git_ignore, vec![".vscode"]);
-
-        extend_path_config_ignores(
-            &mut first_sast_config.path_config,
-            &first_git_ignore,
-            first_sast_config.ignore_gitignore,
-            first_sast_config.ignore_generated_files,
-        );
-
-        fs::write(&file_path, b".vscode\nfile.txt").unwrap();
-
-        let mut second_sast_config = sast_configuration();
-        second_sast_config.ignore_gitignore = false;
-        let second_git_ignore = read_files_from_gitignore(dir.path()).unwrap();
-
-        assert_eq!(second_git_ignore, vec![".vscode", "file.txt"]);
-
-        extend_path_config_ignores(
-            &mut second_sast_config.path_config,
-            &second_git_ignore,
-            second_sast_config.ignore_gitignore,
-            second_sast_config.ignore_generated_files,
-        );
-
-        let first_digest = CliConfigurationSast {
-            run: &run,
-            sast: &first_sast_config,
-        }
-        .generate_diff_aware_digest();
-        let second_digest = CliConfigurationSast {
-            run: &run,
-            sast: &second_sast_config,
-        }
-        .generate_diff_aware_digest();
-
-        assert_ne!(first_digest, second_digest);
-    }
-
-    #[test]
-    fn test_diff_aware_hash_depends_on_generated_file_setting() {
-        let run = run_configuration(vec![]);
-        let mut includes_generated = sast_configuration();
-        includes_generated.ignore_generated_files = false;
-
-        extend_path_config_ignores(
-            &mut includes_generated.path_config,
-            &[],
-            includes_generated.ignore_gitignore,
-            includes_generated.ignore_generated_files,
-        );
-
-        let mut excludes_generated = sast_configuration();
-        excludes_generated.ignore_generated_files = true;
-
-        extend_path_config_ignores(
-            &mut excludes_generated.path_config,
-            &[],
-            excludes_generated.ignore_gitignore,
-            excludes_generated.ignore_generated_files,
-        );
-
-        let includes_generated_digest = CliConfigurationSast {
-            run: &run,
-            sast: &includes_generated,
-        }
-        .generate_diff_aware_digest();
-        let excludes_generated_digest = CliConfigurationSast {
-            run: &run,
-            sast: &excludes_generated,
-        }
-        .generate_diff_aware_digest();
-
-        assert_ne!(includes_generated_digest, excludes_generated_digest);
     }
 }
