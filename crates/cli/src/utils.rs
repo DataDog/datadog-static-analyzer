@@ -60,7 +60,7 @@ pub fn print_run_configuration(run_config: &RunConfiguration) {
     );
     println!("output file               : {}", run_config.output_file);
     println!(
-        "static analysis enabled   :  {}",
+        "static analysis enabled   : {}",
         run_config.static_analysis_enabled
     );
     println!("secrets enabled           : {}", run_config.secrets_enabled);
