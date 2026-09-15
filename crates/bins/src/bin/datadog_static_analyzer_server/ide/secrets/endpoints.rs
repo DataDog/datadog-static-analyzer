@@ -2,7 +2,6 @@ use super::models::{ScanSecretsRequest, ScanSecretsResponse};
 use crate::SECRET_SCANNER_CACHE;
 use cli::model::datadog_api::SecretRuleApiType;
 use common::analysis_options::AnalysisOptions;
-use kernel::utils::decode_base64_string;
 use rocket::serde::json::{json, Json, Value};
 use secrets::model::secret_result::SecretResult;
 use secrets::model::secret_rule::SecretRule;
@@ -58,16 +57,8 @@ fn scan(request: ScanSecretsRequest) -> Result<Vec<SecretResult>, String> {
     };
 
     // Decode the configuration, if present.
-    let configuration = if let Some(config_b64) = request.configuration_base64.clone() {
-        let config = decode_base64_string(config_b64)
-            .map_err(|_| "Configuration is not valid base64".to_string())?;
-        let yaml = secrets::config::file_v1::parse_yaml(&config)
-            .map_err(|_| "Could not parse configuration".to_string())?;
-
-        Some(secrets::config::file_v1::ConfigFile::from(yaml))
-    } else {
-        None
-    };
+    let configuration =
+        server::request::decode_secrets_configuration(request.configuration_base64)?;
 
     let should_filter_using_ast = configuration
         .as_ref()

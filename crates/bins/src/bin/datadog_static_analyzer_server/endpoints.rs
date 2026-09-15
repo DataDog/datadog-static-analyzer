@@ -5,7 +5,6 @@ use crate::datadog_static_analyzer_server::fairings::TraceSpan;
 use crate::datadog_static_analyzer_server::rule_cache::cached_analysis_request;
 use crate::{RAYON_POOL, RULE_CACHE, SECRET_SCANNER_CACHE, V8_PLATFORM};
 use kernel::analysis::ddsa_lib::JsRuntime;
-use kernel::utils::decode_base64_string;
 use rocket::{
     fs::NamedFile,
     futures::FutureExt,
@@ -179,16 +178,8 @@ fn process_secret_scan_request(
     }
 
     // Decode the configuration, if present.
-    let configuration = if let Some(config_b64) = request.configuration_base64.clone() {
-        let config = decode_base64_string(config_b64)
-            .map_err(|_| "Configuration is not valid base64".to_string())?;
-        let yaml = secrets::config::file_v1::parse_yaml(&config)
-            .map_err(|_| "Could not parse configuration".to_string())?;
-
-        Some(secrets::config::file_v1::ConfigFile::from(yaml))
-    } else {
-        None
-    };
+    let configuration =
+        server::request::decode_secrets_configuration(request.configuration_base64)?;
 
     let should_filter_using_ast = configuration
         .as_ref()
