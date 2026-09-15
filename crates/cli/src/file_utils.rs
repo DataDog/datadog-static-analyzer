@@ -806,96 +806,68 @@ mod tests {
     }
 
     #[test]
-    fn select_files_honors_ignore_gitignore() {
-        let test_dir = TestDir::new();
-        test_dir.add_file("src/main.rs");
-        test_dir.add_file("ignored.rs");
-        let base_path = test_dir.base_path();
-        let gitignore_patterns = vec!["ignored.rs".to_string()];
-        let mut respects_gitignore_path_config = PathConfig::default();
-        extend_path_config_ignores(
-            &mut respects_gitignore_path_config,
-            &gitignore_patterns,
-            false,
-            false,
-        );
+    fn test_extend_path_config_ignores_adds_gitignore_patterns() {
+        let mut path_config = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
 
-        let respects_gitignore = select_files(
-            base_path,
-            &[],
-            &ProductFileSelection {
-                path_config: respects_gitignore_path_config,
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(&base_path, respects_gitignore, ["src/main.rs"]);
-        assert_not_contains_files!(&base_path, respects_gitignore, ["ignored.rs"]);
+        let gitignore_patterns = vec!["ignore/**".to_string()];
 
-        let mut ignores_gitignore_path_config = PathConfig::default();
-        extend_path_config_ignores(
-            &mut ignores_gitignore_path_config,
-            &gitignore_patterns,
-            true,
-            false,
+        extend_path_config_ignores(&mut path_config, &gitignore_patterns, false, false);
+
+        assert_eq!(
+            path_config.ignore,
+            vec![
+                "configured/**".to_string().into(),
+                "ignore/**".to_string().into()
+            ]
         );
-        let ignores_gitignore = select_files(
-            base_path,
-            &[],
-            &ProductFileSelection {
-                path_config: ignores_gitignore_path_config,
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(&base_path, ignores_gitignore, ["src/main.rs", "ignored.rs"]);
     }
 
     #[test]
-    fn select_files_honors_ignore_generated_files() {
-        let test_dir = TestDir::new();
-        test_dir.add_file("src/main.rs");
-        test_dir.add_file("node_modules/pkg/index.js");
-        let base_path = test_dir.base_path();
+    fn test_extend_path_config_ignores_skips_gitignore_patterns() {
+        let expected = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
+        let mut path_config = expected.clone();
 
-        let mut excludes_generated_path_config = PathConfig::default();
-        extend_path_config_ignores(&mut excludes_generated_path_config, &[], true, true);
-        let excludes_generated = select_files(
-            base_path,
-            &[],
-            &ProductFileSelection {
-                path_config: excludes_generated_path_config,
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(&base_path, excludes_generated, ["src/main.rs"]);
-        assert_not_contains_files!(
-            &base_path,
-            excludes_generated,
-            ["node_modules/pkg/index.js"]
-        );
+        let gitignore_patterns = vec!["ignore/**".to_string()];
 
-        let mut includes_generated_path_config = PathConfig::default();
-        extend_path_config_ignores(&mut includes_generated_path_config, &[], true, false);
-        let includes_generated = select_files(
-            base_path,
-            &[],
-            &ProductFileSelection {
-                path_config: includes_generated_path_config,
-                max_file_size_kb: None,
-            },
-            false,
-        )
-        .unwrap();
-        assert_contains_files!(
-            &base_path,
-            includes_generated,
-            ["src/main.rs", "node_modules/pkg/index.js"]
-        );
+        extend_path_config_ignores(&mut path_config, &gitignore_patterns, true, false);
+
+        assert_eq!(path_config, expected);
+    }
+
+    #[test]
+    fn test_extend_path_config_ignores_adds_generated_file_patterns() {
+        let mut path_config = PathConfig::default();
+
+        let expected = PathConfig {
+            ignore: DEFAULT_IGNORED_GLOBS
+                .iter()
+                .map(|pattern| pattern.to_string().into())
+                .collect(),
+            only: None,
+        };
+
+        extend_path_config_ignores(&mut path_config, &[], true, true);
+
+        assert_eq!(path_config, expected);
+    }
+
+    #[test]
+    fn test_extend_path_config_ignores_skips_generated_file_patterns() {
+        let expected = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
+        let mut path_config = expected.clone();
+
+        extend_path_config_ignores(&mut path_config, &[], true, false);
+
+        assert_eq!(path_config, expected);
     }
 
     #[test]
