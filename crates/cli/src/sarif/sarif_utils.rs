@@ -4,7 +4,7 @@ use std::rc::Rc;
 
 use crate::constants::{
     DEFAULT_TOOL_NAME, SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_IS_GIT_HISTORY_ONLY,
-    SARIF_PROPERTY_REMOVED_AT_SHA, SARIF_PROPERTY_SHA, SECRETS_HISTORY_TOOL_NAME,
+    SARIF_PROPERTY_REMOVED_AT_SHA, SARIF_PROPERTY_SHA,
 };
 use anyhow::Result;
 use base64::Engine;
@@ -54,10 +54,6 @@ pub struct SarifReportMetadata {
     pub diff_aware_parameters: Option<DiffAwareData>,
     pub execution_time_secs: u64,
     pub tool_name: String,
-    /// When true, static-analysis and secrets findings are emitted as separate SARIF runs (each
-    /// under its own tool driver name). When false, they share a single concatenated run. This is
-    /// independent of `tool_name`, which only sets the driver label.
-    pub split_runs_by_tool: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -1044,59 +1040,69 @@ pub fn generate_sarif_file(
             .map(SarifRuleResult::HistoricalSecret),
     );
 
-    // In normal mode both kinds of findings share a single concatenated run. In git-history mode
-    // the caller requests split runs so static-analysis and historic-secret findings are each
-    // attributed to their own tool driver.
-    let report = if !sarif_report_metadata.split_runs_by_tool {
-        generate_sarif_report(
-            &[static_rules_sarif, secrets_rules_sarif].concat(),
-            &[static_analysis_results, secret_results].concat(),
-            &run_config.source_directory,
-            sarif_report_metadata,
-            path_metadata,
-        )?
-    } else {
-        merge_sarif_runs(
-            &static_rules_sarif,
-            &static_analysis_results,
-            &secrets_rules_sarif,
-            &secret_results,
-            &run_config.source_directory,
-            &sarif_report_metadata,
-            path_metadata,
-        )?
-    };
+    let report = merge_sarif_runs(
+        &static_rules_sarif,
+        &static_analysis_results,
+        run_config.static_analysis_enabled,
+        &secrets_rules_sarif,
+        &secret_results,
+        run_config.secrets_enabled,
+        &run_config.source_directory,
+        &sarif_report_metadata,
+        path_metadata,
+    )?;
 
     Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
 }
 
-/// Builds a SARIF report with up to two runs: a static-analysis run named [`DEFAULT_TOOL_NAME`]
-/// and a historic-secrets run named [`SECRETS_HISTORY_TOOL_NAME`]. A group with no results is
-/// skipped so we never emit an empty run.
+/// Builds a SARIF report with one run per enabled product.
+#[allow(clippy::too_many_arguments)]
 fn merge_sarif_runs(
     static_rules: &[SarifRule],
     static_results: &[SarifRuleResult],
+    static_enabled: bool,
     secrets_rules: &[SarifRule],
     secret_results: &[SarifRuleResult],
+    secrets_enabled: bool,
     source_directory: &String,
     base_metadata: &SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<Sarif> {
     let groups = [
-        (static_rules, static_results, DEFAULT_TOOL_NAME),
-        (secrets_rules, secret_results, SECRETS_HISTORY_TOOL_NAME),
+        (
+            static_rules,
+            static_results,
+            static_enabled,
+            DEFAULT_TOOL_NAME,
+            "STATIC_ANALYSIS",
+        ),
+        (
+            secrets_rules,
+            secret_results,
+            secrets_enabled,
+            base_metadata.tool_name.as_str(),
+            "SECRET",
+        ),
     ];
 
     let mut runs = vec![];
-    for (rules, results, tool_name) in groups {
-        if results.is_empty() {
+    for (rules, results, enabled, tool_name, run_type) in groups {
+        if !enabled {
             continue;
         }
         let mut metadata = base_metadata.clone();
         metadata.tool_name = tool_name.to_string();
         let report =
             generate_sarif_report(rules, results, source_directory, metadata, path_metadata)?;
-        runs.extend(report.runs);
+        for mut run in report.runs {
+            if let Some(properties) = run.tool.driver.properties.as_mut() {
+                properties
+                    .tags
+                    .get_or_insert_with(Vec::new)
+                    .push(format!("DATADOG_RUN_TYPE:{}", run_type));
+            }
+            runs.push(run);
+        }
     }
 
     Ok(SarifBuilder::default()
@@ -1328,7 +1334,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1470,7 +1475,6 @@ mod tests {
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
                     tool_name: name.to_string(),
-                    split_runs_by_tool: false,
                 },
                 &Default::default(),
             )
@@ -1486,11 +1490,12 @@ mod tests {
         }
     }
 
-    /// A git-history report keeps static-analysis and historic-secret findings in two separate
-    /// runs, each named after its own tool. A group with no results is not emitted. Normal mode
-    /// keeps everything in a single `datadog-static-analyzer` run.
+    /// `merge_sarif_runs` always keeps static-analysis and secrets findings in two separate runs.
+    /// A product that is not enabled for the scan is skipped entirely; an enabled product always
+    /// gets its own run and its own `DATADOG_RUN_TYPE` tag, even when it has no rules or
+    /// results at all.
     #[test]
-    fn test_git_history_report_splits_runs_by_tool() {
+    fn test_merge_sarif_runs_by_tool_and_enablement() {
         let static_rule: SarifRule = RuleBuilder::default()
             .name("my-rule".to_string())
             .description_base64(None)
@@ -1584,7 +1589,11 @@ mod tests {
             diff_aware_parameters: None,
             execution_time_secs: 42,
             tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
-            split_runs_by_tool: true,
+        };
+
+        let live_metadata = || SarifReportMetadata {
+            tool_name: DEFAULT_TOOL_NAME.to_string(),
+            ..base_metadata()
         };
 
         let run_tool_names = |report: &Sarif| -> Vec<String> {
@@ -1595,16 +1604,33 @@ mod tests {
                 .collect()
         };
 
+        let run_type_tags = |report: &Sarif, run_index: usize| -> Vec<String> {
+            report.runs[run_index]
+                .tool
+                .driver
+                .properties
+                .as_ref()
+                .and_then(|p| p.tags.as_ref())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| t.starts_with("DATADOG_RUN_TYPE:"))
+                .collect()
+        };
+
         let tmp = tempfile::tempdir().unwrap();
         git2::Repository::init(tmp.path()).unwrap();
         let repo_dir = tmp.path().to_str().unwrap().to_string();
 
-        // Both kinds present -> two runs, each named after its own tool.
+        // Both kinds enabled and populated -> two runs, each named after its own tool and
+        // tagged with its own report type.
         let report = merge_sarif_runs(
             std::slice::from_ref(&static_rule),
             std::slice::from_ref(&static_result),
+            true,
             std::slice::from_ref(&secret_rule),
             std::slice::from_ref(&secret_result),
+            true,
             &repo_dir,
             &base_metadata(),
             &Default::default(),
@@ -1613,35 +1639,66 @@ mod tests {
         let names = run_tool_names(&report);
         assert_eq!(names.len(), 2);
         assert!(names.iter().any(|n| n == DEFAULT_TOOL_NAME));
-        assert!(names.iter().any(|n| n == SECRETS_HISTORY_TOOL_NAME));
+        assert!(names
+            .iter()
+            .any(|n| n == crate::constants::SECRETS_HISTORY_TOOL_NAME));
         assert!(validate_data(&serde_json::to_value(&report).unwrap()));
 
-        // Only historic secrets present -> a single secrets-history run (empty static group is skipped).
+        // Only secrets enabled -> a single SARIF run
         let report = merge_sarif_runs(
             &[],
             &[],
+            false,
             std::slice::from_ref(&secret_rule),
             std::slice::from_ref(&secret_result),
+            true,
             &repo_dir,
             &base_metadata(),
             &Default::default(),
         )
         .expect("merge sarif runs");
-        assert_eq!(run_tool_names(&report), vec![SECRETS_HISTORY_TOOL_NAME]);
+        assert_eq!(
+            run_tool_names(&report),
+            vec![crate::constants::SECRETS_HISTORY_TOOL_NAME]
+        );
+        assert_eq!(
+            run_type_tags(&report, 0),
+            vec!["DATADOG_RUN_TYPE:SECRET".to_string()]
+        );
 
-        // Normal mode keeps everything under a single default-named run.
-        let report = generate_sarif_report(
-            &[static_rule, secret_rule],
-            &[static_result, secret_result],
+        // Secrets enabled but with no rules and no results -> a secrets run must still be emitted.
+        let report = merge_sarif_runs(
+            std::slice::from_ref(&static_rule),
+            std::slice::from_ref(&static_result),
+            true,
+            &[],
+            &[],
+            true,
             &repo_dir,
-            SarifReportMetadata {
-                tool_name: DEFAULT_TOOL_NAME.to_string(),
-                ..base_metadata()
-            },
+            &live_metadata(),
             &Default::default(),
         )
-        .expect("generate sarif report");
-        assert_eq!(run_tool_names(&report), vec![DEFAULT_TOOL_NAME]);
+        .expect("merge sarif runs");
+        assert_eq!(
+            run_tool_names(&report),
+            vec![DEFAULT_TOOL_NAME, DEFAULT_TOOL_NAME]
+        );
+        assert_eq!(
+            run_type_tags(&report, 0),
+            vec!["DATADOG_RUN_TYPE:STATIC_ANALYSIS".to_string()]
+        );
+        assert_eq!(
+            run_type_tags(&report, 1),
+            vec!["DATADOG_RUN_TYPE:SECRET".to_string()]
+        );
+        assert!(report.runs[1]
+            .tool
+            .driver
+            .rules
+            .as_ref()
+            .unwrap()
+            .is_empty());
+        assert!(report.runs[1].results.as_ref().unwrap().is_empty());
     }
 
     /// A history-only secret (whose file/line no longer exist at HEAD) must still
@@ -1713,7 +1770,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1824,7 +1880,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1881,7 +1936,6 @@ mod tests {
                 diff_aware_parameters: Some(diff_aware_infos),
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -1980,7 +2034,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -2091,7 +2144,6 @@ mod tests {
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
                     tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                    split_runs_by_tool: false,
                 },
                 &Default::default(),
             )
@@ -2233,7 +2285,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -2327,7 +2378,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -2425,7 +2475,6 @@ mod tests {
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
                     tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                    split_runs_by_tool: false,
                 },
                 &Default::default(),
             )
@@ -2506,7 +2555,6 @@ mod tests {
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
                     tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                    split_runs_by_tool: false,
                 },
                 &Default::default(),
             )
@@ -2599,7 +2647,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -2667,7 +2714,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -2767,7 +2813,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &path_metadata,
         )
@@ -2872,7 +2917,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 0,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )
@@ -3024,7 +3068,6 @@ mod tests {
                 diff_aware_parameters: None,
                 execution_time_secs: 0,
                 tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
-                split_runs_by_tool: false,
             },
             &Default::default(),
         )

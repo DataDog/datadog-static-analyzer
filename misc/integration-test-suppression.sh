@@ -142,8 +142,9 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
-# DD_API_KEY on line 4 must appear in SARIF with a suppressions property
-suppressed_secret=$(jq '[.runs[0].results[] | select(.suppressions != null and (.suppressions | length) > 0) | select(.locations[0].physicalLocation.region.startLine == 4)] | length' "${SECRETS_SARIF}")
+# DD_API_KEY on line 4 must appear in SARIF with a suppressions property. Static analysis and
+# secrets are separate runs, so search across all of them rather than assuming an index.
+suppressed_secret=$(jq '[.runs[].results[] | select(.suppressions != null and (.suppressions | length) > 0) | select(.locations[0].physicalLocation.region.startLine == 4)] | length' "${SECRETS_SARIF}")
 if [ "${suppressed_secret}" -lt 1 ]; then
   echo "FAIL: expected suppressed secret on line 4 to appear in SARIF with suppressions property, got ${suppressed_secret}"
   exit 1
@@ -151,7 +152,7 @@ fi
 echo "PASS: suppressed secret (line 4) is present in SARIF with suppressions property"
 
 # DD_API_KEY on line 4 must NOT appear as a non-suppressed result
-unsuppressed_secret_line4=$(jq '[.runs[0].results[] | select(.suppressions == null or (.suppressions | length) == 0) | select(.locations[0].physicalLocation.region.startLine == 4)] | length' "${SECRETS_SARIF}")
+unsuppressed_secret_line4=$(jq '[.runs[].results[] | select(.suppressions == null or (.suppressions | length) == 0) | select(.locations[0].physicalLocation.region.startLine == 4)] | length' "${SECRETS_SARIF}")
 if [ "${unsuppressed_secret_line4}" -ne 0 ]; then
   echo "FAIL: suppressed secret on line 4 should not appear as non-suppressed in SARIF, got ${unsuppressed_secret_line4}"
   exit 1
