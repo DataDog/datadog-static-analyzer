@@ -555,8 +555,8 @@ mod tests {
     #[test]
     fn test_swift_keeps_match_in_multiline_string_literal() {
         let code = "let token = \"\"\"\nAKIAABCDEFGHIJKLMNOP\n\"\"\"";
-        // "AKIAABCDEFGHIJKLMNOP" starts right after the opening triple quote and newline, at byte 17.
-        let result = make_result(17, 37);
+        // "AKIAABCDEFGHIJKLMNOP" starts right after the opening triple quote and newline, at byte 16.
+        let result = make_result(16, 36);
         let filtered = filter_secrets_for_ast(vec![result], code, &Language::Swift);
         assert_eq!(filtered.len(), 1);
         assert!(!filtered[0].matches[0].is_filtered_by_ast);
