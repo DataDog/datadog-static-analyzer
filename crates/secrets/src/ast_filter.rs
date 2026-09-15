@@ -86,7 +86,6 @@ const PHP_STRING_OR_COMMENT_NODE_KINDS: &[&str] = &[
     "heredoc_body",
     "heredoc_end",
     "text_interpolation",
-    "text",
     "comment",
 ];
 
