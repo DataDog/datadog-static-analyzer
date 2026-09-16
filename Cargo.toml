@@ -11,6 +11,7 @@ resolver = "2"
 
 [workspace.package]
 version = "0.9.7"
+# NOTE: Do not use 1.x.x unless you 100% know what you are doing. Bump from 0.9.9 -> 0.9.10 
 
 [profile.release]
 lto = true
