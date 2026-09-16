@@ -1,0 +1,33 @@
+name: Check the crate version does not roll over to 1.0.0
+
+on:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "Cargo.toml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+
+jobs:
+  version-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Ensure major version is 0
+        run: |
+          VERSION=$(grep -m1 '^version' Cargo.toml | sed -E 's/version = "(.*)"/\1/')
+          MAJOR=$(echo "$VERSION" | cut -d. -f1)
+
+          echo "Detected version: $VERSION"
+
+          if [[ "$MAJOR" != "0" ]]; then
+            echo "::error::Version '$VERSION' has a major version of $MAJOR. "\
+            "This repo has historically used a \"patch rollover\" technique (e.g. bumping 0.8.9 -> 0.9.0). "\
+            "Releasing a major 1 (1.0.0) has significant consequences for clients that treat this version as SemVer. "\
+            "Thus, if you are updating from 0.9.9, you should use 0.9.10. "\
+            "Only delete this CI job to bump to 1.0.0 if you 100% know what you are doing."
+            exit 1
+          fi
