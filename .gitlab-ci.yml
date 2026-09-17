@@ -59,7 +59,7 @@ trigger_internal_image:
   only:
     - main
   trigger:
-    project: DataDog/images
+    project: ddoghq/images
     branch: ${DD_IMAGES_BRANCH}
     strategy: depend
   variables:
