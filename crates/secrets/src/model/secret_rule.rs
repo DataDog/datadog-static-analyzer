@@ -455,6 +455,26 @@ impl SecretRuleValidator {
     }
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Default)]
+pub struct SecretRuleSuppressions {
+    #[serde(default)]
+    pub starts_with: Vec<String>,
+    #[serde(default)]
+    pub ends_with: Vec<String>,
+    #[serde(default)]
+    pub exact_match: Vec<String>,
+}
+
+impl From<SecretRuleSuppressions> for dd_sds::Suppressions {
+    fn from(v: SecretRuleSuppressions) -> Self {
+        dd_sds::Suppressions {
+            starts_with: v.starts_with,
+            ends_with: v.ends_with,
+            exact_match: v.exact_match,
+        }
+    }
+}
+
 // This is the secret rule exposed by SDS
 #[derive(Clone, Deserialize, Debug, Serialize, Eq, PartialEq)]
 pub struct SecretRule {
@@ -473,6 +493,8 @@ pub struct SecretRule {
     pub pattern_capture_groups: Vec<String>,
     #[serde(default)]
     pub is_supporting_rule: bool,
+    #[serde(default)]
+    pub suppressions: Option<SecretRuleSuppressions>,
 }
 
 impl SecretRule {
@@ -539,6 +561,10 @@ impl SecretRule {
             } else if use_debug {
                 eprintln!("invalid validation: {:?}", match_validation);
             }
+        }
+
+        if let Some(suppressions) = &self.suppressions {
+            rule_config = rule_config.suppressions(suppressions.clone().into());
         }
 
         rule_config
@@ -632,6 +658,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec!["sds_match".to_string()],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         // Validates that convert_to_sds_ruleconfig doesn't panic and returns a valid config.

@@ -401,6 +401,7 @@ mod secret_scan_tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
         serde_json::value::RawValue::from_string(serde_json::to_string(&rule).unwrap()).unwrap()
     }

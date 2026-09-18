@@ -466,6 +466,7 @@ mod git_history_tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
         let run_config = RunConfiguration {
             use_debug: false,
