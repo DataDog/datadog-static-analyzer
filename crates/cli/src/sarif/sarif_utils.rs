@@ -2,12 +2,15 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 use std::rc::Rc;
 
-use crate::constants::{SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_SHA};
+use crate::constants::{
+    DEFAULT_TOOL_NAME, SARIF_PROPERTY_DATADOG_FINGERPRINT, SARIF_PROPERTY_IS_GIT_HISTORY_ONLY,
+    SARIF_PROPERTY_REMOVED_AT_SHA, SARIF_PROPERTY_SHA,
+};
 use anyhow::Result;
 use base64::Engine;
 use common::model::position::Position;
 use common::model::position::PositionBuilder;
-use git2::{BlameOptions, Repository};
+use git2::{BlameOptions, Oid, Repository};
 use kernel::classifiers::ArtifactClassification;
 use kernel::constants::CARGO_VERSION;
 use kernel::model::rule::{RuleCategory, RuleSeverity};
@@ -27,9 +30,10 @@ use serde_sarif::sarif::{
     SarifBuilder, SuppressionBuilder, Tool, ToolBuilder, ToolComponent, ToolComponentBuilder,
 };
 
-use crate::file_utils::get_fingerprint_for_violation;
-use crate::model::cli_configuration::CliConfiguration;
+use crate::file_utils::{get_fingerprint_for_violation, get_fingerprint_from_contents};
 use crate::model::datadog_api::DiffAwareData;
+use crate::model::sast_configuration::CliConfigurationSast;
+use crate::model::secrets_configuration::CliConfigurationSecrets;
 use crate::rule_utils::map_priority_to_severity;
 use crate::sarif::sarif_utils::SarifViolation::{Secret, StaticAnalysis};
 
@@ -42,12 +46,14 @@ trait IntoSarif {
 /// The `SarifReportMetadata` structure contains all metadata being added to the sarif report.
 /// Those metadata is being added as property is being used to enhance the generation
 /// of the SARIF report.
+#[derive(Clone)]
 pub struct SarifReportMetadata {
     pub add_git_info: bool,
     pub debug: bool,
     pub config_digest: String,
     pub diff_aware_parameters: Option<DiffAwareData>,
     pub execution_time_secs: u64,
+    pub tool_name: String,
 }
 
 #[derive(Debug, Clone)]
@@ -90,6 +96,13 @@ impl SarifRule {
         format!("DATADOG_RULE_TYPE:{}", kind)
     }
 
+    fn severity_tag(&self) -> Option<String> {
+        match self {
+            SarifRule::StaticAnalysis(_) => None,
+            SarifRule::SecretRule(r) => Some(format!("DATADOG_SEVERITY:{}", r.priority)),
+        }
+    }
+
     fn is_testing(&self) -> bool {
         match self {
             SarifRule::StaticAnalysis(r) => r.is_testing,
@@ -119,6 +132,21 @@ impl From<SecretRule> for SarifRule {
     fn from(value: SecretRule) -> Self {
         Self::SecretRule(Box::new(value))
     }
+}
+
+/// A secret found only in git history. Wraps the base [`SecretResult`] with the
+/// commits that introduced and (optionally) removed it. Owned by the SARIF layer
+/// so the `secrets` model stays free of git-history concepts. `introducing_commit_sha`
+/// is non-optional: a `HistoricalSecretResult` is only built once the introducing
+/// commit is known.
+///
+/// `blob_oid` is the OID of the historical blob the secret was matched in.
+#[derive(Debug, Clone)]
+pub struct HistoricalSecretResult {
+    pub inner: SecretResult,
+    pub introducing_commit_sha: Oid,
+    pub removed_at_sha: Option<Oid>,
+    pub blob_oid: Oid,
 }
 
 /// Generic representation of a violation for both static analysis and secrets
@@ -164,6 +192,38 @@ impl SarifViolation {
 pub enum SarifRuleResult {
     StaticAnalysis(RuleResult),
     Secret(SecretResult),
+    HistoricalSecret(HistoricalSecretResult),
+}
+
+/// Build the per-match [`SarifViolation`]s for a secret result (HEAD or historical).
+fn secret_violations(secret_result: &SecretResult) -> Vec<SarifViolation> {
+    secret_result
+        .matches
+        .iter()
+        .map(|r| {
+            let severity = match &r.validation_status {
+                SecretValidationStatus::NotValidated => RuleSeverity::Notice,
+                SecretValidationStatus::Valid => RuleSeverity::Error,
+                SecretValidationStatus::Invalid => RuleSeverity::None,
+                SecretValidationStatus::ValidationError(_) => RuleSeverity::Warning,
+                SecretValidationStatus::NotAvailable => RuleSeverity::Error,
+            };
+
+            Secret(
+                Violation {
+                    start: r.start,
+                    end: r.end,
+                    message: secret_result.message.clone(),
+                    severity,
+                    category: RuleCategory::Security,
+                    fixes: vec![],
+                    taint_flow: None,
+                    is_suppressed: r.is_suppressed,
+                },
+                r.validation_status.clone(),
+            )
+        })
+        .collect::<Vec<SarifViolation>>()
 }
 
 impl SarifRuleResult {
@@ -174,33 +234,8 @@ impl SarifRuleResult {
                 .iter()
                 .map(|v| StaticAnalysis(v.clone()))
                 .collect::<Vec<SarifViolation>>(),
-            SarifRuleResult::Secret(secret_result) => secret_result
-                .matches
-                .iter()
-                .map(|r| {
-                    let severity = match &r.validation_status {
-                        SecretValidationStatus::NotValidated => RuleSeverity::Notice,
-                        SecretValidationStatus::Valid => RuleSeverity::Error,
-                        SecretValidationStatus::Invalid => RuleSeverity::None,
-                        SecretValidationStatus::ValidationError(_) => RuleSeverity::Warning,
-                        SecretValidationStatus::NotAvailable => RuleSeverity::Error,
-                    };
-
-                    Secret(
-                        Violation {
-                            start: r.start,
-                            end: r.end,
-                            message: secret_result.message.clone(),
-                            severity,
-                            category: RuleCategory::Security,
-                            fixes: vec![],
-                            taint_flow: None,
-                            is_suppressed: r.is_suppressed,
-                        },
-                        r.validation_status.clone(),
-                    )
-                })
-                .collect::<Vec<SarifViolation>>(),
+            SarifRuleResult::Secret(secret_result) => secret_violations(secret_result),
+            SarifRuleResult::HistoricalSecret(h) => secret_violations(&h.inner),
         }
     }
 
@@ -209,6 +244,7 @@ impl SarifRuleResult {
         match self {
             SarifRuleResult::StaticAnalysis(r) => &r.filename,
             SarifRuleResult::Secret(r) => &r.filename,
+            SarifRuleResult::HistoricalSecret(h) => &h.inner.filename,
         }
     }
 
@@ -217,6 +253,7 @@ impl SarifRuleResult {
         as_slash_path(match self {
             SarifRuleResult::StaticAnalysis(r) => &r.filename,
             SarifRuleResult::Secret(r) => &r.filename,
+            SarifRuleResult::HistoricalSecret(h) => &h.inner.filename,
         })
     }
 
@@ -224,6 +261,7 @@ impl SarifRuleResult {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
             SarifRuleResult::Secret(r) => r.rule_name.as_str(),
+            SarifRuleResult::HistoricalSecret(h) => h.inner.rule_name.as_str(),
         }
     }
 
@@ -231,6 +269,7 @@ impl SarifRuleResult {
         match self {
             SarifRuleResult::StaticAnalysis(r) => r.rule_name.as_str(),
             SarifRuleResult::Secret(r) => r.rule_id.as_str(),
+            SarifRuleResult::HistoricalSecret(h) => h.inner.rule_id.as_str(),
         }
     }
 }
@@ -271,6 +310,7 @@ pub struct SarifGenerationOptions {
     pub diff_aware_parameters: Option<DiffAwareData>,
     pub repository_directory: String,
     pub execution_time_secs: u64,
+    pub tool_name: String,
 }
 
 impl IntoSarif for &SecretRule {
@@ -465,7 +505,7 @@ fn generate_tool_section(rules: &[SarifRule], options: &SarifGenerationOptions) 
     }
 
     let driver: ToolComponent = ToolComponentBuilder::default()
-        .name("datadog-static-analyzer")
+        .name(options.tool_name.as_str())
         .version(CARGO_VERSION)
         .information_uri("https://www.datadoghq.com")
         .rules(
@@ -615,6 +655,10 @@ fn generate_results(
                     tags.push(format!("CWE:{}", cwe));
                 }
 
+                if let Some(severity_tag) = rule.severity_tag() {
+                    tags.push(severity_tag);
+                }
+
                 // If the rule is a test, add a tag
                 if rule.is_testing() {
                     tags.push("DATADOG_TESTING:true".to_string());
@@ -727,25 +771,44 @@ fn generate_results(
                         .transpose();
                     let taint_code_flow = taint_code_flow?;
 
-                    let sha_option = if options.add_git_info {
-                        get_sha_for_line(
+                    // For historical findings, use the introducing commit SHA
+                    // instead of git blame (file may not exist at HEAD).
+                    let historical = match rule_result {
+                        SarifRuleResult::HistoricalSecret(h) => Some(h),
+                        _ => None,
+                    };
+
+                    let sha_option = match historical {
+                        Some(h) => Some(h.introducing_commit_sha.to_string()),
+                        None if options.add_git_info => get_sha_for_line(
                             &rule_result.slash_path_str(),
                             violation.start.line as usize,
                             &options,
-                        )
-                    } else {
-                        None
+                        ),
+                        None => None,
                     };
 
-                    let fingerprint_option = get_fingerprint_for_violation(
-                        rule_result.rule_name().to_string(),
-                        violation,
-                        Path::new(options.repository_directory.as_str()),
-                        Path::new(rule_result.slash_path_str().as_ref()),
-                        options.debug,
-                    );
+                    let fingerprint_option = match historical {
+                        Some(h) => options.git_repo.as_ref().and_then(|repo| {
+                            let odb = repo.odb().ok()?;
+                            let blob = odb.read(h.blob_oid).ok()?;
+                            get_fingerprint_from_contents(
+                                rule_result.rule_name().to_string(),
+                                violation,
+                                rule_result.slash_path_str().as_ref(),
+                                blob.data(),
+                            )
+                        }),
+                        None => get_fingerprint_for_violation(
+                            rule_result.rule_name().to_string(),
+                            violation,
+                            Path::new(options.repository_directory.as_str()),
+                            Path::new(rule_result.slash_path_str().as_ref()),
+                            options.debug,
+                        ),
+                    };
 
-                    let partial_fingerprints: BTreeMap<String, String> =
+                    let mut partial_fingerprints: BTreeMap<String, String> =
                         match (sha_option, fingerprint_option) {
                             (Some(sha), Some(fp)) => BTreeMap::from([
                                 (SARIF_PROPERTY_SHA.to_string(), sha),
@@ -760,6 +823,19 @@ fn generate_results(
                             }
                             _ => BTreeMap::new(),
                         };
+
+                    if let Some(h) = historical {
+                        partial_fingerprints.insert(
+                            SARIF_PROPERTY_IS_GIT_HISTORY_ONLY.to_string(),
+                            "true".to_string(),
+                        );
+                        if let Some(removed_at) = h.removed_at_sha {
+                            partial_fingerprints.insert(
+                                SARIF_PROPERTY_REMOVED_AT_SHA.to_string(),
+                                removed_at.to_string(),
+                            );
+                        }
+                    }
 
                     let mut sarif_result = result_builder.clone();
 
@@ -867,9 +943,14 @@ pub fn generate_sarif_report(
     tool_information: SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<Sarif> {
-    // if we enable git info, we are then getting the repository object. We put that
-    // into an `Arc` object to be able to clone the object.
-    let repository: Option<Rc<Repository>> = if tool_information.add_git_info {
+    // Open the repository when git info is requested (for violation SHAs) or when
+    // there are history-only secrets, whose fingerprints are derived by re-reading
+    // their blob from the object database.
+    let repository: Option<Rc<Repository>> = if tool_information.add_git_info
+        || rules_results
+            .iter()
+            .any(|r| matches!(r, SarifRuleResult::HistoricalSecret(_)))
+    {
         let repo = Repository::open(directory.as_str());
         if repo.is_err() {
             eprintln!("Invalid Git repository in {}", directory);
@@ -888,6 +969,7 @@ pub fn generate_sarif_report(
         diff_aware_parameters: tool_information.diff_aware_parameters.clone(),
         repository_directory: directory.clone(),
         execution_time_secs: tool_information.execution_time_secs,
+        tool_name: tool_information.tool_name.clone(),
     };
 
     let artifacts_kv = extract_artifacts(
@@ -910,21 +992,29 @@ pub fn generate_sarif_report(
         .build()?)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn generate_sarif_file(
-    configuration: &CliConfiguration,
+    sast_cli_config: CliConfigurationSast<'_>,
+    secrets_cli_config: CliConfigurationSecrets<'_>,
     static_analysis_rule_results: Vec<RuleResult>,
     secrets_rule_results: Vec<SecretResult>,
+    historic_secret_results: Vec<HistoricalSecretResult>,
     sarif_report_metadata: SarifReportMetadata,
     path_metadata: &HashMap<String, ArtifactClassification>,
 ) -> Result<String> {
-    let static_rules_sarif: Vec<SarifRule> = configuration
+    // Both bundles borrow the same run configuration, so use either
+    // sast_cli_config.run or secrets_cli_config.run.
+    let run_config = sast_cli_config.run;
+    let sast_config = sast_cli_config.sast;
+    let secrets_config = secrets_cli_config.secrets;
+    let static_rules_sarif: Vec<SarifRule> = sast_config
         .rules
         .iter()
         .cloned()
         .map(|r| r.into())
         .collect();
-    let secrets_rules_sarif: Vec<SarifRule> = configuration
-        .secrets_rules
+    let secrets_rules_sarif: Vec<SarifRule> = secrets_config
+        .rules
         .clone()
         .into_iter()
         .map(|r| r.into())
@@ -934,24 +1024,91 @@ pub fn generate_sarif_file(
         .map(SarifRuleResult::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
-    let secret_results = secrets_rule_results
+    let mut secret_results = secrets_rule_results
         .into_iter()
+        .map(|mut r| {
+            r.matches.retain(|m| !m.is_filtered_by_ast);
+            r
+        })
         .map(SarifRuleResult::try_from)
         .collect::<Result<Vec<_>, _>>()
         .map_err(anyhow::Error::msg)?;
+    // Historic secrets share the secrets run/rules; they carry their own commit provenance.
+    secret_results.extend(
+        historic_secret_results
+            .into_iter()
+            .map(SarifRuleResult::HistoricalSecret),
+    );
 
-    match generate_sarif_report(
-        &[static_rules_sarif, secrets_rules_sarif].concat(),
-        &[static_analysis_results, secret_results].concat(),
-        &configuration.source_directory,
-        sarif_report_metadata,
+    let report = merge_sarif_runs(
+        &static_rules_sarif,
+        &static_analysis_results,
+        run_config.static_analysis_enabled,
+        &secrets_rules_sarif,
+        &secret_results,
+        run_config.secrets_enabled,
+        &run_config.source_directory,
+        &sarif_report_metadata,
         path_metadata,
-    ) {
-        Ok(report) => {
-            Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
+    )?;
+
+    Ok(serde_json::to_string(&report).expect("error when getting the SARIF report"))
+}
+
+/// Builds a SARIF report with one run per enabled product.
+#[allow(clippy::too_many_arguments)]
+fn merge_sarif_runs(
+    static_rules: &[SarifRule],
+    static_results: &[SarifRuleResult],
+    static_enabled: bool,
+    secrets_rules: &[SarifRule],
+    secret_results: &[SarifRuleResult],
+    secrets_enabled: bool,
+    source_directory: &String,
+    base_metadata: &SarifReportMetadata,
+    path_metadata: &HashMap<String, ArtifactClassification>,
+) -> Result<Sarif> {
+    let groups = [
+        (
+            static_rules,
+            static_results,
+            static_enabled,
+            DEFAULT_TOOL_NAME,
+            "STATIC_ANALYSIS",
+        ),
+        (
+            secrets_rules,
+            secret_results,
+            secrets_enabled,
+            base_metadata.tool_name.as_str(),
+            "SECRET",
+        ),
+    ];
+
+    let mut runs = vec![];
+    for (rules, results, enabled, tool_name, run_type) in groups {
+        if !enabled {
+            continue;
         }
-        Err(err) => Err(err),
+        let mut metadata = base_metadata.clone();
+        metadata.tool_name = tool_name.to_string();
+        let report =
+            generate_sarif_report(rules, results, source_directory, metadata, path_metadata)?;
+        for mut run in report.runs {
+            if let Some(properties) = run.tool.driver.properties.as_mut() {
+                properties
+                    .tags
+                    .get_or_insert_with(Vec::new)
+                    .push(format!("DATADOG_RUN_TYPE:{}", run_type));
+            }
+            runs.push(run);
+        }
     }
+
+    Ok(SarifBuilder::default()
+        .version("2.1.0")
+        .runs(runs)
+        .build()?)
 }
 
 /// Returns the file path for this result as a slash path, a path whose components are.
@@ -964,10 +1121,10 @@ fn as_slash_path(path_str: &str) -> std::borrow::Cow<'_, str> {
 mod tests {
     use super::*;
     use assert_json_diff::{assert_json_eq, assert_json_include};
+    use common::model::language::Language;
     use common::model::position::{Position, PositionBuilder, Region};
     use kernel::model::violation::{Fix, Violation};
     use kernel::model::{
-        common::Language,
         rule::{RuleBuilder, RuleCategory, RuleResultBuilder, RuleSeverity, RuleType},
         violation::{EditBuilder, EditType, FixBuilder as RosieFixBuilder, ViolationBuilder},
     };
@@ -1176,6 +1333,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -1298,6 +1456,470 @@ mod tests {
         assert!(validate_data(&sarif_report_to_string));
     }
 
+    // The `tool_name` from the report metadata is surfaced as the SARIF tool driver name.
+    // This is what lets a git-history scan produce a distinctly-named report.
+    #[test]
+    fn test_tool_driver_name_from_metadata() {
+        for name in [
+            crate::constants::DEFAULT_TOOL_NAME,
+            crate::constants::SECRETS_HISTORY_TOOL_NAME,
+        ] {
+            let sarif_report = generate_sarif_report(
+                &[],
+                &vec![],
+                &"mydir".to_string(),
+                SarifReportMetadata {
+                    add_git_info: false,
+                    debug: false,
+                    config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                    diff_aware_parameters: None,
+                    execution_time_secs: 42,
+                    tool_name: name.to_string(),
+                },
+                &Default::default(),
+            )
+            .expect("generate sarif report");
+
+            let sarif_json = serde_json::to_value(sarif_report).unwrap();
+            assert_eq!(
+                sarif_json
+                    .pointer("/runs/0/tool/driver/name")
+                    .and_then(|v| v.as_str()),
+                Some(name)
+            );
+        }
+    }
+
+    /// `merge_sarif_runs` always keeps static-analysis and secrets findings in two separate runs.
+    /// A product that is not enabled for the scan is skipped entirely; an enabled product always
+    /// gets its own run and its own `DATADOG_RUN_TYPE` tag, even when it has no rules or
+    /// results at all.
+    #[test]
+    fn test_merge_sarif_runs_by_tool_and_enablement() {
+        let static_rule: SarifRule = RuleBuilder::default()
+            .name("my-rule".to_string())
+            .description_base64(None)
+            .language(Language::Python)
+            .checksum("blabla".to_string())
+            .pattern(None)
+            .tree_sitter_query_base64(None)
+            .category(RuleCategory::BestPractices)
+            .code_base64("Zm9vYmFyYmF6".to_string())
+            .short_description_base64(None)
+            .entity_checked(None)
+            .rule_type(RuleType::TreeSitterQuery)
+            .severity(RuleSeverity::Error)
+            .cwe(None)
+            .arguments(vec![])
+            .tests(vec![])
+            .is_testing(false)
+            .documentation_url(None)
+            .build()
+            .unwrap()
+            .into();
+        let static_result: SarifRuleResult = RuleResultBuilder::default()
+            .rule_name("my-rule".to_string())
+            .filename("myfile.py".to_string())
+            .violations(vec![ViolationBuilder::default()
+                .start(PositionBuilder::default().line(1).col(2).build().unwrap())
+                .end(PositionBuilder::default().line(3).col(4).build().unwrap())
+                .message("violation message".to_string())
+                .severity(RuleSeverity::Error)
+                .category(RuleCategory::BestPractices)
+                .fixes(vec![])
+                .taint_flow(None)
+                .build()
+                .unwrap()])
+            .output(None)
+            .errors(vec![])
+            .execution_time_ms(0)
+            .parsing_time_ms(0)
+            .query_node_time_ms(0)
+            .execution_error(None)
+            .build()
+            .unwrap()
+            .try_into()
+            .unwrap();
+
+        let secret_rule: SarifRule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: None,
+        }
+        .into();
+        let secret_result: SarifRuleResult =
+            SarifRuleResult::HistoricalSecret(HistoricalSecretResult {
+                inner: SecretResult {
+                    rule_id: "secret-rule".to_string(),
+                    rule_name: "secret-rule".to_string(),
+                    filename: "myfile.py".to_string(),
+                    message: "some secret".to_string(),
+                    priority: RulePriority::Medium,
+                    matches: vec![SecretResultMatch {
+                        start: Position { line: 1, col: 1 },
+                        end: Position { line: 2, col: 2 },
+                        start_index: 0,
+                        end_index: 1,
+                        validation_status: SecretValidationStatus::NotValidated,
+                        is_suppressed: false,
+                        is_filtered_by_ast: false,
+                    }],
+                },
+                introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
+                    .unwrap(),
+                removed_at_sha: None,
+                blob_oid: Oid::zero(),
+            });
+
+        let base_metadata = || SarifReportMetadata {
+            add_git_info: false,
+            debug: false,
+            config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+            diff_aware_parameters: None,
+            execution_time_secs: 42,
+            tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
+        };
+
+        let live_metadata = || SarifReportMetadata {
+            tool_name: DEFAULT_TOOL_NAME.to_string(),
+            ..base_metadata()
+        };
+
+        let run_tool_names = |report: &Sarif| -> Vec<String> {
+            report
+                .runs
+                .iter()
+                .map(|r| r.tool.driver.name.clone())
+                .collect()
+        };
+
+        let run_type_tags = |report: &Sarif, run_index: usize| -> Vec<String> {
+            report.runs[run_index]
+                .tool
+                .driver
+                .properties
+                .as_ref()
+                .and_then(|p| p.tags.as_ref())
+                .cloned()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|t| t.starts_with("DATADOG_RUN_TYPE:"))
+                .collect()
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        git2::Repository::init(tmp.path()).unwrap();
+        let repo_dir = tmp.path().to_str().unwrap().to_string();
+
+        // Both kinds enabled and populated -> two runs, each named after its own tool and
+        // tagged with its own report type.
+        let report = merge_sarif_runs(
+            std::slice::from_ref(&static_rule),
+            std::slice::from_ref(&static_result),
+            true,
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            true,
+            &repo_dir,
+            &base_metadata(),
+            &Default::default(),
+        )
+        .expect("merge sarif runs");
+        let names = run_tool_names(&report);
+        assert_eq!(names.len(), 2);
+        assert!(names.iter().any(|n| n == DEFAULT_TOOL_NAME));
+        assert!(names
+            .iter()
+            .any(|n| n == crate::constants::SECRETS_HISTORY_TOOL_NAME));
+        assert!(validate_data(&serde_json::to_value(&report).unwrap()));
+
+        // Only secrets enabled -> a single SARIF run
+        let report = merge_sarif_runs(
+            &[],
+            &[],
+            false,
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            true,
+            &repo_dir,
+            &base_metadata(),
+            &Default::default(),
+        )
+        .expect("merge sarif runs");
+        assert_eq!(
+            run_tool_names(&report),
+            vec![crate::constants::SECRETS_HISTORY_TOOL_NAME]
+        );
+        assert_eq!(
+            run_type_tags(&report, 0),
+            vec!["DATADOG_RUN_TYPE:SECRET".to_string()]
+        );
+
+        // Secrets enabled but with no rules and no results -> a secrets run must still be emitted.
+        let report = merge_sarif_runs(
+            std::slice::from_ref(&static_rule),
+            std::slice::from_ref(&static_result),
+            true,
+            &[],
+            &[],
+            true,
+            &repo_dir,
+            &live_metadata(),
+            &Default::default(),
+        )
+        .expect("merge sarif runs");
+        assert_eq!(
+            run_tool_names(&report),
+            vec![DEFAULT_TOOL_NAME, DEFAULT_TOOL_NAME]
+        );
+        assert_eq!(
+            run_type_tags(&report, 0),
+            vec!["DATADOG_RUN_TYPE:STATIC_ANALYSIS".to_string()]
+        );
+        assert_eq!(
+            run_type_tags(&report, 1),
+            vec!["DATADOG_RUN_TYPE:SECRET".to_string()]
+        );
+        assert!(report.runs[1]
+            .tool
+            .driver
+            .rules
+            .as_ref()
+            .unwrap()
+            .is_empty());
+        assert!(report.runs[1].results.as_ref().unwrap().is_empty());
+    }
+
+    /// A history-only secret (whose file/line no longer exist at HEAD) must still
+    /// get a non-empty `DATADOG_FINGERPRINT`, computed from the historical blob
+    /// content, and that fingerprint must be byte-for-byte identical to the one the
+    /// HEAD path would compute for the same rule, path and line content.
+    #[test]
+    fn test_history_only_secret_gets_fingerprint_from_blob() {
+        let secret_line = "api_key = \"foobarbaz\"";
+        let blob_content = format!("{secret_line}\nsome other line\n");
+        let relative_path = "config/secrets.py";
+
+        let secret_rule: SarifRule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: None,
+        }
+        .into();
+
+        let inner = SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: relative_path.to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start_index: 0,
+                end_index: 1,
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 1, col: 22 },
+                validation_status: SecretValidationStatus::NotValidated,
+                is_suppressed: false,
+                is_filtered_by_ast: false,
+            }],
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(tmp.path()).unwrap();
+        let blob_oid = repo.blob(blob_content.as_bytes()).unwrap();
+
+        let secret_result: SarifRuleResult =
+            SarifRuleResult::HistoricalSecret(HistoricalSecretResult {
+                inner,
+                introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
+                    .unwrap(),
+                removed_at_sha: None,
+                blob_oid,
+            });
+
+        let repository_directory = tmp.path().to_str().unwrap().to_string();
+        let report = generate_sarif_report(
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            &repository_directory,
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+                tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        let emitted_fingerprint = report.runs[0].results.as_ref().unwrap()[0]
+            .partial_fingerprints
+            .as_ref()
+            .expect("partial fingerprints present")
+            .get(SARIF_PROPERTY_DATADOG_FINGERPRINT)
+            .expect("DATADOG_FINGERPRINT present")
+            .to_string();
+        assert!(
+            !emitted_fingerprint.is_empty(),
+            "history-only secret must get a non-empty fingerprint"
+        );
+
+        let file_path = tmp.path().join(relative_path);
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, &blob_content).unwrap();
+        let violation = Violation {
+            start: Position { line: 1, col: 1 },
+            end: Position { line: 1, col: 22 },
+            message: "some secret".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Security,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+        };
+        let expected_fingerprint = get_fingerprint_for_violation(
+            "secret-rule".to_string(),
+            &violation,
+            tmp.path(),
+            Path::new(relative_path),
+            false,
+        )
+        .expect("HEAD fingerprint for reference content");
+
+        assert_eq!(
+            emitted_fingerprint, expected_fingerprint,
+            "history fingerprint must match the HEAD algorithm for identical rule/path/line"
+        );
+    }
+
+    #[test]
+    fn test_history_only_secret_non_utf8_blob_gets_fingerprint() {
+        let relative_path = "config/secrets.py";
+        // "café" encoded as Latin-1: the 'é' (0xE9) is not valid UTF-8 on its own.
+        let blob_content: &[u8] = b"api_key = \"caf\xe9\"\nsome other line\n";
+
+        let secret_rule: SarifRule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: None,
+        }
+        .into();
+
+        let inner = SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: relative_path.to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![SecretResultMatch {
+                start_index: 0,
+                end_index: 1,
+                start: Position { line: 1, col: 1 },
+                end: Position { line: 1, col: 22 },
+                validation_status: SecretValidationStatus::NotValidated,
+                is_suppressed: false,
+                is_filtered_by_ast: false,
+            }],
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = git2::Repository::init(tmp.path()).unwrap();
+        let blob_oid = repo.blob(blob_content).unwrap();
+
+        let secret_result: SarifRuleResult =
+            SarifRuleResult::HistoricalSecret(HistoricalSecretResult {
+                inner,
+                introducing_commit_sha: Oid::from_str("abc1230000000000000000000000000000000000")
+                    .unwrap(),
+                removed_at_sha: None,
+                blob_oid,
+            });
+
+        let repository_directory = tmp.path().to_str().unwrap().to_string();
+        let report = generate_sarif_report(
+            std::slice::from_ref(&secret_rule),
+            std::slice::from_ref(&secret_result),
+            &repository_directory,
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 42,
+                tool_name: crate::constants::SECRETS_HISTORY_TOOL_NAME.to_string(),
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif report");
+
+        let emitted_fingerprint = report.runs[0].results.as_ref().unwrap()[0]
+            .partial_fingerprints
+            .as_ref()
+            .expect("partial fingerprints present")
+            .get(SARIF_PROPERTY_DATADOG_FINGERPRINT)
+            .expect("DATADOG_FINGERPRINT present")
+            .to_string();
+
+        let violation = Violation {
+            start: Position { line: 1, col: 1 },
+            end: Position { line: 1, col: 22 },
+            message: "some secret".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Security,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+        };
+        let expected_fingerprint = get_fingerprint_from_contents(
+            "secret-rule".to_string(),
+            &violation,
+            relative_path,
+            blob_content,
+        )
+        .expect("fingerprint for lossy-decoded blob");
+
+        assert_eq!(
+            emitted_fingerprint, expected_fingerprint,
+            "history fingerprint must match the lossy-decoded blob content"
+        );
+    }
+
     // Ensure that diff-aware scanning information are correctly surfaced
     #[test]
     fn test_generate_sarif_diff_aware_scanning() {
@@ -1316,6 +1938,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: Some(diff_aware_infos),
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -1413,6 +2036,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -1496,10 +2120,13 @@ mod tests {
                 message: "some secret".to_string(),
                 priority: RulePriority::Medium,
                 matches: vec![SecretResultMatch {
+                    start_index: 0,
+                    end_index: 1,
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 2, col: 2 },
                     validation_status: case.0,
                     is_suppressed: false,
+                    is_filtered_by_ast: false,
                 }],
             }];
 
@@ -1520,6 +2147,7 @@ mod tests {
                     config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
+                    tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
                 },
                 &Default::default(),
             )
@@ -1555,6 +2183,7 @@ mod tests {
                       "properties": {
                         "tags": [
                           "DATADOG_CATEGORY:SECURITY",
+                          "DATADOG_SEVERITY:medium",
                           case.1,
                         ]
                       },
@@ -1629,6 +2258,8 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
+                start_index: 0,
+                end_index: 1,
                 validation_status: SecretValidationStatus::ValidationError(vec![
                     ValidationErrorInfo {
                         error_type: ValidationErrorType::HttpError,
@@ -1637,6 +2268,7 @@ mod tests {
                     },
                 ]),
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         }];
 
@@ -1657,6 +2289,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -1717,6 +2350,8 @@ mod tests {
             message: "some secret".to_string(),
             priority: RulePriority::Medium,
             matches: vec![SecretResultMatch {
+                start_index: 0,
+                end_index: 1,
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
                 validation_status: SecretValidationStatus::ValidationError(vec![
@@ -1727,6 +2362,7 @@ mod tests {
                     },
                 ]),
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         }];
 
@@ -1747,6 +2383,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -1818,10 +2455,13 @@ mod tests {
                 message: "some secret".to_string(),
                 priority,
                 matches: vec![SecretResultMatch {
+                    start_index: 0,
+                    end_index: 1,
                     start: Position { line: 1, col: 1 },
                     end: Position { line: 1, col: 5 },
                     validation_status: SecretValidationStatus::Valid,
                     is_suppressed: false,
+                    is_filtered_by_ast: false,
                 }],
             }];
             let sarif_secret_results = secret_results
@@ -1841,6 +2481,7 @@ mod tests {
                     config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                     diff_aware_parameters: None,
                     execution_time_secs: 42,
+                    tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
                 },
                 &Default::default(),
             )
@@ -1854,6 +2495,92 @@ mod tests {
                 actual_level, expected_level,
                 "priority {:?} should map to {}",
                 priority, expected_level
+            );
+        }
+    }
+
+    #[test]
+    fn test_secret_severity_tag_carries_original_priority() {
+        // A DATADOG_SEVERITY tag must carry the rule's original severity, to avoid
+        // mapping 5 priority levels down to SARIF's 3 severity levels.
+        let priorities = [
+            (RulePriority::Info, "DATADOG_SEVERITY:info"),
+            (RulePriority::Low, "DATADOG_SEVERITY:low"),
+            (RulePriority::Medium, "DATADOG_SEVERITY:medium"),
+            (RulePriority::High, "DATADOG_SEVERITY:high"),
+            (RulePriority::Critical, "DATADOG_SEVERITY:critical"),
+        ];
+
+        for (priority, expected_tag) in priorities {
+            let rule = secrets::model::secret_rule::SecretRule {
+                id: "secret-rule".to_string(),
+                name: "secret-rule".to_string(),
+                sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+                description: "secret-description".to_string(),
+                pattern: "foobarbaz".to_string(),
+                priority,
+                default_included_keywords: vec![],
+                default_excluded_keywords: vec![],
+                look_ahead_character_count: Some(30),
+                validators: Some(vec![]),
+                validators_v2: None,
+                match_validation: None,
+                pattern_capture_groups: vec![],
+                is_supporting_rule: false,
+                suppressions: None,
+            };
+            let secret_results = vec![SecretResult {
+                rule_id: rule.id.clone(),
+                rule_name: rule.name.clone(),
+                filename: "myfile.py".to_string(),
+                message: "some secret".to_string(),
+                priority,
+                matches: vec![SecretResultMatch {
+                    start_index: 0,
+                    end_index: 1,
+                    start: Position { line: 1, col: 1 },
+                    end: Position { line: 1, col: 5 },
+                    validation_status: SecretValidationStatus::Valid,
+                    is_suppressed: false,
+                    is_filtered_by_ast: false,
+                }],
+            }];
+            let sarif_secret_results = secret_results
+                .into_iter()
+                .map(SarifRuleResult::try_from)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(anyhow::Error::msg)
+                .expect("getting results");
+
+            let sarif_report = generate_sarif_report(
+                &[rule.clone().into()],
+                &sarif_secret_results,
+                &"mydir".to_string(),
+                SarifReportMetadata {
+                    add_git_info: false,
+                    debug: false,
+                    config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                    diff_aware_parameters: None,
+                    execution_time_secs: 42,
+                    tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+                },
+                &Default::default(),
+            )
+            .expect("generate sarif report");
+
+            let sarif_json = serde_json::to_value(&sarif_report).unwrap();
+            let tags = sarif_json["runs"][0]["results"][0]["properties"]["tags"]
+                .as_array()
+                .expect("sarif result should contain tags")
+                .iter()
+                .map(|v| v.as_str().unwrap().to_string())
+                .collect::<Vec<_>>();
+            assert!(
+                tags.contains(&expected_tag.to_string()),
+                "priority {:?} should produce tag {}, got {:?}",
+                priority,
+                expected_tag,
+                tags
             );
         }
     }
@@ -1927,6 +2654,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -1993,6 +2721,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -2091,6 +2820,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 42,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &path_metadata,
         )
@@ -2154,6 +2884,8 @@ mod tests {
             matches: vec![SecretResultMatch {
                 start: Position { line: 1, col: 1 },
                 end: Position { line: 2, col: 2 },
+                start_index: 0,
+                end_index: 1,
                 validation_status: SecretValidationStatus::ValidationError(vec![
                     ValidationErrorInfo {
                         error_type: ValidationErrorType::HttpError,
@@ -2172,6 +2904,7 @@ mod tests {
                     },
                 ]),
                 is_suppressed: false,
+                is_filtered_by_ast: false,
             }],
         }];
 
@@ -2192,6 +2925,7 @@ mod tests {
                 config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
                 diff_aware_parameters: None,
                 execution_time_secs: 0,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
             },
             &Default::default(),
         )
@@ -2235,5 +2969,135 @@ mod tests {
         // validate the schema
         let sarif_json = serde_json::to_value(sarif_report).unwrap();
         assert!(validate_data(&sarif_json));
+    }
+
+    #[test]
+    fn test_generate_sarif_file_drops_matches_filtered_by_ast() {
+        use crate::model::run_configuration::RunConfiguration;
+        use crate::model::sast_configuration::SastConfiguration;
+        use crate::model::secrets_configuration::SecretsConfiguration;
+        use kernel::model::common::OutputFormat;
+        use kernel::rule_config::RuleConfigProvider;
+
+        let run = RunConfiguration {
+            use_debug: false,
+            configuration_method: None,
+            source_directory: "mydir".to_string(),
+            source_subdirectories: vec![],
+            output_format: OutputFormat::Sarif,
+            output_file: String::new(),
+            num_cpus: 1,
+            use_staging: false,
+            static_analysis_enabled: false,
+            secrets_enabled: true,
+        };
+        let sast = SastConfiguration {
+            ignore_gitignore: true,
+            path_config: Default::default(),
+            rules_file: None,
+            rules: vec![],
+            rule_config_provider: RuleConfigProvider::default(),
+            max_file_size_kb: 1,
+            show_performance_statistics: false,
+            ignore_generated_files: false,
+            should_verify_checksum: true,
+            debug_java_dfa: false,
+        };
+        let rule = secrets::model::secret_rule::SecretRule {
+            id: "secret-rule".to_string(),
+            name: "secret-rule".to_string(),
+            sds_id: "71A7A0ED-DD03-45C5-9C2E-56B30CB566E0".to_string(),
+            description: "secret-description".to_string(),
+            pattern: "foobarbaz".to_string(),
+            priority: RulePriority::Medium,
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: None,
+        };
+        let secrets_config = SecretsConfiguration {
+            ignore_gitignore: true,
+            ignore_generated_files: false,
+            path_config: Default::default(),
+            rules: vec![rule],
+            max_file_size_kb: 1,
+            ast_filter: true,
+        };
+
+        // One match is kept (not filtered by AST), the other is dropped from the report because
+        // it was flagged as filtered by the AST-based post-filter.
+        let secret_results = vec![SecretResult {
+            rule_id: "secret-rule".to_string(),
+            rule_name: "secret-rule".to_string(),
+            filename: "myfile.js".to_string(),
+            message: "some secret".to_string(),
+            priority: RulePriority::Medium,
+            matches: vec![
+                SecretResultMatch {
+                    start: Position { line: 3, col: 5 },
+                    end: Position { line: 3, col: 15 },
+                    start_index: 0,
+                    end_index: 1,
+                    validation_status: SecretValidationStatus::NotValidated,
+                    is_suppressed: false,
+                    is_filtered_by_ast: false,
+                },
+                SecretResultMatch {
+                    start: Position { line: 8, col: 2 },
+                    end: Position { line: 9, col: 4 },
+                    start_index: 0,
+                    end_index: 1,
+                    validation_status: SecretValidationStatus::NotValidated,
+                    is_suppressed: false,
+                    is_filtered_by_ast: true,
+                },
+            ],
+        }];
+
+        let sarif_str = generate_sarif_file(
+            CliConfigurationSast {
+                run: &run,
+                sast: &sast,
+            },
+            CliConfigurationSecrets {
+                run: &run,
+                secrets: &secrets_config,
+            },
+            vec![],
+            secret_results,
+            vec![],
+            SarifReportMetadata {
+                add_git_info: false,
+                debug: false,
+                config_digest: "5d7273dec32b80788b4d3eac46c866f0".to_string(),
+                diff_aware_parameters: None,
+                execution_time_secs: 0,
+                tool_name: crate::constants::DEFAULT_TOOL_NAME.to_string(),
+            },
+            &Default::default(),
+        )
+        .expect("generate sarif file");
+
+        let sarif_json: Value = serde_json::from_str(&sarif_str).unwrap();
+        let results = sarif_json["runs"][0]["results"].as_array().unwrap();
+        assert_eq!(results.len(), 1);
+
+        // The kept match's position (line 3, cols 5-15) is the one reported...
+        let region = &results[0]["locations"][0]["physicalLocation"]["region"];
+        assert_eq!(region["startLine"], 3);
+        assert_eq!(region["startColumn"], 5);
+        assert_eq!(region["endLine"], 3);
+        assert_eq!(region["endColumn"], 15);
+
+        // ...while the AST-filtered match's position (line 8-9, cols 2/4) never shows up.
+        assert_ne!(region["startLine"], 8);
+        assert_ne!(region["startColumn"], 2);
+        assert_ne!(region["endLine"], 9);
+        assert_ne!(region["endColumn"], 4);
     }
 }

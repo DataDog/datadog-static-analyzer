@@ -8,6 +8,8 @@ pub struct ScanSecretsRequest {
     pub rules: Vec<Box<serde_json::value::RawValue>>,
     #[serde(default)]
     pub use_debug: bool,
+    #[serde(rename = "configuration")]
+    pub configuration_base64: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

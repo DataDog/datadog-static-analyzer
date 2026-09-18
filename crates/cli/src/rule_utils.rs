@@ -1,6 +1,6 @@
-use crate::model::cli_configuration::CliConfiguration;
+use crate::model::sast_configuration::SastConfiguration;
 use anyhow::{anyhow, Context, Result};
-use kernel::model::common::Language;
+use common::model::language::Language;
 use kernel::model::rule::{Rule, RuleCategory, RuleInternal, RuleResult, RuleSeverity};
 use kernel::model::ruleset::RuleSet;
 use kernel::model::violation::Violation;
@@ -71,7 +71,7 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
         violations: secret_result
             .matches
             .iter()
-            .filter(|v| !v.is_suppressed)
+            .filter(|v| v.is_reportable())
             .map(|v| Violation {
                 start: v.start,
                 end: v.end,
@@ -89,12 +89,12 @@ pub fn convert_secret_result_to_rule_result(secret_result: &SecretResult) -> Rul
 /// Utility function to convert rules to rules internal.
 /// Print the time to convert if the performance statistics switch is enabled.
 pub fn convert_rules_to_rules_internal(
-    configuration: &CliConfiguration,
+    sast_config: &SastConfiguration,
     language: &Language,
 ) -> anyhow::Result<Vec<RuleInternal>> {
     let rules_conversion_time = Instant::now();
 
-    let rules = configuration
+    let rules = sast_config
         .rules
         .iter()
         .filter(|r| r.language == *language)
@@ -105,7 +105,7 @@ pub fn convert_rules_to_rules_internal(
                 .to_rule_internal()
                 .context(format!("cannot convert {} to rule internal", r.name));
 
-            if configuration.show_performance_statistics {
+            if sast_config.show_performance_statistics {
                 println!(
                     "Rule {} conversion to rule internal: {} ms",
                     r.name,
@@ -117,7 +117,7 @@ pub fn convert_rules_to_rules_internal(
         })
         .collect::<anyhow::Result<Vec<_>>>();
 
-    if configuration.show_performance_statistics {
+    if sast_config.show_performance_statistics {
         println!(
             "Total time to convert rules to rules internal for language {}: {} ms",
             language,
@@ -139,12 +139,10 @@ pub fn check_rules_checksum(rules: &[Rule]) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use common::model::language::Language;
     use common::model::position::Position;
+    use kernel::model::rule::{RuleCategory, RuleSeverity, RuleType};
     use kernel::model::violation::Violation;
-    use kernel::model::{
-        common::Language,
-        rule::{RuleCategory, RuleSeverity, RuleType},
-    };
 
     use super::*;
 

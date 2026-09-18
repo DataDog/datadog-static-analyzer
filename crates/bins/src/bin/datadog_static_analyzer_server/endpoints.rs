@@ -105,7 +105,7 @@ fn shutdown_post(state: &State<ServerState>, shutdown: Shutdown) -> Status {
 #[rocket::get("/languages", format = "application/json")]
 fn languages(span: TraceSpan) -> Value {
     let _entered = span.enter();
-    let languages: Vec<Value> = kernel::model::common::ALL_LANGUAGES
+    let languages: Vec<Value> = common::model::language::ALL_LANGUAGES
         .iter()
         .map(|x| json!(x))
         .collect();
@@ -177,6 +177,16 @@ fn process_secret_scan_request(
         return Err("Invalid filename: path traversal detected".to_string());
     }
 
+    // Decode the configuration, if present.
+    let configuration =
+        server::request::decode_secrets_configuration(request.configuration_base64)?;
+
+    let should_filter_using_ast = configuration
+        .as_ref()
+        .and_then(|c| c.secrets())
+        .map(|s| s.experimental_ast_filter)
+        .unwrap_or(false);
+
     let parse_rules = |raw: &[Box<serde_json::value::RawValue>]| {
         raw.iter()
             .map(|r| serde_json::from_str(r.get()))
@@ -206,6 +216,7 @@ fn process_secret_scan_request(
         &request.filename,
         &request.data,
         &options,
+        should_filter_using_ast,
     );
 
     // Filter out suppressed matches and drop results with no remaining matches
@@ -364,5 +375,106 @@ pub async fn launch_rocket_with_endpoints(
             Ok(Err(e)) => Err(e.into()),
             Err(_) => Err(EndpointError::JoinHandleError),
         }
+    }
+}
+
+#[cfg(test)]
+mod secret_scan_tests {
+    use super::process_secret_scan_request;
+    use kernel::utils::encode_base64_string;
+    use secrets::model::secret_rule::{RulePriority, SecretRule};
+    use server::model::secret_scan::SecretScanRequest;
+
+    fn aws_key_rule_json() -> Box<serde_json::value::RawValue> {
+        let rule = SecretRule {
+            id: "aws-key".to_string(),
+            sds_id: "sds-aws-key".to_string(),
+            name: "AWS key".to_string(),
+            description: "detects AWS access keys".to_string(),
+            pattern: "AKIA[0-9A-Z]{16}".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: None,
+        };
+        serde_json::value::RawValue::from_string(serde_json::to_string(&rule).unwrap()).unwrap()
+    }
+
+    fn request_with_configuration(configuration_base64: Option<String>) -> SecretScanRequest {
+        // "AKIAABCDEFGHIJKLMNOP" outside a string on line 1 (should be flagged by AST filtering
+        // when enabled), and the same value inside a string literal on line 2 (should not be
+        // flagged).
+        let code = "const token = AKIAABCDEFGHIJKLMNOP;\nconst other = \"AKIAABCDEFGHIJKLMNOP\";"
+            .to_string();
+        SecretScanRequest {
+            filename: "myfile.js".to_string(),
+            data: code,
+            rules: vec![aws_key_rule_json()],
+            use_debug: false,
+            configuration_base64,
+        }
+    }
+
+    #[test]
+    fn no_configuration_does_not_filter_using_ast() {
+        let request = request_with_configuration(None);
+        let results = process_secret_scan_request(request, None).expect("scan should succeed");
+
+        let matches = &results.first().expect("one rule result").matches;
+        assert_eq!(matches.len(), 2);
+        assert!(matches.iter().all(|m| !m.is_filtered_by_ast));
+    }
+
+    #[test]
+    fn invalid_base64_configuration_is_rejected() {
+        let request = request_with_configuration(Some("not-valid-base64!!".to_string()));
+        let err = process_secret_scan_request(request, None).unwrap_err();
+        assert!(err.contains("base64"));
+    }
+
+    #[test]
+    fn invalid_yaml_configuration_is_rejected() {
+        let request =
+            request_with_configuration(Some(encode_base64_string(":: not yaml".to_string())));
+        let err = process_secret_scan_request(request, None).unwrap_err();
+        assert!(err.contains("parse"));
+    }
+
+    #[test]
+    fn configuration_with_experimental_ast_filter_filters_secrets_not_in_strings() {
+        let config = "\
+schema-version: v1.6
+secrets:
+  experimental-ast-filter: true
+";
+        let request = request_with_configuration(Some(encode_base64_string(config.to_string())));
+        let results = process_secret_scan_request(request, None).expect("scan should succeed");
+
+        let matches = &results.first().expect("one rule result").matches;
+        assert_eq!(matches.len(), 2);
+
+        let outside_string_match = matches
+            .iter()
+            .find(|m| m.start.line == 1)
+            .expect("match on line 1");
+        assert!(
+            outside_string_match.is_filtered_by_ast,
+            "match outside a string literal should be filtered"
+        );
+
+        let inside_string_match = matches
+            .iter()
+            .find(|m| m.start.line == 2)
+            .expect("match on line 2");
+        assert!(
+            !inside_string_match.is_filtered_by_ast,
+            "match inside a string literal should not be filtered"
+        );
     }
 }

@@ -60,10 +60,22 @@ impl SecretValidationStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
 pub struct SecretResultMatch {
     pub start: Position,
+    pub start_index: usize,
     pub end: Position,
+    pub end_index: usize,
     pub validation_status: SecretValidationStatus,
     #[serde(default)]
     pub is_suppressed: bool,
+    #[serde(default)]
+    pub is_filtered_by_ast: bool,
+}
+
+impl SecretResultMatch {
+    /// True when the match should appear in a report. False when it was either
+    /// suppressed in source or discarded by the AST filter.
+    pub fn is_reportable(&self) -> bool {
+        !self.is_suppressed && !self.is_filtered_by_ast
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Hash, Eq)]
@@ -74,6 +86,15 @@ pub struct SecretResult {
     pub message: String,
     pub priority: RulePriority,
     pub matches: Vec<SecretResultMatch>,
+}
+
+impl SecretResult {
+    /// Clone with a different file path (used for blob fan-out in history scanning).
+    pub fn clone_with_path(&self, new_path: &str) -> Self {
+        let mut cloned = self.clone();
+        cloned.filename = new_path.to_string();
+        cloned
+    }
 }
 
 #[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Clone, Hash, Serialize, Deserialize)]

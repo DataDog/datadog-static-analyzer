@@ -58,8 +58,8 @@ impl FileContextJavaScript {
 mod tests {
     use super::*;
     use crate::analysis::ddsa_lib::test_utils::cfg_test_v8;
-    use crate::analysis::tree_sitter::get_tree;
-    use crate::model::common::Language;
+    use common::model::language::Language;
+    use common::tree_sitter::get_tree;
 
     /// Tests that imports are properly exposed via the context.
     #[test]

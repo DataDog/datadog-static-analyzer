@@ -3,8 +3,8 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::languages::javascript;
-use crate::analysis::tree_sitter::{get_tree, get_tree_sitter_language};
-use crate::model::common::Language;
+use common::model::language::Language;
+use common::tree_sitter::{get_tree, get_tree_sitter_language};
 use std::sync::LazyLock;
 
 /// Because the tree-sitter-typescript grammar essentially "inherits" the

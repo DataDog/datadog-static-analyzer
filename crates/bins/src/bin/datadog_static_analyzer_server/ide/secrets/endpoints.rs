@@ -56,12 +56,23 @@ fn scan(request: ScanSecretsRequest) -> Result<Vec<SecretResult>, String> {
         ..Default::default()
     };
 
+    // Decode the configuration, if present.
+    let configuration =
+        server::request::decode_secrets_configuration(request.configuration_base64)?;
+
+    let should_filter_using_ast = configuration
+        .as_ref()
+        .and_then(|c| c.secrets())
+        .map(|s| s.experimental_ast_filter)
+        .unwrap_or(false);
+
     let results = secrets::scanner::find_secrets(
         &scanner,
         &rules,
         &request.filename,
         &request.code,
         &options,
+        should_filter_using_ast,
     );
 
     let results = results

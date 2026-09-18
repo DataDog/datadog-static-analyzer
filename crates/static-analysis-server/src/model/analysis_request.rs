@@ -1,4 +1,4 @@
-use kernel::model::common::Language;
+use common::model::language::Language;
 use kernel::model::rule::{
     compute_sha256, Argument, EntityChecked, RuleCategory, RuleInternal, RuleInternalError,
     RuleSeverity, RuleType,

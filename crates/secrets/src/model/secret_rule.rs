@@ -3,7 +3,6 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::model::secret_rule::SecretRuleMatchValidation::CustomHttp;
-use common::model::diff_aware::DiffAware;
 use dd_sds::SecondaryValidator;
 use dd_sds::{
     AwsConfig, AwsType, BodyMatcher, CustomHttpConfig, CustomHttpConfigV2, HttpCallConfig,
@@ -569,61 +568,6 @@ impl SecretRule {
         }
 
         rule_config
-    }
-}
-
-impl DiffAware for SecretRule {
-    fn generate_diff_aware_digest(&self) -> String {
-        let mut digest = format!("{}:{}", self.id, self.pattern);
-
-        match &self.suppressions {
-            None => digest,
-            Some(suppressions) => {
-                let mut starts_with = suppressions.starts_with.clone();
-                let mut ends_with = suppressions.ends_with.clone();
-                let mut exact_match = suppressions.exact_match.clone();
-
-                if starts_with.is_empty() && ends_with.is_empty() && exact_match.is_empty() {
-                    return digest;
-                }
-
-                // Suppression order does not affect matching behavior, so canonicalize the
-                // lists to avoid invalidating diff-aware results for ordering-only changes.
-                starts_with.sort();
-                ends_with.sort();
-                exact_match.sort();
-
-                // We escape colons in the suppression strings to ensure uniqueness.
-                // Otherwise, the following would be equivalent:
-                //   starts_with=["a:b"], ends_with=["c"] → ...:a:b:c:
-                //   starts_with=["a"], ends_with=["b:c"] → ...:a:b:c:
-                digest.push_str(":suppressions:");
-                digest.push_str(
-                    &starts_with
-                        .iter()
-                        .map(|s| s.replace(':', "\\:"))
-                        .collect::<Vec<_>>()
-                        .join(","),
-                );
-                digest.push(':');
-                digest.push_str(
-                    &ends_with
-                        .iter()
-                        .map(|s| s.replace(':', "\\:"))
-                        .collect::<Vec<_>>()
-                        .join(","),
-                );
-                digest.push(':');
-                digest.push_str(
-                    &exact_match
-                        .iter()
-                        .map(|s| s.replace(':', "\\:"))
-                        .collect::<Vec<_>>()
-                        .join(","),
-                );
-                digest
-            }
-        }
     }
 }
 

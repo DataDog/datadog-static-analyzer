@@ -167,7 +167,7 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::{
         attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, parse_code, try_execute,
     };
-    use crate::model::common::Language;
+    use common::model::language::Language;
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::Arc;

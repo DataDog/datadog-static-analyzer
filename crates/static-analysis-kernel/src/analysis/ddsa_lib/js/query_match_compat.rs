@@ -10,7 +10,6 @@ use crate::analysis::ddsa_lib::v8_ds::RustConverter;
 use crate::{analysis, rust_converter};
 use deno_core::v8;
 use deno_core::v8::HandleScope;
-use std::marker::PhantomData;
 rust_converter!(
     (
         QueryMatchCompat<Class>,
@@ -55,7 +54,7 @@ impl QueryMatchCompat<Class> {
 
 #[cfg(test)]
 mod tests {
-    use crate::analysis::ddsa_lib::common::{v8_interned, DDSAJsRuntimeError, NodeId};
+    use crate::analysis::ddsa_lib::common::{DDSAJsRuntimeError, NodeId};
     use crate::analysis::ddsa_lib::js::query_match_compat::QueryMatchCompat;
     use crate::analysis::ddsa_lib::test_utils::{
         attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, make_stub_root_context,
@@ -63,7 +62,6 @@ mod tests {
     };
     use crate::analysis::ddsa_lib::v8_ds::RustConverter;
     use crate::analysis::tree_sitter::TSQueryCapture;
-    use deno_core::v8;
     use std::sync::Arc;
 
     /// Sample contents of a file to test the compatibility layer

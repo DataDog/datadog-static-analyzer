@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::fs::{read_to_string, File};
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 
@@ -8,133 +8,14 @@ use anyhow::Result;
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
-use crate::model::cli_configuration::CliConfiguration;
 use crate::model::datadog_api::DiffAwareData;
+use common::model::language::{
+    get_exact_filename_for_language, get_extensions_for_language, get_prefix_for_language,
+    match_exact_filename, match_extension, match_prefix_filename, Language,
+};
+use kernel::analysis::generated_content::DEFAULT_IGNORED_GLOBS;
 use kernel::config::common::PathConfig;
-use kernel::model::common::Language;
-use kernel::model::common::Language::Dockerfile;
 use kernel::model::violation::Violation;
-
-static FILE_EXTENSIONS_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
-    (Language::Csharp, &["cs"]),
-    (Language::Dart, &["dart"]),
-    (Language::Dockerfile, &["docker", "dockerfile"]),
-    (Language::Elixir, &["ex", "exs"]),
-    (Language::Go, &["go"]),
-    (Language::Java, &["java"]),
-    (Language::JavaScript, &["js", "jsx", "mjs", "cjs"]),
-    (Language::Json, &["json"]),
-    (Language::Kotlin, &["kt", "kts"]),
-    (Language::Python, &["py", "py3"]),
-    (Language::Ruby, &["rb"]),
-    (Language::Rust, &["rs"]),
-    (Language::Swift, &["swift"]),
-    (Language::Terraform, &["tf"]),
-    (Language::TypeScript, &["ts", "tsx", "mts", "cts"]),
-    (Language::Yaml, &["yml", "yaml"]),
-    (Language::Starlark, &["bzl"]),
-    (Language::Bash, &["sh", "bash"]),
-    (Language::PHP, &["php"]),
-    (Language::Markdown, &["md", "mdc"]),
-    (Language::Apex, &["cls"]),
-    (Language::R, &["r"]),
-    (Language::SQL, &["sql"]),
-];
-
-static FILE_EXACT_MATCH_PER_LANGUAGE_LIST: &[(Language, &[&str])] = &[
-    (Language::Dockerfile, &["Dockerfile"]),
-    (Language::Starlark, &["BUILD", "BUILD.bazel"]),
-];
-
-static FILE_PREFIX_PER_LANGUAGE_LIST: &[(Language, &[&str])] =
-    &[(Language::Dockerfile, &["Dockerfile"])];
-
-// get all extensions for a language.
-fn get_extensions_for_language(language: &Language) -> Option<Vec<String>> {
-    for fe in FILE_EXTENSIONS_PER_LANGUAGE_LIST {
-        if fe.0 == *language {
-            let extensions = fe.1.to_vec();
-            return Some(extensions.iter().map(|x| x.to_string()).collect());
-        }
-    }
-    None
-}
-
-// if a langauge only match a file for an exact match, return it
-fn get_exact_filename_for_language(language: &Language) -> Option<Vec<String>> {
-    for fe in FILE_EXACT_MATCH_PER_LANGUAGE_LIST {
-        if fe.0 == *language {
-            let extensions = fe.1.to_vec();
-            return Some(extensions.iter().map(|x| x.to_string()).collect());
-        }
-    }
-    None
-}
-
-// get the prefix for a file that needs to be analyzed for a language
-fn get_prefix_for_language(language: &Language) -> Option<Vec<String>> {
-    for fe in FILE_PREFIX_PER_LANGUAGE_LIST {
-        if fe.0 == *language {
-            let extensions = fe.1.to_vec();
-            return Some(extensions.iter().map(|x| x.to_string()).collect());
-        }
-    }
-    None
-}
-
-/// Find the language for a given file.
-pub fn get_language_for_file(path: &Path) -> Option<Language> {
-    // match for extensions (myfile.c, myfile.php, etc).
-    for (language, extensions) in FILE_EXTENSIONS_PER_LANGUAGE_LIST {
-        let extensions_string = extensions
-            .to_vec()
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        if match_extension(path, extensions_string.as_slice()) {
-            return Some(*language);
-        }
-    }
-
-    // match for exact match (e.g. BUILD.bazel, Dockerfile, etc)
-    for (language, filenames) in FILE_EXACT_MATCH_PER_LANGUAGE_LIST {
-        let filename_strings = filenames
-            .to_vec()
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        if match_exact_filename(path, filename_strings.as_slice()) {
-            return Some(*language);
-        }
-    }
-
-    // match for prefix (e.g. Dockerfile.something)
-    for (language, prefixes) in FILE_PREFIX_PER_LANGUAGE_LIST {
-        let prefix_string = prefixes
-            .to_vec()
-            .iter()
-            .map(|x| x.to_string())
-            .collect::<Vec<String>>();
-        if match_prefix_filename(path, prefix_string.as_slice()) {
-            // If we have a file such as Dockerfile.<something>.dockerignore, we just ignore it
-            if *language == Dockerfile {
-                if let Some(ext) = path.extension() {
-                    if ext
-                        .to_str()
-                        .map(|s| s.ends_with("dockerignore"))
-                        .unwrap_or(false)
-                    {
-                        return None;
-                    }
-                }
-            }
-
-            return Some(*language);
-        }
-    }
-
-    None
-}
 
 // Read the .gitignore file in a directory and return the lines that are not commented
 // or empty.
@@ -217,6 +98,46 @@ pub fn get_files(
     Ok(files_to_return)
 }
 
+pub struct ProductFileSelection {
+    pub path_config: PathConfig,
+    pub max_file_size_kb: Option<u64>,
+}
+
+pub fn extend_path_config_ignores(
+    path_config: &mut PathConfig,
+    gitignore_patterns: &[String],
+    ignore_gitignore: bool,
+    ignore_generated_files: bool,
+) {
+    if !ignore_gitignore {
+        path_config
+            .ignore
+            .extend(gitignore_patterns.iter().map(|p| p.clone().into()));
+    }
+    if ignore_generated_files {
+        path_config
+            .ignore
+            .extend(DEFAULT_IGNORED_GLOBS.iter().map(|&p| p.to_string().into()));
+    }
+}
+
+pub fn select_files(
+    directory: &Path,
+    subdirectories_to_analyze: &[String],
+    selection: &ProductFileSelection,
+    use_debug: bool,
+) -> Result<Vec<PathBuf>> {
+    let files = get_files(
+        directory,
+        subdirectories_to_analyze.to_vec(),
+        &selection.path_config,
+    )?;
+    Ok(match selection.max_file_size_kb {
+        Some(kb) => filter_files_by_size(&files, kb, use_debug),
+        None => files,
+    })
+}
+
 /// try to find if one of the subdirectory used to scan a repository is going outside the
 /// repository directory. If yes, this is unsafe, scans outside the repository and should
 /// not run.
@@ -238,38 +159,6 @@ pub fn are_subdirectories_safe(directory_path: &Path, subdirectories: &[String])
     })
 }
 
-// filter the file according to a list of extensions
-fn match_extension(path: &Path, extensions: &[String]) -> bool {
-    match path.extension() {
-        Some(ext) => match ext.to_str() {
-            Some(e) => extensions.contains(&e.to_string().to_lowercase()),
-            None => false,
-        },
-        None => false,
-    }
-}
-
-// filter a file based on its name
-fn match_exact_filename(path: &Path, filename_list: &[String]) -> bool {
-    match path.file_name() {
-        Some(p) => match p.to_str() {
-            Some(s) => filename_list.contains(&s.to_string()),
-            None => false,
-        },
-        None => false,
-    }
-}
-
-fn match_prefix_filename(path: &Path, prefixes_list: &[String]) -> bool {
-    match path.file_name() {
-        Some(p) => match p.to_str() {
-            Some(s) => prefixes_list.iter().any(|p| s.to_string().starts_with(p)),
-            None => false,
-        },
-        None => false,
-    }
-}
-
 // filter files to analyze for a language. It will filter the files based on the prefix or suffix.
 pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<PathBuf> {
     let extensions = get_extensions_for_language(language).unwrap_or_default();
@@ -283,9 +172,9 @@ pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<
     let result = files
         .iter()
         .filter(|p| {
-            let extension_match = match_extension(p, &extensions);
-            let filename_match = match_exact_filename(p, &exact_matches);
-            let prefix_match = match_prefix_filename(p, &prefixes);
+            let extension_match = match_extension(p, extensions);
+            let filename_match = match_exact_filename(p, exact_matches);
+            let prefix_match = match_prefix_filename(p, prefixes);
 
             extension_match || filename_match || prefix_match
         })
@@ -294,8 +183,12 @@ pub fn filter_files_for_language(files: &[PathBuf], language: &Language) -> Vec<
     result
 }
 
-pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration) -> Vec<PathBuf> {
-    let max_len_bytes = configuration.max_file_size_kb * 1024;
+pub fn filter_files_by_size(
+    files: &[PathBuf],
+    max_file_size_kb: u64,
+    use_debug: bool,
+) -> Vec<PathBuf> {
+    let max_len_bytes = max_file_size_kb * 1024;
     files
         .iter()
         .filter(|f| {
@@ -305,12 +198,12 @@ pub fn filter_files_by_size(files: &[PathBuf], configuration: &CliConfiguration)
                 .map(|x| x.len() > max_len_bytes)
                 .unwrap_or(false);
 
-            if configuration.use_debug && too_big {
+            if use_debug && too_big {
                 eprintln!(
                     "File {} too big (size {} bytes, max size {} kb ({} bytes))",
                     f.display(),
                     &metadata.map(|x| x.len()).unwrap_or(0),
-                    configuration.max_file_size_kb,
+                    max_file_size_kb,
                     max_len_bytes
                 )
             }
@@ -364,7 +257,7 @@ pub fn get_fingerprint_for_violation(
     if !path.exists() || !path.is_file() {
         return None;
     }
-    let Ok(file_contents) = read_to_string(&path) else {
+    let Ok(file_bytes) = fs::read(&path) else {
         if use_debug {
             eprintln!(
                 "Error when trying to read file {}",
@@ -374,6 +267,17 @@ pub fn get_fingerprint_for_violation(
         return None;
     };
 
+    get_fingerprint_from_contents(rule_name, violation, filename, &file_bytes)
+}
+
+/// Generate a fingerprint for a violation from an in-memory copy of the file's contents.
+pub fn get_fingerprint_from_contents(
+    rule_name: String,
+    violation: &Violation,
+    filename: &str,
+    file_contents: &[u8],
+) -> Option<String> {
+    let file_contents = String::from_utf8_lossy(file_contents);
     let violations_lines = violation
         .taint_flow
         .as_ref()
@@ -406,7 +310,7 @@ pub fn get_fingerprint_for_violation(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashSet;
     use std::env;
     use std::path::Path;
 
@@ -414,9 +318,7 @@ mod tests {
 
     use common::model::position;
     use common::model::position::Position;
-    use kernel::model::common::OutputFormat::Sarif;
     use kernel::model::rule::{RuleCategory, RuleSeverity};
-    use kernel::rule_config::RuleConfigProvider;
 
     use super::*;
 
@@ -476,6 +378,47 @@ mod tests {
             false,
         );
         assert!(fingerprint_unknown_file.is_none());
+    }
+
+    #[test]
+    fn get_fingerprint_for_violation_non_utf8_file() {
+        let dir = tempdir().unwrap();
+        let file_path = dir.path().join("latin1.txt");
+        // "café" encoded as Latin-1: the 'é' (0xE9) is not valid UTF-8 on its own.
+        let contents: &[u8] = b"line one\ncaf\xe9 secret here\nline three\n";
+        fs::write(&file_path, contents).unwrap();
+
+        let violation = Violation {
+            start: Position { line: 2, col: 1 },
+            end: Position { line: 2, col: 10 },
+            message: "something bad happened".to_string(),
+            severity: RuleSeverity::Notice,
+            category: RuleCategory::Performance,
+            fixes: vec![],
+            taint_flow: None,
+            is_suppressed: false,
+        };
+
+        let fingerprint = get_fingerprint_for_violation(
+            "my_rule".to_string(),
+            &violation,
+            dir.path(),
+            Path::new("latin1.txt"),
+            false,
+        );
+        assert_eq!(
+            fingerprint,
+            get_fingerprint_from_contents(
+                "my_rule".to_string(),
+                &violation,
+                "latin1.txt",
+                contents
+            )
+        );
+        assert_eq!(
+            fingerprint,
+            Some("48b0b8601af8f1bd309c619b184a5955f6633f315f26ed5f4b6e1203a971241c".to_string())
+        );
     }
 
     #[test]
@@ -586,36 +529,13 @@ mod tests {
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("resources/test/test_files_by_size/versions.json");
         files1.push(d);
-        let cli_configuration = CliConfiguration {
-            use_debug: true,
-            configuration_method: None,
-            ignore_gitignore: true,
-            source_directory: "bla".to_string(),
-            source_subdirectories: vec![],
-            path_config: PathConfig::default(),
-            rules_file: None,
-            output_format: Sarif, // SARIF or JSON
-            output_file: "foo".to_string(),
-            num_cpus: 2, // of cpus to use for parallelism
-            rules: vec![],
-            rule_config_provider: RuleConfigProvider::default(),
-            max_file_size_kb: 1,
-            use_staging: false,
-            show_performance_statistics: false,
-            ignore_generated_files: false,
-            secrets_enabled: false,
-            static_analysis_enabled: true,
-            secrets_rules: vec![],
-            should_verify_checksum: true,
-            debug_java_dfa: false,
-        };
-        assert_eq!(0, filter_files_by_size(&files1, &cli_configuration).len());
+        assert_eq!(0, filter_files_by_size(&files1, 1, true).len());
 
         let mut files2 = vec![];
         let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         d.push("resources/test/test_files_by_size/versions-empty.json");
         files2.push(d);
-        assert_eq!(1, filter_files_by_size(&files2, &cli_configuration).len());
+        assert_eq!(1, filter_files_by_size(&files2, 1, true).len());
     }
 
     /// Filter files based on diff-aware returned files
@@ -777,6 +697,71 @@ mod tests {
     }
 
     #[test]
+    fn test_extend_path_config_ignores_adds_gitignore_patterns() {
+        let mut path_config = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
+
+        let gitignore_patterns = vec!["ignore/**".to_string()];
+
+        extend_path_config_ignores(&mut path_config, &gitignore_patterns, false, false);
+
+        assert_eq!(
+            path_config.ignore,
+            vec![
+                "configured/**".to_string().into(),
+                "ignore/**".to_string().into()
+            ]
+        );
+    }
+
+    #[test]
+    fn test_extend_path_config_ignores_skips_gitignore_patterns() {
+        let expected = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
+        let mut path_config = expected.clone();
+
+        let gitignore_patterns = vec!["ignore/**".to_string()];
+
+        extend_path_config_ignores(&mut path_config, &gitignore_patterns, true, false);
+
+        assert_eq!(path_config, expected);
+    }
+
+    #[test]
+    fn test_extend_path_config_ignores_adds_generated_file_patterns() {
+        let mut path_config = PathConfig::default();
+
+        let expected = PathConfig {
+            ignore: DEFAULT_IGNORED_GLOBS
+                .iter()
+                .map(|pattern| pattern.to_string().into())
+                .collect(),
+            only: None,
+        };
+
+        extend_path_config_ignores(&mut path_config, &[], true, true);
+
+        assert_eq!(path_config, expected);
+    }
+
+    #[test]
+    fn test_extend_path_config_ignores_skips_generated_file_patterns() {
+        let expected = PathConfig {
+            ignore: vec!["configured/**".to_string().into()],
+            only: None,
+        };
+        let mut path_config = expected.clone();
+
+        extend_path_config_ignores(&mut path_config, &[], true, false);
+
+        assert_eq!(path_config, expected);
+    }
+
+    #[test]
     fn get_files_with_subdirectory() {
         let current_path = std::env::current_dir().unwrap();
         let subdirectory = Path::new("src").join("sarif");
@@ -789,35 +774,6 @@ mod tests {
         );
 
         assert_eq!(2, files.unwrap().len());
-    }
-
-    // check that we have the correct number of extensions for each language we support.
-    #[test]
-    fn get_extensions_for_language_all_languages() {
-        let mut extensions_per_languages: HashMap<Language, usize> = HashMap::new();
-        extensions_per_languages.insert(Language::JavaScript, 4);
-        extensions_per_languages.insert(Language::Kotlin, 2);
-        extensions_per_languages.insert(Language::Python, 2);
-        extensions_per_languages.insert(Language::Rust, 1);
-        extensions_per_languages.insert(Language::TypeScript, 4);
-        extensions_per_languages.insert(Language::Dockerfile, 2);
-        extensions_per_languages.insert(Language::Yaml, 2);
-        extensions_per_languages.insert(Language::Starlark, 1);
-        extensions_per_languages.insert(Language::Bash, 2);
-        extensions_per_languages.insert(Language::PHP, 1);
-        extensions_per_languages.insert(Language::Markdown, 2);
-        extensions_per_languages.insert(Language::Apex, 1);
-        extensions_per_languages.insert(Language::R, 1);
-        extensions_per_languages.insert(Language::SQL, 1);
-
-        for (l, e) in extensions_per_languages {
-            assert_eq!(
-                get_extensions_for_language(&l)
-                    .expect("have extensions")
-                    .len(),
-                e
-            );
-        }
     }
 
     #[test]
@@ -894,6 +850,21 @@ mod tests {
         );
     }
 
+    // `Dockerfile.<something>.dockerignore` shares the `Dockerfile` prefix but is not a
+    // Dockerfile; `get_language_for_file` excludes it, and `filter_files_for_language` must
+    // agree since they go through the same `match_prefix_filename` helper.
+    #[test]
+    fn test_filter_files_for_language_excludes_dockerignore() {
+        assert_eq!(
+            0,
+            filter_files_for_language(
+                &[PathBuf::from("path").join(PathBuf::from("Dockerfile.foobar.dockerignore"))],
+                &Language::Dockerfile
+            )
+            .len()
+        );
+    }
+
     #[test]
     fn test_filter_files_for_language_with_exact_match() {
         assert_eq!(
@@ -929,45 +900,5 @@ mod tests {
 
         let files = get_files(tmp.base_path(), vec![], &PathConfig::default()).unwrap();
         assert_eq!(files, vec![valid_path]);
-    }
-
-    #[test]
-    fn test_get_language_for_file() {
-        // extension Java
-        assert_eq!(
-            get_language_for_file(&PathBuf::from("path/to/foo.java")),
-            Some(Language::Java)
-        );
-
-        // extension Markdown
-        assert_eq!(
-            get_language_for_file(&PathBuf::from("path/to/foo.md")),
-            Some(Language::Markdown)
-        );
-        assert_eq!(
-            get_language_for_file(&PathBuf::from("path/to/foo.mdc")),
-            Some(Language::Markdown)
-        );
-
-        // exact filename
-        assert_eq!(
-            get_language_for_file(&PathBuf::from("BUILD.bazel")),
-            Some(Language::Starlark)
-        );
-
-        // prefix
-        assert_eq!(
-            get_language_for_file(&PathBuf::from("Dockerfile.foobar")),
-            Some(Language::Dockerfile)
-        );
-
-        // prefix
-        assert_eq!(
-            get_language_for_file(&PathBuf::from("Dockerfile.foobar.dockerignore")),
-            None
-        );
-
-        // none
-        assert_eq!(get_language_for_file(&PathBuf::from("wefwefwef")), None);
     }
 }

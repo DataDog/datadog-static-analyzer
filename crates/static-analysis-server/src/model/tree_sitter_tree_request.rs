@@ -1,4 +1,4 @@
-use kernel::model::common::Language;
+use common::model::language::Language;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Deserialize, Debug, Serialize)]

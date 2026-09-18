@@ -56,6 +56,9 @@ jobs:
   versions-check:
     uses: './.github/workflows/versions-check.yaml'
 
+  version-guard:
+    uses: './.github/workflows/version-guard.yaml'
+
   build:
     needs:
       - release-type
@@ -143,6 +146,7 @@ jobs:
       - integration-tests
       - verify-schema
       - versions-check
+      - version-guard
       - build
     runs-on: ubuntu-latest
     permissions:

@@ -18,6 +18,9 @@ name = "datadog-export-rulesets"
 [[bin]]
 name = "datadog-static-analyzer-server"
 
+[dev-dependencies]
+tempfile = "3.23.0"
+
 [dev-dependencies.cargo-husky]
 version = "1"
 default-features = false # Disable features which are enabled by default

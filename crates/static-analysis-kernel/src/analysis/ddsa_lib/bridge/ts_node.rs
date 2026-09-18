@@ -170,7 +170,7 @@ mod tests {
         attach_as_global, cfg_test_v8, try_execute, TsTree,
     };
     use crate::analysis::ddsa_lib::RawTSNode;
-    use crate::model::common::Language;
+    use common::model::language::Language;
     use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
     use deno_core::v8::HandleScope;

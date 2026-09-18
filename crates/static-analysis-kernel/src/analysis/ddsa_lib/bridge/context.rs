@@ -5,7 +5,7 @@
 use crate::analysis::ddsa_lib;
 use crate::analysis::ddsa_lib::common::{DDSAJsRuntimeError, Instance};
 use crate::analysis::ddsa_lib::js;
-use crate::model::common::Language;
+use common::model::language::Language;
 use deno_core::v8;
 use deno_core::v8::HandleScope;
 use std::ops::Deref;
@@ -121,7 +121,7 @@ impl ContextBridge {
             // For now, in the interest of simplicity, we just clear all file contexts when the
             // language changes (as opposed to only clearing the context for the preceding language).
             // This really has no performance impact, as the number of times we'll change languages
-            // has an upper bound of the count of [`crate::model::common::Language`] variants.
+            // has an upper bound of the count of [`common::model::language::Language`] variants.
             self.clear_file_contexts(scope);
         }
         // Because trees and file contents go hand-in-hand, we can avoid a relatively expensive string
@@ -235,8 +235,8 @@ mod tests {
         attach_as_global, cfg_test_v8, format_ts_lang_pointer, parse_code, try_execute,
         KEY_TS_LANGUAGE_PTR,
     };
-    use crate::analysis::tree_sitter::get_tree;
-    use crate::model::common::Language;
+    use common::model::language::Language;
+    use common::tree_sitter::get_tree;
     use deno_core::v8;
     use std::cell::RefCell;
     use std::collections::HashMap;

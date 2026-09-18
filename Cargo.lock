@@ -456,7 +456,16 @@ version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0700ddab506f33b20a03b13996eccd309a48e5ff77d0d95926aa0210fb4e95f1"
 dependencies = [
- "bit-vec",
+ "bit-vec 0.6.3",
+]
+
+[[package]]
+name = "bit-set"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08807e080ed7f9d5433fa9b275196cfc35414f66a0c79d864dc51a0d825231a3"
+dependencies = [
+ "bit-vec 0.8.0",
 ]
 
 [[package]]
@@ -464,6 +473,12 @@ name = "bit-vec"
 version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "349f9b6a179ed607305526ca489b34ad0a41aed5f7980fa90eb03160b69598fb"
+
+[[package]]
+name = "bit-vec"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5e764a1d40d510daf35e07be9eb06e75770908c27d411ee6c92109c9840eaaf7"
 
 [[package]]
 name = "bitcoin"
@@ -663,7 +678,7 @@ dependencies = [
 
 [[package]]
 name = "cli"
-version = "0.8.8"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -681,6 +696,7 @@ dependencies = [
  "serde",
  "serde-sarif",
  "serde_json",
+ "serde_yaml",
  "sha2",
  "static-analysis-kernel",
  "tempfile",
@@ -692,13 +708,17 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.8.8"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "bstr",
+ "cc",
  "derive_builder",
+ "globset",
  "line-index",
  "serde",
+ "serde_yaml",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -979,7 +999,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "datadog-static-analyzer"
-version = "0.8.8"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "cargo-husky",
@@ -1002,6 +1022,7 @@ dependencies = [
  "serde_yaml",
  "static-analysis-kernel",
  "static-analysis-server",
+ "tempfile",
  "terminal-emoji",
  "thiserror 2.0.18",
  "tracing",
@@ -1014,7 +1035,7 @@ dependencies = [
 [[package]]
 name = "dd-sensitive-data-scanner"
 version = "0.0.0"
-source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=b2dca51b27a87ecb2d847ad4167a0537afca1972#b2dca51b27a87ecb2d847ad4167a0537afca1972"
+source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=972b5d8d18279b47470dadb313b368c591c76369#972b5d8d18279b47470dadb313b368c591c76369"
 dependencies = [
  "ahash",
  "aws-sign-v4",
@@ -1049,6 +1070,7 @@ dependencies = [
  "slotmap",
  "strum",
  "thiserror 1.0.69",
+ "tiktoken-rs",
  "tokio",
 ]
 
@@ -1071,8 +1093,8 @@ dependencies = [
  "anyhow",
  "az",
  "bincode",
- "bit-set",
- "bit-vec",
+ "bit-set 0.5.3",
+ "bit-vec 0.6.3",
  "bytes",
  "capacity_builder",
  "cooked-waker",
@@ -1406,8 +1428,19 @@ version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b95f7c0680e4142284cf8b22c14a476e87d61b004a3a0861872b32ef7ead40a2"
 dependencies = [
- "bit-set",
+ "bit-set 0.5.3",
  "regex",
+]
+
+[[package]]
+name = "fancy-regex"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "72cf461f865c862bb7dc573f643dd6a2b6842f7c30b07882b56bd148cc2761b8"
+dependencies = [
+ "bit-set 0.8.0",
+ "regex-automata",
+ "regex-syntax 0.8.10",
 ]
 
 [[package]]
@@ -2436,7 +2469,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55cb077ad656299f160924eb2912aa147d7339ea7d69e1b5517326fdcec3c1ca"
 dependencies = [
  "ascii-canvas",
- "bit-set",
+ "bit-set 0.5.3",
  "ena",
  "itertools 0.11.0",
  "lalrpop-util",
@@ -3955,18 +3988,20 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.8.8"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "common",
  "dd-sensitive-data-scanner",
- "futures",
  "httpmock",
  "itertools 0.14.0",
  "lazy_static",
  "serde",
  "serde_json",
+ "serde_yaml",
  "strum",
+ "thiserror 2.0.18",
+ "tree-sitter",
 ]
 
 [[package]]
@@ -4350,11 +4385,10 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-kernel"
-version = "0.8.8"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
- "cc",
  "common",
  "deno_core",
  "derive_builder",
@@ -4374,7 +4408,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-server"
-version = "0.8.8"
+version = "0.9.7"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -4642,6 +4676,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
 dependencies = [
  "cfg-if",
+]
+
+[[package]]
+name = "tiktoken-rs"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fac4a168cfc1d8ed65bf17a6ee0843ad9a68f863c63c0fb2fa7eab67838782ee"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "bstr",
+ "fancy-regex 0.17.0",
+ "lazy_static",
+ "regex",
+ "rustc-hash 1.1.0",
 ]
 
 [[package]]
@@ -5141,7 +5190,7 @@ dependencies = [
  "chrono",
  "downcast-rs",
  "erased-serde",
- "fancy-regex",
+ "fancy-regex 0.11.0",
  "json-pointer",
  "jsonway",
  "percent-encoding",

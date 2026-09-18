@@ -19,7 +19,10 @@ echo "Current version: $CURRENT_VERSION"
 IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
 
 # Calculate new version
-if [ "$PATCH" -eq 9 ]; then
+if [ "$MAJOR" -eq 0 ] && [ "$MINOR" -eq 9 ]; then
+    NEW_MINOR=9
+    NEW_PATCH=$((PATCH + 1))
+elif [ "$PATCH" -eq 9 ]; then
     NEW_MINOR=$((MINOR + 1))
     NEW_PATCH=0
 else
