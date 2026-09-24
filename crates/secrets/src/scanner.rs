@@ -127,7 +127,7 @@ mod tests {
         SecretRuleHttpResponseConfig, SecretRuleMatchPairingConfig, SecretRuleMatchValidation,
         SecretRuleMatchValidationHttpMethod, SecretRuleMatchValidationHttpV2,
         SecretRulePairedValidatorConfig, SecretRuleResponseCondition,
-        SecretRuleResponseConditionType, SecretRuleStatusCodeMatcher,
+        SecretRuleResponseConditionType, SecretRuleStatusCodeMatcher, SecretRuleSuppressions,
     };
     use common::model::position::Position;
 
@@ -162,6 +162,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
@@ -210,6 +211,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: true,
+            suppressions: None,
         };
         let primary_rule = SecretRule {
             id: "primary".to_string(),
@@ -226,6 +228,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let rules = vec![supporting_rule, primary_rule];
@@ -263,6 +266,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
@@ -303,6 +307,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
@@ -353,6 +358,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         let text = "FOO\nFOOBAR\nFOOBAZ\nCAT";
@@ -413,6 +419,7 @@ mod tests {
             )),
             pattern_capture_groups: vec![],
             is_supporting_rule: true,
+            suppressions: None,
         };
 
         let mut parameters = BTreeMap::new();
@@ -464,6 +471,7 @@ mod tests {
             )),
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let rules = vec![supporting_rule, primary_rule];
@@ -556,6 +564,7 @@ mod tests {
             )),
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         };
 
         let rules = vec![rule];
@@ -606,6 +615,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Directive on line 1 means ignore entire file
@@ -628,6 +638,56 @@ mod tests {
     }
 
     #[test]
+    fn test_find_secrets_with_rule_suppressions() {
+        let mut rules: Vec<SecretRule> = vec![SecretRule {
+            id: "secret_rule".to_string(),
+            sds_id: "sds_id".to_string(),
+            name: "detect secrets".to_string(),
+            description: "super secret!".to_string(),
+            pattern: "SECRET_[A-Z]+".to_string(),
+            default_included_keywords: vec![],
+            default_excluded_keywords: vec![],
+            look_ahead_character_count: Some(30),
+            priority: RulePriority::Medium,
+            validators: Some(vec![]),
+            validators_v2: None,
+            match_validation: None,
+            pattern_capture_groups: vec![],
+            is_supporting_rule: false,
+            suppressions: None,
+        }];
+        let text = "SECRET_VALUE\nSECRET_PLACEHOLDER\n";
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+            true,
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].matches.len(), 2);
+
+        rules[0].suppressions = Some(SecretRuleSuppressions {
+            starts_with: vec![],
+            ends_with: vec![],
+            exact_match: vec!["SECRET_PLACEHOLDER".to_string()],
+        });
+        let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
+        let matches = find_secrets(
+            &scanner,
+            rules.as_slice(),
+            "myfile",
+            text,
+            &AnalysisOptions::default(),
+            true,
+        );
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].matches.len(), 1);
+    }
+
+    #[test]
     fn test_find_secrets_applies_ast_filter_when_enabled_negative() {
         let rules: Vec<SecretRule> = vec![SecretRule {
             id: "secret_rule".to_string(),
@@ -644,6 +704,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // FOOBAR appears as a bare identifier, not inside a string or comment.
@@ -679,6 +740,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // FOOBAR appears as a bare identifier, not inside a string or comment.
@@ -714,6 +776,7 @@ mod tests {
             match_validation: None,
             pattern_capture_groups: vec![],
             is_supporting_rule: false,
+            suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Same match as above, but with AST filtering disabled it must not be flagged.
