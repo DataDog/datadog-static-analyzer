@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::datadog_static_analyzer_server::fairings::TraceSpan;
 use crate::datadog_static_analyzer_server::rule_cache::cached_analysis_request;
@@ -279,23 +279,16 @@ pub fn get_revision() -> String {
     utils::get_revision()
 }
 
-#[rocket::get("/static/<name>")]
+#[rocket::get("/static/<path..>")]
 async fn serve_static(
     span: TraceSpan,
     server_configuration: &State<ServerState>,
-    name: &str,
+    path: PathBuf,
 ) -> Option<NamedFile> {
     let _entered = span.enter();
-    if server_configuration.static_directory.is_none()
-        || name.contains("..")
-        || name.starts_with('.')
-    {
-        return None;
-    }
+    let s = server_configuration.static_directory.as_ref()?;
 
-    let s = server_configuration.static_directory.as_ref().unwrap();
-
-    let full_path = Path::new(s).join(name);
+    let full_path = Path::new(s).join(path);
     NamedFile::open(full_path).await.ok()
 }
 
