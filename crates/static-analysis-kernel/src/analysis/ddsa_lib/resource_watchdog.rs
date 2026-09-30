@@ -274,13 +274,9 @@ type NearHeapLimitCallback = dyn Fn(usize, usize) -> usize;
 /// to dereference a pointer that must point to a live [`NearHeapLimitCallback`] (which, by default,
 /// will not live as long as the v8 isolate). Thus, this struct guarantees memory safety
 /// by manually managing the allocation and lifetime of the `NearHeapLimitCallback`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct HeapLimitGuard {
     boxed_callback_ptr: Cell<*mut Box<NearHeapLimitCallback>>,
-    /// The raw pointer of the isolate this guard was initialized with. This is only used to assert
-    /// that, for each function that accepts a `&mut v8::Isolate`, that the provided isolate is
-    /// the same as the one that initialized this `HeapLimitGuard`.
-    parent_isolate_ptr: *const v8::Isolate,
     /// The limit of the v8 isolate upon initialization.
     initial_limit: usize,
 }
@@ -297,13 +293,11 @@ impl HeapLimitGuard {
         // that is guaranteed to never be dropped.
         let boxed_box = Box::new(near_heap_limit_cb);
         let boxed_callback_ptr = Box::into_raw(boxed_box);
-        let isolate_ptr: *const v8::Isolate = &*isolate;
         let stats = isolate.get_heap_statistics();
         let initial_limit = stats.heap_size_limit();
 
         let guard = Self {
             boxed_callback_ptr: Cell::new(boxed_callback_ptr),
-            parent_isolate_ptr: isolate_ptr,
             initial_limit,
         };
         let guard = Rc::new(guard);
@@ -335,7 +329,7 @@ impl HeapLimitGuard {
         isolate: &mut v8::Isolate,
         heap_size_limit: usize,
     ) -> Result<(), &'static str> {
-        if !std::ptr::eq(&*isolate as *const _, self.parent_isolate_ptr) {
+        if !self.is_guard_for(isolate) {
             return Err("isolate must be the same as the one that initialized this guard");
         }
         if heap_size_limit > self.initial_limit {
@@ -357,6 +351,13 @@ impl HeapLimitGuard {
         // See: https://chromium.googlesource.com/v8/v8.git/+/refs/heads/main/src/heap/heap.cc
         let _ = self.set_callback_inner(isolate, current_ptr, heap_size_limit);
         Ok(())
+    }
+
+    /// Whether this guard is the one that [`Self::new`] registered on the provided isolate or not.
+    fn is_guard_for(&self, isolate: &v8::Isolate) -> bool {
+        isolate
+            .get_slot::<Rc<HeapLimitGuard>>()
+            .is_some_and(|guard| std::ptr::eq(Rc::as_ptr(guard), self))
     }
 
     /// Sets the [`NearHeapLimitCallback`] used by the v8 isolate, replacing and returning a
@@ -681,6 +682,8 @@ pub(crate) mod tests {
         assert!(suggest_result.is_err_and(
             |msg| msg == "isolate must be the same as the one that initialized this guard"
         ));
+        // The isolate for runtime_2 was entered upon creation, so it needs to be exited via dropping before accessing runtime_1's isolate.
+        drop(runtime_2);
         assert!(guard_for_rt_1
             .suggest_heap_limit(runtime_1.v8_isolate(), REDUCED_LIMIT)
             .is_ok());
