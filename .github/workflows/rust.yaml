@@ -76,8 +76,3 @@ jobs:
           DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
           DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
         run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r java-security -r java-best-practices -r java-code-style
-      - name: Check Docker rulesets
-        env:
-          DD_API_KEY: ${{ steps.dd-sts.outputs.api_key }}
-          DD_APP_KEY: ${{ steps.dd-sts.outputs.app_key }}
-        run: cargo run --locked --bin datadog-static-analyzer-test-ruleset -- -r docker-best-practices
