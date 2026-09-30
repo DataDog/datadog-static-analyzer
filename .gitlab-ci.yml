@@ -63,6 +63,8 @@ trigger_internal_image:
     branch: ${DD_IMAGES_BRANCH}
     strategy: depend
   variables:
+    DOCKER_ENV_PREFIX: "X_DOCKER_ENV_"
+    X_DOCKER_ENV_DD_GIT_COMMIT_SHA: ${CI_COMMIT_SHA}
     DD_IMAGES_BRANCH: master
     IMAGE_VERSION: current
     IMAGE_NAME: datadog-static-analyzer
