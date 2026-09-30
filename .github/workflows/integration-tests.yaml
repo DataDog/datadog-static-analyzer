@@ -28,7 +28,6 @@ jobs:
           - { file: './misc/integration-test-classification.sh', gha_alias: 'Artifact Classification' }
           - { file: './misc/integration-test-git.sh', gha_alias: 'Git' }
           - { file: './misc/integration-test-python.sh', gha_alias: 'Python' }
-          - { file: './misc/integration-test-docker.sh', gha_alias: 'Docker' }
           - { file: './misc/integration-test-js-ts.sh', gha_alias: 'JavaScript/TypeScript' }
           - { file: './misc/integration-test-filter-rules.sh', gha_alias: 'Per-Path Rule Filtering' }
           - { file: './misc/integration-git-hooks.sh', gha_alias: 'Git Hooks' }

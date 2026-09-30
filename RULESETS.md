@@ -10,10 +10,6 @@ The complete list is available in [our documentation](https://docs.datadoghq.com
 - csharp-inclusive
 - csharp-security
 
-## Docker
-
--  docker-best-practices
-
 ## Go
 - go-best-practices
 - go-inclusive
