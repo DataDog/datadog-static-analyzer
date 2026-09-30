@@ -475,17 +475,23 @@ pub(crate) mod tests {
         let mut runtime = cfg_test_v8().deno_core_rt();
         let timeout = Duration::from_millis(500);
         let loop_code = "while (true) {}";
-        let loop_script = compile_script(&mut runtime.handle_scope(), loop_code, None).unwrap();
+        let loop_script = {
+            deno_core::scope!(scope, runtime);
+            compile_script(scope, loop_code, None).unwrap()
+        };
         let code = "123;";
-        let normal_script = compile_script(&mut runtime.handle_scope(), code, None).unwrap();
+        let normal_script = {
+            deno_core::scope!(scope, runtime);
+            compile_script(scope, code, None).unwrap()
+        };
 
         let watchdog = V8ResourceWatchdog::new(runtime.v8_isolate());
 
         // First, ensure that the implementation isn't forcing a minimum execution time to that of the
         // timeout (which could happen if we are improperly handling a mutex lock).
         let now = Instant::now();
-        let scope = &mut runtime.handle_scope();
-        let tc_scope = &mut v8::TryCatch::new(scope);
+        deno_core::scope!(scope, runtime);
+        v8::tc_scope!(let tc_scope, scope);
 
         let res = watchdog.execute(Some(Duration::from_secs(10)), tc_scope, |sc| {
             let opened = normal_script.open(sc);
@@ -553,8 +559,8 @@ pub(crate) mod tests {
         let mut runtime = cfg_test_v8().deno_core_rt_with_heap_limit(INITIAL_LIMIT);
         let watchdog = V8ResourceWatchdog::new(runtime.v8_isolate());
 
-        let scope = &mut runtime.handle_scope();
-        let tc_scope = &mut v8::TryCatch::new(scope);
+        deno_core::scope!(scope, runtime);
+        v8::tc_scope!(let tc_scope, scope);
         let oom_script = compile_script(tc_scope, OOM_CODE, None).unwrap();
 
         let mut last_margin: Option<f32> = None;

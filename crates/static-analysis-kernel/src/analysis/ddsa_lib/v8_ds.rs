@@ -6,7 +6,7 @@ use crate::analysis::ddsa_lib::common::{
     swallow_v8_error, v8_interned, v8_uint, DDSAJsRuntimeError,
 };
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use indexmap::{Equivalent, IndexMap};
 use std::hash::Hash;
 
@@ -18,7 +18,7 @@ pub trait RustConverter {
 
     fn convert_to<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         value: &Self::Item,
     ) -> v8::Local<'s, v8::Value>;
 }
@@ -30,7 +30,7 @@ pub trait V8Converter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error>;
 }
@@ -54,12 +54,12 @@ where
     C: RustConverter<Item = T>,
 {
     /// Constructs a new, empty `MirroredVec`.
-    pub fn new(converter: C, scope: &mut HandleScope) -> Self {
+    pub fn new(converter: C, scope: &mut PinScope) -> Self {
         Self::with_capacity(converter, scope, 0)
     }
 
     /// Constructs a new, empty `MirroredVec` with at least the specified capacity.
-    pub fn with_capacity(converter: C, scope: &mut HandleScope, capacity: u32) -> Self {
+    pub fn with_capacity(converter: C, scope: &mut PinScope, capacity: u32) -> Self {
         let s_length = v8_interned(scope, "length");
         // We intentionally pass in "0" for length (and not `capacity`) due to the potential
         // for v8 to classify it as a "holey" array (and trigger de-optimizations).
@@ -91,7 +91,7 @@ where
     /// attempt is made -- the entire array will be cleared and re-written in both Rust and v8.
     ///
     /// Existing v8 values will be released to v8's garbage collector.
-    pub fn set_data(&mut self, scope: &mut HandleScope, data: impl Into<Vec<T>>) {
+    pub fn set_data(&mut self, scope: &mut PinScope, data: impl Into<Vec<T>>) {
         let v8_array = self.v8_array.open(scope);
         let prev_len = v8_array.length() as usize;
 
@@ -120,7 +120,7 @@ where
     ///
     /// Garbage collection behavior follows that of [`MirroredVec::set_data`].
     #[inline(always)]
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.set_data(scope, vec![]);
     }
 
@@ -143,7 +143,7 @@ where
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] array.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         v8::Local::new(scope, &self.v8_array)
     }
 
@@ -153,14 +153,14 @@ where
 
     /// Returns a handle to the v8 element at the given index.
     #[cfg(test)]
-    pub fn get_v8<'s>(&self, scope: &mut HandleScope<'s>, index: u32) -> v8::Local<'s, v8::Value> {
+    pub fn get_v8<'s>(&self, scope: &mut PinScope<'s, '_>, index: u32) -> v8::Local<'s, v8::Value> {
         let index = v8_uint(scope, index);
         self.v8_array.open(scope).get(scope, index.into()).unwrap()
     }
 
     /// Inspects the underlying [`v8::Array`] to return the number of elements it contains.
     #[cfg(test)]
-    fn v8_len(&self, scope: &mut HandleScope) -> usize {
+    fn v8_len(&self, scope: &mut PinScope) -> usize {
         let v8_array = self.v8_array.open(scope);
         v8_array.length() as usize
     }
@@ -184,13 +184,13 @@ where
     V: Eq,
 {
     /// Constructs a new, empty `MirroredIndexMap`.
-    pub fn new(scope: &mut HandleScope) -> Self {
+    pub fn new(scope: &mut PinScope) -> Self {
         Self::with_capacity(scope, 0)
     }
 
     /// Creates a new, empty `MirroredIndexMap` with at least the specified capacity.
     /// Note: the capacity is allocated for the Rust `IndexMap` only, not the `v8::Map`.
-    pub fn with_capacity(scope: &mut HandleScope, capacity: usize) -> Self {
+    pub fn with_capacity(scope: &mut PinScope, capacity: usize) -> Self {
         let v8_map = v8::Map::new(scope);
         let v8_map = v8::Global::new(scope, v8_map);
         let imap = IndexMap::with_capacity(capacity);
@@ -218,14 +218,14 @@ where
     /// the key will not be updated), and the existing value will be returned as `Some(V)`.
     pub fn insert_with<'s, G>(
         &mut self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         key: K,
         value: V,
         kv_generator: G,
     ) -> (usize, Option<V>)
     where
         G: FnOnce(
-            &mut HandleScope<'s>,
+            &mut PinScope<'s, '_>,
             &K,
             &V,
         ) -> (v8::Local<'s, v8::Value>, v8::Local<'s, v8::Value>),
@@ -245,7 +245,7 @@ where
     }
 
     /// Removes all the elements in the map, retaining the existing capacity across Rust and v8.
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         if self.is_empty() {
             return;
         }
@@ -255,7 +255,7 @@ where
 
     /// Returns a local handle to the underlying [`v8::Global`] map.
     #[inline(always)]
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Map> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Map> {
         v8::Local::new(scope, &self.v8_map)
     }
 
@@ -278,7 +278,7 @@ where
     #[cfg(test)]
     pub fn get_v8_int<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         key: &str,
     ) -> v8::Local<'s, v8::Integer> {
         let value = self.get_v8(scope, key);
@@ -286,7 +286,7 @@ where
     }
 
     #[cfg(test)]
-    pub fn get_v8<'s>(&self, scope: &mut HandleScope<'s>, key: &str) -> v8::Local<'s, v8::Value> {
+    pub fn get_v8<'s>(&self, scope: &mut PinScope<'s, '_>, key: &str) -> v8::Local<'s, v8::Value> {
         let key = v8_interned(scope, key);
         self.v8_map.open(scope).get(scope, key.into()).unwrap()
     }
@@ -310,14 +310,14 @@ where
     C: V8Converter<Item = T, Error = DDSAJsRuntimeError>,
 {
     /// Constructs a new, empty `SyncedV8Array`.
-    pub fn new(converter: C, scope: &mut HandleScope, array: v8::Global<v8::Array>) -> Self {
+    pub fn new(converter: C, scope: &mut PinScope, array: v8::Global<v8::Array>) -> Self {
         Self::with_capacity(converter, scope, array, 0)
     }
 
     /// Constructs a new, empty `SyncedV8Array` with at least the specified capacity.
     pub fn with_capacity(
         converter: C,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         array: v8::Global<v8::Array>,
         capacity: u32,
     ) -> Self {
@@ -334,7 +334,7 @@ where
 
     /// Provides a [`v8::Local`] handle to the underlying [`v8::Global`] array.
     #[inline(always)]
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         v8::Local::new(scope, &self.v8_array)
     }
 
@@ -342,7 +342,7 @@ where
     /// a collected `Vec`, or an error if any of the elements couldn't be converted into a [`T`].
     ///
     /// NOTE: To access borrowed values without draining the `v8::Array`, use [`sync_read`](Self::sync_read).
-    pub fn drain_collect(&mut self, scope: &mut HandleScope) -> Result<Vec<T>, DDSAJsRuntimeError> {
+    pub fn drain_collect(&mut self, scope: &mut PinScope) -> Result<Vec<T>, DDSAJsRuntimeError> {
         self.sync_data(scope)?;
         let mut collected = Vec::with_capacity(self.vec.len());
         // Prevent dropping into v8 unless necessary
@@ -355,7 +355,7 @@ where
     }
 
     /// Clears the `v8::Array`.
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.clear_v8(scope);
         self.vec.clear();
     }
@@ -363,7 +363,7 @@ where
     /// Syncs the data from v8, returning a reference to it.
     ///
     /// To mutably take owned values, use [`drain_collect`](Self::drain_collect).
-    pub fn sync_read(&mut self, scope: &mut HandleScope) -> Result<&[T], DDSAJsRuntimeError> {
+    pub fn sync_read(&mut self, scope: &mut PinScope) -> Result<&[T], DDSAJsRuntimeError> {
         self.sync_data(scope)?;
         Ok(self.vec.as_slice())
     }
@@ -371,7 +371,7 @@ where
     /// Syncs the data from the `v8::Array` to the `Vec<T>`.
     ///
     /// Note: Equivalence of elements is not checked, so this will always re-convert the v8 values via the `converter`.
-    fn sync_data(&mut self, scope: &mut HandleScope) -> Result<(), DDSAJsRuntimeError> {
+    fn sync_data(&mut self, scope: &mut PinScope) -> Result<(), DDSAJsRuntimeError> {
         let v8_array = self.v8_array.open(scope);
         let v8_len = v8_array.length() as usize;
 
@@ -389,7 +389,7 @@ where
     }
 
     /// Clears the underlying `v8::Array`, preserving its allocation.
-    fn clear_v8(&self, scope: &mut HandleScope) {
+    fn clear_v8(&self, scope: &mut PinScope) {
         let v8_array = self.v8_array.open(scope);
         let undefined = v8::undefined(scope);
         for idx in (0..v8_array.length()).rev() {
@@ -401,7 +401,7 @@ where
     }
 
     #[cfg(test)]
-    fn v8_len(&self, scope: &mut HandleScope) -> usize {
+    fn v8_len(&self, scope: &mut PinScope) -> usize {
         self.v8_array.open(scope).length() as usize
     }
 }
@@ -422,7 +422,7 @@ macro_rules! rust_converter {
           type Item = $ty;
           fn convert_to<'s>(
               &$self,
-              $scope: &mut HandleScope<'s>,
+              $scope: &mut PinScope<'s, '_>,
               $value: &Self::Item,
           ) -> v8::Local<'s, v8::Value> {
               $convert_expr
@@ -456,7 +456,7 @@ macro_rules! v8_converter {
           type Error = $err;
           fn try_convert_from<'s>(
               &$self,
-              $scope: &mut HandleScope<'s>,
+              $scope: &mut PinScope<'s, '_>,
               $value: v8::Local<'s, v8::Value>,
           ) -> Result<Self::Item, Self::Error> {
               $convert_expr
@@ -471,7 +471,7 @@ mod tests {
     use crate::analysis::ddsa_lib::test_utils::{attach_as_global, cfg_test_v8};
     use crate::analysis::ddsa_lib::v8_ds::{MirroredIndexMap, MirroredVec, SyncedV8Array};
     use deno_core::v8;
-    use deno_core::v8::HandleScope;
+    use deno_core::v8::PinScope;
 
     struct IntConverter;
     rust_converter!((IntConverter, i32), |&self, scope, value| {
@@ -512,7 +512,7 @@ mod tests {
                 key_name: value.to_string(),
             }
         }
-        fn to_v8<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Value> {
+        fn to_v8<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Value> {
             let v8_obj = v8::Object::new(scope);
             let v8_key = v8::String::new(scope, "key_name").unwrap();
             let v8_value = v8::String::new(scope, &self.key_name).unwrap();
@@ -523,7 +523,7 @@ mod tests {
 
     /// A v8 key-value generator function for [`MirroredIndexMap`].
     fn default_kv_generator<'s, K: AsRef<str>>(
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         key: &K,
         value: &i32,
     ) -> (v8::Local<'s, v8::Value>, v8::Local<'s, v8::Value>) {
@@ -537,7 +537,7 @@ mod tests {
     ) -> (deno_core::JsRuntime, SyncedV8Array<Object, ObjConverter>) {
         let mut rt = cfg_test_v8().deno_core_rt();
         let synced = {
-            let scope = &mut rt.handle_scope();
+            deno_core::scope!(scope, rt);
             let v8_array = v8::Array::new(scope, 0);
             let v8_array = v8::Global::new(scope, v8_array);
             let synced = SyncedV8Array::new(ObjConverter, scope, v8_array);
@@ -549,7 +549,7 @@ mod tests {
     }
 
     fn execute_script<'s>(
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         code: &str,
     ) -> Option<v8::Local<'s, v8::Value>> {
         let code = v8_string(scope, code);
@@ -560,7 +560,7 @@ mod tests {
     #[test]
     fn mirrored_vec_set_get() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let mut synced = MirroredVec::new(IntConverter, scope);
         assert_eq!(synced.v8_len(scope), 0);
@@ -582,7 +582,7 @@ mod tests {
     #[test]
     fn mirrored_vec_clear() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let mut synced = MirroredVec::with_capacity(IntConverter, scope, 16);
         let data = vec![1, 2, 3, 4];
@@ -603,7 +603,7 @@ mod tests {
     #[test]
     fn mirrored_vec_replace() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         // Long -> Short
         let mut synced = MirroredVec::new(IntConverter, scope);
@@ -624,7 +624,7 @@ mod tests {
     #[test]
     fn mirrored_im_insert_with_get_full() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut synced = MirroredIndexMap::new(scope);
 
         let data = vec![("abc", 123), ("def", 456), ("ghi", 789)];
@@ -644,7 +644,7 @@ mod tests {
     #[test]
     fn mirrored_im_replace() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut synced = MirroredIndexMap::new(scope);
 
         let (key, value) = ("abc", 123);
@@ -668,7 +668,7 @@ mod tests {
     #[test]
     fn synced_array_get() {
         let (mut rt, mut synced) = setup_vec_from_v8("ARRAY");
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         assert_eq!(synced.sync_read(scope).unwrap().len(), 0);
         let base = vec![Object::new("123"), Object::new("456"), Object::new("789")];
         let code = r#"
@@ -690,7 +690,7 @@ ARRAY.shift();
     #[test]
     fn synced_array_drain() {
         let (mut rt, mut synced) = setup_vec_from_v8("ARRAY");
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         let base = vec![Object::new("123"), Object::new("456"), Object::new("789")];
         let code = r#"
 ARRAY.push({ key_name: "123" }, { key_name: "456" }, { key_name: "789" });
@@ -708,7 +708,7 @@ ARRAY.push({ key_name: "123" }, { key_name: "456" }, { key_name: "789" });
     #[test]
     fn synced_array_clear() {
         let (mut rt, mut synced) = setup_vec_from_v8("ARRAY");
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         let code = r#"
 ARRAY.push({ key_name: "123" }, { key_name: "456" }, { key_name: "789" });
 "#;
@@ -725,7 +725,7 @@ ARRAY.push({ key_name: "123" }, { key_name: "456" }, { key_name: "789" });
     #[test]
     fn synced_array_deserialization_err() {
         let (mut rt, mut synced) = setup_vec_from_v8("ARRAY");
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         let code = r#"
 ARRAY.push({ key_name: "123" }, { wrong_key: "456" });
 "#;

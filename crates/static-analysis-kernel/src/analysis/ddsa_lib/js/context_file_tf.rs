@@ -4,7 +4,7 @@
 
 use std::marker::PhantomData;
 
-use deno_core::v8::{self, HandleScope};
+use deno_core::v8::{self, PinScope};
 
 use crate::analysis::ddsa_lib::common::{
     load_function, set_key_value, set_undefined, v8_interned, v8_string, Class, DDSAJsRuntimeError,
@@ -49,7 +49,7 @@ impl FileContextTerraform<Instance> {
     pub const CLASS_NAME: &'static str = "FileContextTerraform";
 
     /// Creates a new [`v8::Global`] object by loading [`Self::CLASS_NAME`] from the `scope` and creating an instance.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let args = [v8::undefined(scope).into()];
@@ -70,7 +70,7 @@ impl FileContextTerraform<Instance> {
     /// or `undefined` if no array is provided.
     pub fn set_module_resource_array(
         &self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         array: Option<&v8::Global<v8::Array>>,
     ) {
         if let Some(v8_map) = array {
@@ -93,7 +93,7 @@ impl TerraformResource<Class> {
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
     pub fn try_new(
-        scope: &mut v8::HandleScope,
+        scope: &mut v8::PinScope,
     ) -> Result<Self, crate::analysis::ddsa_lib::common::DDSAJsRuntimeError> {
         let class = load_function(scope, Self::CLASS_NAME)?;
         Ok(Self {
@@ -105,7 +105,7 @@ impl TerraformResource<Class> {
 
 #[cfg(test)]
 mod tests {
-    use deno_core::{v8, v8::HandleScope};
+    use deno_core::{v8, v8::PinScope};
 
     use super::{FileContextTerraform, TerraformResource};
     use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint, Instance};
@@ -115,11 +115,7 @@ mod tests {
 
     /// Creates a `FileContextTerraform`, prepopulated with the provided `resource_array` and exposed on `globalThis`
     /// with the provided `variable_name`.
-    fn mount_context(
-        scope: &mut HandleScope,
-        variable_name: &str,
-        resource_array: &[(&str, &str)],
-    ) {
+    fn mount_context(scope: &mut PinScope, variable_name: &str, resource_array: &[(&str, &str)]) {
         let resources = v8::Array::new(scope, 0);
         for (index, (resource_type, resource_name)) in resource_array.iter().enumerate() {
             let resource = v8::Object::new(scope);
@@ -184,7 +180,7 @@ mod tests {
     #[test]
     fn unique_resources() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let tf_resources = &[
             ("aws_instance", "app"),
             ("google_compute_instance", "cache"),
@@ -213,7 +209,7 @@ TERRAFORM.getResourcesOfType('aws_instance').map(r => r.name).join(',');
     #[test]
     fn get_all_resources() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let tf_resources = &[
             ("aws_instance", "app"),
             ("google_compute_instance", "cache"),

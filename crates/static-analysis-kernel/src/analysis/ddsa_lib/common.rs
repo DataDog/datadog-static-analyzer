@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Deref;
 use std::time::Duration;
@@ -150,8 +150,8 @@ impl<T> Deref for StellaCompat<T> {
 
 /// Loads a global [`v8::Function`] from the provided scope, returning an error if either the
 /// identifier doesn't exist, or if it doesn't refer to a function.
-pub fn load_function(
-    scope: &mut HandleScope,
+pub fn load_function<'s, 'i>(
+    scope: &mut PinScope<'s, 'i>,
     identifier: &str,
 ) -> Result<v8::Global<v8::Function>, DDSAJsRuntimeError> {
     let ctx = scope.get_current_context();
@@ -183,7 +183,7 @@ pub fn load_function(
 /// * Panics if the provided string is not ASCII.
 /// * Panics if `str` is longer than the v8 string length limit.
 #[inline(always)]
-pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
+pub fn v8_interned<'s, 'i>(scope: &mut PinScope<'s, 'i>, str: &str) -> v8::Local<'s, v8::String> {
     // This is a debug assertion because `is_ascii()` is O(N), and the `v8_interned` function is called
     // frequently in performance-critical paths.
     debug_assert!(str.is_ascii(), "string must be ASCII");
@@ -195,14 +195,14 @@ pub fn v8_interned<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, 
 /// to create the string, even if it has been seen by the runtime before. An empty string is
 /// returned if the string is larger than the v8 string length limit.
 #[inline(always)]
-pub fn v8_string<'s>(scope: &mut HandleScope<'s>, str: &str) -> v8::Local<'s, v8::String> {
+pub fn v8_string<'s, 'i>(scope: &mut PinScope<'s, 'i>, str: &str) -> v8::Local<'s, v8::String> {
     v8::String::new_from_utf8(scope, str.as_bytes(), v8::NewStringType::Normal)
         .unwrap_or_else(|| swallow_v8_error(|| v8::String::empty(scope)))
 }
 
 /// A shorthand for creating a [`v8::Integer`].
 #[inline(always)]
-pub fn v8_uint<'s>(scope: &mut HandleScope<'s>, number: u32) -> v8::Local<'s, v8::Integer> {
+pub fn v8_uint<'s, 'i>(scope: &mut PinScope<'s, 'i>, number: u32) -> v8::Local<'s, v8::Integer> {
     v8::Integer::new_from_unsigned(scope, number)
 }
 
@@ -236,10 +236,10 @@ where
 /// into the provided v8 type, returning an error if the conversion is invalid.
 ///
 /// Note that this function is relatively slow, as it will create a new interned `v8::String` for the `field_name`.
-pub fn get_field<'s, T>(
+pub fn get_field<'s, 'i, T>(
     value: v8::Local<v8::Object>,
     field_name: &'static str,
-    scope: &mut HandleScope<'s>,
+    scope: &mut PinScope<'s, 'i>,
     expecting: &'static str,
 ) -> Result<v8::Local<'s, T>, DDSAJsRuntimeError>
 where
@@ -256,10 +256,10 @@ where
 /// returned as `None`.
 ///
 /// Note that this function is relatively slow, as it will create a new interned `v8::String` for the `field_name`.
-pub fn get_optional_field<'s, T>(
+pub fn get_optional_field<'s, 'i, T>(
     value: v8::Local<v8::Object>,
     field_name: &'static str,
-    scope: &mut HandleScope<'s>,
+    scope: &mut PinScope<'s, 'i>,
     expecting: &'static str,
 ) -> Result<Option<v8::Local<'s, T>>, DDSAJsRuntimeError>
 where
@@ -282,9 +282,9 @@ where
 ///
 /// NOTE: this is not a zero-cost abstraction, as it first collects the entire v8 array into
 /// a `Vec`, and then returns an iterator over that `Vec`.
-pub fn iter_v8_array<'s>(
+pub fn iter_v8_array<'s, 'i>(
     value: v8::Local<'s, v8::Array>,
-    scope: &mut HandleScope<'s>,
+    scope: &mut PinScope<'s, 'i>,
 ) -> impl Iterator<Item = v8::Local<'s, v8::Value>> {
     let len = value.length();
     let mut vec = Vec::with_capacity(len as usize);
@@ -299,9 +299,9 @@ pub fn iter_v8_array<'s>(
 }
 
 /// Sets a [`v8::Global`] object's property to undefined.
-pub fn set_undefined(
+pub fn set_undefined<'s, 'i>(
     object: &v8::Global<v8::Object>,
-    scope: &mut HandleScope,
+    scope: &mut PinScope<'s, 'i>,
     key: &v8::Global<v8::String>,
 ) {
     let v8_object = object.open(scope);
@@ -316,13 +316,13 @@ pub fn set_undefined(
 }
 
 /// Sets a [`v8::Global`] object's key to the value returned by the `value_generator`.
-pub fn set_key_value<G>(
+pub fn set_key_value<'s, 'i, G>(
     object: &v8::Global<v8::Object>,
-    scope: &mut HandleScope,
+    scope: &mut PinScope<'s, 'i>,
     key: &v8::Global<v8::String>,
     value_generator: G,
 ) where
-    for<'s> G: Fn(&mut HandleScope<'s>) -> v8::Local<'s, v8::Value>,
+    for<'a, 'b> G: Fn(&mut PinScope<'a, 'b>) -> v8::Local<'a, v8::Value>,
 {
     let v8_object = object.open(scope);
     let v8_key = v8::Local::new(scope, key);
@@ -331,13 +331,13 @@ pub fn set_key_value<G>(
 }
 
 /// Creates a `v8::Global` [`UnboundScript`](v8::UnboundScript) from the given code and origin.
-pub fn compile_script(
-    scope: &mut HandleScope,
+pub fn compile_script<'s, 'i>(
+    scope: &mut PinScope<'s, 'i>,
     code: &str,
     origin: Option<&v8::ScriptOrigin>,
 ) -> Result<v8::Global<v8::UnboundScript>, DDSAJsRuntimeError> {
     let code_str = v8_string(scope, code);
-    let tc_scope = &mut v8::TryCatch::new(scope);
+    v8::tc_scope!(let tc_scope, scope);
     let script_result = v8::Script::compile(tc_scope, code_str, origin);
 
     let script = script_result.ok_or_else(|| {
@@ -391,7 +391,8 @@ mod tests {
         let invalid_js = r#"
 const invalidSyntax = const;
 "#;
-        let err = compile_script(&mut runtime.v8_handle_scope(), invalid_js, None).unwrap_err();
+        deno_core::scope!(scope, runtime.deno_runtime());
+        let err = compile_script(scope, invalid_js, None).unwrap_err();
         let DDSAJsRuntimeError::Interpreter { reason } = err else {
             panic!("error variant should be `Interpreter`");
         };
@@ -404,7 +405,8 @@ const invalidSyntax = const;
         let invalid_js = r#"
 const validSyntax = 123;
 "#;
-        assert!(compile_script(&mut runtime.v8_handle_scope(), invalid_js, None).is_ok());
+        deno_core::scope!(scope, runtime.deno_runtime());
+        assert!(compile_script(scope, invalid_js, None).is_ok());
     }
 
     /// Tests that [`inner_make_deno_core_runtime`]  can modify the default v8::Context for
@@ -415,8 +417,11 @@ const validSyntax = 123;
         // We use the ES6 `Map` constructor because it will always be present
         let code = "Map;";
 
-        let value = try_execute(&mut runtime.handle_scope(), code).unwrap();
-        assert!(value.is_object());
+        {
+            deno_core::scope!(scope, runtime);
+            let value = try_execute(scope, code).unwrap();
+            assert!(value.is_object());
+        }
 
         let mut runtime = inner_make_deno_core_runtime(
             vec![],
@@ -427,7 +432,8 @@ const validSyntax = 123;
             })),
             None,
         );
-        let value = try_execute(&mut runtime.handle_scope(), code).unwrap_err();
+        deno_core::scope!(scope, runtime);
+        let value = try_execute(scope, code).unwrap_err();
         let DDSAJsRuntimeError::Execution { error: js_error } = value else {
             panic!("should be this variant")
         };
@@ -448,7 +454,7 @@ const validSyntax = 123;
     #[test]
     fn v8_string_fn_utf8() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         // Round-trip the strings through v8 to ensure a lossless conversion.
         for (text, is_only_onebyte) in [(ASCII, true), (LATIN_1_SUPPLEMENT, true), (WIDE, false)] {
@@ -463,7 +469,7 @@ const validSyntax = 123;
     #[test]
     fn v8_interned_fn_ascii() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let v8_str = v8_interned(scope, ASCII);
         assert!(v8_str.contains_only_onebyte());
@@ -477,7 +483,7 @@ const validSyntax = 123;
         for text in [LATIN_1_SUPPLEMENT, WIDE] {
             let result = std::panic::catch_unwind(|| {
                 let mut runtime = cfg_test_v8().deno_core_rt();
-                let scope = &mut runtime.handle_scope();
+                deno_core::scope!(scope, runtime);
                 let _v8_str = v8_interned(scope, text);
             });
             assert!(result.is_err());
@@ -495,8 +501,9 @@ function someFunction() {
 }
 someFunction();
 ";
+        deno_core::scope!(scope, runtime);
         let DDSAJsRuntimeError::Execution { error: js_error } =
-            try_execute(&mut runtime.handle_scope(), code).unwrap_err()
+            try_execute(scope, code).unwrap_err()
         else {
             panic!("should be this variant")
         };

@@ -11,7 +11,7 @@ use crate::analysis::ddsa_lib::v8_ds::RustConverter;
 use crate::analysis::tree_sitter::TSCaptureContent;
 use crate::rust_converter;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A function representing the ES6 class `QueryMatch`.
@@ -58,7 +58,7 @@ impl QueryMatch<Class> {
     pub const CLASS_NAME: &'static str = "QueryMatch";
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let class = load_function(scope, Self::CLASS_NAME)?;
         let single_capture = SingleCaptureTemplate::new(scope);
         let multi_capture = MultiCaptureTemplate::new(scope);
@@ -105,7 +105,7 @@ mod tests {
     #[test]
     fn get_id_single_on_single() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = QueryMatch::try_new(scope).unwrap();
         let single_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_single(
             Arc::<str>::from("cap_name"),
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn get_id_single_on_multi_is_last() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = QueryMatch::try_new(scope).unwrap();
         let multi_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_multi(
             Arc::<str>::from("cap_name"),
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn get_many_ids_on_single() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = QueryMatch::try_new(scope).unwrap();
         let single_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_single(
             Arc::<str>::from("cap_name"),
@@ -176,7 +176,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     #[test]
     fn get_many_ids_on_multi() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = QueryMatch::try_new(scope).unwrap();
         let multi_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_multi(
             Arc::<str>::from("cap_name"),
@@ -201,7 +201,7 @@ assert(cap_node_ids.join(",") === "10,20,30", "nodeIds were incorrect");
     #[test]
     fn get_many_ids_on_multi_with_one_element() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = QueryMatch::try_new(scope).unwrap();
         let multi_cap = crate::analysis::tree_sitter::TSQueryCapture::<NodeId>::new_multi(
             Arc::<str>::from("cap_name"),
@@ -226,7 +226,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     #[test]
     fn query_match_converter_empty_undefined() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = QueryMatch::try_new(scope).unwrap();
         let captures = vec![];
         let v8_query_match = js_class.convert_to(scope, &captures);
@@ -243,7 +243,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     fn get_node() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10]);
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
@@ -266,7 +266,7 @@ assert(cap_node_ids[0] === 10, "nodeId was incorrect");
     fn get_many_nodes() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20]);
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 

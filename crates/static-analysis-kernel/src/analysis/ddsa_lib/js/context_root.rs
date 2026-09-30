@@ -8,7 +8,7 @@ use crate::analysis::ddsa_lib::common::{
 };
 use crate::analysis::ddsa_lib::js;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A [`v8::Global`] object created from the ES6 class `RootContext`.
@@ -30,7 +30,7 @@ impl RootContext<Instance> {
     pub const CLASS_NAME: &'static str = "RootContext";
 
     /// Creates a new [`v8::Global`] object by loading [`Self::CLASS_NAME`] from the `scope` and creating an instance.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let undefined = v8::undefined(scope);
@@ -61,16 +61,12 @@ impl RootContext<Instance> {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         v8::Local::new(scope, &self.v8_object)
     }
 
     /// Sets the rule context.
-    pub fn set_rule_ctx(
-        &self,
-        scope: &mut HandleScope,
-        rule_ctx: Option<&js::RuleContext<Instance>>,
-    ) {
+    pub fn set_rule_ctx(&self, scope: &mut PinScope, rule_ctx: Option<&js::RuleContext<Instance>>) {
         if let Some(rule_ctx) = rule_ctx {
             set_key_value(&self.v8_object, scope, &self.s_rule_ctx, |inner| {
                 rule_ctx.as_local(inner).into()
@@ -81,11 +77,7 @@ impl RootContext<Instance> {
     }
 
     /// Sets the file context.
-    pub fn set_file_ctx(
-        &self,
-        scope: &mut HandleScope,
-        file_ctx: Option<&js::FileContext<Instance>>,
-    ) {
+    pub fn set_file_ctx(&self, scope: &mut PinScope, file_ctx: Option<&js::FileContext<Instance>>) {
         if let Some(file_ctx) = file_ctx {
             set_key_value(&self.v8_object, scope, &self.s_file_ctx, |inner| {
                 file_ctx.as_local(inner).into()
@@ -98,7 +90,7 @@ impl RootContext<Instance> {
     /// Sets the tree-sitter Language context.
     pub fn set_ts_lang_ctx(
         &self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         ts_lang_ctx: Option<&js::TsLanguageContext<Instance>>,
     ) {
         if let Some(ts_lang_ctx) = ts_lang_ctx {
@@ -111,7 +103,7 @@ impl RootContext<Instance> {
     }
 
     /// Sets the filename cache in the context.
-    pub fn set_filename_cache(&self, scope: &mut HandleScope, filename: Option<&str>) {
+    pub fn set_filename_cache(&self, scope: &mut PinScope, filename: Option<&str>) {
         if let Some(filename) = filename {
             set_key_value(&self.v8_object, scope, &self.s_filename, |inner| {
                 v8_string(inner, filename).into()
@@ -123,18 +115,18 @@ impl RootContext<Instance> {
 
     /// Gets the value of the filename cache.
     #[cfg(test)]
-    pub fn get_filename_cache(&self, scope: &mut HandleScope) -> Option<String> {
+    pub fn get_filename_cache(&self, scope: &mut PinScope) -> Option<String> {
         self.get_cache(scope, &self.s_filename)
     }
 
     /// Gets the value of the file contents cache.
     #[cfg(test)]
-    pub fn get_file_contents_cache(&self, scope: &mut HandleScope) -> Option<String> {
+    pub fn get_file_contents_cache(&self, scope: &mut PinScope) -> Option<String> {
         self.get_cache(scope, &self.s_file_contents)
     }
 
     /// Sets the file contents cache in the context.
-    pub fn set_file_contents_cache(&self, scope: &mut HandleScope, file_contents: Option<&str>) {
+    pub fn set_file_contents_cache(&self, scope: &mut PinScope, file_contents: Option<&str>) {
         if let Some(file_contents) = file_contents {
             set_key_value(&self.v8_object, scope, &self.s_file_contents, |inner| {
                 v8_string(inner, file_contents).into()
@@ -145,7 +137,7 @@ impl RootContext<Instance> {
     }
 
     #[cfg(test)]
-    fn get_cache(&self, scope: &mut HandleScope, key: &v8::Global<v8::String>) -> Option<String> {
+    fn get_cache(&self, scope: &mut PinScope, key: &v8::Global<v8::String>) -> Option<String> {
         let v8_key = v8::Local::new(scope, key);
         let v8_value = self.v8_object.open(scope).get(scope, v8_key.into());
         let v8_value = v8_value.unwrap();
@@ -174,10 +166,13 @@ mod tests {
 
     /// Constructs a `ContextBridge` and attaches it to `globalThis` with the given name
     fn setup_bridge(runtime: &mut deno_core::JsRuntime, name: &str) -> Rc<RefCell<ContextBridge>> {
-        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        let bridge = {
+            deno_core::scope!(scope, runtime);
+            ContextBridge::try_new(scope).unwrap()
+        };
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let v8_bridge = bridge.borrow().as_local(scope);
         attach_as_global(scope, v8_bridge, name);
         bridge
@@ -217,7 +212,7 @@ const sampleFileContents = 0 + 1 + 2;
         let mut runtime = cfg_test_v8().deno_core_rt();
         let bridge = setup_bridge(&mut runtime, "ROOT");
         let tree = Arc::new(parse_code(&file_contents, Language::JavaScript));
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         bridge
             .borrow_mut()
             .set_root_context(scope, &tree, &file_contents, &file_name);

@@ -4,7 +4,7 @@
 
 use std::marker::PhantomData;
 
-use deno_core::v8::{self, Handle, HandleScope};
+use deno_core::v8::{self, Handle, PinScope};
 
 use crate::analysis::ddsa_lib::common::{
     load_function, set_key_value, set_undefined, v8_interned, v8_string, Class, DDSAJsRuntimeError,
@@ -53,7 +53,7 @@ impl FileContextJavaScript<Instance> {
     pub const CLASS_NAME: &'static str = "FileContextJavaScript";
 
     /// Creates a new [`v8::Global`] object by loading [`Self::CLASS_NAME`] from the `scope` and creating an instance.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let args = [v8::undefined(scope).into()];
@@ -72,11 +72,7 @@ impl FileContextJavaScript<Instance> {
 
     /// Assigns either the provided [`v8::Global`] array to the JavaScript object's [`FileContextJavaScript::s_imports`] key,
     /// or `undefined` if no array is provided.
-    pub fn set_imports_array(
-        &self,
-        scope: &mut HandleScope,
-        array: Option<&v8::Global<v8::Array>>,
-    ) {
+    pub fn set_imports_array(&self, scope: &mut PinScope, array: Option<&v8::Global<v8::Array>>) {
         if let Some(v8_map) = array {
             set_key_value(&self.v8_object, scope, &self.s_imports, |inner| {
                 v8::Local::new(inner, v8_map).into()
@@ -96,7 +92,7 @@ impl JSPackageImport<Class> {
     pub const CLASS_NAME: &'static str = "PackageImport";
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         Ok(Self {
             class: js_class,

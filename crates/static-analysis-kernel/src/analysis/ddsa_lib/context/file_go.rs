@@ -6,7 +6,7 @@ use crate::analysis::ddsa_lib::common::v8_string;
 use crate::analysis::ddsa_lib::v8_ds::MirroredIndexMap;
 use crate::analysis::languages::go;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 
 /// Structure for the file context that is specific to Go.
 #[derive(Debug)]
@@ -15,14 +15,14 @@ pub struct FileContextGo {
 }
 
 impl FileContextGo {
-    pub fn new(scope: &mut HandleScope) -> Self {
+    pub fn new(scope: &mut PinScope) -> Self {
         Self {
             packages_aliased: MirroredIndexMap::new(scope),
         }
     }
 
     /// Queries the `tree_sitter::Tree` and updates the internal [`MirroredIndexMap`] with the query results.
-    pub fn update_state(&mut self, scope: &mut HandleScope, tree: &tree_sitter::Tree, code: &str) {
+    pub fn update_state(&mut self, scope: &mut PinScope, tree: &tree_sitter::Tree, code: &str) {
         self.packages_aliased.clear(scope);
 
         for go::PackageImport {
@@ -44,7 +44,7 @@ impl FileContextGo {
     }
 
     /// Clears the internal [`MirroredIndexMap`] of any package aliases.
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.packages_aliased.clear(scope);
     }
 
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn context_get_imports() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut ctx_go = FileContextGo::new(scope);
 
         let mut assert_test = |code: &str, expected: &[(&str, &str)]| {

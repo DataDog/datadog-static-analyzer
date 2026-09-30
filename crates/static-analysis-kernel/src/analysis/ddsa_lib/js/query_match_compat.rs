@@ -9,7 +9,7 @@ use crate::analysis::ddsa_lib::js::QueryMatch;
 use crate::analysis::ddsa_lib::v8_ds::RustConverter;
 use crate::{analysis, rust_converter};
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 rust_converter!(
     (
         QueryMatchCompat<Class>,
@@ -45,7 +45,7 @@ impl QueryMatchCompat<Class> {
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] and instantiating
     /// a [`QueryMatch<T>`].
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let class = load_function(scope, Self::CLASS_NAME)?;
         let proxied = QueryMatch::<Class>::try_new(scope)?;
         Ok(Self { class, proxied })
@@ -85,7 +85,7 @@ const abc = 123; thisStringRepresents(\"File Contents\");\
     fn compat_layer_captures() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10]);
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
@@ -108,7 +108,7 @@ assert(QUERY_MATCH.captures.cap_name.id === 10);
     fn compat_layer_captures_name_collision() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20]);
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
@@ -149,7 +149,7 @@ QUERY_MATCH.captures.{}(\"cap_name\");",
     fn compat_layer_captures_list() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20]);
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
@@ -175,7 +175,7 @@ assert(stubNodes[1].id === 20);
     fn compat_layer_captures_list_empty() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[]);
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
@@ -198,7 +198,7 @@ assert(stubNodes === undefined);
     fn compat_layer_context() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_root_context = make_stub_root_context(scope, &[("arg_name1", "123")], COMPAT_FILENAME, COMPAT_FILE_CONTENTS, None);
         attach_as_global(scope, stub_root_context, "__RUST_BRIDGE__context");
 
@@ -233,7 +233,7 @@ QUERY_MATCH.context.filename;
     fn compat_layer_native_ddsa() {
         let mut runtime = cfg_test_v8().deno_core_rt();
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let stub_tsn_bridge = make_stub_tsn_bridge(scope, &[10, 20, 30]);
         attach_as_global(scope, stub_tsn_bridge, "__RUST_BRIDGE__ts_node");
 
