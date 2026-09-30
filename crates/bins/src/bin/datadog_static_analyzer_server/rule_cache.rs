@@ -125,6 +125,7 @@ mod tests {
     use kernel::model::rule::{compute_sha256, RuleCategory, RuleSeverity, RuleType};
     use kernel::utils::encode_base64_string;
     use server::model::analysis_request::{AnalysisRequest, AnalysisRequestOptions, ServerRule};
+    use std::sync::mpsc;
 
     fn request_from(
         rule_name: &str,
@@ -268,19 +269,38 @@ function visit(captures) {
         // Tests the clearing of `v8::Script` cache
         assert_ne!(req_v1.rules[0].code_base64, req_v2.rules[0].code_base64);
 
-        // Two runtimes to simulate two threads. Thus, there are two v8::UnboundScript caches, but the entrypoint is the same `RuleCache`
-        let mut rt_a = v8.new_runtime();
-        let mut rt_b = v8.new_runtime();
+        let (a_ran_v1_tx, a_ran_v1_rx) = mpsc::channel::<()>();
+        let (b_done_tx, b_done_rx) = mpsc::channel::<()>();
 
-        let resp = cached_analysis_request(&mut rt_a, req_v1.clone(), None, Some(&cache)).unwrap();
-        assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v1");
+        let cache = &cache;
+        let (req_v1_a, req_v2_a) = (req_v1.clone(), req_v2.clone());
+        let req_v2_b = req_v2.clone();
 
-        let resp = cached_analysis_request(&mut rt_b, req_v2.clone(), None, Some(&cache)).unwrap();
-        assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v2");
+        std::thread::scope(|s| {
+            s.spawn(move || {
+                let mut rt_a = v8.new_runtime();
 
-        // `rt_a` still contains a v8::UnboundScript for `req_v1`.
-        // `cached_analysis_request` must correctly instruct `rt_a` to clear its cache for `RULE_NAME`.
-        let resp = cached_analysis_request(&mut rt_a, req_v2.clone(), None, Some(&cache)).unwrap();
-        assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v2");
+                let resp = cached_analysis_request(&mut rt_a, req_v1_a, None, Some(cache)).unwrap();
+                assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v1");
+
+                // Let thread B overwrite the `RuleCache` entry for `RULE_NAME`.
+                a_ran_v1_tx.send(()).unwrap();
+                b_done_rx.recv().expect("thread B should run");
+
+                // `rt_a` still contains a v8::UnboundScript for `req_v1`.
+                // `cached_analysis_request` must correctly instruct `rt_a` to clear its cache for `RULE_NAME`.
+                let resp = cached_analysis_request(&mut rt_a, req_v2_a, None, Some(cache)).unwrap();
+                assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v2");
+            });
+
+            s.spawn(move || {
+                let mut rt_b = v8.new_runtime();
+
+                a_ran_v1_rx.recv().expect("thread A should run first");
+                let resp = cached_analysis_request(&mut rt_b, req_v2_b, None, Some(cache)).unwrap();
+                assert_eq!(resp[0].output.as_ref().unwrap(), "rule_v2");
+                b_done_tx.send(()).unwrap();
+            });
+        });
     }
 }
