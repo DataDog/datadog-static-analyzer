@@ -16,7 +16,7 @@ use crate::model::violation;
 use common::model::language::Language;
 use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -56,7 +56,7 @@ impl JsRuntime {
         // Construct the bridges and attach their underlying `v8:Global` object to the
         // default context's `globalThis` variable.
         let (context, query_match, ts_node, violation, v8_ddsa_global) = {
-            let scope = &mut deno_runtime.handle_scope();
+            deno_core::scope!(scope, deno_runtime);
             let v8_ddsa_object = v8::Object::new(scope);
 
             let context = ContextBridge::try_new(scope)?;
@@ -147,7 +147,10 @@ impl JsRuntime {
         let rule_cache = Rc::clone(&self.rule_cache);
         let mut rule_cache_ref = rule_cache.borrow_mut();
         if !rule_cache_ref.contains_key(&rule.name) {
-            let script = CompiledRule::new(&mut self.runtime.handle_scope(), &rule.code)?;
+            let script = {
+                deno_core::scope!(scope, self.runtime);
+                CompiledRule::new(scope, &rule.code)?
+            };
             rule_cache_ref.insert(rule.name.clone(), script);
         }
         let compiled_rule = rule_cache_ref
@@ -247,7 +250,7 @@ impl JsRuntime {
                 return Ok(vec![]);
             }
 
-            let scope = &mut self.runtime.handle_scope();
+            deno_core::scope!(scope, self.runtime);
 
             // Push data from Rust to v8
             // Update the DDSA context metadata
@@ -275,12 +278,15 @@ impl JsRuntime {
         // we can't immediately return here -- the bridges need to be cleared.
         let execution_res = self.scoped_execute(rule_script, |_, _| (), timeout);
 
-        let violations_res = self
-            .bridge_violation
-            .drain_collect(&mut self.runtime.handle_scope());
+        let violations_res = {
+            deno_core::scope!(scope, self.runtime);
+            self.bridge_violation.drain_collect(scope)
+        };
 
-        self.bridge_query_match
-            .clear(&mut self.runtime.handle_scope());
+        {
+            deno_core::scope!(scope, self.runtime);
+            self.bridge_query_match.clear(scope);
+        }
 
         if let Err(runtime_err) = execution_res {
             Err(runtime_err)
@@ -312,28 +318,27 @@ impl JsRuntime {
     ///     None,
     /// )
     /// ```
-    pub(crate) fn scoped_execute<'rt, 's, 'v, T, U>(
-        &'rt mut self,
-        script: &'s v8::Global<v8::UnboundScript>,
+    pub(crate) fn scoped_execute<T, U>(
+        &mut self,
+        script: &v8::Global<v8::UnboundScript>,
         handle_return_value: T,
         timeout: Option<Duration>,
     ) -> Result<U, DDSAJsRuntimeError>
     where
-        'rt: 's,
-        's: 'v,
-        T: Fn(&mut v8::TryCatch<v8::HandleScope<'s>>, v8::Local<'v, v8::Value>) -> U,
+        T: for<'h> Fn(
+            &mut v8::PinnedRef<'_, v8::TryCatch<'_, 'h, v8::HandleScope<'_>>>,
+            v8::Local<'h, v8::Value>,
+        ) -> U,
     {
         self.console.borrow_mut().clear();
 
-        let scope = &mut self.runtime.handle_scope();
         // We re-use the same v8::Context for performance, and we use a combination of closures and
         // a frozen global object to achieve equivalent encapsulation to creating a new v8::Context.
-        let v8_ctx = scope.get_current_context();
+        deno_core::scope!(scope, self.runtime);
 
-        let ctx_scope = &mut v8::ContextScope::new(scope, v8_ctx);
         // The v8 API uses `Option` for fallible calls, with `None` indicating a v8 execution error.
         // We need to use a `TryCatch` scope to actually be able to inspect the error type/contents.
-        let tc_ctx_scope = &mut v8::TryCatch::new(ctx_scope);
+        v8::tc_scope!(let tc_ctx_scope, scope);
 
         let opened = script.open(tc_ctx_scope);
         let bound_script = opened.bind_to_current_context(tc_ctx_scope);
@@ -356,10 +361,12 @@ impl JsRuntime {
         Ok(handle_return_value(tc_ctx_scope, return_val))
     }
 
-    /// Provides a [`v8::HandleScope`] for the underlying v8 isolate.
+    /// Provides the underlying `deno_core` runtime, so that callers can open a
+    /// [`v8::PinScope`] with [`deno_core::scope!`] (a scope is pinned to the stack, so it can't
+    /// be returned from a function).
     #[cfg(test)]
-    pub fn v8_handle_scope(&mut self) -> v8::HandleScope<'_> {
-        self.runtime.handle_scope()
+    pub fn deno_runtime(&mut self) -> &mut deno_core::JsRuntime {
+        &mut self.runtime
     }
 
     #[cfg(test)]
@@ -370,9 +377,8 @@ impl JsRuntime {
     /// Returns the length of the `v8::Array` backing the runtime's `ViolationBridge`.
     #[cfg(test)]
     pub fn violation_bridge_v8_len(&mut self) -> usize {
-        let v8_array = self
-            .bridge_violation
-            .as_local(&mut self.runtime.handle_scope());
+        deno_core::scope!(scope, self.runtime);
+        let v8_array = self.bridge_violation.as_local(scope);
         v8_array.length() as usize
     }
 
@@ -445,7 +451,7 @@ pub(crate) fn make_base_deno_core_runtime(
     )
 }
 
-pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Context>);
+pub type V8DefaultContextMutateFn = dyn Fn(&mut PinScope, v8::Local<v8::Context>);
 
 /// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
 ///
@@ -469,7 +475,7 @@ pub(crate) fn inner_make_deno_core_runtime(
         ..Default::default()
     });
     if let Some(config_fn) = config_default_v8_context {
-        let scope = &mut js_runtime.handle_scope();
+        deno_core::scope!(scope, js_runtime);
         let default_ctx = scope.get_current_context();
         config_fn(scope, default_ctx);
     }
@@ -488,7 +494,7 @@ pub struct CompiledRule {
 impl CompiledRule {
     const SCRIPT_NAME: &'static str = "rule";
 
-    pub fn new(scope: &mut v8::HandleScope, rule_code: &str) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn new(scope: &mut PinScope, rule_code: &str) -> Result<Self, DDSAJsRuntimeError> {
         /// The line offset for code interpolated into the script created by [`format_rule_script`](Self::format_rule_script).
         const TEMPLATE_LINE_OFFSET: usize = 6;
 
@@ -647,7 +653,10 @@ mod tests {
         ts_query: &str,
         rule_code: &str,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
-        let compiled_rule = CompiledRule::new(&mut runtime.v8_handle_scope(), rule_code).unwrap();
+        let compiled_rule = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            CompiledRule::new(scope, rule_code).unwrap()
+        };
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let ts_query = crate::analysis::tree_sitter::TSQuery::try_new(&ts_lang, ts_query).unwrap();
         let filename: Arc<str> = Arc::from("some_filename.js");
@@ -678,7 +687,10 @@ mod tests {
         let source_text: Arc<str> = Arc::from(source_text);
         let filename: Arc<str> = Arc::from(filename);
 
-        let compiled_rule = CompiledRule::new(&mut runtime.v8_handle_scope(), rule_code).unwrap();
+        let compiled_rule = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            CompiledRule::new(scope, rule_code).unwrap()
+        };
 
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let tree = Arc::new(get_tree(source_text.as_ref(), &Language::JavaScript).unwrap());
@@ -718,7 +730,7 @@ mod tests {
     #[test]
     fn bridge_global_defined() {
         let mut runtime = cfg_test_v8().new_runtime();
-        let scope = &mut runtime.runtime.handle_scope();
+        deno_core::scope!(scope, runtime.runtime);
         let code = r#"
 assert(globalThis.__RUST_BRIDGE__context instanceof RootContext, "ContextBridge global has wrong type");
 assert(Array.isArray(globalThis.__RUST_BRIDGE__query_match), "QueryMatchBridge global has wrong type");
@@ -735,7 +747,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
     #[test]
     fn ddsa_global_prototype_chain() {
         let mut runtime = cfg_test_v8().new_runtime();
-        let scope = &mut runtime.runtime.handle_scope();
+        deno_core::scope!(scope, runtime.runtime);
         let global_proxy = scope.get_current_context().global(scope);
         let global = global_proxy
             .get_prototype(scope)
@@ -751,7 +763,7 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
     #[test]
     fn default_context_frozen_objects() {
         let mut runtime = cfg_test_v8().new_runtime();
-        let scope = &mut runtime.runtime.handle_scope();
+        deno_core::scope!(scope, runtime.runtime);
         for obj in ["globalThis", "Object.getPrototypeOf(globalThis)"] {
             let value = try_execute(scope, &format!("Object.isFrozen({obj});")).unwrap();
             assert!(value.is_true());
@@ -766,7 +778,10 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
         for obj in ["globalThis", "Object.getPrototypeOf(globalThis)"] {
             let mut rt = cfg_test_v8().new_runtime();
             let type_of = "typeof __RUST_BRIDGE__ts_node;";
-            let type_of = compile_script(&mut rt.v8_handle_scope(), type_of, None).unwrap();
+            let type_of = {
+                deno_core::scope!(scope, rt.deno_runtime());
+                compile_script(scope, type_of, None).unwrap()
+            };
 
             // Baseline: the bridge should be an object
             let value = rt.scoped_execute(&type_of, |s, v| v.to_rust_string_lossy(s), None);
@@ -779,7 +794,10 @@ assert(Array.isArray(globalThis.__RUST_BRIDGE__violation), "ViolationBridge glob
 typeof __RUST_BRIDGE__ts_node;
 "
             );
-            let script = compile_script(&mut rt.v8_handle_scope(), &code, None).unwrap();
+            let script = {
+                deno_core::scope!(scope, rt.deno_runtime());
+                compile_script(scope, &code, None).unwrap()
+            };
             let value = rt.scoped_execute(&script, |s, v| v.to_rust_string_lossy(s), None);
             // JavaScript should not be able to mutate the value.
             assert!(value.unwrap_err().to_string().contains(
@@ -795,13 +813,13 @@ typeof __RUST_BRIDGE__ts_node;
             // in `v8_ddsa_global` without needing to borrow `rt`. We achieve this by using mem::replace
             // with a stub v8::Global object, which doesn't affect execution behavior.
             let stub_obj = {
-                let scope = &mut rt.v8_handle_scope();
+                deno_core::scope!(scope, rt.deno_runtime());
                 let stub_obj = v8::Object::new(scope);
                 v8::Global::new(scope, stub_obj)
             };
             let ddsa_global = {
                 let ddsa_global = std::mem::replace(&mut rt.v8_ddsa_global, stub_obj);
-                let scope = &mut rt.v8_handle_scope();
+                deno_core::scope!(scope, rt.deno_runtime());
 
                 let opened = ddsa_global.open(scope);
                 let key = v8_interned(scope, "__RUST_BRIDGE__ts_node");
@@ -827,11 +845,13 @@ typeof __RUST_BRIDGE__ts_node;
 
         // Any arbitrary, valid JavaScript code works here. We are only running a script to
         // inspect the v8 context that it executes within.
-        let script =
-            compile_script(&mut runtime.v8_handle_scope(), "// Test execution", None).unwrap();
+        let script = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            compile_script(scope, "// Test execution", None).unwrap()
+        };
 
         let default_ctx_id_hash = {
-            let scope = &mut runtime.runtime.handle_scope();
+            deno_core::scope!(scope, runtime.runtime);
             let global_proxy = scope.get_current_context().global(scope);
             global_proxy.get_identity_hash()
         };
@@ -988,7 +1008,10 @@ function visit(_captures) { }
         let mut runtime = cfg_test_v8().new_runtime();
 
         let code = "abc;";
-        let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
+        let script = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            compile_script(scope, code, None).unwrap()
+        };
         let err = runtime
             .scoped_execute(&script, |sc, val| val.to_rust_string_lossy(sc), None)
             .unwrap_err();
@@ -1078,7 +1101,10 @@ function visit(captures) {
         let mut runtime = cfg_test_v8().new_runtime();
         let timeout = Duration::from_millis(500);
         let loop_code = "while (true) {}";
-        let loop_script = compile_script(&mut runtime.v8_handle_scope(), loop_code, None).unwrap();
+        let loop_script = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            compile_script(scope, loop_code, None).unwrap()
+        };
 
         let err = runtime
             .scoped_execute(&loop_script, |_, _| (), Some(timeout))
@@ -1092,7 +1118,10 @@ function visit(captures) {
         use resource_watchdog::tests::{DEFAULT_HEAP_LIMIT, OOM_CODE};
 
         let mut runtime = cfg_test_v8().new_runtime_with_heap_limit(DEFAULT_HEAP_LIMIT);
-        let loop_script = compile_script(&mut runtime.v8_handle_scope(), OOM_CODE, None).unwrap();
+        let loop_script = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            compile_script(scope, OOM_CODE, None).unwrap()
+        };
 
         let err = runtime
             .scoped_execute(&loop_script, |_, _| (), None)
@@ -1106,7 +1135,10 @@ function visit(captures) {
     fn scoped_execute_console_empty() {
         let mut runtime = cfg_test_v8().new_runtime();
         let code = "console.log(1234);";
-        let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
+        let script = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            compile_script(scope, code, None).unwrap()
+        };
         assert!(runtime.console.borrow().0.is_empty());
         runtime.scoped_execute(&script, |_, _| (), None).unwrap();
         assert_eq!(runtime.console.borrow().0.len(), 1);
@@ -1232,7 +1264,7 @@ function visit(captures) {
         // (We currently don't have a cleaner/more robust way to test this)
         {
             let mut rt = cfg_test_v8().new_runtime();
-            let scope = &mut rt.v8_handle_scope();
+            deno_core::scope!(scope, rt.deno_runtime());
             let script_a = "__RUST_BRIDGE__context.fileCtx.go === undefined;";
             assert!(!try_execute(scope, script_a).unwrap().is_true());
             let script_b = "__RUST_BRIDGE__context.fileCtx.rust === undefined;";
@@ -1250,7 +1282,10 @@ function visit(captures) {
             // inspect its side effects on the `ddsa_lib::FileContext`. We console log a value just
             // to be able to assert that the rule was actually invoked.
             let rule_code = "function visit(captures) { console.log(123); }";
-            let compiled_rule = CompiledRule::new(&mut rt.v8_handle_scope(), rule_code).unwrap();
+            let compiled_rule = {
+                deno_core::scope!(scope, rt.deno_runtime());
+                CompiledRule::new(scope, rule_code).unwrap()
+            };
 
             let text = Arc::<str>::from(text);
             let tree = Arc::new(get_tree(text.as_ref(), &language).unwrap());
@@ -1511,7 +1546,10 @@ function visit(captures) {
     fn ddsa_console_global() {
         let mut runtime = cfg_test_v8().new_runtime();
         let code = "console instanceof DDSA_Console;";
-        let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
+        let script = {
+            deno_core::scope!(scope, runtime.deno_runtime());
+            compile_script(scope, code, None).unwrap()
+        };
         let correct_instance = runtime.scoped_execute(&script, |_, value| value.is_true(), None);
         assert!(correct_instance.unwrap());
     }
@@ -1620,7 +1658,10 @@ function visit(captures) {
         ];
         for name in identifiers {
             let code = &format!("{name};");
-            let script = compile_script(&mut runtime.v8_handle_scope(), code, None).unwrap();
+            let script = {
+                deno_core::scope!(scope, runtime.deno_runtime());
+                compile_script(scope, code, None).unwrap()
+            };
             let exe_result = runtime.scoped_execute(&script, |_, value| value.is_undefined(), None);
 
             let expected_err = format!("Uncaught ReferenceError: {name} is not defined");
@@ -1703,7 +1744,10 @@ function visit(captures) {
 
         let mut rt = cfg_test_v8().new_runtime();
 
-        let compiled = CompiledRule::new(&mut rt.v8_handle_scope(), CODE_V1).unwrap();
+        let compiled = {
+            deno_core::scope!(scope, rt.deno_runtime());
+            CompiledRule::new(scope, CODE_V1).unwrap()
+        };
         rt.rule_cache
             .borrow_mut()
             .insert(RULE_NAME.to_string(), compiled);

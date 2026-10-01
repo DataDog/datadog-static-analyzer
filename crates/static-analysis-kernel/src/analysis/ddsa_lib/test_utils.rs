@@ -16,7 +16,7 @@ use crate::analysis::ddsa_lib::JsRuntime;
 use crate::model::rule::{RuleCategory, RuleInternal, RuleSeverity};
 use common::model::language::Language;
 use common::tree_sitter::{get_tree, get_tree_sitter_language};
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use deno_core::{v8, ExtensionFileSource};
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -56,11 +56,11 @@ pub(crate) fn js_class_eq(class_name: &str, expected: &[&str]) -> bool {
 /// Returns true if the `v8::Object` created by [`T`] has exactly the provided property names.
 fn v8_object_eq<T>(expected: &[&str], mut object_creator: T) -> bool
 where
-    T: for<'s> FnMut(&mut HandleScope<'s>) -> v8::Local<'s, v8::Object>,
+    T: for<'s> FnMut(&mut PinScope<'s, '_>) -> v8::Local<'s, v8::Object>,
 {
     use std::collections::HashSet;
     let mut runtime = cfg_test_v8().deno_core_rt();
-    let scope = &mut runtime.handle_scope();
+    deno_core::scope!(scope, runtime);
     let object = object_creator(scope);
 
     let object_props = js_all_props(scope, &object);
@@ -89,12 +89,12 @@ const BASE_INSTANCE_PROTO_PROPS: &[&str] = &[
 /// A function that inspects a [`v8::Object`] and returns a list of all property names
 /// (excluding property names from the object's prototype chain).
 pub(crate) fn js_all_props(
-    scope: &mut HandleScope,
+    scope: &mut PinScope,
     value: &impl Deref<Target = v8::Object>,
 ) -> Vec<String> {
     use std::collections::HashSet;
     /// Helper function to enumerate all properties in an object.
-    fn get_all_props(scope: &mut HandleScope, object: &v8::Object) -> HashSet<String> {
+    fn get_all_props(scope: &mut PinScope, object: &v8::Object) -> HashSet<String> {
         use v8::{GetPropertyNamesArgsBuilder, PropertyFilter};
         let args = GetPropertyNamesArgsBuilder::new()
             .property_filter(PropertyFilter::ALL_PROPERTIES)
@@ -127,10 +127,10 @@ pub(crate) fn js_all_props(
 
 /// Compiles JavaScript and executes it within the provided scope, returning the script's return value.
 pub(crate) fn try_execute<'s>(
-    scope: &mut HandleScope<'s>,
+    scope: &mut PinScope<'s, '_>,
     code: &str,
 ) -> Result<v8::Local<'s, v8::Value>, DDSAJsRuntimeError> {
-    let tc_scope = &mut v8::TryCatch::new(scope);
+    v8::tc_scope!(let tc_scope, scope);
     let code = v8_string(tc_scope, code);
     let script = v8::Script::compile(tc_scope, code, None).unwrap();
     script.run(tc_scope).ok_or_else(|| {
@@ -220,7 +220,7 @@ globalThis.__ddsaPrivate__ = new DDSAPrivate();
 /// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
 /// any previous value.
 pub(crate) fn attach_as_global<'s, T>(
-    scope: &mut HandleScope<'s>,
+    scope: &mut PinScope<'s, '_>,
     v8_item: impl v8::Handle<Data = T>,
     name: &str,
 ) where
@@ -245,7 +245,7 @@ pub(crate) fn format_ts_lang_pointer(ts_language: &tree_sitter::Language) -> Str
 /// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
 /// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
 pub(crate) fn make_stub_tsn_bridge<'s>(
-    scope: &mut HandleScope<'s>,
+    scope: &mut PinScope<'s, '_>,
     node_ids: &[u32],
 ) -> v8::Local<'s, v8::Map> {
     let stub_tsn_bridge = v8::Map::new(scope);
@@ -264,7 +264,7 @@ pub(crate) fn make_stub_tsn_bridge<'s>(
 
 /// Creates a stub [`v8::Object`] that partially implements the interface for a `RootContext`.
 pub(crate) fn make_stub_root_context<'s>(
-    scope: &mut HandleScope<'s>,
+    scope: &mut PinScope<'s, '_>,
     arguments: &[(&str, &str)],
     filename: &str,
     file_contents: &str,

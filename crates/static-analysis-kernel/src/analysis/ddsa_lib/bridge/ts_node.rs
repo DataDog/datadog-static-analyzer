@@ -9,7 +9,7 @@ use crate::analysis::ddsa_lib::{js, RawTSNode};
 use crate::analysis::tree_sitter::{TSCaptureContent, TSQueryCapture};
 use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 
 /// A stateful bridge holding a collection of [`RawTsNode`].
 #[derive(Debug)]
@@ -28,7 +28,7 @@ impl TsNodeBridge {
     /// Constructs a new `TsNodeBridge` for the given `scope`. The scope's [`v8::Context::global`] must
     /// have a class function with the following identifier:
     /// * [`js::TreeSitterNodeFn<Class>::CLASS_NAME`]
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = js::TreeSitterNodeFn::try_new(scope)?;
         let mirrored_im = MirroredIndexMap::<RawTSNode, NodeId>::with_capacity(scope, 128);
         Ok(Self {
@@ -46,7 +46,7 @@ impl TsNodeBridge {
     /// code units.
     pub fn insert(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         node: tree_sitter::Node,
         idx: &LineColumnIndex,
     ) -> NodeId {
@@ -89,7 +89,7 @@ impl TsNodeBridge {
     /// Serializes a [`tree_sitter::Node`] to v8 using UTF-16 column values from `idx`.
     fn build_v8_node<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         node: tree_sitter::Node,
         id: NodeId,
         idx: &LineColumnIndex,
@@ -100,7 +100,7 @@ impl TsNodeBridge {
 
     /// Removes all tree-sitter nodes from the bridge.
     /// Previously allocated `TreeSitterNode` v8 objects will be released to the garbage collector.
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.mirrored_im.clear(scope);
     }
 
@@ -115,7 +115,7 @@ impl TsNodeBridge {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] map of tree-sitter nodes.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Map> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Map> {
         self.mirrored_im.as_local(scope)
     }
 
@@ -124,7 +124,7 @@ impl TsNodeBridge {
     /// nodes.
     pub fn insert_capture(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         capture: TSQueryCapture<tree_sitter::Node>,
         idx: &LineColumnIndex,
     ) -> TSQueryCapture<NodeId> {
@@ -150,7 +150,7 @@ impl TsNodeBridge {
     #[cfg(test)]
     fn v8_get<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         id: NodeId,
     ) -> Option<v8::Local<'s, v8::Object>> {
         let key = v8_uint(scope, id);
@@ -173,7 +173,7 @@ mod tests {
     use common::model::language::Language;
     use common::utils::position_utils::LineColumnIndex;
     use deno_core::v8;
-    use deno_core::v8::HandleScope;
+    use deno_core::v8::PinScope;
     use std::cell::RefCell;
     use std::rc::Rc;
     use std::sync::Arc;
@@ -181,7 +181,7 @@ mod tests {
     /// Compares whether a [`TreeSitterNodeObj`] has equivalent data to a [`tree_sitter::Node`].
     #[rustfmt::skip]
     fn ts_node_eq(
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         obj: v8::Local<v8::Object>,
         node: tree_sitter::Node,
     ) -> bool {
@@ -199,14 +199,20 @@ mod tests {
 
     fn setup_bridge() -> (deno_core::JsRuntime, Rc<RefCell<TsNodeBridge>>) {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let bridge = TsNodeBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        let bridge = {
+            deno_core::scope!(scope, runtime);
+            TsNodeBridge::try_new(scope).unwrap()
+        };
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
         (runtime, bridge)
     }
 
     fn setup_context_bridge(runtime: &mut deno_core::JsRuntime) -> Rc<RefCell<ContextBridge>> {
-        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        let bridge = {
+            deno_core::scope!(scope, runtime);
+            ContextBridge::try_new(scope).unwrap()
+        };
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
         bridge
@@ -216,7 +222,7 @@ mod tests {
     #[test]
     fn ts_node_bridge_is_synced() {
         let (mut runtime, bridge) = setup_bridge();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut bridge = bridge.borrow_mut();
 
         let source = r#"const val = foo(bar, baz);"#;
@@ -245,7 +251,7 @@ mod tests {
     #[test]
     fn ts_node_rust_lookup() {
         let (mut runtime, bridge) = setup_bridge();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut bridge = bridge.borrow_mut();
 
         let source = r#"const val = foo(bar, baz);"#;
@@ -267,7 +273,7 @@ mod tests {
     #[test]
     fn ts_node_bridge_no_duplicates() {
         let (mut runtime, bridge) = setup_bridge();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut bridge = bridge.borrow_mut();
 
         let source = r#"const val = foo(bar, baz);"#;
@@ -297,7 +303,7 @@ const def = 456;
 
         // The provider of the text is the "context", so we need to create and populate that first.
         let ctx_bridge = setup_context_bridge(&mut runtime);
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let ts_node_map = ts_node_bridge.borrow().as_local(scope);
         attach_as_global(scope, ts_node_map, "TS_NODES");
         ctx_bridge
@@ -338,7 +344,7 @@ const def = 456;
 
         // The provider of the text is the "context", so we need to create and populate that first.
         let ctx_bridge = setup_context_bridge(&mut runtime);
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let ts_node_map = ts_node_bridge.borrow().as_local(scope);
         attach_as_global(scope, ts_node_map, "TS_NODES");
         ctx_bridge

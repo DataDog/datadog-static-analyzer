@@ -7,7 +7,7 @@ use crate::analysis::ddsa_lib::common::{
 };
 use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A deserialized JavaScript object representation of a [`tree_sitter::Node`].
@@ -68,14 +68,14 @@ impl TreeSitterNodeFn<Class> {
     pub const CLASS_NAME: &'static str = "TreeSitterNode";
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         load_function(scope, Self::CLASS_NAME).map(|func| Self(func, PhantomData))
     }
 
     /// Creates a new instance of the `TreeSitterNode` class.
     pub fn new_instance<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         ts_node: TreeSitterNode<Instance>,
     ) -> v8::Local<'s, v8::Object> {
         let id = v8_uint(scope, ts_node.id).into();
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn position_getters() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
 
         let base_ts_node = TreeSitterNode::<Instance> {
@@ -261,7 +261,7 @@ mod tests {
     #[test]
     fn type_getter() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
 
         let lang_js = get_tree_sitter_language(&Language::JavaScript);
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn field_child_interface() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let js_class = TreeSitterNodeFn::<Class>::try_new(scope).unwrap();
 
         let lang_js = get_tree_sitter_language(&Language::JavaScript);

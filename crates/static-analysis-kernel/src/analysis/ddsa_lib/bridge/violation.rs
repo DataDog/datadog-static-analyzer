@@ -7,14 +7,14 @@ use crate::analysis::ddsa_lib::js;
 use crate::analysis::ddsa_lib::js::ViolationConverter;
 use crate::analysis::ddsa_lib::v8_ds::SyncedV8Array;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 
 /// A stateful bridge pulling a collection of [`js::Violation`] from v8.
 pub struct ViolationBridge(SyncedV8Array<js::Violation<Instance>, ViolationConverter>);
 
 impl ViolationBridge {
     /// Creates a new, empty `ViolationBridge`.
-    pub fn new(scope: &mut HandleScope) -> Self {
+    pub fn new(scope: &mut PinScope) -> Self {
         let converter = ViolationConverter::new();
         let array = v8::Array::new(scope, 0);
         let array = v8::Global::new(scope, array);
@@ -27,7 +27,7 @@ impl ViolationBridge {
     /// Existing `ViolationInstance` objects will be released to the v8 garbage collector.
     pub fn drain_collect(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
     ) -> Result<Vec<js::Violation<Instance>>, DDSAJsRuntimeError> {
         let res = self.0.drain_collect(scope);
         if res.is_err() {
@@ -37,12 +37,12 @@ impl ViolationBridge {
     }
 
     /// Clears all data from bridge.
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.0.clear(scope);
     }
 
     /// Provides a local handle to the underlying [`v8::Global`] array powering the bridge.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         self.0.as_local(scope)
     }
 }
@@ -58,7 +58,7 @@ mod tests {
     fn setup_bridge(global_name: &str) -> (JsRuntime, ViolationBridge) {
         let mut runtime = cfg_test_v8().deno_core_rt();
         let v_bridge = {
-            let scope = &mut runtime.handle_scope();
+            deno_core::scope!(scope, runtime);
             let v_bridge = ViolationBridge::new(scope);
             let v8_v_bridge = v_bridge.as_local(scope);
             attach_as_global(scope, v8_v_bridge, global_name);
@@ -71,7 +71,7 @@ mod tests {
     #[test]
     fn violations_bridge_drains() {
         let (mut runtime, mut v_bridge) = setup_bridge("VIOLATIONS");
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let v8_v_bridge = v_bridge.as_local(scope);
         assert_eq!(v8_v_bridge.length(), 0);
 
@@ -97,7 +97,7 @@ VIOLATIONS.push(v);
     #[test]
     fn violations_bridge_invalid_obj() {
         let (mut runtime, mut v_bridge) = setup_bridge("VIOLATIONS");
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let v8_v_bridge = v_bridge.as_local(scope);
         assert_eq!(v8_v_bridge.length(), 0);
 

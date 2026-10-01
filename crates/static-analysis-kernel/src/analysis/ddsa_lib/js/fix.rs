@@ -10,7 +10,7 @@ use crate::analysis::ddsa_lib::js::Edit;
 use crate::analysis::ddsa_lib::v8_ds::V8Converter;
 use crate::model::violation;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 
 /// The JavaScript representation of a fix for a rule violation.
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -53,7 +53,7 @@ impl V8Converter for FixConverter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error> {
         let v8_obj = v8_type_from::<v8::Object>(value, "instanceof Fix")?;

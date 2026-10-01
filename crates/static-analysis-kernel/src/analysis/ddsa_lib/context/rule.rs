@@ -5,7 +5,7 @@
 use crate::analysis::ddsa_lib::common::v8_string;
 use crate::analysis::ddsa_lib::v8_ds::MirroredIndexMap;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 
 /// A stateful struct containing metadata related to a rule.
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct RuleContext {
 }
 
 impl RuleContext {
-    pub fn new(scope: &mut HandleScope) -> Self {
+    pub fn new(scope: &mut PinScope) -> Self {
         let arguments = MirroredIndexMap::<String, String>::new(scope);
         RuleContext { arguments }
     }
@@ -23,7 +23,7 @@ impl RuleContext {
     /// Inserts an argument name and value pair
     pub fn insert_argument(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         name: impl Into<String>,
         value: impl Into<String>,
     ) {
@@ -38,7 +38,7 @@ impl RuleContext {
     }
 
     /// Clears all arguments from the map, preserving the original allocation across Rust and v8.
-    pub fn clear_arguments(&mut self, scope: &mut HandleScope) {
+    pub fn clear_arguments(&mut self, scope: &mut PinScope) {
         self.arguments.clear(scope);
     }
 

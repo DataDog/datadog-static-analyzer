@@ -6,7 +6,7 @@ use crate::analysis::ddsa_lib::common::{get_field, v8_type_from, DDSAJsRuntimeEr
 use crate::analysis::ddsa_lib::v8_ds::V8Converter;
 use common::model::position;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A representation of a JavaScript `CodeRegion` class instance.
@@ -55,7 +55,7 @@ impl V8Converter for CodeRegionConverter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error> {
         let v8_obj = v8_type_from::<v8::Object>(value, "an object")?;

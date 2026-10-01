@@ -9,7 +9,7 @@ use crate::analysis::ddsa_lib::v8_ds::MirroredVec;
 use crate::analysis::tree_sitter::QueryMatch;
 use common::utils::position_utils::LineColumnIndex;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 
 /// A stateful bridge holding a collection of [`QueryMatch<NodeId>`].
 pub struct QueryMatchBridge(
@@ -20,7 +20,7 @@ impl QueryMatchBridge {
     /// Constructs a new `QueryMatchBridge` for the given `scope`. The scope's [`v8::Context::global`] must
     /// have class functions with the following identifiers:
     /// * [`js::QueryMatch::CLASS_NAME`]
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         /// The `QueryMatchBridge` persists across the entire lifetime of the [`JsRuntime`](use crate::analysis::ddsa_lib::JsRuntime),
         /// so push operations amortize to O(1) (because we aren't constantly re-creating this vec).
         ///
@@ -38,7 +38,7 @@ impl QueryMatchBridge {
     ///       will not be removed from the `TsNodeBridge`.
     pub fn set_data<'tree>(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         matches: impl Into<Vec<QueryMatch<tree_sitter::Node<'tree>>>>,
         node_bridge: &mut TsNodeBridge,
         idx: &LineColumnIndex,
@@ -61,7 +61,7 @@ impl QueryMatchBridge {
     }
 
     /// Clears all [`QueryMatch`] from the bridge, releasing its `v8::Local` objects to the garbage collector.
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.0.set_data(scope, []);
     }
 
@@ -76,7 +76,7 @@ impl QueryMatchBridge {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] array.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         self.0.as_local(scope)
     }
 }
@@ -97,8 +97,14 @@ mod tests {
 
     fn setup_bridge() -> (JsRuntime, QueryMatchBridge, TsNodeBridge) {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let qm_bridge = QueryMatchBridge::try_new(&mut runtime.handle_scope()).unwrap();
-        let tsn_bridge = TsNodeBridge::try_new(&mut runtime.handle_scope()).unwrap();
+        let qm_bridge = {
+            deno_core::scope!(scope, runtime);
+            QueryMatchBridge::try_new(scope).unwrap()
+        };
+        let tsn_bridge = {
+            deno_core::scope!(scope, runtime);
+            TsNodeBridge::try_new(scope).unwrap()
+        };
         (runtime, qm_bridge, tsn_bridge)
     }
 
@@ -114,7 +120,7 @@ mod tests {
             node_id
         }
 
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let text = "\
 const abc = calc(12, 34, 56);

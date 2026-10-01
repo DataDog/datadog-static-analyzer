@@ -12,7 +12,7 @@ use crate::model::rule::{RuleCategory, RuleSeverity};
 use crate::model::violation;
 use common::model::position;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A representation of a JavaScript `Violation` class instance.
@@ -81,7 +81,7 @@ impl V8Converter for ViolationConverter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error> {
         let v8_obj = v8_type_from::<v8::Object>(value, "instanceof Violation")?;
@@ -153,7 +153,7 @@ mod tests {
     fn variadic_violation_creation() {
         let converter = ViolationConverter::new();
         let mut rt = cfg_test_v8().deno_core_rt();
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
 
         let region0 = CodeRegion::<Instance> {
             start_line: 22,

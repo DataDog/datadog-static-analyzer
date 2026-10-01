@@ -7,7 +7,7 @@ use crate::analysis::ddsa_lib::common::{DDSAJsRuntimeError, Instance};
 use crate::analysis::ddsa_lib::js;
 use common::model::language::Language;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::ops::Deref;
 use std::sync::Arc;
 
@@ -38,7 +38,7 @@ impl ContextBridge {
     ///
     /// Note that individual [`ddsa_lib::FileContext`] instances may require their own class functions
     /// to be present in the scope, and these contexts can be viewed at [`Self::init_all_file_ctx`].
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_root_ctx = js::RootContext::try_new(scope)?;
         let js_rule_ctx = js::RuleContext::try_new(scope)?;
         let js_file_ctx = js::FileContext::try_new(scope)?;
@@ -78,7 +78,7 @@ impl ContextBridge {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         self.root.js.as_local(scope)
     }
 
@@ -88,7 +88,7 @@ impl ContextBridge {
     /// if they were the same.
     pub fn set_root_context(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         tree: &Arc<tree_sitter::Tree>,
         file_contents: &Arc<str>,
         filename: &Arc<str>,
@@ -142,7 +142,7 @@ impl ContextBridge {
     /// Assigns the provide rule arguments to the context.
     pub fn set_rule_arguments<K: Into<String>, V: Into<String>>(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         args: impl IntoIterator<Item = (K, V)>,
     ) {
         self.rule.ddsa.clear_arguments(scope);
@@ -157,7 +157,7 @@ impl ContextBridge {
     /// as this function does not clear existing contexts.
     pub fn set_file_context(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         language: Language,
         tree: &tree_sitter::Tree,
         file_contents: &Arc<str>,
@@ -183,7 +183,7 @@ impl ContextBridge {
     }
 
     /// Clears all file contexts
-    fn clear_file_contexts(&mut self, scope: &mut HandleScope) {
+    fn clear_file_contexts(&mut self, scope: &mut PinScope) {
         if let Some(go) = self.file.ddsa.go_mut() {
             go.clear(scope);
         }
@@ -199,7 +199,7 @@ impl ContextBridge {
 
     /// Initializes all file contexts supported by the associated [`ddsa_lib::FileContext`].
     fn init_all_file_ctx(
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         file: &mut Linked<ddsa_lib::FileContext, js::FileContext<Instance>>,
     ) -> Result<(), DDSAJsRuntimeError> {
         let ddsa_go = ddsa_lib::FileContextGo::new(scope);
@@ -247,7 +247,7 @@ mod tests {
     /// A function that performs an `assert!` that the [`js::TsLanguageContext`](crate::analysis::ddsa_lib::js::TsLanguageContext)
     /// on the bridge contains metadata for the expected `tree_sitter::Language`.
     fn assert_ts_lang_ctx(
-        scope: &mut v8::HandleScope,
+        scope: &mut v8::PinScope,
         bridge: &ContextBridge,
         expected: &tree_sitter::Language,
     ) {
@@ -271,7 +271,7 @@ mod tests {
     #[test]
     fn set_root_context_clears_cache() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let contents_1: Arc<str> = Arc::from("const fileContents = '11111'");
         let filename_1: Arc<str> = Arc::from("11111.js");
         let tree_1 = Arc::new(parse_code(contents_1.as_ref(), Language::JavaScript));
@@ -300,7 +300,7 @@ mod tests {
     #[test]
     fn set_rule_context_args_is_exact() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut bridge = ContextBridge::try_new(scope).unwrap();
         assert!(bridge.rule.js.v8_arguments_map(scope).is_some());
         let v8_args_map = bridge.rule.js.v8_arguments_map(scope).unwrap();
@@ -329,7 +329,7 @@ mod tests {
     #[test]
     fn set_root_context_ts_lang() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut bridge = ContextBridge::try_new(scope).unwrap();
 
         // First assert that the TsLanguageContext is uninitialized
@@ -359,11 +359,17 @@ mod tests {
     /// Tests that go module aliases are eagerly calculated by calling `set_file_context`.
     fn test_fetch_go_module_alias_eagerly() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
-        attach_as_global(&mut runtime.handle_scope(), bridge.file.js.v8_object(), "FILE_CTX_BRIDGE");
+        let bridge = {
+            deno_core::scope!(scope, runtime);
+            ContextBridge::try_new(scope).unwrap()
+        };
+        {
+            deno_core::scope!(scope, runtime);
+            attach_as_global(scope, bridge.file.js.v8_object(), "FILE_CTX_BRIDGE");
+        }
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let filename = Arc::<str>::from("filename.go");
         let file_contents = r#"
@@ -397,15 +403,17 @@ FILE_CTX_BRIDGE.go.getResolvedPackage("mrand");
     /// Tests that terraform resources are eagerly calculated by calling `set_file_context`.
     fn test_fetch_terraform_resources_eagerly() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
-        attach_as_global(
-            &mut runtime.handle_scope(),
-            bridge.file.js.v8_object(),
-            "FILE_CTX_BRIDGE",
-        );
+        let bridge = {
+            deno_core::scope!(scope, runtime);
+            ContextBridge::try_new(scope).unwrap()
+        };
+        {
+            deno_core::scope!(scope, runtime);
+            attach_as_global(scope, bridge.file.js.v8_object(), "FILE_CTX_BRIDGE");
+        }
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let filename = Arc::<str>::from("filename.tf");
         let file_contents = r#"
@@ -444,15 +452,17 @@ FILE_CTX_BRIDGE.terraform.resources.map(r => `${r.type}:${r.name}`).join(',');
     /// Tests that JavaScript package imports are eagerly calculated by calling `set_file_context`.
     fn test_fetch_js_package_imports_eagerly() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let bridge = ContextBridge::try_new(&mut runtime.handle_scope()).unwrap();
-        attach_as_global(
-            &mut runtime.handle_scope(),
-            bridge.file.js.v8_object(),
-            "FILE_CTX_BRIDGE",
-        );
+        let bridge = {
+            deno_core::scope!(scope, runtime);
+            ContextBridge::try_new(scope).unwrap()
+        };
+        {
+            deno_core::scope!(scope, runtime);
+            attach_as_global(scope, bridge.file.js.v8_object(), "FILE_CTX_BRIDGE");
+        }
         let bridge = Rc::new(RefCell::new(bridge));
         runtime.op_state().borrow_mut().put(Rc::clone(&bridge));
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let filename = Arc::<str>::from("filename.js");
         let file_contents = r#"

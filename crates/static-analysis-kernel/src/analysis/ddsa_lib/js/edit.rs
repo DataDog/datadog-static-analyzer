@@ -9,7 +9,7 @@ use crate::analysis::ddsa_lib::v8_ds::V8Converter;
 use crate::model::violation;
 use common::model::position::Position;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
@@ -94,7 +94,7 @@ impl V8Converter for EditConverter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error> {
         let _pd = PhantomData;
@@ -169,16 +169,16 @@ mod tests {
         cfg_test_v8, js_class_eq, js_instance_eq, try_execute,
     };
     use crate::analysis::ddsa_lib::v8_ds::V8Converter;
-    use deno_core::v8::HandleScope;
+    use deno_core::v8::PinScope;
     use std::marker::PhantomData;
 
     #[rustfmt::skip]
-    fn assert_de_ok(input: &str, s: &mut HandleScope) {
+    fn assert_de_ok(input: &str, s: &mut PinScope) {
         let c = EditConverter::new();
         assert!(try_execute(s, input).is_ok_and(|v| c.try_convert_from(s, v).is_ok()));
     }
     #[rustfmt::skip]
-    fn assert_de_fail(input: &str, scope: &mut HandleScope, expected: &str) {
+    fn assert_de_fail(input: &str, scope: &mut PinScope, expected: &str) {
         let c = EditConverter::new();
         assert!(try_execute(scope, input).is_ok_and(|v| {
             let err = c.try_convert_from(scope, v).unwrap_err();
@@ -212,7 +212,7 @@ mod tests {
     #[test]
     fn edit_converter_deserialization() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let s = &mut runtime.handle_scope();
+        deno_core::scope!(s, runtime);
         // Users should not be creating `Edit` instances via the constructor, it's tested regardless
         // Missing `startCol`
         assert_de_fail("new Edit(10, undefined, undefined, undefined, 'ADD', 'More text')", s, "NotFound");
@@ -243,7 +243,7 @@ mod tests {
     #[test]
     fn edit_converter_deserialize_superfluous() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut deserialize = |input: &str| -> Edit<Instance> {
             let c = EditConverter::new();
             try_execute(scope, input).map(|v| c.try_convert_from(scope, v)).unwrap().unwrap()

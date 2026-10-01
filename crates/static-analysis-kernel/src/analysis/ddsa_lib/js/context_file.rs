@@ -8,7 +8,7 @@ use crate::analysis::ddsa_lib::common::{
 };
 use crate::analysis::ddsa_lib::js;
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A [`v8::Global`] object created from the ES6 class `FileContext`.
@@ -28,7 +28,7 @@ impl FileContext<Instance> {
     pub const CLASS_NAME: &'static str = "FileContext";
 
     /// Creates a new [`v8::Global`] object by loading [`Self::CLASS_NAME`] from the `scope` and creating an instance.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let v8_object = js_class
@@ -46,7 +46,7 @@ impl FileContext<Instance> {
     }
 
     // Initializes support for `go`, linking a [`js::FileContextGo`] to this `FileContext`.
-    pub fn initialize_go(&mut self, scope: &mut HandleScope, ctx_go: js::FileContextGo<Instance>) {
+    pub fn initialize_go(&mut self, scope: &mut PinScope, ctx_go: js::FileContextGo<Instance>) {
         let s_go = v8_string(scope, "go");
         // (Convert to `Global` just to satisfy the interface)
         let s_go = v8::Global::new(scope, s_go);
@@ -60,7 +60,7 @@ impl FileContext<Instance> {
     // `FileContext`.
     pub fn initialize_tf(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         ctx_tf: js::FileContextTerraform<Instance>,
     ) {
         let s_tf = v8_string(scope, "terraform");
@@ -76,7 +76,7 @@ impl FileContext<Instance> {
     // `FileContext`.
     pub fn initialize_js(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         ctx_js: js::FileContextJavaScript<Instance>,
     ) {
         let s_js = v8_string(scope, "javascript");
@@ -89,7 +89,7 @@ impl FileContext<Instance> {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         v8::Local::new(scope, &self.v8_object)
     }
 
