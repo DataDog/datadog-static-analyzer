@@ -672,17 +672,30 @@ pub(crate) mod tests {
     fn heap_limit_guard_correct_isolate() {
         const INITIAL_LIMIT: usize = DEFAULT_HEAP_LIMIT;
         const REDUCED_LIMIT: usize = INITIAL_LIMIT / 2;
+        const WRONG_ISOLATE: &str =
+            "isolate must be the same as the one that initialized this guard";
         let v8_platform = cfg_test_v8();
         let mut runtime_1 = v8_platform.deno_core_rt_with_heap_limit(INITIAL_LIMIT);
         let guard_for_rt_1 = HeapLimitGuard::new(runtime_1.v8_isolate(), Box::new(|_, _| 0));
-        let mut runtime_2 = v8_platform.deno_core_rt_with_heap_limit(INITIAL_LIMIT);
-        let suggest_result =
-            guard_for_rt_1.suggest_heap_limit(runtime_2.v8_isolate(), REDUCED_LIMIT);
-        assert!(suggest_result.is_err_and(
-            |msg| msg == "isolate must be the same as the one that initialized this guard"
-        ));
         assert!(guard_for_rt_1
             .suggest_heap_limit(runtime_1.v8_isolate(), REDUCED_LIMIT)
             .is_ok());
+        {
+            deno_core::scope!(scope, runtime_1);
+            assert!(guard_for_rt_1
+                .suggest_heap_limit(scope, REDUCED_LIMIT)
+                .is_ok());
+        }
+
+        let mut runtime_2 = v8_platform.deno_core_rt_with_heap_limit(INITIAL_LIMIT);
+        assert!(guard_for_rt_1
+            .suggest_heap_limit(runtime_2.v8_isolate(), REDUCED_LIMIT)
+            .is_err_and(|msg| msg == WRONG_ISOLATE));
+        {
+            deno_core::scope!(scope, runtime_2);
+            assert!(guard_for_rt_1
+                .suggest_heap_limit(scope, REDUCED_LIMIT)
+                .is_err_and(|msg| msg == WRONG_ISOLATE));
+        }
     }
 }
