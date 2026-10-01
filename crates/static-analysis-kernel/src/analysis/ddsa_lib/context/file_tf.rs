@@ -37,7 +37,7 @@ const TF_QUERY: &str = r#"
 "#;
 
 impl FileContextTerraform {
-    pub fn new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let resources = MirroredVec::new(js::TerraformResource::try_new(scope)?, scope);
 
         let ts_query =

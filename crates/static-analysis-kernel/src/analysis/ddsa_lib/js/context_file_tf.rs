@@ -93,7 +93,7 @@ impl TerraformResource<Class> {
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
     pub fn try_new(
-        scope: &mut v8::PinScope,
+        scope: &v8::PinScope,
     ) -> Result<Self, crate::analysis::ddsa_lib::common::DDSAJsRuntimeError> {
         let class = load_function(scope, Self::CLASS_NAME)?;
         Ok(Self {

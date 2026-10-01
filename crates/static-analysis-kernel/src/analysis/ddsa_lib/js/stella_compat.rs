@@ -35,7 +35,7 @@ impl VisitArgFilenameCompat<Instance> {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         v8::Local::new(scope, &self.v8_object)
     }
 }
@@ -66,7 +66,7 @@ impl VisitArgCodeCompat<Instance> {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         v8::Local::new(scope, &self.v8_object)
     }
 }

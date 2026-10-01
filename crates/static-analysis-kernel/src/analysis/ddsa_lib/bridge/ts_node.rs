@@ -28,7 +28,7 @@ impl TsNodeBridge {
     /// Constructs a new `TsNodeBridge` for the given `scope`. The scope's [`v8::Context::global`] must
     /// have a class function with the following identifier:
     /// * [`js::TreeSitterNodeFn<Class>::CLASS_NAME`]
-    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = js::TreeSitterNodeFn::try_new(scope)?;
         let mirrored_im = MirroredIndexMap::<RawTSNode, NodeId>::with_capacity(scope, 128);
         Ok(Self {
@@ -115,7 +115,7 @@ impl TsNodeBridge {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] map of tree-sitter nodes.
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Map> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Map> {
         self.mirrored_im.as_local(scope)
     }
 
@@ -181,11 +181,11 @@ mod tests {
     /// Compares whether a [`TreeSitterNodeObj`] has equivalent data to a [`tree_sitter::Node`].
     #[rustfmt::skip]
     fn ts_node_eq(
-        scope: &mut PinScope,
+        scope: &PinScope,
         obj: v8::Local<v8::Object>,
         node: tree_sitter::Node,
     ) -> bool {
-        let mut equals = |name: &'static str, other: usize| -> bool {
+        let equals = |name: &'static str, other: usize| -> bool {
             get_field::<v8::Integer>(obj, name, scope, "integer").unwrap().value() as usize == other
         };
         // We intentionally do not check `id` here because that is our abstraction, not tree-sitter's.

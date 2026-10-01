@@ -58,7 +58,7 @@ impl QueryMatch<Class> {
     pub const CLASS_NAME: &'static str = "QueryMatch";
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
-    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let class = load_function(scope, Self::CLASS_NAME)?;
         let single_capture = SingleCaptureTemplate::new(scope);
         let multi_capture = MultiCaptureTemplate::new(scope);

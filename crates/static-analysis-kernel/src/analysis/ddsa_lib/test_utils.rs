@@ -89,12 +89,12 @@ const BASE_INSTANCE_PROTO_PROPS: &[&str] = &[
 /// A function that inspects a [`v8::Object`] and returns a list of all property names
 /// (excluding property names from the object's prototype chain).
 pub(crate) fn js_all_props(
-    scope: &mut PinScope,
+    scope: &PinScope,
     value: &impl Deref<Target = v8::Object>,
 ) -> Vec<String> {
     use std::collections::HashSet;
     /// Helper function to enumerate all properties in an object.
-    fn get_all_props(scope: &mut PinScope, object: &v8::Object) -> HashSet<String> {
+    fn get_all_props(scope: &PinScope, object: &v8::Object) -> HashSet<String> {
         use v8::{GetPropertyNamesArgsBuilder, PropertyFilter};
         let args = GetPropertyNamesArgsBuilder::new()
             .property_filter(PropertyFilter::ALL_PROPERTIES)
@@ -220,7 +220,7 @@ globalThis.__ddsaPrivate__ = new DDSAPrivate();
 /// Attaches the provided `v8_item` to the [`v8::Context::global`] with identifier `name`, overwriting
 /// any previous value.
 pub(crate) fn attach_as_global<'s, T>(
-    scope: &mut PinScope<'s, '_>,
+    scope: &PinScope<'s, '_>,
     v8_item: impl v8::Handle<Data = T>,
     name: &str,
 ) where
@@ -245,7 +245,7 @@ pub(crate) fn format_ts_lang_pointer(ts_language: &tree_sitter::Language) -> Str
 /// Creates a stub [`v8::Map`] that represents the interface a [`TsNodeBridge`](analysis::ddsa_lib::bridge::TsNodeBridge)
 /// exposes to JavaScript. The values stored are not true `TreeSitterNode` instances.
 pub(crate) fn make_stub_tsn_bridge<'s>(
-    scope: &mut PinScope<'s, '_>,
+    scope: &PinScope<'s, '_>,
     node_ids: &[u32],
 ) -> v8::Local<'s, v8::Map> {
     let stub_tsn_bridge = v8::Map::new(scope);

@@ -78,7 +78,7 @@ impl ContextBridge {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         self.root.js.as_local(scope)
     }
 

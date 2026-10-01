@@ -20,7 +20,7 @@ impl QueryMatchBridge {
     /// Constructs a new `QueryMatchBridge` for the given `scope`. The scope's [`v8::Context::global`] must
     /// have class functions with the following identifiers:
     /// * [`js::QueryMatch::CLASS_NAME`]
-    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         /// The `QueryMatchBridge` persists across the entire lifetime of the [`JsRuntime`](use crate::analysis::ddsa_lib::JsRuntime),
         /// so push operations amortize to O(1) (because we aren't constantly re-creating this vec).
         ///
@@ -76,7 +76,7 @@ impl QueryMatchBridge {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] array.
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         self.0.as_local(scope)
     }
 }

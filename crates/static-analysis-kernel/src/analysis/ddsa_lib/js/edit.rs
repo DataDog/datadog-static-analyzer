@@ -94,7 +94,7 @@ impl V8Converter for EditConverter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut PinScope<'s, '_>,
+        scope: &PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error> {
         let _pd = PhantomData;

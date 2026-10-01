@@ -15,7 +15,7 @@ pub struct FileContextGo {
 }
 
 impl FileContextGo {
-    pub fn new(scope: &mut PinScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         Self {
             packages_aliased: MirroredIndexMap::new(scope),
         }

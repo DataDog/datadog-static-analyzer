@@ -68,7 +68,7 @@ impl TreeSitterNodeFn<Class> {
     pub const CLASS_NAME: &'static str = "TreeSitterNode";
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
-    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         load_function(scope, Self::CLASS_NAME).map(|func| Self(func, PhantomData))
     }
 

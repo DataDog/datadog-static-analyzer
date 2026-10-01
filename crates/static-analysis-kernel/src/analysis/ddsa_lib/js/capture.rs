@@ -16,7 +16,7 @@ pub(crate) struct SingleCaptureTemplate {
 }
 
 impl SingleCaptureTemplate {
-    pub fn new(scope: &mut PinScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         let s_name = v8_interned(scope, "name");
         let s_node_id = v8_interned(scope, "nodeId");
         let undefined = v8::undefined(scope);
@@ -69,7 +69,7 @@ pub(crate) struct MultiCaptureTemplate {
 }
 
 impl MultiCaptureTemplate {
-    pub fn new(scope: &mut PinScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         let s_name = v8_interned(scope, "name");
         let s_node_ids = v8_interned(scope, "nodeIds");
         let undefined = v8::undefined(scope);

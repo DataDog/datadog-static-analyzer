@@ -55,7 +55,7 @@ impl V8Converter for CodeRegionConverter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut PinScope<'s, '_>,
+        scope: &PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error> {
         let v8_obj = v8_type_from::<v8::Object>(value, "an object")?;

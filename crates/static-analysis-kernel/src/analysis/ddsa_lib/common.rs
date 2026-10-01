@@ -151,7 +151,7 @@ impl<T> Deref for StellaCompat<T> {
 /// Loads a global [`v8::Function`] from the provided scope, returning an error if either the
 /// identifier doesn't exist, or if it doesn't refer to a function.
 pub fn load_function(
-    scope: &mut PinScope,
+    scope: &PinScope,
     identifier: &str,
 ) -> Result<v8::Global<v8::Function>, DDSAJsRuntimeError> {
     let ctx = scope.get_current_context();
@@ -183,7 +183,7 @@ pub fn load_function(
 /// * Panics if the provided string is not ASCII.
 /// * Panics if `str` is longer than the v8 string length limit.
 #[inline(always)]
-pub fn v8_interned<'s>(scope: &mut PinScope<'s, '_>, str: &str) -> v8::Local<'s, v8::String> {
+pub fn v8_interned<'s>(scope: &PinScope<'s, '_>, str: &str) -> v8::Local<'s, v8::String> {
     // This is a debug assertion because `is_ascii()` is O(N), and the `v8_interned` function is called
     // frequently in performance-critical paths.
     debug_assert!(str.is_ascii(), "string must be ASCII");
@@ -195,14 +195,14 @@ pub fn v8_interned<'s>(scope: &mut PinScope<'s, '_>, str: &str) -> v8::Local<'s,
 /// to create the string, even if it has been seen by the runtime before. An empty string is
 /// returned if the string is larger than the v8 string length limit.
 #[inline(always)]
-pub fn v8_string<'s>(scope: &mut PinScope<'s, '_>, str: &str) -> v8::Local<'s, v8::String> {
+pub fn v8_string<'s>(scope: &PinScope<'s, '_>, str: &str) -> v8::Local<'s, v8::String> {
     v8::String::new_from_utf8(scope, str.as_bytes(), v8::NewStringType::Normal)
         .unwrap_or_else(|| swallow_v8_error(|| v8::String::empty(scope)))
 }
 
 /// A shorthand for creating a [`v8::Integer`].
 #[inline(always)]
-pub fn v8_uint<'s>(scope: &mut PinScope<'s, '_>, number: u32) -> v8::Local<'s, v8::Integer> {
+pub fn v8_uint<'s>(scope: &PinScope<'s, '_>, number: u32) -> v8::Local<'s, v8::Integer> {
     v8::Integer::new_from_unsigned(scope, number)
 }
 
@@ -239,7 +239,7 @@ where
 pub fn get_field<'s, T>(
     value: v8::Local<v8::Object>,
     field_name: &'static str,
-    scope: &mut PinScope<'s, '_>,
+    scope: &PinScope<'s, '_>,
     expecting: &'static str,
 ) -> Result<v8::Local<'s, T>, DDSAJsRuntimeError>
 where
@@ -259,7 +259,7 @@ where
 pub fn get_optional_field<'s, T>(
     value: v8::Local<v8::Object>,
     field_name: &'static str,
-    scope: &mut PinScope<'s, '_>,
+    scope: &PinScope<'s, '_>,
     expecting: &'static str,
 ) -> Result<Option<v8::Local<'s, T>>, DDSAJsRuntimeError>
 where
@@ -284,7 +284,7 @@ where
 /// a `Vec`, and then returns an iterator over that `Vec`.
 pub fn iter_v8_array<'s>(
     value: v8::Local<'s, v8::Array>,
-    scope: &mut PinScope<'s, '_>,
+    scope: &PinScope<'s, '_>,
 ) -> impl Iterator<Item = v8::Local<'s, v8::Value>> {
     let len = value.length();
     let mut vec = Vec::with_capacity(len as usize);

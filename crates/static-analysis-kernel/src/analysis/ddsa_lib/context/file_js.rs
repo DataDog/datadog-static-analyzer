@@ -26,7 +26,7 @@ pub struct PackageImport {
 }
 
 impl FileContextJavaScript {
-    pub fn new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let imports = MirroredVec::new(JSPackageImport::try_new(scope)?, scope);
         Ok(Self { imports })
     }

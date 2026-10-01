@@ -30,7 +30,7 @@ pub trait V8Converter {
 
     fn try_convert_from<'s>(
         &self,
-        scope: &mut PinScope<'s, '_>,
+        scope: &PinScope<'s, '_>,
         value: v8::Local<'s, v8::Value>,
     ) -> Result<Self::Item, Self::Error>;
 }
@@ -54,12 +54,12 @@ where
     C: RustConverter<Item = T>,
 {
     /// Constructs a new, empty `MirroredVec`.
-    pub fn new(converter: C, scope: &mut PinScope) -> Self {
+    pub fn new(converter: C, scope: &PinScope) -> Self {
         Self::with_capacity(converter, scope, 0)
     }
 
     /// Constructs a new, empty `MirroredVec` with at least the specified capacity.
-    pub fn with_capacity(converter: C, scope: &mut PinScope, capacity: u32) -> Self {
+    pub fn with_capacity(converter: C, scope: &PinScope, capacity: u32) -> Self {
         let s_length = v8_interned(scope, "length");
         // We intentionally pass in "0" for length (and not `capacity`) due to the potential
         // for v8 to classify it as a "holey" array (and trigger de-optimizations).
@@ -143,7 +143,7 @@ where
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] array.
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         v8::Local::new(scope, &self.v8_array)
     }
 
@@ -184,13 +184,13 @@ where
     V: Eq,
 {
     /// Constructs a new, empty `MirroredIndexMap`.
-    pub fn new(scope: &mut PinScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         Self::with_capacity(scope, 0)
     }
 
     /// Creates a new, empty `MirroredIndexMap` with at least the specified capacity.
     /// Note: the capacity is allocated for the Rust `IndexMap` only, not the `v8::Map`.
-    pub fn with_capacity(scope: &mut PinScope, capacity: usize) -> Self {
+    pub fn with_capacity(scope: &PinScope, capacity: usize) -> Self {
         let v8_map = v8::Map::new(scope);
         let v8_map = v8::Global::new(scope, v8_map);
         let imap = IndexMap::with_capacity(capacity);
@@ -255,7 +255,7 @@ where
 
     /// Returns a local handle to the underlying [`v8::Global`] map.
     #[inline(always)]
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Map> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Map> {
         v8::Local::new(scope, &self.v8_map)
     }
 
@@ -310,14 +310,14 @@ where
     C: V8Converter<Item = T, Error = DDSAJsRuntimeError>,
 {
     /// Constructs a new, empty `SyncedV8Array`.
-    pub fn new(converter: C, scope: &mut PinScope, array: v8::Global<v8::Array>) -> Self {
+    pub fn new(converter: C, scope: &PinScope, array: v8::Global<v8::Array>) -> Self {
         Self::with_capacity(converter, scope, array, 0)
     }
 
     /// Constructs a new, empty `SyncedV8Array` with at least the specified capacity.
     pub fn with_capacity(
         converter: C,
-        scope: &mut PinScope,
+        scope: &PinScope,
         array: v8::Global<v8::Array>,
         capacity: u32,
     ) -> Self {
@@ -334,7 +334,7 @@ where
 
     /// Provides a [`v8::Local`] handle to the underlying [`v8::Global`] array.
     #[inline(always)]
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         v8::Local::new(scope, &self.v8_array)
     }
 
@@ -456,7 +456,7 @@ macro_rules! v8_converter {
           type Error = $err;
           fn try_convert_from<'s>(
               &$self,
-              $scope: &mut PinScope<'s, '_>,
+              $scope: & PinScope<'s, '_>,
               $value: v8::Local<'s, v8::Value>,
           ) -> Result<Self::Item, Self::Error> {
               $convert_expr
@@ -512,7 +512,7 @@ mod tests {
                 key_name: value.to_string(),
             }
         }
-        fn to_v8<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Value> {
+        fn to_v8<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Value> {
             let v8_obj = v8::Object::new(scope);
             let v8_key = v8::String::new(scope, "key_name").unwrap();
             let v8_value = v8::String::new(scope, &self.key_name).unwrap();
@@ -549,7 +549,7 @@ mod tests {
     }
 
     fn execute_script<'s>(
-        scope: &mut PinScope<'s, '_>,
+        scope: &PinScope<'s, '_>,
         code: &str,
     ) -> Option<v8::Local<'s, v8::Value>> {
         let code = v8_string(scope, code);

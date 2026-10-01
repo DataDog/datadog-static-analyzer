@@ -45,7 +45,7 @@ impl QueryMatchCompat<Class> {
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] and instantiating
     /// a [`QueryMatch<T>`].
-    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let class = load_function(scope, Self::CLASS_NAME)?;
         let proxied = QueryMatch::<Class>::try_new(scope)?;
         Ok(Self { class, proxied })

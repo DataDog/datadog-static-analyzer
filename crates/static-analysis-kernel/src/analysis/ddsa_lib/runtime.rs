@@ -451,7 +451,7 @@ pub(crate) fn make_base_deno_core_runtime(
     )
 }
 
-pub type V8DefaultContextMutateFn = dyn Fn(&mut PinScope, v8::Local<v8::Context>);
+pub type V8DefaultContextMutateFn = dyn Fn(&PinScope, v8::Local<v8::Context>);
 
 /// Creates a [`deno_core::JsRuntime`] with the provided `extensions`.
 ///

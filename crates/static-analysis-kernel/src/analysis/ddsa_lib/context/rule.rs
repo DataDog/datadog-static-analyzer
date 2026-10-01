@@ -15,7 +15,7 @@ pub struct RuleContext {
 }
 
 impl RuleContext {
-    pub fn new(scope: &mut PinScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         let arguments = MirroredIndexMap::<String, String>::new(scope);
         RuleContext { arguments }
     }

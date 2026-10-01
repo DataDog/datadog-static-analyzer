@@ -14,7 +14,7 @@ pub struct ViolationBridge(SyncedV8Array<js::Violation<Instance>, ViolationConve
 
 impl ViolationBridge {
     /// Creates a new, empty `ViolationBridge`.
-    pub fn new(scope: &mut PinScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         let converter = ViolationConverter::new();
         let array = v8::Array::new(scope, 0);
         let array = v8::Global::new(scope, array);
@@ -42,7 +42,7 @@ impl ViolationBridge {
     }
 
     /// Provides a local handle to the underlying [`v8::Global`] array powering the bridge.
-    pub fn as_local<'s>(&self, scope: &mut PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Array> {
         self.0.as_local(scope)
     }
 }
