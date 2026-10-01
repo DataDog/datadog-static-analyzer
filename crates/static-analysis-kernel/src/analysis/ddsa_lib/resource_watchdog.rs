@@ -277,8 +277,6 @@ type NearHeapLimitCallback = dyn Fn(usize, usize) -> usize;
 #[derive(Debug)]
 struct HeapLimitGuard {
     boxed_callback_ptr: Cell<*mut Box<NearHeapLimitCallback>>,
-    /// The limit of the v8 isolate upon initialization.
-    initial_limit: usize,
 }
 
 impl HeapLimitGuard {
@@ -293,12 +291,9 @@ impl HeapLimitGuard {
         // that is guaranteed to never be dropped.
         let boxed_box = Box::new(near_heap_limit_cb);
         let boxed_callback_ptr = Box::into_raw(boxed_box);
-        let stats = isolate.get_heap_statistics();
-        let initial_limit = stats.heap_size_limit();
 
         let guard = Self {
             boxed_callback_ptr: Cell::new(boxed_callback_ptr),
-            initial_limit,
         };
         let guard = Rc::new(guard);
         // Giving the v8 isolate an owned `Rc` of this `HeapLimitGuard` ensures that the callbacks
@@ -334,9 +329,6 @@ impl HeapLimitGuard {
             .is_some_and(|guard| std::ptr::eq(Rc::as_ptr(guard), self))
         {
             return Err("isolate must be the same as the one that initialized this guard");
-        }
-        if heap_size_limit > self.initial_limit {
-            return Err("limit can not be set higher than the initial value");
         }
 
         let current_ptr = self.boxed_callback_ptr.get();
@@ -645,23 +637,6 @@ pub(crate) mod tests {
         assert!(set_result.is_ok());
         // The `suggest_heap_limit` call should have set a lower limit.
         assert!(heap_limit_diff(runtime.v8_isolate(), REDUCED_LIMIT) < HEAP_LIMIT_MARGIN_OF_ERROR);
-    }
-
-    /// The heap limit cannot be set larger than the initial value.
-    #[test]
-    fn heap_limit_initial_value() {
-        const INITIAL_LIMIT: usize = DEFAULT_HEAP_LIMIT;
-        let mut runtime = cfg_test_v8().deno_core_rt_with_heap_limit(INITIAL_LIMIT);
-        let guard = HeapLimitGuard::new(runtime.v8_isolate(), Box::new(|_, _| 0));
-
-        assert_eq!(heap_limit_diff(runtime.v8_isolate(), INITIAL_LIMIT), 0.0);
-
-        // Setting a limit larger than the initial value isn't possible.
-        let set_result = guard.suggest_heap_limit(runtime.v8_isolate(), INITIAL_LIMIT * 2);
-        assert!(set_result
-            .is_err_and(|msg| msg == "limit can not be set higher than the initial value"));
-
-        assert_eq!(heap_limit_diff(runtime.v8_isolate(), INITIAL_LIMIT), 0.0);
     }
 
     /// A `HeapLimitGuard` only works on the isolate it was initialized with.
