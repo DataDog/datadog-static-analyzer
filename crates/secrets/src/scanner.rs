@@ -271,7 +271,7 @@ mod tests {
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
         // Line 1: FOOBAR - should be found
         // Line 2: #no-dd-secrets
-        // Line 3: FOOBAZ - should be ignored
+        // Line 3: FOOBAZ (no trailing newline) - should be found but suppressed
         let text = "FOOBAR\n#no-dd-secrets\nFOOBAZ";
         let matches = find_secrets(
             &scanner,
@@ -284,10 +284,15 @@ mod tests {
 
         // FOOBAR at line 1 is found and not suppressed (directive on line 2 covers line 3)
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches.first().unwrap().matches.len(), 1);
+        assert_eq!(matches.first().unwrap().matches.len(), 2);
         let first = matches.first().unwrap().matches.first().unwrap();
         assert_eq!(first.start, Position { line: 1, col: 1 });
+        assert_eq!(first.end, Position { line: 1, col: 7 });
         assert!(!first.is_suppressed);
+        let second = matches.first().unwrap().matches.get(1).unwrap();
+        assert_eq!(second.start, Position { line: 3, col: 1 });
+        assert_eq!(second.end, Position { line: 3, col: 7 });
+        assert!(second.is_suppressed);
     }
 
     #[test]
@@ -599,7 +604,7 @@ mod tests {
     }
 
     #[test]
-    fn test_find_secrets_all_ignored() {
+    fn test_find_secrets_directive_covers_next_line_only() {
         let rules: Vec<SecretRule> = vec![SecretRule {
             id: "secret_rule".to_string(),
             sds_id: "sds_id".to_string(),
@@ -618,7 +623,7 @@ mod tests {
             suppressions: None,
         }];
         let scanner = build_sds_scanner(rules.as_slice(), false).expect("error building scanner");
-        // Directive on line 1 means ignore entire file
+        // Directive on line 1 covers line 2 only; FOOBAZ on line 3 should be surfaced.
         let text = "#no-dd-secrets\nFOOBAR\nFOOBAZ";
         let matches = find_secrets(
             &scanner,
@@ -629,12 +634,18 @@ mod tests {
             false,
         );
 
-        // FOOBAR at line 2 is found and suppressed (directive on line 1 covers line 2)
+        // FOOBAR at line 2 is found and suppressed (directive on line 1 covers line 2); FOOBAZ
+        // at line 3 is found and NOT suppressed (the directive doesn't extend that far).
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches.first().unwrap().matches.len(), 1);
+        assert_eq!(matches.first().unwrap().matches.len(), 2);
         let first = matches.first().unwrap().matches.first().unwrap();
         assert_eq!(first.start, Position { line: 2, col: 1 });
+        assert_eq!(first.end, Position { line: 2, col: 7 });
         assert!(first.is_suppressed);
+        let second = matches.first().unwrap().matches.get(1).unwrap();
+        assert_eq!(second.start, Position { line: 3, col: 1 });
+        assert_eq!(second.end, Position { line: 3, col: 7 });
+        assert!(!second.is_suppressed);
     }
 
     #[test]
