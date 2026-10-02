@@ -37,8 +37,7 @@ impl V8ResourceWatchdog {
             Arc::clone(&timeout_condvar),
         );
 
-        let mut stats = v8::HeapStatistics::default();
-        isolate.get_heap_statistics(&mut stats);
+        let stats = isolate.get_heap_statistics();
         let initial_heap_limit = stats.heap_size_limit();
 
         let heap_limit_cb =
@@ -299,8 +298,7 @@ impl HeapLimitGuard {
         let boxed_box = Box::new(near_heap_limit_cb);
         let boxed_callback_ptr = Box::into_raw(boxed_box);
         let isolate_ptr: *const v8::Isolate = &*isolate;
-        let mut stats = v8::HeapStatistics::default();
-        isolate.get_heap_statistics(&mut stats);
+        let stats = isolate.get_heap_statistics();
         let initial_limit = stats.heap_size_limit();
 
         let guard = Self {
@@ -462,8 +460,7 @@ pub(crate) mod tests {
     /// Returns the percentage difference between the isolate's current heap limit
     /// and the expected heap limit.
     fn heap_limit_diff(isolate: &mut v8::Isolate, expected: usize) -> f32 {
-        let mut stats = v8::HeapStatistics::default();
-        isolate.get_heap_statistics(&mut stats);
+        let stats = isolate.get_heap_statistics();
         let current_limit = stats.heap_size_limit() as isize;
         let diff = current_limit.abs_diff(expected as isize);
         diff as f32 / expected as f32
