@@ -41,7 +41,7 @@ impl LineColumnIndex {
 
 /// Get position of an offset in a code and return a [Position].
 pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Position> {
-    if offset >= content.len() {
+    if offset > content.len() {
         anyhow::bail!("offset is larger than content length");
     }
 
@@ -53,7 +53,9 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
         let start_index = line.as_ptr() as usize - content.as_ptr() as usize;
         let end_index = start_index + line.len();
 
-        if (start_index..end_index).contains(&offset) {
+        if (start_index..end_index).contains(&offset)
+            || (end_index == content.len() && offset == end_index)
+        {
             let mut col_number: u32 = 1;
             for (grapheme_start, grapheme_end, _) in line.grapheme_indices() {
                 let grapheme_absolute_start = start_index + grapheme_start;
@@ -75,6 +77,15 @@ pub fn get_position_in_string(content: &str, offset: usize) -> anyhow::Result<Po
                     });
                 }
                 col_number += 1;
+            }
+
+            // offset == content.len(): one column past the last grapheme of the final line,
+            // counting its line terminator when the content ends with one.
+            if offset == end_index {
+                return Ok(Position {
+                    line: line_number,
+                    col: col_number,
+                });
             }
         }
         line_number += 1;
@@ -98,6 +109,41 @@ mod tests {
     #[test]
     fn test_get_position_in_string_out_of_bounds() {
         assert!(get_position_in_string("foobarbaz", 42).is_err());
+    }
+
+    #[test]
+    fn test_get_position_in_string_at_eof_without_trailing_newline() {
+        assert_eq!(
+            get_position_in_string("foobarbaz", 9).unwrap(),
+            Position::new(1, 10)
+        );
+    }
+
+    #[test]
+    fn test_get_position_in_string_at_eof_after_multibyte_grapheme() {
+        assert_eq!(
+            get_position_in_string("FOO🦊", 7).unwrap(),
+            Position::new(1, 5)
+        );
+    }
+
+    #[test]
+    fn test_get_position_in_string_one_past_eof() {
+        assert!(get_position_in_string("abc", 4).is_err());
+    }
+
+    #[test]
+    fn test_get_position_in_string_at_eof_with_trailing_newline() {
+        // The newline is counted, so the position lands one column past it.
+        assert_eq!(
+            get_position_in_string("abc\n", 4).unwrap(),
+            Position::new(1, 5)
+        );
+        // Same offset with content after the newline resolves to the next line instead.
+        assert_eq!(
+            get_position_in_string("abc\nd", 4).unwrap(),
+            Position::new(2, 1)
+        );
     }
 
     #[test]
