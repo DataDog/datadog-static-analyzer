@@ -400,8 +400,6 @@ pub(crate) fn make_base_deno_core_runtime(
     /// Global properties that are deleted (e.g. `delete globalThis.x;`) from the global proxy object
     /// of the default `v8::Context` for the `JsRuntime`.
     const DEFAULT_DELETED_GLOBAL_PROPS: &[&str] = &[
-        // `deno_core`, by default, injects its own `console` implementation.
-        "console",
         "Promise",
         "FinalizationRegistry",
         "ArrayBuffer",
@@ -426,6 +424,8 @@ pub(crate) fn make_base_deno_core_runtime(
     const DEFAULT_OVERRIDDEN_GLOBAL_PROPS: &[&str] = &[
         // `deno_core` (as of "0.330.0") manually sets v8 flag: `--js-float16array`.
         "Float16Array",
+        // v8 (as of "134.0.0") always exposes wasm unless disabled at compile time.
+        "WebAssembly",
     ];
     inner_make_deno_core_runtime(
         extensions,
@@ -454,9 +454,6 @@ pub type V8DefaultContextMutateFn = dyn Fn(&mut HandleScope, v8::Local<v8::Conte
 /// runtime's `v8::Isolate`.
 ///
 /// If provided, `max_heap_size_bytes` will configure a hard limit for the heap.
-///
-/// # Warning
-/// This will leak memory for each `deno_core::JsRuntime` created. Thus, this runtime should be reused where possible.
 pub(crate) fn inner_make_deno_core_runtime(
     extensions: Vec<deno_core::Extension>,
     config_default_v8_context: Option<Box<V8DefaultContextMutateFn>>,
@@ -466,23 +463,17 @@ pub(crate) fn inner_make_deno_core_runtime(
     if let Some(max) = max_heap_size_bytes {
         create_params = create_params.heap_limits(0, max);
     }
-    // [11-22-24]: There _may_ be an issue on Linux systems with PKU support where multiple
-    // deno_core::JsRuntime will attempt to use the same memory map, leading to segfaults.
-    // If this is the case, creating and using snapshots for each JsRuntime should fix this.
-    let mut snapshot_runtime = deno_core::JsRuntimeForSnapshot::new(Default::default());
+    let mut js_runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+        create_params: Some(create_params),
+        extensions,
+        ..Default::default()
+    });
     if let Some(config_fn) = config_default_v8_context {
-        let scope = &mut snapshot_runtime.handle_scope();
+        let scope = &mut js_runtime.handle_scope();
         let default_ctx = scope.get_current_context();
         config_fn(scope, default_ctx);
     }
-    let snapshot = snapshot_runtime.snapshot();
-    let leaked = Box::leak(snapshot);
-    deno_core::JsRuntime::new(deno_core::RuntimeOptions {
-        create_params: Some(create_params),
-        extensions,
-        startup_snapshot: Some(leaked),
-        ..Default::default()
-    })
+    js_runtime
 }
 
 /// A [`v8::Global<v8::UnboundScript>`] script representing a static analysis rule.
