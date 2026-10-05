@@ -58,6 +58,7 @@ trigger_internal_image:
   stage: release
   only:
     - main
+    - jf/K9CODESEC-7237-8-release
   trigger:
     project: ddoghq/images
     branch: ${DD_IMAGES_BRANCH}
