@@ -40,8 +40,7 @@ export class TreeSitterNode {
         /**
          * The id of this node, assigned by the Rust static analysis kernel.
          * @type {NodeId}
-         * @private
-         * */
+         */
         this.id = id;
         /**
          * @type {number}
