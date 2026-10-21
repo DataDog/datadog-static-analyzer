@@ -67,6 +67,7 @@ struct CliArgs {
     directory_to_analyze: PathBuf,
     subdirectories_to_analyze: Vec<String>,
     rules_file: Option<String>,
+    rules_with_config: bool,
     ignore_paths_from_options: Vec<String>,
     output_file: String,
     output_format: OutputFormat,
@@ -108,6 +109,11 @@ fn parse_cli_args(raw_args: &[String]) -> Result<CliArgs> {
         "rules",
         "rules to use (json file)",
         "/path/to/rules.json",
+    );
+    opts.optflag(
+        "",
+        "rules-with-config",
+        "with -r, run only the rules from the file even if a SAST configuration (local or remote) is present; the configuration is still honoured for paths, file size, gitignore and ruleset-configs",
     );
     opts.optopt("d", "debug", "use debug mode", "yes/no");
     opts.optflag("", "debug-export-java-dfa", "export Java flow graphs by writing a `{filename}.dot` file next to each Java file scanned; this dirties the working directory");
@@ -283,6 +289,11 @@ fn parse_cli_args(raw_args: &[String]) -> Result<CliArgs> {
     let subdirectories_to_analyze = matches.opt_strs("u");
 
     let rules_file = matches.opt_str("r");
+    let rules_with_config = matches.opt_present("rules-with-config");
+    if rules_with_config && rules_file.is_none() {
+        eprintln!("--rules-with-config requires a rule file; pass -r /path/to/rules.json");
+        exit(EXIT_CODE_INVALID_CONFIGURATION);
+    }
 
     let Some(directory_to_analyze) = directory_to_analyze_option.map(PathBuf::from) else {
         eprintln!("no directory passed, specify a directory with option -i");
@@ -322,6 +333,7 @@ fn parse_cli_args(raw_args: &[String]) -> Result<CliArgs> {
         directory_to_analyze,
         subdirectories_to_analyze,
         rules_file,
+        rules_with_config,
         ignore_paths_from_options,
         output_file,
         output_format,
@@ -364,20 +376,21 @@ fn resolve_sast_config(
 
     // Rulesets to exclude when fetching default rulesets
     let mut excluded_rulesets = Vec::<&str>::new();
-    // if there is a configuration file, we load the rules from it. But it means
-    // we cannot have the rule parameter given.
+    // If there is a configuration (local or remote), its settings always apply. Its rulesets are
+    // only loaded when no rule file is given. A rule file together with a configuration requires
+    // --rules-with-config, and then only the rules from the file run.
     if let Some(conf) = sast_config {
         ignore_gitignore = conf
             .global_config
             .as_ref()
             .and_then(|g| g.use_gitignore.map(|b| !b))
             .unwrap_or(false);
-        if args.rules_file.is_some() {
-            eprintln!("a rule file cannot be specified when a configuration file is present.");
+        if args.rules_file.is_some() && !args.rules_with_config {
+            eprintln!("a rule file cannot be specified when a configuration file is present. Use --rules-with-config to run only the rules from the file while honouring the configuration's settings.");
             exit(EXIT_CODE_RULE_FILE_WITH_CONFIGURATION);
         }
 
-        if args.static_analysis_enabled {
+        if args.static_analysis_enabled && args.rules_file.is_none() {
             let explicit_rs = conf.explicit_rulesets().collect::<Vec<_>>();
             let rules_from_api =
                 get_rules_from_rulesets(&explicit_rs, args.use_staging, args.use_debug)
@@ -1084,4 +1097,163 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kernel::config::common::PathPattern;
+    use kernel::model::rule::{RuleCategory, RuleType};
+    use kernel::model::ruleset::RuleSet;
+    use tempfile::TempDir;
+
+    fn rule(name: &str) -> Rule {
+        Rule {
+            name: name.to_string(),
+            short_description_base64: None,
+            description_base64: None,
+            category: RuleCategory::Security,
+            severity: RuleSeverity::Error,
+            language: Language::Python,
+            rule_type: RuleType::TreeSitterQuery,
+            entity_checked: None,
+            code_base64: "".to_string(),
+            cwe: None,
+            checksum: "".to_string(),
+            pattern: None,
+            tree_sitter_query_base64: None,
+            arguments: vec![],
+            tests: vec![],
+            is_testing: false,
+            documentation_url: None,
+        }
+    }
+
+    /// Writes a rules file with a single ruleset `ephemeral-rs` containing `ephemeral-rs/my-rule`.
+    fn write_rules_file(dir: &TempDir) -> String {
+        let rulesets = vec![RuleSet::new("ephemeral-rs", None, vec![rule("my-rule")])];
+        let path = dir.path().join("rules.json");
+        fs::write(&path, serde_json::to_string(&rulesets).unwrap()).unwrap();
+        path.to_string_lossy().to_string()
+    }
+
+    fn args_with_rules(rules_file: String) -> CliArgs {
+        CliArgs {
+            directory_to_analyze: PathBuf::from("."),
+            subdirectories_to_analyze: vec![],
+            rules_file: Some(rules_file),
+            rules_with_config: true,
+            ignore_paths_from_options: vec![],
+            output_file: "out.json".to_string(),
+            output_format: OutputFormat::Json,
+            use_debug: false,
+            use_staging: false,
+            static_analysis_enabled: true,
+            secrets_enabled: false,
+            scan_git_history_only: false,
+            diff_aware_requested: false,
+            should_verify_checksum: false,
+            add_git_info: false,
+            show_performance_statistics: false,
+            print_violations: false,
+            fail_any_violation_severities: vec![],
+            debug_java_dfa: false,
+            num_cpus: 1,
+            timeout: None,
+        }
+    }
+
+    fn parse_config(yaml: &str) -> sast_file_v1::ConfigFile {
+        sast_file_v1::parse_yaml(yaml).unwrap().into()
+    }
+
+    fn rule_names(config: &SastConfiguration) -> Vec<&str> {
+        config.rules.iter().map(|r| r.name.as_str()).collect()
+    }
+
+    /// With `--rules-with-config`, only the rules from the file run, but the configuration's
+    /// global settings still apply. The configured ruleset does not exist, so fetching it would fail.
+    #[test]
+    fn rules_with_config_runs_only_file_rules_and_honours_global_config() {
+        let dir = TempDir::new().unwrap();
+        let args = args_with_rules(write_rules_file(&dir));
+        // language=yaml
+        let config = parse_config(
+            "\
+schema-version: v1.0
+sast:
+  use-rulesets:
+    - this-ruleset-does-not-exist
+  global-config:
+    ignore-paths:
+      - vendor/**
+    use-gitignore: false
+    max-file-size-kb: 42
+    ignore-generated-files: false
+",
+        );
+
+        let sast_config = resolve_sast_config(config.sast(), &args, &[]).unwrap();
+
+        assert_eq!(rule_names(&sast_config), vec!["ephemeral-rs/my-rule"]);
+        assert_eq!(sast_config.max_file_size_kb, 42);
+        assert!(sast_config.ignore_gitignore);
+        assert!(!sast_config.ignore_generated_files);
+        assert!(sast_config
+            .path_config
+            .ignore
+            .contains(&PathPattern::from("vendor/**".to_string())));
+    }
+
+    /// Without a configuration, `--rules-with-config` behaves like `-r` alone.
+    #[test]
+    fn rules_with_config_without_config_matches_rules_file_alone() {
+        let dir = TempDir::new().unwrap();
+        let rules_file = write_rules_file(&dir);
+        let with_modifier = args_with_rules(rules_file.clone());
+        let without_modifier = CliArgs {
+            rules_with_config: false,
+            ..args_with_rules(rules_file)
+        };
+
+        let a = resolve_sast_config(None, &with_modifier, &[]).unwrap();
+        let b = resolve_sast_config(None, &without_modifier, &[]).unwrap();
+
+        assert_eq!(rule_names(&a), vec!["ephemeral-rs/my-rule"]);
+        assert_eq!(rule_names(&a), rule_names(&b));
+        assert_eq!(a.max_file_size_kb, b.max_file_size_kb);
+        assert_eq!(a.ignore_gitignore, b.ignore_gitignore);
+        assert_eq!(a.ignore_generated_files, b.ignore_generated_files);
+    }
+
+    /// The configuration's `ruleset-configs` apply to the rules from the file.
+    #[test]
+    fn rules_with_config_applies_ruleset_configs() {
+        let dir = TempDir::new().unwrap();
+        let args = args_with_rules(write_rules_file(&dir));
+        // language=yaml
+        let config = parse_config(
+            "\
+schema-version: v1.0
+sast:
+  use-default-rulesets: false
+  ruleset-configs:
+    ephemeral-rs:
+      rule-configs:
+        my-rule:
+          severity: NOTICE
+",
+        );
+
+        let sast_config = resolve_sast_config(config.sast(), &args, &[]).unwrap();
+
+        assert_eq!(rule_names(&sast_config), vec!["ephemeral-rs/my-rule"]);
+        assert_eq!(
+            sast_config
+                .rule_config_provider
+                .config_for_file("src/main.py")
+                .get_severity("ephemeral-rs/my-rule"),
+            Some(RuleSeverity::Notice)
+        );
+    }
 }

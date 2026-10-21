@@ -130,7 +130,8 @@ xattr -dr com.apple.quarantine datadog-static-analyzer
 ## Options
 
  - `-f` or `--format`: format of the output file. `-f sarif` produces a [SARIF-compliant file](https://www.oasis-open.org/committees/tc_home.php?wg_abbrev=sarif)
- - `-r` or `--rules`: provides a file that contains all rules (rules can be put in a file using `datadog-export-rulesets`)
+ - `-r` or `--rules`: provides a file that contains all rules (rules can be put in a file using `datadog-export-rulesets`). Without `--rules-with-config`, it cannot be used when a configuration file (local or remote) is present
+ - `--rules-with-config`: with `-r`, run only the rules from the file even if a configuration (local or remote) is present. The configuration's rulesets are not fetched, but its paths, file size, gitignore and `ruleset-configs` settings still apply
  - `-c` or `--cpus`: number of cores used to analyze (count about 1GB of RAM usage per core)
  - `-o` or `--output`: output file
  - `-p` or `--ignore-path`: path (pattern/glob) to ignore; accepts multiple
