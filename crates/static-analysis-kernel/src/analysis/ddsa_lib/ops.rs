@@ -91,7 +91,7 @@ pub fn op_ts_node_text(state: &OpState, #[smi] node_id: u32) -> Option<String> {
 #[op2]
 pub fn op_ts_node_named_children<'s>(
     state: &OpState,
-    scope: &mut v8::HandleScope<'s>,
+    scope: &mut v8::PinScope<'s, '_>,
     #[smi] node_id: u32,
 ) -> Option<v8::Local<'s, v8::Array>> {
     let ts_node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>();
@@ -151,7 +151,7 @@ pub fn op_ts_node_named_children<'s>(
 #[op2]
 pub fn op_ts_node_parent(
     state: &OpState,
-    scope: &mut v8::HandleScope,
+    scope: &mut v8::PinScope,
     #[smi] node_id: u32,
 ) -> Option<u32> {
     let ts_node_bridge = state.borrow::<Rc<RefCell<bridge::TsNodeBridge>>>();
@@ -246,7 +246,7 @@ impl OpSafeRawTSNode {
 #[string]
 pub fn op_digraph_adjacency_list_to_dot(
     state: &OpState,
-    scope: &mut v8::HandleScope,
+    scope: &mut v8::PinScope,
     adjacency_list: v8::Local<v8::Map>,
     #[string] fn_signature: &str,
 ) -> Option<String> {
@@ -308,7 +308,7 @@ mod tests {
     #[test]
     fn none_serialization_to_null() {
         let mut rt = cfg_test_v8().deno_core_rt();
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         let res = try_execute(scope, "Deno.core.ops.cfg_test_op_rust_option(true);").unwrap();
         assert_eq!(res.uint32_value(scope).unwrap(), 123);
 

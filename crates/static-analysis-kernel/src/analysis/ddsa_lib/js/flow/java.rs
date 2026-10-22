@@ -118,11 +118,16 @@ mod tests {
         let idx = LineColumnIndex::new(source_text);
         let source_arc = Arc::<str>::from(source_text);
         let filename = Arc::<str>::from("test_doesnt_use_filename");
-        rt.bridge_context().borrow_mut().set_root_context(&mut rt.v8_handle_scope(), &tree.tree(), &source_arc, &filename);
+        {
+            let ctx_bridge = rt.bridge_context();
+            deno_core::scope!(scope, rt.deno_runtime());
+            ctx_bridge.borrow_mut().set_root_context(scope, &tree.tree(), &source_arc, &filename);
+        }
         let tsn_bridge = rt.bridge_ts_node();
         let mut tsn_bridge = tsn_bridge.borrow_mut();
         for node in tree.find_named_nodes(None, None) {
-            tsn_bridge.insert(&mut rt.v8_handle_scope(), node, &idx);
+            deno_core::scope!(scope, rt.deno_runtime());
+            tsn_bridge.insert(scope, node, &idx);
         }
 
         (rt, tree)
@@ -175,7 +180,10 @@ __ddsaPrivate__.graphToDOT(methodFlow.graph, \"cst_v8_full\");
 ",
                 CLASS_NAME, method_decl_id
             );
-            let script = compile_script(&mut rt.v8_handle_scope(), &script, None).unwrap();
+            let script = {
+                deno_core::scope!(scope, rt.deno_runtime());
+                compile_script(scope, &script, None).unwrap()
+            };
             let full_str = rt
                 .scoped_execute(&script, |sc, val| val.to_rust_string_lossy(sc), None)
                 .unwrap();
@@ -287,7 +295,10 @@ public class TestClass {
                 .unwrap_or("undefined".to_string());
 
             let script = format!("{}.findContainingMethod(getNode({}))?.id;", CLASS_NAME, nid);
-            let script = compile_script(&mut rt.v8_handle_scope(), &script, None).unwrap();
+            let script = {
+                deno_core::scope!(scope, rt.deno_runtime());
+                compile_script(scope, &script, None).unwrap()
+            };
             let exe_result = rt.scoped_execute(&script, |sc, v| v.to_rust_string_lossy(sc), None);
             assert_eq!(exe_result.unwrap(), expected);
         }
@@ -318,7 +329,7 @@ public class TestClass {
     fn bin_expr_op_js_synchronization() {
         let tests = [BinOp::Ignored, BinOp::Add];
         let mut rt = cfg_test_v8().deno_core_rt();
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         for rust_kind in tests {
             let js_const = match rust_kind {
                 BinOp::Ignored => "BIN_EXPR_OP_IGNORED",
@@ -398,7 +409,10 @@ for (const flow of [sourceFlows[0], sinkFlows[0]]) {{
 serialized;
 "#,
         );
-        let script = compile_script(&mut rt.v8_handle_scope(), &script, None).unwrap();
+        let script = {
+            deno_core::scope!(scope, rt.deno_runtime());
+            compile_script(scope, &script, None).unwrap()
+        };
         let res = rt
             .scoped_execute(&script, |sc, value| value.to_rust_string_lossy(sc), None)
             .unwrap();
@@ -461,7 +475,10 @@ const v = Violation.new("flow violation", sourceFlows[0]);
 v;
 "#,
         );
-        let script = compile_script(&mut rt.v8_handle_scope(), &script, None).unwrap();
+        let script = {
+            deno_core::scope!(scope, rt.deno_runtime());
+            compile_script(scope, &script, None).unwrap()
+        };
         let violation = rt
             .scoped_execute(
                 &script,
