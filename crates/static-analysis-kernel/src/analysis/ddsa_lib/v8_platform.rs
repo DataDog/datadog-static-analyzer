@@ -94,7 +94,7 @@ impl V8Platform<Initialized> {
     }
 
     fn extensions() -> Vec<deno_core::Extension> {
-        vec![ddsa_lib::init_ops_and_esm()]
+        vec![ddsa_lib::init()]
     }
 }
 
