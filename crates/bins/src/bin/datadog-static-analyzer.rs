@@ -148,6 +148,12 @@ fn parse_cli_args(raw_args: &[String]) -> Result<CliArgs> {
         format!("allow N CPUs at once; if unspecified, defaults to the number of logical cores on the platform or {}, whichever is less", DEFAULT_MAX_CPUS).as_str(),
         "--cpus 5",
     );
+    opts.optopt(
+        "",
+        "force-cpus",
+        "use exactly N threads; overrides --cpus and ignores the number of logical cores",
+        "--force-cpus 16",
+    );
     opts.optflag(
         "w",
         "diff-aware",
@@ -318,7 +324,21 @@ fn parse_cli_args(raw_args: &[String]) -> Result<CliArgs> {
                 .context("unable to parse `cpus` flag as integer")
         })
         .transpose()?;
-    let num_cpus = choose_cpu_count(num_cores_requested);
+    let num_cores_forced = matches
+        .opt_str("force-cpus")
+        .map(|val| {
+            val.parse::<usize>()
+                .context("unable to parse `force-cpus` flag as integer")
+        })
+        .transpose()?;
+    let num_cpus = match num_cores_forced {
+        Some(0) => {
+            eprintln!("--force-cpus must be at least 1");
+            exit(EXIT_CODE_INVALID_CONFIGURATION);
+        }
+        Some(n) => n,
+        None => get_num_threads_to_use(choose_cpu_count(num_cores_requested)),
+    };
 
     let timeout = matches
         .opt_str("rule-timeout-ms")
@@ -954,7 +974,7 @@ fn main() -> Result<()> {
         source_subdirectories: args.subdirectories_to_analyze.clone(),
         output_format: args.output_format.clone(),
         output_file: args.output_file.clone(),
-        num_cpus: get_num_threads_to_use(args.num_cpus),
+        num_cpus: args.num_cpus,
         use_staging: args.use_staging,
         static_analysis_enabled: args.static_analysis_enabled,
         secrets_enabled: args.secrets_enabled,
@@ -1161,6 +1181,30 @@ mod tests {
             num_cpus: 1,
             timeout: None,
         }
+    }
+
+    fn parse_args(dir: &TempDir, extra: &[&str]) -> Result<CliArgs> {
+        let dir = dir.path().to_string_lossy();
+        let mut raw_args = vec!["datadog-static-analyzer", "-i", &dir, "-o", "out.json"];
+        raw_args.extend_from_slice(extra);
+        parse_cli_args(&raw_args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    /// `--force-cpus` is used verbatim, even beyond the number of logical cores.
+    #[test]
+    fn force_cpus_exceeds_logical_cores() {
+        let dir = TempDir::new().unwrap();
+        let requested = num_cpus::get() * 4;
+        let args = parse_args(&dir, &["--force-cpus", &requested.to_string()]).unwrap();
+        assert_eq!(args.num_cpus, requested);
+    }
+
+    /// `--force-cpus` takes precedence over `--cpus`.
+    #[test]
+    fn force_cpus_overrides_cpus() {
+        let dir = TempDir::new().unwrap();
+        let args = parse_args(&dir, &["--cpus", "2", "--force-cpus", "7"]).unwrap();
+        assert_eq!(args.num_cpus, 7);
     }
 
     fn parse_config(yaml: &str) -> sast_file_v1::ConfigFile {
