@@ -415,7 +415,14 @@ fn main() -> Result<()> {
             eprintln!("--force-cpus must be at least 1");
             exit(EXIT_CODE_INVALID_CONFIGURATION);
         }
-        Some(n) => n,
+        Some(n) => {
+            if use_debug {
+                if let Some(req) = num_cores_requested {
+                    eprintln!("overriding --cpus value `{req}` with --force-cpus value `{n}`");
+                }
+            }
+            n
+        }
         None => get_num_threads_to_use(choose_cpu_count(num_cores_requested)),
     };
 
