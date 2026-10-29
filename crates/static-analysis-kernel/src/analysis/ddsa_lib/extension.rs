@@ -3,6 +3,40 @@
 // Copyright 2024 Datadog, Inc.
 
 use crate::analysis::ddsa_lib::ops;
+use std::borrow::Cow;
+
+macro_rules! embedded_esm {
+    ($(($specifier:literal, $file:literal)),* $(,)?) => {
+        &[$(deno_core::ExtensionFileSource::new(
+            $specifier,
+            deno_core::ascii_str_include!(concat!("js/", $file)),
+        )),*]
+    };
+}
+
+/// The ES modules that make up `ddsa_lib`.
+const DDSA_LIB_ESM: &[deno_core::ExtensionFileSource] = embedded_esm![
+    ("ext:ddsa_lib/__bootstrap.js", "__bootstrap.js"),
+    ("ext:ddsa_lib/context_file", "context_file.js"),
+    ("ext:ddsa_lib/context_file_go", "context_file_go.js"),
+    ("ext:ddsa_lib/context_file_js", "context_file_js.js"),
+    ("ext:ddsa_lib/context_file_tf", "context_file_tf.js"),
+    ("ext:ddsa_lib/context_root", "context_root.js"),
+    ("ext:ddsa_lib/context_rule", "context_rule.js"),
+    ("ext:ddsa_lib/context_ts_lang", "context_ts_lang.js"),
+    ("ext:ddsa_lib/ddsa", "ddsa.js"),
+    ("ext:ddsa_lib/edit", "edit.js"),
+    ("ext:ddsa_lib/fix", "fix.js"),
+    ("ext:ddsa_lib/flow/graph", "flow/graph.js"),
+    ("ext:ddsa_lib/flow/java", "flow/java.js"),
+    ("ext:ddsa_lib/query_match", "query_match.js"),
+    ("ext:ddsa_lib/query_match_compat", "query_match_compat.js"),
+    ("ext:ddsa_lib/region", "region.js"),
+    ("ext:ddsa_lib/stella_compat", "stella_compat.js"),
+    ("ext:ddsa_lib/utility", "utility.js"),
+    ("ext:ddsa_lib/ts_node", "ts_node.js"),
+    ("ext:ddsa_lib/violation", "violation.js"),
+];
 
 deno_core::extension!(
     ddsa_lib,
@@ -18,37 +52,20 @@ deno_core::extension!(
         ops::op_digraph_adjacency_list_to_dot,
     ],
     esm_entry_point = "ext:ddsa_lib/__bootstrap.js",
-    esm = [
-        dir "src/analysis/ddsa_lib/js",
-        "__bootstrap.js",
-        "ext:ddsa_lib/context_file" = "context_file.js",
-        "ext:ddsa_lib/context_file_go" = "context_file_go.js",
-        "ext:ddsa_lib/context_file_js" = "context_file_js.js",
-        "ext:ddsa_lib/context_file_tf" = "context_file_tf.js",
-        "ext:ddsa_lib/context_root" = "context_root.js",
-        "ext:ddsa_lib/context_rule" = "context_rule.js",
-        "ext:ddsa_lib/context_ts_lang" = "context_ts_lang.js",
-        "ext:ddsa_lib/ddsa" = "ddsa.js",
-        "ext:ddsa_lib/edit" = "edit.js",
-        "ext:ddsa_lib/fix" = "fix.js",
-        "ext:ddsa_lib/flow/graph" = "flow/graph.js",
-        "ext:ddsa_lib/flow/java" = "flow/java.js",
-        "ext:ddsa_lib/query_match" = "query_match.js",
-        "ext:ddsa_lib/query_match_compat" = "query_match_compat.js",
-        "ext:ddsa_lib/region" = "region.js",
-        "ext:ddsa_lib/stella_compat" = "stella_compat.js",
-        "ext:ddsa_lib/utility" = "utility.js",
-        "ext:ddsa_lib/ts_node" = "ts_node.js",
-        "ext:ddsa_lib/violation" = "violation.js",
-    ],
+    customizer = |ext: &mut deno_core::Extension| {
+        ext.esm_files = Cow::Borrowed(DDSA_LIB_ESM);
+    },
 );
+
+#[cfg(test)]
+const DDSA_LIB_CFG_TEST_ESM: &[deno_core::ExtensionFileSource] =
+    embedded_esm![("ext:ddsa_lib_cfg_test/helpers", "test_helpers.js")];
 
 #[cfg(test)]
 deno_core::extension!(
     ddsa_lib_cfg_test,
     ops = [ops::cfg_test_op_rust_option],
-    esm = [
-        dir "src/analysis/ddsa_lib/js",
-        "ext:ddsa_lib_cfg_test/helpers" = "test_helpers.js",
-    ]
+    customizer = |ext: &mut deno_core::Extension| {
+        ext.esm_files = Cow::Borrowed(DDSA_LIB_CFG_TEST_ESM);
+    },
 );
