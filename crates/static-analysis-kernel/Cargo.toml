@@ -18,11 +18,8 @@ thiserror = { workspace = true }
 tree-sitter = { workspace = true }
 
 # other
-deno_core = "0.330.0"
+deno_core = "0.337.0"
 globset = "0.4.16"
 graphviz-rust = "0.9.6"
 sequence_trie = "0.3.6"
 serde_yaml = "0.9.21"
-
-# We're experiencing issues with v8 130.0.8. Until we can resolve this, pin to the last-known-working.
-v8 = "=130.0.7"
