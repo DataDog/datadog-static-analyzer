@@ -155,6 +155,12 @@ fn main() -> Result<()> {
         format!("allow N CPUs at once; if unspecified, defaults to the number of logical cores on the platform or {}, whichever is less", DEFAULT_MAX_CPUS).as_str(),
         "--cpus 5",
     );
+    opts.optopt(
+        "",
+        "force-cpus",
+        "use exactly N threads; overrides --cpus and ignores the number of logical cores",
+        "--force-cpus 16",
+    );
 
     opts.optflag("h", "help", "print this help");
     opts.optflag("v", "version", "shows the tool version");
@@ -397,7 +403,28 @@ fn main() -> Result<()> {
         })
         .transpose()?;
     // Select the number of cores to use based on the user's CLI arg (or lack of one)
-    let num_cpus = get_num_threads_to_use(choose_cpu_count(num_cores_requested));
+    let num_cores_forced = matches
+        .opt_str("force-cpus")
+        .map(|val| {
+            val.parse::<usize>()
+                .context("unable to parse `force-cpus` flag as integer")
+        })
+        .transpose()?;
+    let num_cpus = match num_cores_forced {
+        Some(0) => {
+            eprintln!("--force-cpus must be at least 1");
+            exit(EXIT_CODE_INVALID_CONFIGURATION);
+        }
+        Some(n) => {
+            if use_debug {
+                if let Some(req) = num_cores_requested {
+                    eprintln!("overriding --cpus value `{req}` with --force-cpus value `{n}`");
+                }
+            }
+            n
+        }
+        None => get_num_threads_to_use(choose_cpu_count(num_cores_requested)),
+    };
 
     // Build the run/SAST/secrets configuration objects that describe how the CLI should behave.
     let run_config = RunConfiguration {
