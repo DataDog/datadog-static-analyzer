@@ -6,7 +6,7 @@ use crate::analysis::ddsa_lib::common::{
     load_function, set_key_value, set_undefined, v8_interned, DDSAJsRuntimeError, Instance,
 };
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A [`v8::Global`] object created from the ES6 class `FileContextGo`.
@@ -24,7 +24,7 @@ impl FileContextGo<Instance> {
     pub const CLASS_NAME: &'static str = "FileContextGo";
 
     /// Creates a new [`v8::Global`] object by loading [`Self::CLASS_NAME`] from the `scope` and creating an instance.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let args = [v8::undefined(scope).into()];
@@ -46,7 +46,7 @@ impl FileContextGo<Instance> {
 
     /// Assigns either the provided `v8::Global` map to the JavaScript object's [`FileContextGo::s_alias_map`] key,
     /// or `undefined` if no map is provided.
-    pub fn set_pkg_alias_map(&self, scope: &mut HandleScope, map: Option<&v8::Global<v8::Map>>) {
+    pub fn set_pkg_alias_map(&self, scope: &mut PinScope, map: Option<&v8::Global<v8::Map>>) {
         if let Some(v8_map) = map {
             set_key_value(&self.v8_object, scope, &self.s_alias_map, |inner| {
                 v8::Local::new(inner, v8_map).into()
@@ -70,11 +70,11 @@ mod tests {
         attach_as_global, cfg_test_v8, js_class_eq, js_instance_eq, try_execute,
     };
     use deno_core::v8;
-    use deno_core::v8::HandleScope;
+    use deno_core::v8::PinScope;
 
     /// Creates a `FileContextGo`, prepopulated with the provided `mapping` and exposed on `globalThis`
     /// with the provided `variable_name`.
-    fn mount_context(scope: &mut HandleScope, variable_name: &str, mapping: &[(&str, &str)]) {
+    fn mount_context(scope: &mut PinScope, variable_name: &str, mapping: &[(&str, &str)]) {
         let package_map = v8::Map::new(scope);
         for (alias, name) in mapping {
             let key = v8_interned(scope, alias);
@@ -108,7 +108,7 @@ mod tests {
     #[test]
     fn unique_packages_array() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mapping = &[
             ("alias_1", "alpha/pkg"),
             ("alias_2", "delta/pkg"),
@@ -130,7 +130,7 @@ GO.packages.join(',');
     #[test]
     fn package_name_lookup() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mapping = &[
             ("alias_1", "alpha/pkg"),
             ("alias_2", "delta/pkg"),

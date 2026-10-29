@@ -6,7 +6,7 @@ use crate::analysis::ddsa_lib::common::{
     load_function, set_key_value, set_undefined, v8_interned, DDSAJsRuntimeError, Instance,
 };
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::marker::PhantomData;
 
 /// A [`v8::Global`] object created from the ES6 class `RuleContext`.
@@ -24,7 +24,7 @@ impl RuleContext<Instance> {
     pub const CLASS_NAME: &'static str = "RuleContext";
 
     /// Creates a new [`v8::Global`] object by loading [`Self::CLASS_NAME`] from the `scope` and creating an instance.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let args = [v8::undefined(scope).into()];
@@ -42,14 +42,14 @@ impl RuleContext<Instance> {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         v8::Local::new(scope, &self.v8_object)
     }
 
     /// Sets the [`v8::Map`] containing argument names and argument values.
     pub fn set_arguments_map(
         &self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         arguments_map: Option<&v8::Global<v8::Map>>,
     ) {
         if let Some(v8_map) = arguments_map {
@@ -64,7 +64,7 @@ impl RuleContext<Instance> {
     /// Returns a local handle to the [`v8::Global`] map, if present.
     pub fn v8_arguments_map<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
     ) -> Option<v8::Local<'s, v8::Map>> {
         let v8_key = v8::Local::new(scope, &self.s_arguments);
         let v8_args = self.v8_object.open(scope).get(scope, v8_key.into());
