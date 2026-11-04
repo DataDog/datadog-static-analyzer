@@ -1035,7 +1035,7 @@ dependencies = [
 [[package]]
 name = "dd-sensitive-data-scanner"
 version = "0.0.0"
-source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=972b5d8d18279b47470dadb313b368c591c76369#972b5d8d18279b47470dadb313b368c591c76369"
+source = "git+https://github.com/DataDog/dd-sensitive-data-scanner.git?rev=8152feee4c095d69878f69ccd2c95baf71932b3e#8152feee4c095d69878f69ccd2c95baf71932b3e"
 dependencies = [
  "ahash",
  "aws-sign-v4",
