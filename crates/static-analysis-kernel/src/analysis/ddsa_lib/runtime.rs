@@ -1579,12 +1579,11 @@ function visit(captures) {
     #[test]
     fn make_base_deno_core_runtime_set_heap_limit() {
         const MAX_BYTES: usize = 16 * 1024 * 1024;
-        let mut heap_stats = v8::HeapStatistics::default();
         let _v8 = cfg_test_v8();
         for size in [MAX_BYTES, MAX_BYTES * 2] {
             let mut rt = make_base_deno_core_runtime(vec![], Some(size));
-            rt.v8_isolate().get_heap_statistics(&mut heap_stats);
-            assert_eq!(heap_stats.heap_size_limit(), size);
+            let stats = rt.v8_isolate().get_heap_statistics();
+            assert_eq!(stats.heap_size_limit(), size);
         }
     }
 
