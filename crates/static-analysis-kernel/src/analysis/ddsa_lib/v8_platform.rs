@@ -27,7 +27,7 @@ const BASE_FLAGS: &str = concat!(
     // and so it's possible for changes in their default flags to contradict ours. Until `deno_core`
     // allows the creation of a JsRuntime without forcing v8 flags, we use the following flag
     // to crash the process if there is a contradiction. This serves as a canary to investigate further.
-    " --abort-on-contradictory-flags",
+    " --flag-processing-mode=abort-on-error",
     // Performance: compile JavaScript eagerly
     " --no-lazy",
     " --no-lazy-streaming",
@@ -155,11 +155,11 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// v8 is initialized with `--abort-on-contradictory-flags`.
+    /// v8 is initialized with `--flag-processing-mode=abort-on-error` (which will abort on contradictory flags).
     /// (This is important -- see documentation in [`BASE_FLAGS`] -- hence it has an explicit test).
     #[test]
-    fn v8_contradictory_flags_abort() {
-        assert!(BASE_FLAGS.contains("--abort-on-contradictory-flags"));
+    fn v8_flag_processing_mode() {
+        assert!(BASE_FLAGS.contains("--flag-processing-mode=abort-on-error"));
     }
 
     /// v8 is initialized without the ability to run `eval`-like functions.
