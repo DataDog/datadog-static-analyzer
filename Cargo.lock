@@ -23,10 +23,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "adler"
-version = "1.0.2"
+name = "adler2"
+version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f26201604c87b1e01bd3d98f8d5d9a8fcbb815e8cedb41ffccbeb4bf593a35fe"
+checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "ahash"
@@ -570,6 +570,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "boxed_error"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "17d4f95e880cfd28c4ca5a006cf7f6af52b4bcb7b5866f573b2faa126fb7affb"
+dependencies = [
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1098,15 +1108,16 @@ dependencies = [
 
 [[package]]
 name = "deno_core"
-version = "0.344.1"
+version = "0.356.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd7a6225ec7ad7234284bf22d9c078a4eff49aa234a79124bcd345b024782a57"
+checksum = "889109fa6ef1001fa5719d6292ca20e665edeece4a190ef2d35fab0bab76d54b"
 dependencies = [
  "anyhow",
  "az",
  "bincode",
  "bit-set 0.8.0",
  "bit-vec 0.8.0",
+ "boxed_error",
  "bytes",
  "capacity_builder",
  "cooked-waker",
@@ -1142,9 +1153,9 @@ checksum = "fe4dccb6147bb3f3ba0c7a48e993bfeb999d2c2e47a81badee80e2b370c8d695"
 
 [[package]]
 name = "deno_error"
-version = "0.5.7"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e983933fb4958fbe1e0a63c1e89a2af72b12c409e86404e547955564e6e217b8"
+checksum = "3007d3f1ea92ea503324ae15883aac0c2de2b8cf6fead62203ff6a67161007ab"
 dependencies = [
  "deno_error_macro",
  "libc",
@@ -1156,9 +1167,9 @@ dependencies = [
 
 [[package]]
 name = "deno_error_macro"
-version = "0.5.7"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1ad5ae3ef15db33e917d6ed54b53d0a98d068c4d1217eb35a4997423203c3ef"
+checksum = "9b565e60a9685cdf312c888665b5f8647ac692a7da7e058a5e2268a466da8eaf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1167,9 +1178,9 @@ dependencies = [
 
 [[package]]
 name = "deno_ops"
-version = "0.220.1"
+version = "0.232.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6318d409071d908b037999386bc7fc0a2b799895350f68e472c0854208bf9d6d"
+checksum = "fff4ab5ddb3fb4af0e73e61de6390a14185cc66d7fd1481bc1051628d9c81c6c"
 dependencies = [
  "indexmap 2.13.0",
  "proc-macro-rules",
@@ -1184,9 +1195,9 @@ dependencies = [
 
 [[package]]
 name = "deno_path_util"
-version = "0.3.3"
+version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8850326ea9cb786aafd938f3de9866432904c0bae3aa0139a7a4e570b0174f6"
+checksum = "78c7e98943f0d068928906db0c7bde89de684fa32c6a8018caacc4cee2cdd72b"
 dependencies = [
  "deno_error",
  "percent-encoding",
@@ -2725,11 +2736,11 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.7.4"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8a240ddb74feaf34a79a7add65a741f3167852fba007066dcac1ca548d89c08"
+checksum = "1fa76a2c86f704bdb222d66965fb3d63269ce38518b83cb0575fca855ebb6316"
 dependencies = [
- "adler",
+ "adler2",
 ]
 
 [[package]]
@@ -4143,9 +4154,9 @@ dependencies = [
 
 [[package]]
 name = "serde_v8"
-version = "0.253.1"
+version = "0.265.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ec88914cc897ee5ac2848c20ef8dcf796f3f06990027a87bc8116b58177d04b"
+checksum = "ab66666858a36e4bdb5552103c43af2a4d220d8ff1ac6fd911ad96e3015ce397"
 dependencies = [
  "deno_error",
  "num-bigint",
@@ -5186,9 +5197,9 @@ dependencies = [
 
 [[package]]
 name = "v8"
-version = "135.1.1"
+version = "137.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "171c7d65c2c71e7e02cbef7762787614cab3e9043d58b433ef65b4baa2f4614d"
+checksum = "33995a1fee055ff743281cde33a41f0d618ee0bdbe8bdf6859e11864499c2595"
 dependencies = [
  "bindgen",
  "bitflags",
@@ -5380,9 +5391,9 @@ dependencies = [
 
 [[package]]
 name = "wasm_dep_analyzer"
-version = "0.2.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2eeee3bdea6257cc36d756fa745a70f9d393571e47d69e0ed97581676a5369ca"
+checksum = "a10e6b67c951a84de7029487e0e0a496860dae49f6699edd279d5ff35b8fbf54"
 dependencies = [
  "deno_error",
  "thiserror 2.0.18",

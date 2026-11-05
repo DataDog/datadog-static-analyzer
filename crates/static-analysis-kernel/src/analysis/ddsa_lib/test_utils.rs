@@ -140,7 +140,7 @@ pub(crate) fn try_execute<'s>(
         let deno_error = deno_core::error::JsError::from_v8_exception(tc_scope, exception);
         tc_scope.reset();
         DDSAJsRuntimeError::Execution {
-            error: deno_error.into(),
+            error: (*deno_error).into(),
         }
     })
 }

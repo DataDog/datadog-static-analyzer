@@ -349,7 +349,7 @@ impl JsRuntime {
             let deno_error = deno_core::error::JsError::from_v8_exception(tc_ctx_scope, exception);
             tc_ctx_scope.reset();
             DDSAJsRuntimeError::Execution {
-                error: deno_error.into(),
+                error: (*deno_error).into(),
             }
         })?;
 
