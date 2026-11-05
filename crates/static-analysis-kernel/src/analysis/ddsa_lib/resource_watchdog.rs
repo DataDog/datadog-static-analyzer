@@ -17,8 +17,6 @@ pub(crate) struct V8ResourceWatchdog {
     timeout_condvar: Arc<Condvar>,
     isolate_handle: v8::IsolateHandle,
     heap_limit_guard: Rc<HeapLimitGuard>,
-    /// The heap limit to enforce for the v8 isolate.
-    initial_heap_limit: usize,
 }
 
 impl V8ResourceWatchdog {
@@ -37,9 +35,6 @@ impl V8ResourceWatchdog {
             Arc::clone(&timeout_condvar),
         );
 
-        let stats = isolate.get_heap_statistics();
-        let initial_heap_limit = stats.heap_size_limit();
-
         let heap_limit_cb =
             Self::make_near_heap_limit_callback(isolate_handle.clone(), Arc::clone(&state));
         let heap_limit_guard = HeapLimitGuard::new(isolate, Box::new(heap_limit_cb));
@@ -49,7 +44,6 @@ impl V8ResourceWatchdog {
             timeout_condvar,
             isolate_handle,
             heap_limit_guard,
-            initial_heap_limit,
         }
     }
 
@@ -95,9 +89,9 @@ impl V8ResourceWatchdog {
         // If the isolate was terminated via a `NearHeapLimitCallback`, it was given
         // an additional memory allotment that needs to be reset to the initial value.
         if did_oom {
-            self.heap_limit_guard
-                .suggest_heap_limit(scope.as_mut(), self.initial_heap_limit)
-                .expect("init params should guarantee success");
+            let _ = self
+                .heap_limit_guard
+                .restore_initial_heap_limit(scope.as_mut());
         }
 
         // (If the watchdog timed out an execution, a wakeup isn't necessary because it's already
@@ -277,8 +271,11 @@ type NearHeapLimitCallback = dyn Fn(usize, usize) -> usize;
 #[derive(Debug)]
 struct HeapLimitGuard {
     boxed_callback_ptr: Cell<*mut Box<NearHeapLimitCallback>>,
-    /// The limit of the v8 isolate upon initialization.
-    initial_limit: usize,
+    /// The isolate's configured heap limit.
+    ///
+    /// Due to the fact this value is only available via a [`NeapHeapLimitCallback`], this will
+    /// be `None` until said callback is called.
+    initial_limit: Rc<Cell<Option<usize>>>,
 }
 
 impl HeapLimitGuard {
@@ -291,10 +288,15 @@ impl HeapLimitGuard {
         // with an additional box (hereafter: "Parent Box"). We then leak the "Parent Box"
         // in order to get a `*mut Box<NearHeapLimitCallback>` , which is a thin pointer to the "Child Box".
         // that is guaranteed to never be dropped.
+        let initial_limit = Rc::new(Cell::new(None));
+        let recorder = Rc::clone(&initial_limit);
+        let near_heap_limit_cb: Box<NearHeapLimitCallback> =
+            Box::new(move |current_heap_limit, initial_heap_limit| {
+                recorder.set(Some(initial_heap_limit));
+                near_heap_limit_cb(current_heap_limit, initial_heap_limit)
+            });
         let boxed_box = Box::new(near_heap_limit_cb);
         let boxed_callback_ptr = Box::into_raw(boxed_box);
-        let stats = isolate.get_heap_statistics();
-        let initial_limit = stats.heap_size_limit();
 
         let guard = Self {
             boxed_callback_ptr: Cell::new(boxed_callback_ptr),
@@ -335,9 +337,6 @@ impl HeapLimitGuard {
         {
             return Err("isolate must be the same as the one that initialized this guard");
         }
-        if heap_size_limit > self.initial_limit {
-            return Err("limit can not be set higher than the initial value");
-        }
 
         let current_ptr = self.boxed_callback_ptr.get();
 
@@ -354,6 +353,20 @@ impl HeapLimitGuard {
         // See: https://chromium.googlesource.com/v8/v8.git/+/refs/heads/main/src/heap/heap.cc
         let _ = self.set_callback_inner(isolate, current_ptr, heap_size_limit);
         Ok(())
+    }
+
+    /// Restores the heap limit that the isolate was configured with (undoing any additional
+    /// allotment provided by a [`NearHeapLimitCallback`]).
+    ///
+    /// Returns `Err` if the isolate doesn't correspond with this HeapLimitGuard.
+    fn restore_initial_heap_limit(&self, isolate: &mut v8::Isolate) -> Result<(), &'static str> {
+        // Because of how Self::new wraps the user-provided callback with a recorder that
+        // stores `Some(initial_heap_limit)`, if the value is `None`, the callback was never
+        // invoked, and thus the heap limit will be exactly as initialized. No action required.
+        let Some(initial_limit) = self.initial_limit.get() else {
+            return Ok(());
+        };
+        self.suggest_heap_limit(isolate, initial_limit)
     }
 
     /// Sets the [`NearHeapLimitCallback`] used by the v8 isolate, replacing and returning a
@@ -448,20 +461,6 @@ pub(crate) mod tests {
     /// 128MB: a heap limit large enough to test expected v8 behavior while still respecting a
     /// low resource utilization for the test runner.
     pub(crate) const DEFAULT_HEAP_LIMIT: usize = 128 * 1024 * 1024;
-    /// A 5% margin of error, used to confirm that calls to [`HeapLimitGuard::suggest_heap_limit`] have
-    /// the desired effect. Note that this is a relatively large % because it's paired with [`DEFAULT_HEAP_LIMIT`],
-    /// which is relatively small. (As the limit grows to a value more realistic
-    /// for production use -- e.g. 1+ GB -- the actual margin of error drops below 1%)
-    const HEAP_LIMIT_MARGIN_OF_ERROR: f32 = 0.05;
-
-    /// Returns the percentage difference between the isolate's current heap limit
-    /// and the expected heap limit.
-    fn heap_limit_diff(isolate: &mut v8::Isolate, expected: usize) -> f32 {
-        let stats = isolate.get_heap_statistics();
-        let current_limit = stats.heap_size_limit() as isize;
-        let diff = current_limit.abs_diff(expected as isize);
-        diff as f32 / expected as f32
-    }
 
     /// The watchdog's state should be properly cleared across executions.
     /// Note that because this is testing the [`V8ResourceWatchdog::execute`] function, which we
@@ -560,10 +559,9 @@ pub(crate) mod tests {
         v8::tc_scope!(let tc_scope, scope);
         let oom_script = compile_script(tc_scope, OOM_CODE, None).unwrap();
 
-        let mut last_margin: Option<f32> = None;
         // A loop is performed to ensure the original limit is reset and that the margin of
         // error doesn't snowball beyond the acceptable margin.
-        for i in 0..3 {
+        for _ in 0..3 {
             let err = watchdog
                 .execute(None, tc_scope, |sc| {
                     let opened = oom_script.open(sc);
@@ -573,13 +571,9 @@ pub(crate) mod tests {
                 })
                 .unwrap_err();
             assert!(matches!(err, DDSAJsRuntimeError::JavaScriptMemoryExceeded));
-            let margin = heap_limit_diff(tc_scope, INITIAL_LIMIT);
-            assert!(margin < HEAP_LIMIT_MARGIN_OF_ERROR, "[{i}] margin exceeded");
 
-            // Ensure there is no drift in the margin (prevent snowballing).
-            if let Some(last_margin) = last_margin.replace(margin) {
-                assert_eq!(last_margin, margin, "[{i}] margin drifted");
-            }
+            let heap_size_limit = tc_scope.get_heap_statistics().heap_size_limit();
+            assert_eq!(heap_size_limit, INITIAL_LIMIT);
         }
     }
 
@@ -628,40 +622,37 @@ pub(crate) mod tests {
         assert_eq!(unsafe { (*stored_ptr)(5, 1) }, 26);
     }
 
-    /// A [`HeapLimitGuard`] can set the heap limit of an isolate (within a margin of error).
+    /// A [`HeapLimitGuard`] can lower the heap limit of an isolate.
     #[test]
-    fn heap_limit_guard_set_heap_limit_margin_of_error() {
+    fn heap_limit_guard_set_heap_limit() {
         const INITIAL_LIMIT: usize = DEFAULT_HEAP_LIMIT;
         const REDUCED_LIMIT: usize = INITIAL_LIMIT / 2;
+        const FURTHER_REDUCED_LIMIT: usize = REDUCED_LIMIT / 2;
         const _: () = {
             assert!(REDUCED_LIMIT < INITIAL_LIMIT, "test invariant");
+            assert!(FURTHER_REDUCED_LIMIT < REDUCED_LIMIT, "test invariant");
         };
         let mut runtime = cfg_test_v8().deno_core_rt_with_heap_limit(INITIAL_LIMIT);
-        assert_eq!(heap_limit_diff(runtime.v8_isolate(), INITIAL_LIMIT), 0.0);
+        let heap_size_limit = runtime.v8_isolate().get_heap_statistics().heap_size_limit();
+        assert_eq!(heap_size_limit, INITIAL_LIMIT);
 
         let guard = HeapLimitGuard::new(runtime.v8_isolate(), Box::new(|_, _| 0));
 
         let set_result = guard.suggest_heap_limit(runtime.v8_isolate(), REDUCED_LIMIT);
         assert!(set_result.is_ok());
         // The `suggest_heap_limit` call should have set a lower limit.
-        assert!(heap_limit_diff(runtime.v8_isolate(), REDUCED_LIMIT) < HEAP_LIMIT_MARGIN_OF_ERROR);
-    }
+        let after_suggest = runtime.v8_isolate().get_heap_statistics().heap_size_limit();
+        // `after_suggest` includes the value v8 padded our input with. Thus, exact math isn't
+        // feasible here and we can only assert on the comparison.
+        assert!(after_suggest < INITIAL_LIMIT);
 
-    /// The heap limit cannot be set larger than the initial value.
-    #[test]
-    fn heap_limit_initial_value() {
-        const INITIAL_LIMIT: usize = DEFAULT_HEAP_LIMIT;
-        let mut runtime = cfg_test_v8().deno_core_rt_with_heap_limit(INITIAL_LIMIT);
-        let guard = HeapLimitGuard::new(runtime.v8_isolate(), Box::new(|_, _| 0));
-
-        assert_eq!(heap_limit_diff(runtime.v8_isolate(), INITIAL_LIMIT), 0.0);
-
-        // Setting a limit larger than the initial value isn't possible.
-        let set_result = guard.suggest_heap_limit(runtime.v8_isolate(), INITIAL_LIMIT * 2);
-        assert!(set_result
-            .is_err_and(|msg| msg == "limit can not be set higher than the initial value"));
-
-        assert_eq!(heap_limit_diff(runtime.v8_isolate(), INITIAL_LIMIT), 0.0);
+        let set_result = guard.suggest_heap_limit(runtime.v8_isolate(), FURTHER_REDUCED_LIMIT);
+        assert!(set_result.is_ok());
+        let second_after_suggest = runtime.v8_isolate().get_heap_statistics().heap_size_limit();
+        // ...however, diffing the two "after_suggest" values cancels out v8's padding, letting us do
+        // an equality comparison to the value we passed in.
+        let set_delta = after_suggest - second_after_suggest;
+        assert_eq!(set_delta, REDUCED_LIMIT - FURTHER_REDUCED_LIMIT);
     }
 
     /// A `HeapLimitGuard` only works on the isolate it was initialized with.

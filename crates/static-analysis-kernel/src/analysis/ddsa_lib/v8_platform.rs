@@ -70,7 +70,7 @@ impl V8Platform<FlagsSet> {
 
     fn initialize_inner<T>(platform: v8::UniqueRef<v8::Platform>) -> V8Platform<T> {
         let shared_platform = platform.make_shared();
-        deno_core::JsRuntime::init_platform(Some(shared_platform), false);
+        deno_core::JsRuntime::init_platform(Some(shared_platform));
         V8Platform::<T>(std::marker::PhantomData)
     }
 }
