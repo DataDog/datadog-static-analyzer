@@ -274,13 +274,9 @@ type NearHeapLimitCallback = dyn Fn(usize, usize) -> usize;
 /// to dereference a pointer that must point to a live [`NearHeapLimitCallback`] (which, by default,
 /// will not live as long as the v8 isolate). Thus, this struct guarantees memory safety
 /// by manually managing the allocation and lifetime of the `NearHeapLimitCallback`.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct HeapLimitGuard {
     boxed_callback_ptr: Cell<*mut Box<NearHeapLimitCallback>>,
-    /// The raw pointer of the isolate this guard was initialized with. This is only used to assert
-    /// that, for each function that accepts a `&mut v8::Isolate`, that the provided isolate is
-    /// the same as the one that initialized this `HeapLimitGuard`.
-    parent_isolate_ptr: *const v8::Isolate,
     /// The limit of the v8 isolate upon initialization.
     initial_limit: usize,
 }
@@ -297,13 +293,11 @@ impl HeapLimitGuard {
         // that is guaranteed to never be dropped.
         let boxed_box = Box::new(near_heap_limit_cb);
         let boxed_callback_ptr = Box::into_raw(boxed_box);
-        let isolate_ptr: *const v8::Isolate = &*isolate;
         let stats = isolate.get_heap_statistics();
         let initial_limit = stats.heap_size_limit();
 
         let guard = Self {
             boxed_callback_ptr: Cell::new(boxed_callback_ptr),
-            parent_isolate_ptr: isolate_ptr,
             initial_limit,
         };
         let guard = Rc::new(guard);
@@ -335,7 +329,10 @@ impl HeapLimitGuard {
         isolate: &mut v8::Isolate,
         heap_size_limit: usize,
     ) -> Result<(), &'static str> {
-        if !std::ptr::eq(&*isolate as *const _, self.parent_isolate_ptr) {
+        if !isolate
+            .get_slot::<Rc<HeapLimitGuard>>()
+            .is_some_and(|guard| std::ptr::eq(Rc::as_ptr(guard), self))
+        {
             return Err("isolate must be the same as the one that initialized this guard");
         }
         if heap_size_limit > self.initial_limit {
@@ -475,17 +472,23 @@ pub(crate) mod tests {
         let mut runtime = cfg_test_v8().deno_core_rt();
         let timeout = Duration::from_millis(500);
         let loop_code = "while (true) {}";
-        let loop_script = compile_script(&mut runtime.handle_scope(), loop_code, None).unwrap();
+        let loop_script = {
+            deno_core::scope!(scope, runtime);
+            compile_script(scope, loop_code, None).unwrap()
+        };
         let code = "123;";
-        let normal_script = compile_script(&mut runtime.handle_scope(), code, None).unwrap();
+        let normal_script = {
+            deno_core::scope!(scope, runtime);
+            compile_script(scope, code, None).unwrap()
+        };
 
         let watchdog = V8ResourceWatchdog::new(runtime.v8_isolate());
 
         // First, ensure that the implementation isn't forcing a minimum execution time to that of the
         // timeout (which could happen if we are improperly handling a mutex lock).
         let now = Instant::now();
-        let scope = &mut runtime.handle_scope();
-        let tc_scope = &mut v8::TryCatch::new(scope);
+        deno_core::scope!(scope, runtime);
+        v8::tc_scope!(let tc_scope, scope);
 
         let res = watchdog.execute(Some(Duration::from_secs(10)), tc_scope, |sc| {
             let opened = normal_script.open(sc);
@@ -553,8 +556,8 @@ pub(crate) mod tests {
         let mut runtime = cfg_test_v8().deno_core_rt_with_heap_limit(INITIAL_LIMIT);
         let watchdog = V8ResourceWatchdog::new(runtime.v8_isolate());
 
-        let scope = &mut runtime.handle_scope();
-        let tc_scope = &mut v8::TryCatch::new(scope);
+        deno_core::scope!(scope, runtime);
+        v8::tc_scope!(let tc_scope, scope);
         let oom_script = compile_script(tc_scope, OOM_CODE, None).unwrap();
 
         let mut last_margin: Option<f32> = None;
@@ -666,17 +669,30 @@ pub(crate) mod tests {
     fn heap_limit_guard_correct_isolate() {
         const INITIAL_LIMIT: usize = DEFAULT_HEAP_LIMIT;
         const REDUCED_LIMIT: usize = INITIAL_LIMIT / 2;
+        const WRONG_ISOLATE: &str =
+            "isolate must be the same as the one that initialized this guard";
         let v8_platform = cfg_test_v8();
         let mut runtime_1 = v8_platform.deno_core_rt_with_heap_limit(INITIAL_LIMIT);
         let guard_for_rt_1 = HeapLimitGuard::new(runtime_1.v8_isolate(), Box::new(|_, _| 0));
-        let mut runtime_2 = v8_platform.deno_core_rt_with_heap_limit(INITIAL_LIMIT);
-        let suggest_result =
-            guard_for_rt_1.suggest_heap_limit(runtime_2.v8_isolate(), REDUCED_LIMIT);
-        assert!(suggest_result.is_err_and(
-            |msg| msg == "isolate must be the same as the one that initialized this guard"
-        ));
         assert!(guard_for_rt_1
             .suggest_heap_limit(runtime_1.v8_isolate(), REDUCED_LIMIT)
             .is_ok());
+        {
+            deno_core::scope!(scope, runtime_1);
+            assert!(guard_for_rt_1
+                .suggest_heap_limit(scope, REDUCED_LIMIT)
+                .is_ok());
+        }
+
+        let mut runtime_2 = v8_platform.deno_core_rt_with_heap_limit(INITIAL_LIMIT);
+        assert!(guard_for_rt_1
+            .suggest_heap_limit(runtime_2.v8_isolate(), REDUCED_LIMIT)
+            .is_err_and(|msg| msg == WRONG_ISOLATE));
+        {
+            deno_core::scope!(scope, runtime_2);
+            assert!(guard_for_rt_1
+                .suggest_heap_limit(scope, REDUCED_LIMIT)
+                .is_err_and(|msg| msg == WRONG_ISOLATE));
+        }
     }
 }

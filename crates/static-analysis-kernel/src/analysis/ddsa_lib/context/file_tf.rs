@@ -2,7 +2,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2024 Datadog, Inc.
 
-use deno_core::v8::{self, HandleScope};
+use deno_core::v8::{self, PinScope};
 use tree_sitter::StreamingIterator;
 
 use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError};
@@ -37,7 +37,7 @@ const TF_QUERY: &str = r#"
 "#;
 
 impl FileContextTerraform {
-    pub fn new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let resources = MirroredVec::new(js::TerraformResource::try_new(scope)?, scope);
 
         let ts_query =
@@ -51,7 +51,7 @@ impl FileContextTerraform {
     }
 
     /// Queries the `tree_sitter::Tree` and updates the internal [`MirroredIndexMap`] with the query results.
-    pub fn update_state(&mut self, scope: &mut HandleScope, tree: &tree_sitter::Tree, code: &str) {
+    pub fn update_state(&mut self, scope: &mut PinScope, tree: &tree_sitter::Tree, code: &str) {
         let mut query_cursor = tree_sitter::QueryCursor::new();
         let query_result = query_cursor.matches(&self.query, tree.root_node(), code.as_bytes());
 
@@ -83,7 +83,7 @@ impl FileContextTerraform {
     }
 
     /// Clears the internal [`MirroredVec`] of any resources.
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.resources.clear(scope);
     }
 
@@ -104,7 +104,7 @@ mod tests {
     #[test]
     fn test_get_file_context_tf() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut ctx_tf = FileContextTerraform::new(scope).unwrap();
 
         struct TestCase {

@@ -4,7 +4,7 @@
 
 use crate::analysis::ddsa_lib::common::{v8_interned, v8_uint};
 use crate::analysis::ddsa_lib::v8_ds::MirroredIndexMap;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::collections::HashMap;
 
 #[derive(Debug, Default)]
@@ -17,7 +17,7 @@ impl TsLanguageContext {
     /// Gets a reference to [`Metadata`] for the provided `tree_sitter::Language`.
     pub(crate) fn get_metadata(
         &mut self,
-        scope: &mut HandleScope,
+        scope: &mut PinScope,
         language: &tree_sitter::Language,
     ) -> &Metadata {
         self.metadata
@@ -41,7 +41,7 @@ pub(crate) struct Metadata {
 
 impl Metadata {
     /// Extracts metadata from the provided `ts_language`.
-    pub fn new(scope: &mut HandleScope, ts_language: &tree_sitter::Language) -> Self {
+    pub fn new(scope: &mut PinScope, ts_language: &tree_sitter::Language) -> Self {
         // NOTE: We debug_assert that node kind ids are 0-based.
         let is_zero_based_id = true;
         debug_assert!(ts_language.node_kind_for_id(0).is_some());
@@ -101,7 +101,7 @@ pub enum NameOrId {
 /// and the value being the output of the `ts_language` passed to
 /// [`test_utils::format_ts_lang_pointer`](crate::analysis::ddsa_lib::test_utils::format_ts_lang_pointer).
 pub(crate) fn new_metadata_map<T, U, V>(
-    scope: &mut HandleScope,
+    scope: &mut PinScope,
     ts_language: &tree_sitter::Language,
     count: T,
     zero_based_id: bool,
@@ -160,7 +160,7 @@ mod tests {
     #[test]
     fn metadata_node_kind() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let metadata = ts_lang::Metadata::new(scope, &ts_lang);
         let v8_map = metadata.node_kind_map.as_local(scope);
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn metadata_field() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let ts_lang = get_tree_sitter_language(&Language::JavaScript);
         let metadata = ts_lang::Metadata::new(scope, &ts_lang);
         let v8_map = metadata.field_map.as_local(scope);

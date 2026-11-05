@@ -4,7 +4,7 @@
 
 use crate::analysis::ddsa_lib::common::{swallow_v8_error, v8_interned, v8_uint, NodeId};
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 
 /// A [`v8::Global`] template for creating `SingleCapture` v8 objects.
 #[derive(Debug)]
@@ -16,7 +16,7 @@ pub(crate) struct SingleCaptureTemplate {
 }
 
 impl SingleCaptureTemplate {
-    pub fn new(scope: &mut HandleScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         let s_name = v8_interned(scope, "name");
         let s_node_id = v8_interned(scope, "nodeId");
         let undefined = v8::undefined(scope);
@@ -40,7 +40,7 @@ impl SingleCaptureTemplate {
     /// Creates a new local [`v8::Object`] for a `SingleCapture`.
     pub fn new_instance<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         name: &str,
         node_id: NodeId,
     ) -> v8::Local<'s, v8::Object> {
@@ -69,7 +69,7 @@ pub(crate) struct MultiCaptureTemplate {
 }
 
 impl MultiCaptureTemplate {
-    pub fn new(scope: &mut HandleScope) -> Self {
+    pub fn new(scope: &PinScope) -> Self {
         let s_name = v8_interned(scope, "name");
         let s_node_ids = v8_interned(scope, "nodeIds");
         let undefined = v8::undefined(scope);
@@ -92,7 +92,7 @@ impl MultiCaptureTemplate {
     /// Creates a new local [`v8::Object`] for a `MultiCapture`.
     pub fn new_instance<'s>(
         &self,
-        scope: &mut HandleScope<'s>,
+        scope: &mut PinScope<'s, '_>,
         name: &str,
         node_ids: &[NodeId],
     ) -> v8::Local<'s, v8::Object> {
@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn single_capture_js_properties_canary() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let template = SingleCaptureTemplate::new(scope);
         let capture = template.new_instance(scope, "alpha", 16);
         attach_as_global(scope, capture, "CAPTURE");
@@ -146,7 +146,7 @@ assert(CAPTURE.nodeId === 16, "nodeId was incorrect");
     #[test]
     fn multi_capture_js_properties_canary() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let template = MultiCaptureTemplate::new(scope);
         let capture = template.new_instance(scope, "bravo", &[16, 32, 48]);
         attach_as_global(scope, capture, "CAPTURE");

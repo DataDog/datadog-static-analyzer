@@ -167,7 +167,7 @@ mod tests {
     fn v8_eval_like_disabled() {
         let v8 = cfg_test_v8();
         let mut rt = v8.new_runtime();
-        let scope = &mut rt.v8_handle_scope();
+        deno_core::scope!(scope, rt.deno_runtime());
         let samples = [
             "eval('1 + 2');",
             "new Function('a', 'b', 'return a + b;')(1, 2);",

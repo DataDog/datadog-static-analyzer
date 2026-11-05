@@ -339,7 +339,7 @@ pub(crate) struct V8DotGraph {
 impl V8DotGraph {
     /// Creates a new `V8DotGraph` from the provided `v8::Map`.
     pub fn try_new(
-        scope: &mut v8::HandleScope,
+        scope: &mut v8::PinScope,
         map: v8::Local<v8::Map>,
     ) -> Result<Self, &'static str> {
         use dot_structures::*;
@@ -817,7 +817,10 @@ graph.adjacencyList;
         js_script += "\
 [graph.adjacencyList, transpose(graph.adjacencyList)];
 ";
-        let js_script = compile_script(&mut rt.v8_handle_scope(), &js_script, None).unwrap();
+        let js_script = {
+            deno_core::scope!(scope, rt.deno_runtime());
+            compile_script(scope, &js_script, None).unwrap()
+        };
 
         let vertex_transformer = |node: &dot_structures::Node| -> Option<dot_structures::Node> {
             let vid = id_str(&node.id.0).parse::<u32>().unwrap();
@@ -864,7 +867,7 @@ graph.adjacencyList;
     fn vertex_kind_js_synchronization() {
         let tests = [VertexKind::Cst, VertexKind::Phi];
         let mut rt = cfg_test_v8().deno_core_rt();
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         for rust_kind in tests {
             let js_const = match rust_kind {
                 VertexKind::Cst => "VERTEX_CST",
@@ -886,7 +889,7 @@ graph.adjacencyList;
             EdgeKind::Dependence,
         ];
         let mut rt = cfg_test_v8().deno_core_rt();
-        let scope = &mut rt.handle_scope();
+        deno_core::scope!(scope, rt);
         for rust_kind in tests {
             // (The name of the const exported from `graph.js`)
             let js_const = match rust_kind {
@@ -904,7 +907,7 @@ graph.adjacencyList;
     #[test]
     fn js_edge_rust_deserialize() {
         let mut rt = cfg_test_v8().deno_core_rt();
-        let sc = &mut rt.handle_scope();
+        deno_core::scope!(sc, rt);
         let cases = [
             (VertexId::from_cst(1234), VertexKind::Cst),
             (VertexId::from_phi(1234), VertexKind::Phi),
@@ -925,7 +928,7 @@ graph.adjacencyList;
     #[test]
     fn js_edge_js_ser_des() {
         let mut rt = cfg_test_v8().deno_core_rt();
-        let sc = &mut rt.handle_scope();
+        deno_core::scope!(sc, rt);
         // language=javascript
         let js_code = "\
 const packed = makeEdge(1234, EDGE_DEPENDENCE);
@@ -1055,7 +1058,10 @@ const vidPaths = _findTaintFlows(adjList, cst(1), false).map((flow) => {
 const serialized = vidPaths.map((flow) => DDSA_Console.stringify(flow)).join('\\n');
 serialized;
 ";
-        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code, None).unwrap();
+        let js_code = {
+            deno_core::scope!(scope, rt.deno_runtime());
+            compile_script(scope, js_code, None).unwrap()
+        };
         let res = rt
             .scoped_execute(&js_code, |sc, value| value.to_rust_string_lossy(sc), None)
             .unwrap();
@@ -1078,7 +1084,10 @@ serialized;
 const flow = new TaintFlow([], false);
 flow instanceof Array;
 ";
-        let js_code = compile_script(&mut rt.v8_handle_scope(), js_code, None).unwrap();
+        let js_code = {
+            deno_core::scope!(scope, rt.deno_runtime());
+            compile_script(scope, js_code, None).unwrap()
+        };
         let has_array_proto = rt
             .scoped_execute(&js_code, |_, value| value.is_true(), None)
             .unwrap();
