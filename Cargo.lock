@@ -1086,9 +1086,9 @@ dependencies = [
 
 [[package]]
 name = "deno_core"
-version = "0.330.0"
+version = "0.337.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fd38bbbd68ed873165ccb630322704b44140d3a8c8d50f898beac4d1a8a3358c"
+checksum = "a0dc58970dbda08cf38bbc4b8e69d52335f01cd2074ca0dab2adc76de614b7c6"
 dependencies = [
  "anyhow",
  "az",
@@ -1101,6 +1101,7 @@ dependencies = [
  "deno_core_icudata",
  "deno_error",
  "deno_ops",
+ "deno_path_util",
  "deno_unsync",
  "futures",
  "indexmap 2.13.0",
@@ -1155,9 +1156,9 @@ dependencies = [
 
 [[package]]
 name = "deno_ops"
-version = "0.206.0"
+version = "0.213.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c25ffa9d088ea00748dbef870bba110ac22ebf8cf7b2e9eb288409c5d852af3"
+checksum = "67f99dc5a0cec90094e29e54ec753b9501d5b53029c0200f2af933786f075acc"
 dependencies = [
  "indexmap 2.13.0",
  "proc-macro-rules",
@@ -1168,6 +1169,19 @@ dependencies = [
  "strum_macros 0.25.3",
  "syn 2.0.117",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "deno_path_util"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8850326ea9cb786aafd938f3de9866432904c0bae3aa0139a7a4e570b0174f6"
+dependencies = [
+ "deno_error",
+ "percent-encoding",
+ "sys_traits",
+ "thiserror 2.0.18",
+ "url",
 ]
 
 [[package]]
@@ -4151,9 +4165,9 @@ dependencies = [
 
 [[package]]
 name = "serde_v8"
-version = "0.239.0"
+version = "0.246.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3caa6d882827148e5d9052d9d8d6d1c9d6ad426ed00cab46cafb8c07a0e7126a"
+checksum = "c582e4fb6cf768043c54e1203a483b782e7f646573e55ca99c4bfc4806ad901e"
 dependencies = [
  "deno_error",
  "num-bigint",
@@ -4403,7 +4417,6 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "tree-sitter",
- "v8",
 ]
 
 [[package]]
@@ -4541,6 +4554,26 @@ name = "synstructure"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "728a70f3dbaf5bab7f0c4b1ac8d7ae5ea60a4b5549c8a5914361c99147a709d2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "sys_traits"
+version = "0.1.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e1495a604cd38eeb30c408724966cd31ca1b68b5a97e3afc474c0d719bfeec5a"
+dependencies = [
+ "sys_traits_macros",
+]
+
+[[package]]
+name = "sys_traits_macros"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "181f22127402abcf8ee5c83ccd5b408933fec36a6095cf82cda545634692657e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5164,9 +5197,9 @@ dependencies = [
 
 [[package]]
 name = "v8"
-version = "130.0.7"
+version = "134.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a511192602f7b435b0a241c1947aa743eb7717f20a9195f4b5e8ed1952e01db1"
+checksum = "21c7a224a7eaf3f98c1bad772fbaee56394dce185ef7b19a2e0ca5e3d274165d"
 dependencies = [
  "bindgen",
  "bitflags",
