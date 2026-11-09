@@ -3,7 +3,7 @@
 // Copyright 2024 Datadog, Inc.
 
 use deno_core::v8;
-use deno_core::v8::HandleScope;
+use deno_core::v8::PinScope;
 use std::borrow::Cow;
 
 use crate::analysis::ddsa_lib::common::{Class, DDSAJsRuntimeError};
@@ -26,12 +26,12 @@ pub struct PackageImport {
 }
 
 impl FileContextJavaScript {
-    pub fn new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn new(scope: &PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let imports = MirroredVec::new(JSPackageImport::try_new(scope)?, scope);
         Ok(Self { imports })
     }
 
-    pub fn update_state(&mut self, scope: &mut HandleScope, tree: &tree_sitter::Tree, code: &str) {
+    pub fn update_state(&mut self, scope: &mut PinScope, tree: &tree_sitter::Tree, code: &str) {
         let imports = languages::javascript::parse_imports_with_tree(code, tree);
         let owned_imports = imports
             .into_iter()
@@ -44,7 +44,7 @@ impl FileContextJavaScript {
         self.imports.set_data(scope, owned_imports);
     }
 
-    pub fn clear(&mut self, scope: &mut HandleScope) {
+    pub fn clear(&mut self, scope: &mut PinScope) {
         self.imports.clear(scope);
     }
 
@@ -65,7 +65,7 @@ mod tests {
     #[test]
     fn test_get_js_imports() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
         let mut ctx_js = FileContextJavaScript::new(scope).unwrap();
 
         let code_1 = "\

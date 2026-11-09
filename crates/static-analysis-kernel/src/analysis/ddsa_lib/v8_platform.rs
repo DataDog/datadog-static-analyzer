@@ -27,7 +27,7 @@ const BASE_FLAGS: &str = concat!(
     // and so it's possible for changes in their default flags to contradict ours. Until `deno_core`
     // allows the creation of a JsRuntime without forcing v8 flags, we use the following flag
     // to crash the process if there is a contradiction. This serves as a canary to investigate further.
-    " --abort-on-contradictory-flags",
+    " --flag-processing-mode=abort-on-error",
     // Performance: compile JavaScript eagerly
     " --no-lazy",
     " --no-lazy-streaming",
@@ -35,8 +35,6 @@ const BASE_FLAGS: &str = concat!(
     " --disallow-code-generation-from-strings",
     // Require each context to explicitly provide a SharedArrayBuffer implementation.
     " --enable-sharedarraybuffer-per-context",
-    // Don't expose wasm
-    " --no-expose-wasm",
 );
 
 /// An instance of the v8 platform.
@@ -72,7 +70,7 @@ impl V8Platform<FlagsSet> {
 
     fn initialize_inner<T>(platform: v8::UniqueRef<v8::Platform>) -> V8Platform<T> {
         let shared_platform = platform.make_shared();
-        deno_core::JsRuntime::init_platform(Some(shared_platform), false);
+        deno_core::JsRuntime::init_platform(Some(shared_platform));
         V8Platform::<T>(std::marker::PhantomData)
     }
 }
@@ -96,7 +94,7 @@ impl V8Platform<Initialized> {
     }
 
     fn extensions() -> Vec<deno_core::Extension> {
-        vec![ddsa_lib::init_ops_and_esm()]
+        vec![ddsa_lib::init()]
     }
 }
 
@@ -157,11 +155,11 @@ mod tests {
         assert!(result.is_err());
     }
 
-    /// v8 is initialized with `--abort-on-contradictory-flags`.
+    /// v8 is initialized with `--flag-processing-mode=abort-on-error` (which will abort on contradictory flags).
     /// (This is important -- see documentation in [`BASE_FLAGS`] -- hence it has an explicit test).
     #[test]
-    fn v8_contradictory_flags_abort() {
-        assert!(BASE_FLAGS.contains("--abort-on-contradictory-flags"));
+    fn v8_flag_processing_mode() {
+        assert!(BASE_FLAGS.contains("--flag-processing-mode=abort-on-error"));
     }
 
     /// v8 is initialized without the ability to run `eval`-like functions.
@@ -169,7 +167,7 @@ mod tests {
     fn v8_eval_like_disabled() {
         let v8 = cfg_test_v8();
         let mut rt = v8.new_runtime();
-        let scope = &mut rt.v8_handle_scope();
+        deno_core::scope!(scope, rt.deno_runtime());
         let samples = [
             "eval('1 + 2');",
             "new Function('a', 'b', 'return a + b;')(1, 2);",

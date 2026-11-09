@@ -5,7 +5,7 @@
 use crate::analysis::ddsa_lib::common::{load_function, DDSAJsRuntimeError, Instance};
 use crate::analysis::ddsa_lib::js::{MultiCaptureTemplate, SingleCaptureTemplate};
 use deno_core::v8;
-use deno_core::v8::{Handle, HandleScope, IntegrityLevel};
+use deno_core::v8::{Handle, IntegrityLevel, PinScope};
 use std::marker::PhantomData;
 
 /// A [`v8::Global`] object created from the ES6 class `VisitArgFilenameCompat`.
@@ -20,7 +20,7 @@ impl VisitArgFilenameCompat<Instance> {
     pub const CLASS_NAME: &'static str = "VisitArgFilenameCompat";
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let v8_object = js_class
@@ -35,7 +35,7 @@ impl VisitArgFilenameCompat<Instance> {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         v8::Local::new(scope, &self.v8_object)
     }
 }
@@ -51,7 +51,7 @@ impl VisitArgCodeCompat<Instance> {
     pub const CLASS_NAME: &'static str = "VisitArgCodeCompat";
 
     /// Creates a new [`v8::Global`] function by loading [`Self::CLASS_NAME`] from the `scope`.
-    pub fn try_new(scope: &mut HandleScope) -> Result<Self, DDSAJsRuntimeError> {
+    pub fn try_new(scope: &mut PinScope) -> Result<Self, DDSAJsRuntimeError> {
         let js_class = load_function(scope, Self::CLASS_NAME)?;
         let js_class = js_class.open(scope);
         let v8_object = js_class
@@ -66,7 +66,7 @@ impl VisitArgCodeCompat<Instance> {
     }
 
     /// Returns a local handle to the underlying [`v8::Global`] object.
-    pub fn as_local<'s>(&self, scope: &mut HandleScope<'s>) -> v8::Local<'s, v8::Object> {
+    pub fn as_local<'s>(&self, scope: &PinScope<'s, '_>) -> v8::Local<'s, v8::Object> {
         v8::Local::new(scope, &self.v8_object)
     }
 }
@@ -107,7 +107,7 @@ thisStringRepresents('The file contents');\
     #[test]
     fn filename_proxy() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let stub_root_context = make_stub_root_context(scope, &[], CTX_FILENAME, "", None);
         attach_as_global(scope, stub_root_context, "__RUST_BRIDGE__context");
@@ -130,7 +130,7 @@ assert(__FILENAME_PROXY__.includes("name"), "method invocation doesn't work");
     #[test]
     fn file_contents_proxy() {
         let mut runtime = cfg_test_v8().deno_core_rt();
-        let scope = &mut runtime.handle_scope();
+        deno_core::scope!(scope, runtime);
 
         let stub_root_context = make_stub_root_context(scope, &[], "", CTX_FILE_CONTENTS, None);
         attach_as_global(scope, stub_root_context, "__RUST_BRIDGE__context");
