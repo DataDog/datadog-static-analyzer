@@ -912,6 +912,9 @@ fn decide_exit_code(
 }
 
 fn main() -> Result<()> {
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    datadog_static_analyzer::print_mac_deprecation_warning();
+
     let raw_args: Vec<String> = env::args().collect();
     let args = parse_cli_args(&raw_args)?;
     let gitignore_patterns =
