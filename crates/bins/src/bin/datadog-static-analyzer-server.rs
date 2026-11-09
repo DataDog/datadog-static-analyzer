@@ -16,6 +16,9 @@ pub(crate) static SECRET_SCANNER_CACHE: OnceLock<SecretScannerCache> = OnceLock:
 
 #[rocket::main]
 async fn main() {
+    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+    datadog_static_analyzer::print_mac_deprecation_warning();
+
     // NOTE: It's imperative that the Rayon pool (which will handle analysis jobs that use v8)
     // is created by the same thread that initializes v8 (see the documentation
     // on the `initialize_v8` function for more information).

@@ -26,6 +26,17 @@ use std::time::Duration;
 mod git_history;
 pub use git_history::git_history_secret_analysis;
 
+/// Warns that Intel Mac builds will no longer be released.
+#[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+pub fn print_mac_deprecation_warning() {
+    if std::env::var_os("DDSA_NO_DEPRECATION_WARNING").is_some() {
+        return;
+    }
+    eprintln!("Warning: macOS x86_64 builds will no longer be published after January 1st, 2027. \
+After then, you will need to use the Docker image (https://github.com/DataDog/datadog-static-analyzer/blob/main/doc/docker-container.md). \
+Set DDSA_NO_DEPRECATION_WARNING=1 to hide this warning.");
+}
+
 /// Read a file and if the file has some invalid UTF-8 characters, it returns a string with invalid
 /// characters.
 pub fn read_file(path: &Path) -> anyhow::Result<String> {
