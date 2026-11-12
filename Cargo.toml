@@ -10,7 +10,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.9.12"
+version = "0.9.13"
 # NOTE: Do not use 1.x.x unless you 100% know what you are doing.
 
 [profile.release]
@@ -42,4 +42,4 @@ num_cpus = "1.17.0"
 thiserror = "2.0.16"
 tracing = "0.1.40"
 uuid = { version = "1.18.0", features = ["v4"] }
-tree-sitter = "=0.25.8"
+tree-sitter = { git = "https://github.com/DataDog/tree-sitter", rev = "a96203107d1807cb3bcf56cf48eed0df0bed832a" }

@@ -695,7 +695,7 @@ dependencies = [
 
 [[package]]
 name = "cli"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -725,7 +725,7 @@ dependencies = [
 
 [[package]]
 name = "common"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "anyhow",
  "bstr",
@@ -1025,7 +1025,7 @@ checksum = "d7a1e2f27636f116493b8b860f5546edb47c8d8f8ea73e1d2a20be88e28d1fea"
 
 [[package]]
 name = "datadog-static-analyzer"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "anyhow",
  "cargo-husky",
@@ -4102,7 +4102,7 @@ dependencies = [
 
 [[package]]
 name = "secrets"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "anyhow",
  "common",
@@ -4474,7 +4474,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-kernel"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -4496,7 +4496,7 @@ dependencies = [
 
 [[package]]
 name = "static-analysis-server"
-version = "0.9.12"
+version = "0.9.13"
 dependencies = [
  "anyhow",
  "assert-json-diff",
@@ -5228,9 +5228,8 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter"
-version = "0.25.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d7b8994f367f16e6fa14b5aebbcb350de5d7cbea82dc5b00ae997dd71680dd2"
+version = "0.25.10"
+source = "git+https://github.com/DataDog/tree-sitter?rev=a96203107d1807cb3bcf56cf48eed0df0bed832a#a96203107d1807cb3bcf56cf48eed0df0bed832a"
 dependencies = [
  "cc",
  "regex",
@@ -5242,9 +5241,8 @@ dependencies = [
 
 [[package]]
 name = "tree-sitter-language"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "009994f150cc0cd50ff54917d5bc8bffe8cad10ca10d81c34da2ec421ae61782"
+version = "0.1.5"
+source = "git+https://github.com/DataDog/tree-sitter?rev=a96203107d1807cb3bcf56cf48eed0df0bed832a#a96203107d1807cb3bcf56cf48eed0df0bed832a"
 
 [[package]]
 name = "try-lock"
